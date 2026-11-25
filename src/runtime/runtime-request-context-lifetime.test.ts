@@ -266,6 +266,112 @@ describe("active runtime context lifetime", () => {
     expect(canWithCapabilities(resolved!.capabilities, "admin", "system", "*")).toBe(false);
   });
 
+  describe("a contact in a chat governed by contact grants", () => {
+    function governedTurnSource(contactId: string) {
+      return {
+        channel: "whatsapp",
+        accountId: "main",
+        chatId: "120363400000000791@g.us",
+        canonicalChatId: "chat_lease_governed_1",
+        actorType: "contact",
+        contactId,
+      };
+    }
+
+    beforeEach(() => {
+      setCapabilities(["admin:system:*", "execute:executable:*", READ]);
+      dbCreateTagDefinition({
+        slug: "permission-lease-governed-read",
+        label: "Read",
+        kind: "system",
+        source: "permissions",
+        metadata: { permissions: { capabilities: [READ] } },
+      });
+    });
+
+    it("keeps an overlay turn whose contact gains full access mid-turn; the lift applies next turn", () => {
+      // Devin on #990: the overlay-to-lifted change at renewal is a gain, not a reduction.
+      const contact = createContact({ phone: "5511900000791", name: "Later admin", status: "allowed" });
+      dbEnsureContactChatGrant({
+        contactId: contact.id,
+        profileSlug: "permission-lease-governed-read",
+        scopeType: "chat",
+        scopeId: "chat_lease_governed_1",
+      });
+      const source = governedTurnSource(contact.id);
+      const { runtimeContext: context } = start(
+        options({ prompt: "long report", source } as RuntimeRequestContextOptions["prompt"]),
+      );
+      const issued = structuredClone(context);
+      expect(issued.metadata?.actorAuthorizationMode).toBe("user-overlay");
+      updateContact(contact.id, { tags: ["permission-owner"] });
+      advance(30 * 60 * 1000);
+      advance(31 * 60 * 1000);
+      const resolved = resolveRuntimeContext(issued.contextKey, { touch: false });
+      expect(resolved?.contextId).toBe(issued.contextId);
+      expect(resolved?.metadata?.actorAuthorizationMode).toBe("user-overlay");
+      expect(resolved?.capabilities).toEqual(issued.capabilities);
+      expect(canWithCapabilities(resolved!.capabilities, "admin", "system", "*")).toBe(false);
+
+      stop?.();
+      const { runtimeContext: next } = start(
+        options({ prompt: "next", source } as RuntimeRequestContextOptions["prompt"]),
+      );
+      expect(next.metadata?.userOverlay).toBe("lifted");
+    });
+
+    it("revokes an overlay turn whose chat stops being governed mid-turn: only a lift is a gain", () => {
+      // Review of #990 (N1): the lease relaxes the mode only when the recomputed turn is lifted. Any other
+      // mode change (here the last grant removed, so the chat falls back to the agent identity) revokes.
+      const contact = createContact({ phone: "5511900000794", name: "Member", status: "allowed" });
+      const grant = {
+        contactId: contact.id,
+        profileSlug: "permission-lease-governed-read",
+        scopeType: "chat" as const,
+        scopeId: "chat_lease_governed_1",
+      };
+      dbEnsureContactChatGrant(grant);
+      const { runtimeContext: context } = start(
+        options({
+          prompt: "long report",
+          source: governedTurnSource(contact.id),
+        } as RuntimeRequestContextOptions["prompt"]),
+      );
+      const issued = structuredClone(context);
+      expect(issued.metadata?.actorAuthorizationMode).toBe("user-overlay");
+      dbDeleteContactChatGrant(grant);
+      advance(30 * 60 * 1000);
+      expect(resolveRuntimeContext(issued.contextKey, { touch: false })).toBeNull();
+    });
+
+    it("revokes a lifted turn whose contact loses full access mid-turn", () => {
+      const other = createContact({ phone: "5511900000792", name: "Member", status: "allowed" });
+      dbEnsureContactChatGrant({
+        contactId: other.id,
+        profileSlug: "permission-lease-governed-read",
+        scopeType: "chat",
+        scopeId: "chat_lease_governed_1",
+      });
+      const admin = createContact({
+        phone: "5511900000793",
+        name: "Admin",
+        status: "allowed",
+        tags: ["permission-owner"],
+      });
+      const { runtimeContext: context } = start(
+        options({
+          prompt: "long report",
+          source: governedTurnSource(admin.id),
+        } as RuntimeRequestContextOptions["prompt"]),
+      );
+      const issued = structuredClone(context);
+      expect(issued.metadata?.userOverlay).toBe("lifted");
+      updateContact(admin.id, { tags: [] });
+      advance(30 * 60 * 1000);
+      expect(resolveRuntimeContext(issued.contextKey, { touch: false })).toBeNull();
+    });
+  });
+
   it("never adds a newly granted capability to an active turn", () => {
     const { runtimeContext: context } = start();
     const issued = structuredClone(context.capabilities);

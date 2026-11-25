@@ -262,6 +262,7 @@ mock.module("./plugins/index.js", () => ({
 }));
 
 mock.module("./spec/server.js", () => ({
+  SPEC_MCP_SERVER_NAME: "spec",
   createSpecServer: () => null,
   isSpecModeActive: () => false,
   getSpecState: () => undefined,

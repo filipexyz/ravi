@@ -945,6 +945,21 @@ describe("createClaudeRuntimeProvider", () => {
     }
   });
 
+  it("keeps @path mentions in a prompt as text on every path that builds the environment", async () => {
+    const { RAVI_CLAUDE_MANAGED_AUTH_ENV } = await import("./credential-secret-shape.js");
+    const inputs: Record<string, string>[] = [
+      { PATH: "" },
+      { PATH: "", CLAUDE_CODE_DISABLE_FILE_MENTIONS: "0" },
+      { PATH: "", CLAUDE_CODE_DISABLE_FILE_MENTIONS: "" },
+      { PATH: "", [RAVI_CLAUDE_MANAGED_AUTH_ENV]: "1" },
+      { RAVI_MODEL_BROKER_ACTIVE: "1", ANTHROPIC_BASE_URL: "http://127.0.0.1:43123" },
+    ];
+    for (const input of inputs) {
+      expect(buildClaudeCodeEnvironment(input).CLAUDE_CODE_DISABLE_FILE_MENTIONS).toBe("1");
+    }
+    expect(buildClaudeCodeEnvironment().CLAUDE_CODE_DISABLE_FILE_MENTIONS).toBe("1");
+  });
+
   it("never backfills upstream auth into a model-broker runtime", () => {
     const originalToken = process.env.CLAUDE_CODE_OAUTH_TOKEN;
     const originalApiKey = process.env.ANTHROPIC_API_KEY;

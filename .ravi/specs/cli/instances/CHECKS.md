@@ -46,3 +46,8 @@
   without silently renaming or removing the old numeric route.
 - WhatsApp numeric groups, group JIDs (including hyphens), prefixed groups and
   formatted phone approvals MUST retain their normalization and review kind.
+- `bun test src/cli/commands/instances-connect.test.ts` MUST verify that
+  `instances connect` on an existing `closed/closed` instance keeps both
+  policies, intake mode, dmScope, enabled flag, defaults and default tags,
+  keeps the agent when none is given, and creates a new instance with the
+  schema defaults.

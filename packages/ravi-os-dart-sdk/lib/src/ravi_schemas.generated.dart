@@ -121059,7 +121059,7 @@ class RaviSchemas {
       "type": "boolean"
     },
     "limit": {
-      "description": "Page size (default: 50, max: 500)",
+      "description": "Page size (default and max: 500; past that, follow the next page)",
       "type": "string"
     },
     "offset": {

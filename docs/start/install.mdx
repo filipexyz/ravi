@@ -53,9 +53,9 @@ These docs follow the `next` release channel (`ravi.bot@next`). The `latest` cha
     | 2. Ambiente | Creates `~/.ravi/.env` and asks for a Claude credential. Type `OAuth token` in full to paste a Claude Code token; any other answer means `API key`. Then it asks for an optional OpenAI key (audio transcription) and a model (`sonnet`, `haiku` or `opus`). |
     | 3. Daemon | Starts the daemon under PM2 (`ravi daemon start`) and runs `pm2 save`. On a new machine the daemon creates the state database as it starts, and `ravi` commands cannot read it before then, so this step waits (up to 45 seconds) until the daemon has prepared its state. |
     | 4. Agente | The daemon creates the `main` agent when it first starts, so this step only lists it. |
-    | 5. Configurações | Asks your time zone, then WhatsApp DM and group policies. The policy answers are saved as global settings and do not change any instance. You set the real policies per instance on the channel pages. |
+    | 5. Configurações | Asks your time zone, then WhatsApp DM and group policies. The policy answers are saved as global settings and do not change any instance. You set the real policies per instance on the channel pages. When it has written them, the wizard tells the running daemon so they apply right away; otherwise the daemon picks them up within 30 seconds. |
 
-    The wizard prints "Configuração completa!" even when an Omni or PM2 step ended in a warning, so read any warning lines above it. If the daemon did not prepare its state, the wizard skips steps 4 and 5 and prints "Configuração incompleta" instead: read `ravi daemon logs` and, once it shows `Daemon ready`, run `ravi setup` again. Its final hint, `ravi agents chat main`, is not a real command. Use the commands in [Talk to your agent](#talk-to-your-agent) instead.
+    The wizard prints "Configuração completa!" even when an Omni or PM2 step ended in a warning, so read any warning lines above it. If the daemon did not prepare its state, the wizard skips steps 4 and 5 and prints "Configuração incompleta" instead: the usual cause is that `nats-server` is not running, because the daemon is ready only after it connects to it. Check that, read `ravi daemon logs` and, once it shows `Daemon ready`, run `ravi setup` again. Its final hint, `ravi agents chat main`, is not a real command. Use the commands in [Talk to your agent](#talk-to-your-agent) instead.
   </Step>
   <Step title="Create the agent's instructions file">
     ```bash
@@ -195,7 +195,7 @@ Once you have run it with `--next`, a plain `ravi update` stays on `next`. Befor
   pm2 save
   ```
 
-  The daemon comes first because it is what creates the state database; `ravi settings set` before it fails with `STATE_SCHEMA_NOT_READY`. On a new machine `ravi daemon start` returns once the daemon has prepared its state, so the next command can use it. If the daemon does not get ready within 45 seconds, the command warns on stderr and still exits `0`: read `ravi daemon logs`, and wait for `Daemon ready` before `ravi settings set`.
+  The daemon comes first because it is what creates the state database; `ravi settings set` before it fails with `STATE_SCHEMA_NOT_READY`. On a new machine `ravi daemon start` returns once the daemon has prepared its state, so the next command can use it. If the daemon does not get ready within 45 seconds, the command warns on stderr and still exits `0`. The usual cause is that `nats-server` is not running: check your `nats` process with `pm2 ls`, read `ravi daemon logs`, and wait for `Daemon ready` before `ravi settings set`.
 
   Then continue with step 3 and [Choose the model provider](#choose-the-model-provider). `-js` turns on JetStream, which Ravi requires.
 

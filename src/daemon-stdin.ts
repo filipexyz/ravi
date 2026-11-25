@@ -31,6 +31,14 @@ const clearPm2Context = `unset ${Object.keys(clearedPm2ContextEnv()).join(" ")};
 export const PM2_INERT_STDIN_SHELL_COMMAND = `${clearPm2Context} exec "$RAVI_PM2_EXECUTABLE" "$0" "$@" < /dev/null`;
 export const PM2_CHANNELS_SHELL_COMMAND = `${clearPm2Context} exec "$0" "$@" < /dev/null`;
 
+/**
+ * How long PM2 waits after SIGINT before SIGKILL. PM2's default is 1600 ms,
+ * shorter than the daemon's own 15 s shutdown guard: under load the daemon was
+ * killed before its shutdown recorded the restart checkpoint, so interrupted
+ * turns had nothing to resume from. Keep this above the shutdown guard.
+ */
+export const PM2_KILL_TIMEOUT_MS = 20_000;
+
 export type DaemonStdinNeuterResult = { replaced: true; path: string } | { replaced: false; reason: string };
 
 let posixDup2Fn: ((oldFd: number, newFd: number) => number) | undefined;
@@ -108,6 +116,8 @@ export function buildDaemonPm2StartArgs(input: { bundlePath: string }): string[]
     "/bin/sh",
     "--interpreter-args",
     `-c '${PM2_INERT_STDIN_SHELL_COMMAND}'`,
+    "--kill-timeout",
+    String(PM2_KILL_TIMEOUT_MS),
     "--",
     "daemon",
     "run",
@@ -153,6 +163,8 @@ export function buildChannelsPm2StartArgs(input: {
     "/bin/sh",
     "--interpreter-args",
     `-c '${PM2_CHANNELS_SHELL_COMMAND}'`,
+    "--kill-timeout",
+    String(PM2_KILL_TIMEOUT_MS),
     "--",
     input.bundlePath,
     "channels",

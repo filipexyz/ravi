@@ -282,6 +282,25 @@ The daemon publishes the inventory through the Console sync bridge
   is built or enqueued. Existing installations keep their egress unchanged.
 - Event: domain `credentials`, type `credentials.inventory`, entity
   `credential_inventory/installation`, payload schema `credentials.inventory/v1`.
+  A snapshot is split into pages of at most 48 KiB of UTF-8 JSON (the Console
+  rejects a sync payload over 64 KiB): every page carries `snapshotId` (the
+  content hash), `page`, `pages` and the header; page 1 carries the audit. The
+  Console shows a snapshot only when it holds all `pages` of one `snapshotId`.
+  Pages are sized after the sync redactor, as the outbox stores them. Page 1
+  MAY carry the audit with no item, when the first item does not fit beside
+  it; an audit too large for a page alone loses its oldest entries. A
+  connection sends at most 50 scopes (the rest become one `+N more` entry) and
+  every audit string is capped like free text, so one item always fits. A page
+  over the limit is never emitted: the build fails instead. The content hash
+  includes the wire format, so the first check after an upgrade from the
+  unpaged format publishes instead of waiting for the heartbeat.
+  Every string is bounded to what the Console schema accepts (identifiers
+  100, `id` and other text 200, alias 250), since the Console drops a whole
+  page over any bound; a cut never splits a surrogate pair. The bounds MUST be
+  the last thing that touches a string: the payload is built as the wire
+  shape, then the sync redactor (which lengthens text, "Bearer x" becoming
+  "Bearer [REDACTED]"), then the bounds, so the redactor the outbox runs again
+  on every page finds nothing left to change.
 - The payload is the inventory with each item's `secret` renamed `storage`:
   the sync redactor blanks every key ending in "secret". The payload MUST be a
   fixed point of `sanitizeSyncPayload` (nothing for the redactor to remove) and

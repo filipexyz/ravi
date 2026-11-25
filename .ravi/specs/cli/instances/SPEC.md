@@ -99,6 +99,12 @@ bundle/database.
 | routes add / set / restore | reversible config with live-effect echo | not braked (declared) |
 | pending approve | additive (allows contact / creates route) | not braked (declared) |
 
+`instances connect` on an existing instance MUST change only its Omni id,
+channel and agent (when `--agent` is given or resolved). It MUST NOT reset
+`dmPolicy`, `groupPolicy`, `contactIntakeMode`, `dmScope`, `enabled`,
+`defaults` or `defaultContactTags`: re-pairing never widens access. A new
+instance is created with the schema defaults.
+
 ## Official error cases
 
 | case | code | exit |

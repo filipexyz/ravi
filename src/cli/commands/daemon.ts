@@ -5,7 +5,11 @@ import {
   runtimeStartReadiness,
 } from "../../runtime-maintenance.js";
 import { performUpgradeRestart } from "../daemon-upgrade-restart.js";
-import { DEFAULT_DAEMON_START_READY_TIMEOUT_MS, waitForDaemonStateReady } from "../daemon-start-ready.js";
+import {
+  DEFAULT_DAEMON_START_READY_TIMEOUT_MS,
+  describeFirstStartNotReady,
+  waitForDaemonStateReady,
+} from "../daemon-start-ready.js";
 import { isInsideDaemonProcessTree } from "../daemon-process-tree.js";
 import { settleThreadFenceLeftovers } from "../../threads/fence-adoption.js";
 import { getRaviStateDir } from "../../utils/paths.js";
@@ -443,13 +447,7 @@ async function awaitFirstStartState(asJson: boolean): Promise<void> {
     if (!asJson) console.log("Daemon ready");
     return;
   }
-  const why =
-    result.reason === "stopped"
-      ? "The daemon stopped before it finished preparing its state."
-      : `The daemon has not finished preparing its state after ${Math.ceil(result.waitedMs / 1000)}s.`;
-  console.error(
-    `${why} Read 'ravi daemon logs' for the reason; until it is ready, commands that read state answer STATE_SCHEMA_NOT_READY.`,
-  );
+  console.error(describeFirstStartNotReady(result));
 }
 
 @Group({

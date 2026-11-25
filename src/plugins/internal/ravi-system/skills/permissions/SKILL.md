@@ -134,6 +134,27 @@ Regras:
 - `ravi agents permissions` grava em `agent.defaults.runtimePermissions`.
   Use diretamente apenas para correção agent-only; para fluxos iniciados por
   humanos, prefira `ravi permissions allow/resolve`.
+- No Claude, toda chamada de ferramenta passa pelo teto pelo nome, inclusive
+  ferramentas de servidores MCP que o runtime carrega da própria configuração
+  (`.mcp.json`, plugins): `mcp__<servidor>__<ferramenta>`.
+  `use:tool:mcp__<servidor>__*` libera toda ferramenta cujo nome começa com
+  esse prefixo: vale para o servidor que o runtime carregar com esse nome. Um
+  agent `explicit-only` precisa também de `use:tool:ToolSearch` para carregar
+  a definição da ferramenta. Os leitores de recursos (`ListMcpResourcesTool`,
+  `ReadMcpResourceTool`, `ReadMcpResourceDirTool`) não são por servidor: um
+  deles lê os recursos de todos os servidores da sessão. O piso bootstrap já
+  tem `use:tool:*`. No Codex, ferramentas MCP da configuração do operador não
+  passam pelo teto, e qualquer `use:tool:` tira um agent `explicit-only` do
+  sandbox somente leitura.
+- A ferramenta de subagente tem dois nomes: o Claude Code a chama de `Agent`; o
+  registro, os grupos de ferramentas e as concessões antigas dizem `Task`. Os
+  dois são uma ferramenta só: `use:tool:Task` e `use:tool:Agent` liberam as duas
+  chamadas, um grupo que lista `Task` cobre `Agent`, e negar um dos nomes retém
+  os dois. `TaskOutput`, `TaskStop` e as ferramentas de lista de tarefas são
+  outras ferramentas: conceder `Task` não as cobre.
+- No Claude, `@caminho` escrito numa mensagem fica como texto: o runtime não
+  lê o arquivo sozinho. O agent só chega ao arquivo por uma chamada de
+  ferramenta, que passa pelo teto.
 - Profiles de runtime: `bootstrap` (piso de nascimento), `chat-only`
   (conversation only; sentinel explícito `{ profile: "chat-only" }`),
   `explicit-only` (só as capabilities explícitas, sem piso bootstrap — para
@@ -164,6 +185,15 @@ Regras:
   chat governado por grants de contato, `actorAuthorizationMode=user-overlay`
   e o efetivo é `agent_identity ∩ caps do contato no chat`. Ator desconhecido
   continua falhando fechado.
+- Contato cujo poder próprio (tags de permissão globais) tem acesso total
+  (`admin:system:*`, como a tag de admin do operador) não é reduzido num chat
+  governado, desde que nada no overlay dele o restrinja: nenhum `deny_*` num
+  grant daquele chat nem nas tags dele. Aí o overlay sai como
+  `userOverlay=lifted`, a automação dele não é recusada e as threads que ele
+  abre não ficam presas. Com um `deny_*` (por exemplo, sem shell naquele chat)
+  o overlay continua e a automação segue recusada. Grant de chat nunca levanta
+  o overlay, nem full-access concedido naquele chat, e tag global sem acesso
+  total também não.
 - O modelo antigo `agent ∩ actor ∩ surface ∩ turn` está aposentado na criação
   de contexto runtime; trate menções a ele como histórico/test fixture.
 - Tags são labels; elas não concedem autoridade sem provider explícito.

@@ -62,7 +62,11 @@ import { triggerAuthorityLendsOwner, triggerOwnSessionAdmitsPrompt } from "../tr
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import {
   CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY,
+  captureRestartTurnAuthority,
+  DAEMON_RESTART_INTERRUPTED_ATTEMPT_METADATA_KEY,
+  RESTART_TURN_AUTHORITY_METADATA_KEY,
   resolveCrashRecoveryRestartResumeMode,
+  resolveRestartSnapshotInterruptedAttemptId,
 } from "./daemon-restart-resume.js";
 import {
   getCrashRecoveryReplayablePendingRuntimeMessages,
@@ -359,6 +363,10 @@ export class RuntimeSessionDispatcher {
         pendingMessages: [],
         metadata: {
           reason: options.reason,
+          // A session without a live turn (queued, stashed, debounced, starting) has no
+          // turn authority to restore: `{ v: 1 }` says so, and each durable queued
+          // message carries its own envelope. The live-session loop records the real one.
+          [RESTART_TURN_AUTHORITY_METADATA_KEY]: captureRestartTurnAuthority(undefined),
           ...(overrides.metadata ?? {}),
         },
       };
@@ -417,6 +425,16 @@ export class RuntimeSessionDispatcher {
             ? "pending_only"
             : "skip";
       const nonIdle = !replaySafety.replayable || isDaemonRestartNonIdleSession(session) || pendingMessages.length > 0;
+      // A turn cut off after it started acting is resumed at boot with a note
+      // to verify state first (never a replay), once per durable attempt.
+      const interruptedAttemptId = resolveRestartSnapshotInterruptedAttemptId({
+        turnActive: session.turnActive,
+        replayable: replaySafety.replayable,
+        terminalTurnConsumed,
+        hasScheduledCapacityRetry,
+        superseded: Boolean(session.currentTurnSuperseded),
+        attemptId: session.currentCrashRecoveryAttemptId,
+      });
       const snapshot = getAccumulator(sessionName, {
         agentId: session.agentId,
         runtimeProvider: session.queryHandle.provider,
@@ -437,6 +455,8 @@ export class RuntimeSessionDispatcher {
           currentTurnPendingIds: session.currentTurnPendingIds ?? [],
           currentTurnSuperseded: Boolean(session.currentTurnSuperseded),
           [CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY]: restartResumeMode,
+          [DAEMON_RESTART_INTERRUPTED_ATTEMPT_METADATA_KEY]: interruptedAttemptId,
+          [RESTART_TURN_AUTHORITY_METADATA_KEY]: captureRestartTurnAuthority(session.currentTurnAuthority),
           crashRecoveryReplaySafety: replaySafety,
           crashRecoveryTerminalStatus: session.currentCrashRecoveryTerminal?.status ?? null,
         },

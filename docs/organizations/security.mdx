@@ -136,7 +136,7 @@ When a turn lacks a capability, Ravi can ask a trusted person in the chat. Today
 | Provider | When a turn lacks a capability |
 |---|---|
 | Pi, Grok | Ravi posts an approval request in the chat the turn came from. Approving a shell command does not make it run today. |
-| Claude Code | Built-in tools and shell commands are refused at once. The chat gets approval requests only for plans and for leaving spec mode. |
+| Claude Code | Tools and shell commands are refused at once. The chat gets approval requests only for plans and for leaving spec mode. |
 | Codex | Shell commands are refused at once. Nothing is asked in the chat. |
 
 On every provider, a `ravi` command outside the ceiling is refused without asking.
@@ -225,7 +225,7 @@ The `external-authority` provider lets an outside issuer cap what agents may do.
 
 **What it covers.** Checks that carry the agent's identity: every `ravi` command an agent runs, and tool and shell requests on Pi and Grok. Your own terminal commands stay with `operator-control`, which is always in the chain.
 
-**What it does not cover yet.** Outside governed chats, Claude Code and Codex check built-in tools and shell commands against the agent's ceiling directly. The assertion does not apply to those checks.
+**What it does not cover yet.** Outside governed chats, Claude Code checks tools and shell commands, and Codex checks shell commands, against the agent's ceiling directly. The assertion does not apply to those checks.
 
 <Steps>
   <Step title="Write and sign the assertion">
@@ -330,14 +330,15 @@ These limits exist today. Plan around them.
 
 | Limit | What to do |
 |---|---|
-| Ravi does not check tools from MCP servers that a runtime loads from its own configuration, such as a Claude `.mcp.json`. They run without approval, from any chat. | Add only MCP servers you would let everyone who reaches the agent use. |
+| On Codex, Ravi does not check tools from MCP servers in the operator's Codex configuration: they run without approval, from any chat. On Grok, one capability (`use:tool:MCPTool`) covers every MCP server and tool. | On those runtimes, add only MCP servers you would let everyone who reaches the agent use. |
+| On Claude Code, Ravi checks each MCP tool call by name, but Claude Code still starts every MCP server its configuration lists when a session starts. An agent on the `bootstrap` floor holds `use:tool:*`, which covers all of them. | Add only servers you trust to run on the machine, and use `explicit-only` with `use:tool:mcp__<server>__*` to choose which ones an agent may call. |
 | On Codex, Ravi checks shell commands per turn. Codex's other built-in tools, such as file edits, follow the agent's profile instead. | Use `chat-only`, or `explicit-only` without tool or exec capabilities. Those run Codex in a read-only sandbox with web search and image viewing off. |
 | Chat approvals for capabilities exist only on Pi and Grok. On Claude Code and Codex, a missing capability is refused. | Raise the ceiling, or grant per chat, ahead of time. |
 | Outside governed chats, any sender who resolves to a contact gets the full ceiling, whatever the contact's status. | Use `pairing` and `allowlist`, and govern group chats that include other people. |
 | Policies default to `open`, and `ravi instances connect` resets them to `open`. | Set them again after every connect. |
 | The credential broker declares its policy but does not enforce it on a secret read. | Rely on the command capabilities and the CLI-only rule. Use `chat-only` or `explicit-only` for agents that untrusted people reach. |
 | The external authority reads one assertion, and an assertion names one subject. While it is in the chain, the checks it covers deny every other agent with `external_assertion_subject_mismatch`. Apps whose keys come from `ravi daemon init-admin-key` act as `agent:bootstrap`, so they are denied too. | Enable it on a machine that runs the one agent you want to cap. |
-| The external authority does not cover the built-in tool and shell checks of Claude Code and Codex outside governed chats. | Cap those agents with their ceiling as well. |
+| The external authority does not cover the tool and shell checks of Claude Code and Codex outside governed chats. | Cap those agents with their ceiling as well. |
 | A machine is linked by whichever Console user runs `ravi login` on it. `ravi logout` asks the Console to revoke that login, but a new `ravi login` links the machine again. | Control who can log in to your organization. See [Machines](/organizations/machines#remove-a-machine). |
 
 ### Not built yet

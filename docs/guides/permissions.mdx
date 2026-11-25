@@ -71,7 +71,25 @@ ravi agents permissions main bootstrap --capabilities execute:executable:curl,vi
 
 **`--capabilities` replaces the list.** Repeat the capabilities the agent already has. The seeded `main` agent starts with one explicit capability, `view:agent:*`. `--clear-capabilities` drops the list and keeps the profile.
 
-**What the ceiling covers.** The runtime's built-in tools (`Read`, `Edit`, `Bash`, `WebFetch` and the rest), shell commands and `ravi` commands. Tools from MCP servers that the runtime loads from its own configuration, such as a Claude `.mcp.json` in the agent's `cwd`, are not checked against it: they run without the ceiling and without approval, from any chat. Add only MCP servers you would let the agent use freely.
+**What the ceiling covers.** Tool calls, shell commands and `ravi` commands. On Claude Code every tool call is checked by its name: the built-in tools (`Read`, `Edit`, `Bash`, `WebFetch` and the rest), tools a new Claude Code version adds, and tools from MCP servers that Claude Code loads from its own configuration, such as a `.mcp.json` in the agent's `cwd` or a plugin. A file path written as `@path` in a message stays text: Claude Code does not read the file on its own, and the agent reaches it only through a tool call. Ravi's own spec-mode tools (`mcp__spec__*`) come with the agent's spec-mode setting and are not checked against the ceiling or against what one turn holds: on an agent with spec mode on, a turn with no capabilities can still call them.
+
+**The subagent tool has two names.** Claude Code calls it `Agent`; Ravi's registry, its tool groups and older grants call it `Task`. Ravi treats the two as one tool: `use:tool:Task` and `use:tool:Agent` both allow it, a tool group that lists `Task` covers `Agent`, and a deny of either name withholds both. `TaskOutput`, `TaskStop` and the task-list tools are other tools, and a grant of `Task` does not cover them.
+
+**MCP tools on Claude Code.** An MCP tool is named `mcp__<server>__<tool>`. `use:tool:mcp__github__*` grants every tool whose name starts with `mcp__github__`, and `use:tool:mcp__github__create_issue` grants one tool. The grant goes by name: it covers whichever server Claude Code loads under the name `github`. The resource readers `ListMcpResourcesTool`, `ReadMcpResourceTool` and `ReadMcpResourceDirTool` are granted by those names and are not per-server: one of them reads the resources of every MCP server the session started. Claude Code may load tool definitions on demand through `ToolSearch`, so an `explicit-only` agent needs `use:tool:ToolSearch` as well.
+
+```bash
+ravi agents permissions support explicit-only --capabilities 'use:tool:ToolSearch,use:tool:mcp__github__*' --execute
+```
+
+A `bootstrap` or `full-access` agent holds `use:tool:*`, which covers every MCP tool its runtime loads. To choose which servers a Claude Code agent may call, use `explicit-only`.
+
+<Warning>
+The check is on each call, not on the server. Claude Code still starts every MCP server its configuration lists when a session starts, and a local server is a program running on your machine. On Codex, Ravi does not check tools from MCP servers in the operator's Codex configuration, and these capabilities select no server there: any `use:tool:` capability takes an `explicit-only` Codex agent out of its read-only sandbox. On Grok, one capability, `use:tool:MCPTool`, covers every MCP server and tool.
+</Warning>
+
+<Note>
+As of 24 Nov 2026 the check on MCP tools and on tools outside Ravi's built-in list is in `@next`, and so is the `@path` rule. In `@latest`, Claude Code runs both kinds of tool without the ceiling, from any chat, and reads a file named as `@path` in a message.
+</Note>
 
 **When changes apply.** From the agent's next turn. Ravi revokes the agent's live permission contexts when you change the ceiling, and the Bash check of a running turn reads the new ceiling at its next command. You do not need to restart the daemon or reset sessions.
 

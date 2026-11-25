@@ -1510,6 +1510,26 @@ export function terminalizeRuntimeTurnAttempt(input: {
   );
 }
 
+/** Whether the session started any attempt after `attempt` (in any boot). */
+export function hasLaterRuntimeTurnAttempt(
+  attempt: Pick<RuntimeTurnAttemptRecord, "attemptId" | "sessionKey" | "startedAt">,
+): boolean {
+  const row = getDb()
+    .prepare(
+      `SELECT 1 AS found FROM runtime_turn_attempts
+       WHERE session_key = ? AND attempt_id <> ? AND (started_at > ? OR (started_at = ? AND attempt_id > ?))
+       LIMIT 1`,
+    )
+    .get(
+      requiredText(attempt.sessionKey, "sessionKey"),
+      attempt.attemptId,
+      attempt.startedAt,
+      attempt.startedAt,
+      attempt.attemptId,
+    ) as { found: number } | null;
+  return Boolean(row);
+}
+
 function promptQueueFingerprint(input: {
   dedupeKey: string;
   sessionKey: string;

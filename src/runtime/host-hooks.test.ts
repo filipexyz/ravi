@@ -1,8 +1,15 @@
-import { describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { runWithContext, type ToolContext } from "../cli/context.js";
 import type { AgentConfig } from "../router/index.js";
+import type { ContextCapability, ContextRecord } from "../router/router-db.js";
+import { clearSpecState } from "../spec/server.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { createRuntimeHostHooks, type RuntimeHostHookApprovalServices } from "./host-hooks.js";
-import type { RuntimeCapabilities } from "./types.js";
+import { buildRuntimeHostAttachments } from "./runtime-host-attachments.js";
+import type { RuntimeCapabilities, RuntimeHookMatcher } from "./types.js";
 
 const capabilities = { supportsHostSessionHooks: true } as RuntimeCapabilities;
 const agent: AgentConfig = { id: "hook-agent", cwd: "/tmp/hook-agent" };
@@ -308,5 +315,168 @@ describe("runtime host hook crash recovery fences", () => {
     expect(result).toEqual({});
     expect(order).toEqual(["marker:output", "external:spec", "marker:started"]);
     expect(harness.streamingSession.currentTurnToolStarted).toBe(true);
+  });
+});
+
+const GATE_AGENT_ID = "gate-agent";
+const GATE_SESSION = "gate-session";
+const claudeLike = {
+  supportsHostSessionHooks: true,
+  supportsMcpServers: true,
+  supportsRemoteSpawn: false,
+} as RuntimeCapabilities;
+
+function turnContext(capabilities: ContextCapability[]): ToolContext {
+  const context: ContextRecord = {
+    contextId: `test-${GATE_AGENT_ID}`,
+    contextKey: `test-key-${GATE_AGENT_ID}`,
+    kind: "test-runtime",
+    agentId: GATE_AGENT_ID,
+    capabilities,
+    createdAt: 0,
+  };
+  return { agentId: GATE_AGENT_ID, context };
+}
+
+function buildSession(agent: Partial<AgentConfig> = {}) {
+  const attachments = buildRuntimeHostAttachments({
+    runtimeCapabilities: claudeLike,
+    agent: { id: GATE_AGENT_ID, cwd: `/tmp/${GATE_AGENT_ID}`, ...agent },
+    sessionName: GATE_SESSION,
+    sessionCwd: `/tmp/${GATE_AGENT_ID}`,
+    streamingSession: { currentCrashRecoveryAttemptId: "attempt-1", currentTurnToolStarted: false },
+    crashRecovery: { markTurnAttemptSafety: () => undefined } as unknown as Pick<
+      RuntimeCrashRecoveryCoordinator,
+      "markTurnAttemptSafety"
+    >,
+  });
+  return { attachments, preToolUse: attachments.hooks?.PreToolUse ?? [] };
+}
+
+function matches(entry: RuntimeHookMatcher, toolName: string): boolean {
+  return entry.matcher === undefined || entry.matcher.split("|").includes(toolName);
+}
+
+/** Runs the PreToolUse chain the way the runtime does: every matching hook, first deny wins. */
+async function runPreToolUse(
+  chain: RuntimeHookMatcher[],
+  capabilities: ContextCapability[],
+  input: { tool_name: string; tool_input?: Record<string, unknown>; mcp_server?: { name: string; source: string } },
+): Promise<string | null> {
+  return runWithContext(turnContext(capabilities), async () => {
+    for (const entry of chain.filter((candidate) => matches(candidate, input.tool_name))) {
+      for (const hook of entry.hooks) {
+        const result = await hook({ hook_event_name: "PreToolUse", tool_input: {}, ...input }, null, {
+          signal: new AbortController().signal,
+        });
+        const output = result?.hookSpecificOutput;
+        if (output?.permissionDecision === "deny") return String(output.permissionDecisionReason ?? "denied");
+      }
+    }
+    return null;
+  });
+}
+
+const toolGrant = (objectId: string): ContextCapability => ({ permission: "use", objectType: "tool", objectId });
+
+/** Enters spec mode the way the agent does: by calling `enter_spec_mode` on the in-process server the session attached. */
+async function enterSpecMode(server: Record<string, unknown> | undefined): Promise<void> {
+  const instance = (server as { instance?: { connect(transport: unknown): Promise<void> } } | undefined)?.instance;
+  if (!instance) throw new Error("the session did not attach the spec server");
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await instance.connect(serverTransport);
+  const client = new Client({ name: "host-hooks-test", version: "1.0.0" });
+  await client.connect(clientTransport);
+  try {
+    await client.callTool({ name: "enter_spec_mode", arguments: {} });
+  } finally {
+    await client.close();
+  }
+}
+
+describe("tool gate on the registered PreToolUse chain", () => {
+  let stateDir: string | null = null;
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-host-hooks-tool-gate-");
+  });
+
+  afterEach(async () => {
+    clearSpecState(GATE_SESSION);
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("denies a tool of a server the runtime loaded from its own configuration", async () => {
+    const { preToolUse } = buildSession();
+    const call = { tool_name: "mcp__github__create_issue", mcp_server: { name: "github", source: "project" } };
+
+    expect(await runPreToolUse(preToolUse, [toolGrant("Read")], call)).toContain("tool:mcp__github__create_issue");
+    expect(await runPreToolUse(preToolUse, [toolGrant("mcp__github__*")], call)).toBeNull();
+    expect(await runPreToolUse(preToolUse, [toolGrant("*")], call)).toBeNull();
+  });
+
+  it("denies a tool the built-in registry does not list", async () => {
+    const { preToolUse } = buildSession();
+
+    for (const toolName of ["ListMcpResourcesTool", "ReadMcpResourceTool", "Monitor", "CronCreate", "Workflow"]) {
+      expect(await runPreToolUse(preToolUse, [toolGrant("Read")], { tool_name: toolName })).toContain(
+        `tool:${toolName}`,
+      );
+      expect(await runPreToolUse(preToolUse, [toolGrant(toolName)], { tool_name: toolName })).toBeNull();
+    }
+  });
+
+  it("exempts exactly the in-process servers the session registers", async () => {
+    const specSession = buildSession({ specMode: true });
+    // The provider registers this record as built, so its keys are the names Claude Code reports.
+    const registered = Object.keys(specSession.attachments.mcpServers ?? {});
+    expect(registered).toEqual(["spec"]);
+    const [name] = registered;
+    const hostCall = { tool_name: `mcp__${name}__enter_spec_mode`, mcp_server: { name: name!, source: "sdk" } };
+    const lookalike = { tool_name: `mcp__${name}__ping`, mcp_server: { name: name!, source: "project" } };
+    const unregistered = { tool_name: "mcp__other__call", mcp_server: { name: "other", source: "sdk" } };
+
+    expect(await runPreToolUse(specSession.preToolUse, [], hostCall)).toBeNull();
+    expect(await runPreToolUse(specSession.preToolUse, [], lookalike)).toContain(`tool:mcp__${name}__ping`);
+    expect(await runPreToolUse(specSession.preToolUse, [], unregistered)).toContain("tool:mcp__other__call");
+
+    const plainSession = buildSession();
+    expect(plainSession.attachments.mcpServers).toBeUndefined();
+    expect(await runPreToolUse(plainSession.preToolUse, [], hostCall)).toContain(`tool:mcp__${name}__enter_spec_mode`);
+  });
+
+  it("blocks the subagent tool under both of its names while spec mode is on, and only then", async () => {
+    const { attachments, preToolUse } = buildSession({ specMode: true });
+    // A grant of every tool: what denies below is the spec-mode block, not the tool gate.
+    const callTool = (toolName: string) => runPreToolUse(preToolUse, [toolGrant("*")], { tool_name: toolName });
+
+    for (const toolName of ["Task", "Agent"]) {
+      expect(await callTool(toolName)).toBeNull();
+    }
+
+    await enterSpecMode(attachments.mcpServers?.spec);
+
+    // The block lists `Task`; the current Claude Code reports the same tool as `Agent`.
+    for (const toolName of ["Task", "Agent"]) {
+      expect(await callTool(toolName)).toContain("Spec mode ativo");
+    }
+    // The rename is one tool: the other `Task*` tools and the read-only tools stay open.
+    for (const toolName of ["TaskOutput", "TaskStop", "Read", "Grep"]) {
+      expect(await callTool(toolName)).toBeNull();
+    }
+  });
+
+  it("checks a Monitor shell command through the Bash-matched permission hook", async () => {
+    const { preToolUse } = buildSession();
+    // Claude Code delivers Monitor's command to Bash-matched hooks as a Bash
+    // call. Holding `use tool:Monitor` must not run a command the turn cannot execute.
+    const bashMatched = preToolUse.filter((entry) => entry.matcher === "Bash");
+    const denial = await runPreToolUse(bashMatched, [toolGrant("Monitor")], {
+      tool_name: "Bash",
+      tool_input: { command: "curl https://example.com" },
+    });
+
+    expect(denial).toContain("cannot execute: curl");
   });
 });

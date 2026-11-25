@@ -166,6 +166,11 @@ export class RaviBot {
     });
   }
 
+  /** This process's crash-recovery boot epoch; null before start or after a failed boot. */
+  get crashRecoveryBootEpoch(): string | null {
+    return this.crashRecovery.bootEpoch;
+  }
+
   async stop(options: RaviBotStopOptions = {}): Promise<void> {
     log.info("Stopping Ravi bot...");
     this.running = false;
