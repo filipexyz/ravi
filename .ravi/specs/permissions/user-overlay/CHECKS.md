@@ -61,12 +61,21 @@
   (`userOverlay=inactive`) it MUST NOT bind (`cron-commands.test.ts`, "binds a
   job from an overlay turn or a lifted overlay to its chat…").
 - A narrowed member's turn and held relay MUST NOT, on an admin's lifted-turn
-  job, set any of the 7 keys that keep the owner, enable it, run it now (no
-  `ravi.cron.trigger` published) or delete it; each refusal MUST carry its
-  `automationHold` cause. A held relay acting for the job's own owner, a
-  member on their own bound job and an admin on their own job MUST still
-  succeed, `cron run` and `cron rm` included (`runtime-request-context.test.ts`,
-  "cron jobs a turn held below the agent may touch").
+  job, a legacy job without an owner or an operator-owned job, set any of the
+  7 keys that keep the owner, enable it, run it now (no `ravi.cron.trigger`
+  published) or delete it, with or without `--execute`; each refusal MUST
+  carry its `automationHold` cause. A held relay acting for the job's own
+  owner, a member on their own bound job and an admin on their own job MUST
+  still succeed, `cron run` and `cron rm` included. Disabling another owner's
+  job MUST stay open to a held turn (`runtime-request-context.test.ts`, "cron
+  jobs a turn held below the agent may touch").
+- A held relay that acts as the agent (a thread's return, `agent:<id>`) MUST
+  NOT enable, reschedule, run or delete a job owned by `agent:<id>`, while
+  the unrestricted return that wrote it still may. A held turn whose actor
+  cannot be resolved (`unknown`) MUST NOT enable, reschedule, run or delete a
+  legacy job without an owner; disabling stays open to it as to any turn
+  (same block, "a held relay that acts as the agent…", "a held turn whose
+  actor cannot be resolved…").
 - A global (`--force`) grant MUST apply only inside governed chats and MUST NOT
   govern a chat by itself.
 - Blocked contacts MUST receive zero overlay capabilities.

@@ -526,10 +526,16 @@ function assertCronCreatorBindable(op: string): void {
  * only a job it owns: a bound job of another owner can run as the agent (a lifted owner), so the chat binding
  * does not bound it. `cron run` fires the job now even when it is disabled; deleting it cannot be undone by its
  * owner. Disabling stays open to any turn: it only reduces, and the owner can enable it again.
+ *
+ * Ownership is proven only by a principal that says who is asking (review of #992, N1). A held relay acts as the
+ * agent (`agent:<id>`), which owns every job an unrestricted turn of the agent wrote. A turn whose actor cannot be
+ * resolved is `unknown`, which is also the owner a legacy row without one reports.
  */
 function assertHeldTurnOwnsJob(op: string, job: CronJob): void {
   if (automationHoldCause() === null) return;
-  if (resolveCronOwnerPrincipalForCurrentTurn() === cronJobRunsAs(job)) return;
+  const principal = resolveCronOwnerPrincipalForCurrentTurn();
+  const namesWhoAsks = !principal.startsWith("agent:") && principal !== "unknown";
+  if (namesWhoAsks && principal === cronJobRunsAs(job)) return;
   assertNoUserOverlayAutomationWrite(op);
 }
 
