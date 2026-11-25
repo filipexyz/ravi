@@ -95,6 +95,7 @@ import {
 } from "../../router/route-sticky-attach.js";
 import { listSessions, deleteSession } from "../../router/sessions.js";
 import type { SessionEntry } from "../../router/types.js";
+import type { InstanceConfig } from "../../router/router-db.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { searchTagBindingsForSelector } from "../../tags/service.js";
 import type { TagBinding } from "../../tags/types.js";
@@ -742,6 +743,26 @@ function deleteConflictingSessions(
     }
   }
   return deleted;
+}
+
+/**
+ * Records the Omni link that `instances connect` resolved. An existing instance
+ * keeps its dmPolicy, groupPolicy, intake mode, dmScope, defaults, tags and
+ * enabled flag: connect only changes the Omni id, channel and agent. Only a new
+ * instance is created with the schema defaults.
+ */
+export function saveConnectedInstance(input: {
+  name: string;
+  instanceId: string;
+  channel: string;
+  agent?: string;
+  existing: InstanceConfig | null;
+}): InstanceConfig {
+  const { name, instanceId, channel, agent, existing } = input;
+  if (existing) {
+    return dbUpdateInstance(name, { instanceId, channel, ...(agent !== undefined ? { agent } : {}) });
+  }
+  return dbUpsertInstance({ name, instanceId, channel, agent, enabled: true });
 }
 
 function getOmniClient() {
@@ -1454,7 +1475,7 @@ export class InstancesCommands {
 
     // Upsert local instance record
     const agentId = agent ?? inst?.agent ?? (dbGetAgent(name) ? name : undefined);
-    dbUpsertInstance({ name, instanceId, channel, agent: agentId ?? undefined, enabled: inst?.enabled !== false });
+    saveConnectedInstance({ name, instanceId, channel, agent: agentId ?? undefined, existing: inst });
     if (agentId && !dbGetAgent(agentId)) {
       const cwd = `${homedir()}/ravi/${agentId}`;
       mkdirSync(cwd, { recursive: true });

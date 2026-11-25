@@ -1079,12 +1079,13 @@ export async function requestFullAccessApproval(input: FullAccessRequestInput) {
       details: { suggestedAction },
       diagnostic: errorDiagnostic(message, { operation: op }),
     });
-  const policy = (code: string, message: string, suggestedAction: string): never =>
+  const policy = (code: string, message: string, suggestedAction: string, caught?: unknown): never =>
     contractFail(op, code, message, {
       asJson: input.asJson,
       exitCode: CONTRACT_EXIT_POLICY,
       details: { suggestedAction },
-      diagnostic: errorDiagnostic(message, { operation: op }),
+      // A caught error reaches the diagnostic as itself (cause chain), not as its message.
+      diagnostic: errorDiagnostic(caught ?? message, { operation: op }),
     });
 
   if (normalizePermissionTagSlug(input.profile) !== "permission-full-access") {
@@ -1156,6 +1157,14 @@ export async function requestFullAccessApproval(input: FullAccessRequestInput) {
   };
   const mapGrantRequestError = (error: unknown): never => {
     if (!(error instanceof GrantRequestError)) throw error;
+    if (error.code === "already_held") {
+      return policy(
+        "FULL_ACCESS_ALREADY_HELD",
+        error.message,
+        "Nothing was requested. If a command of theirs was refused, its message names the cause: a relayed turn (a thread or a thread's return) is held by the relay, and in a chat governed by contact grants, automation from their turn (triggers, followups, hooks, signals, tasks) is refused unless their full access comes from their own permissions outside that chat; a cron job bound to that chat is allowed. No chat grant lifts either.",
+        error,
+      );
+    }
     const code =
       error.code === "no_adapter"
         ? "FULL_ACCESS_APPROVAL_UNAVAILABLE"
@@ -1166,6 +1175,7 @@ export async function requestFullAccessApproval(input: FullAccessRequestInput) {
       code,
       error.message,
       "Nothing was requested. An installation needs at least one contact with admin that a connected channel can reach.",
+      error,
     );
   };
 

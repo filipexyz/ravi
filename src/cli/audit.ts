@@ -46,13 +46,16 @@ export interface CliAuditEventOptions {
 }
 
 export async function emitCliAuditEvent(options: CliAuditEventOptions): Promise<void> {
-  if (process.env.RAVI_SUPPRESS_AUDIT_EVENTS === "1") return;
+  // The variable stops the audit event, not the cleanup: a command that opened its NATS connection lazily (a
+  // `ravi.config.changed` notification, say) must still close it, or the open socket keeps the process alive after
+  // the command printed its result.
+  if (process.env.RAVI_SUPPRESS_AUDIT_EVENTS !== "1") {
+    const tool = options.tool ?? `${options.group}_${options.name}`;
+    const payload = buildCliAuditPayload(options, tool);
 
-  const tool = options.tool ?? `${options.group}_${options.name}`;
-  const payload = buildCliAuditPayload(options, tool);
-
-  // Best effort: without a daemon there is no one to receive it, so don't print a NATS error.
-  await nats.emit(`ravi._cli.cli.${options.group}.${options.name}`, payload, { quietConnect: true }).catch(() => {});
+    // Best effort: without a daemon there is no one to receive it, so don't print a NATS error.
+    await nats.emit(`ravi._cli.cli.${options.group}.${options.name}`, payload, { quietConnect: true }).catch(() => {});
+  }
 
   if (options.closeLazyConnection && !isExplicitConnect()) {
     await nats.close().catch(() => {});

@@ -168,7 +168,7 @@ A few requests go to services that are neither your model provider nor a chat pl
 | `ravi update` | Only when you run it | A request to `registry.npmjs.org` for the release you install. A source checkout runs `git fetch` and `git pull` from its `origin` instead. |
 | Agent tools | When the agent uses them | Whatever the agent puts in a web fetch, a shell command such as `curl`, or an MCP server call |
 
-The agent's ceiling decides which built-in tools and shell commands it may run. MCP servers that the runtime loads from its own configuration are not checked against the ceiling. See [Permissions](/guides/permissions).
+The agent's ceiling decides which tools and shell commands it may run. On Claude Code that includes each tool of an MCP server the runtime loads from its own configuration. On Codex, tools from MCP servers in the operator's Codex configuration are not checked against the ceiling. See [Permissions](/guides/permissions#agent-ceilings).
 
 ## What Ravi never sends
 

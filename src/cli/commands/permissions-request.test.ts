@@ -135,6 +135,31 @@ describe("permissions request / request-status", () => {
     expect(dbListContactChatGrants({ contactId: grantee.id })).toEqual([]);
   });
 
+  it("refuses a contact who already holds full access in that chat, in the plan too, asking nobody", async () => {
+    register();
+    // 24/11: an admin (the operator) asked full access for themselves; the card went to another admin.
+    for (const execute of [true, false]) {
+      const error = await request({ to: `contact:${admin.id}`, execute });
+      expect(error).toMatchObject({ code: "FULL_ACCESS_ALREADY_HELD", exitCode: 3 });
+      const message = (error as Error).message;
+      expect(message).toContain(`Contact ${admin.id} already holds full access in chat ${chatId}`);
+      // Says only what holds: the grant adds nothing; it never claims their turns run with the whole agent.
+      expect(message).toContain("would add nothing to what their own turns hold");
+      expect(message).not.toContain("whole authority");
+      // Nothing was open, so nothing was closed, in the plan or the real request.
+      expect(message).not.toContain("was closed");
+      const suggestedAction = (error as { details?: { suggestedAction?: string } }).details?.suggestedAction;
+      // In a governed chat their turn is narrowed to those grants: automation stays refused there too,
+      // except a cron job bound to that chat, unless their own power outside the chat covers the agent.
+      expect(suggestedAction).toContain("a chat governed by contact grants");
+      expect(suggestedAction).toContain("unless their full access comes from their own permissions outside that chat");
+      expect(suggestedAction).toContain("a cron job bound to that chat is allowed");
+      expect(suggestedAction).toContain("No chat grant lifts either");
+    }
+    expect(delivered).toEqual([]);
+    expect(dbListContactChatGrants({ contactId: admin.id })).toEqual([]);
+  });
+
   it("accepts only full-access, one contact, one chat and an executor that already holds admin", async () => {
     register();
 

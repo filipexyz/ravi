@@ -11,5 +11,8 @@
 - Chats, groups, rooms, and threads MUST NOT be modeled as contacts.
 - Contact discovery, reads, timeline, profile, and CRM projections MUST be
   authorized before disclosure.
+- A nonexistent free-form contact ref (letters mixed with digits) MUST resolve
+  to not found, never to the contact that owns its stray digits; phone-shaped
+  refs (formatted numbers, JIDs, `lid:`/`group:`) MUST keep resolving.
 - `bun test src/contacts.identity-model.test.ts src/cli/commands/contacts.test.ts`
   SHOULD pass after changing contact identity or CLI behavior.

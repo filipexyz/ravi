@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ContractError } from "../cli/agent-contract.js";
 import { CliExpectedError } from "../cli/expected-error.js";
+import { isAutomationHoldCause } from "../permissions/automation-hold.js";
 import { logger } from "../utils/logger.js";
 import { publishGhPr, type GhPrPublicationDeps } from "../hooks/gh-pr-publish.js";
 import type { GhWatchFollowContext } from "../hooks/gh-watch.js";
@@ -392,6 +393,7 @@ function unexpectedPublicationFailure(
     const cause = oneLine(error.message);
     // A refusal by policy is not a transient fault: repeating the same publication gives the same refusal.
     const denied = error.code === "PERMISSION_DENIED";
+    const automationHold = denied ? error.details?.automationHold : undefined;
     return prError(
       denied ? "PERMISSION_DENIED" : "PR_PUBLICATION_INCOMPLETE",
       `Publication stopped in the ${phase} phase: ${cause}`,
@@ -401,6 +403,8 @@ function unexpectedPublicationFailure(
         suggestedAction: denied
           ? (error.suggestedAction ?? "Ask the operator to complete the step this turn is not allowed to do.")
           : `Rerun to reconcile the PR and follow: ${rerun}`,
+        // The automation guard's cause travels so a remote caller reads its fixed advice.
+        ...(isAutomationHoldCause(automationHold) ? { automationHold } : {}),
       },
     );
   }

@@ -34,7 +34,7 @@ export {
   formatPhone,
 } from "./utils/phone.js";
 
-import { normalizePhone } from "./utils/phone.js";
+import { isPhoneShapedRef, normalizePhone } from "./utils/phone.js";
 
 function resolveDbPath(env: NodeJS.ProcessEnv = process.env): string {
   return join(getRaviStateDir(env), "chat.db");
@@ -3054,11 +3054,19 @@ function getCanonicalCompatContactById(database: Database, contactId: string): C
 
 function findCanonicalContactByIdentity(database: Database, identity: string): Contact | null {
   const raw = identity.trim();
-  const normalized = normalizePhone(raw);
+  if (!raw) return null;
+  // Only phone-shaped refs get phone-normalized candidates. A free-form ref
+  // such as `missing-ref-1` must not collapse to `1` and resolve to whatever
+  // legacy contact owns that digit string.
+  const phoneShaped = isPhoneShapedRef(raw);
+  const normalized = phoneShaped ? normalizePhone(raw) : null;
   const emailNormalized = raw.toLowerCase();
-  const candidates = new Set<string>([raw, normalized, emailNormalized]);
-  if (/^\d+$/.test(normalized) && !normalized.startsWith("lid:")) {
-    candidates.add(`lid:${normalized}`);
+  const candidates = new Set<string>([raw, emailNormalized]);
+  if (normalized) {
+    candidates.add(normalized);
+    if (/^\d+$/.test(normalized)) {
+      candidates.add(`lid:${normalized}`);
+    }
   }
 
   const byExactId = getCanonicalCompatContactById(database, raw);
@@ -3093,7 +3101,7 @@ function findCanonicalContactByIdentity(database: Database, identity: string): C
     if (byCompatibilityId) return byCompatibilityId;
   }
 
-  const platformIdentity = findDefaultPlatformIdentityForIdentity(database, raw);
+  const platformIdentity = phoneShaped ? findDefaultPlatformIdentityForIdentity(database, raw) : null;
   if (platformIdentity?.owner_type === "agent") return null;
   if (platformIdentity?.owner_type === "contact" && platformIdentity.owner_id) {
     const byOwner = getCanonicalCompatContactById(database, platformIdentity.owner_id);
@@ -4018,8 +4026,9 @@ function getContactDetailsByCanonicalId(
 }
 
 function findPlatformIdentityByRef(database: Database, platformIdentityRef: string): PlatformIdentityRow | null {
-  const normalized = normalizePhone(platformIdentityRef);
   const emailNormalized = platformIdentityRef.trim().toLowerCase();
+  // Phone-normalize only phone-shaped refs; otherwise compare the ref as-is.
+  const normalized = isPhoneShapedRef(platformIdentityRef) ? normalizePhone(platformIdentityRef) : emailNormalized;
   const row = database
     .prepare(
       `

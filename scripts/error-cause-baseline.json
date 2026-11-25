@@ -4679,13 +4679,6 @@
       "count": 1
     },
     {
-      "id": "src/runtime/prompt-subscription.ts:040a78dc8b9735fea837bde0",
-      "file": "src/runtime/prompt-subscription.ts",
-      "boundary": "runtime-chat",
-      "rule": "surface-bypasses-constructor",
-      "count": 1
-    },
-    {
       "id": "src/runtime/provider-device-login.ts:44b82e71718640cce7ee55d8",
       "file": "src/runtime/provider-device-login.ts",
       "boundary": "runtime-chat",
@@ -5744,7 +5737,7 @@
     }
   ],
   "totals": {
-    "violations": 859,
+    "violations": 858,
     "byDirectory": {
       "src/access": 2,
       "src/adapters": 2,
@@ -5810,7 +5803,7 @@
       "src/prox/calls": 5,
       "src/reference": 1,
       "src/router": 24,
-      "src/runtime": 97,
+      "src/runtime": 96,
       "src/sandbox": 3,
       "src/sdk/gateway": 9,
       "src/sdk/gateway/streaming": 6,

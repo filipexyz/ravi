@@ -6,8 +6,8 @@ import { createPreCompactHook } from "./pre-compact.js";
 
 // The memory agent is a Claude Code process. Without an explicit `env`, the SDK
 // spawns it with `{...process.env}`, the whole daemon env. A fake Claude Code
-// records the env names and the flags it actually received, so the test checks
-// the spawn, not what the code meant to pass.
+// records the env names, the value of the mention switch and the flags it
+// actually received, so the test checks the spawn, not what the code meant to pass.
 // It needs the real SDK `query`: another test file that mocks the SDK in the
 // same process leaves the fake executable never started (see the ledger check).
 it("spawns the memory agent with the provider env filter and the tool limit, not the daemon env", async () => {
@@ -31,7 +31,8 @@ function finish(initialize) {
   const request = initialize && initialize.request ? initialize.request : null;
   const subtype = request ? (request.subtype ?? null) : null;
   const hooks = request ? (request.hooks ?? null) : null;
-  fs.writeFileSync(${JSON.stringify(`${ledger}.tmp`)}, JSON.stringify({ env: Object.keys(process.env), argv: process.argv.slice(2), subtype, hooks }));
+  const mentions = process.env.CLAUDE_CODE_DISABLE_FILE_MENTIONS ?? null;
+  fs.writeFileSync(${JSON.stringify(`${ledger}.tmp`)}, JSON.stringify({ env: Object.keys(process.env), mentions, argv: process.argv.slice(2), subtype, hooks }));
   fs.renameSync(${JSON.stringify(`${ledger}.tmp`)}, ${JSON.stringify(ledger)});
   process.exit(1);
 }
@@ -64,8 +65,12 @@ setTimeout(() => finish(null), 3000);
     OPENAI_API_KEY: "canary-openai",
   };
   const kept = { CLAUDE_CODE_OAUTH_TOKEN: "canary-claude-login" };
-  const saved = Object.fromEntries(Object.keys({ ...dropped, ...kept }).map((name) => [name, process.env[name]]));
-  Object.assign(process.env, dropped, kept);
+  // The daemon env asks for mentions on: the spawn must still turn them off.
+  const overridden = { CLAUDE_CODE_DISABLE_FILE_MENTIONS: "0" };
+  const saved = Object.fromEntries(
+    Object.keys({ ...dropped, ...kept, ...overridden }).map((name) => [name, process.env[name]]),
+  );
+  Object.assign(process.env, dropped, kept, overridden);
   try {
     const hook = createPreCompactHook({ memoryModel: "haiku", pathToClaudeCodeExecutable: executable });
     await hook(
@@ -88,18 +93,26 @@ setTimeout(() => finish(null), 3000);
     expect(existsSync(ledger), "fake Claude Code never ran: was the SDK mocked by another test file?").toBe(true);
     const {
       env: names,
+      mentions,
       argv,
       subtype,
       hooks,
-    }: { env: string[]; argv: string[]; subtype: string | null; hooks: { PreToolUse?: unknown[] } | null } = JSON.parse(
-      readFileSync(ledger, "utf8"),
-    );
+    }: {
+      env: string[];
+      mentions: string | null;
+      argv: string[];
+      subtype: string | null;
+      hooks: { PreToolUse?: unknown[] } | null;
+    } = JSON.parse(readFileSync(ledger, "utf8"));
     for (const name of Object.keys(dropped)) {
       expect(names).not.toContain(name);
     }
     // Claude Code still logs in from the daemon env, as a real Claude turn does.
     expect(names).toContain("CLAUDE_CODE_OAUTH_TOKEN");
     expect(names).toContain("PATH");
+    // An `@path` in the prompt stays text: the file guard below only sees tool calls.
+    // The value is what Claude Code reads, so the name alone proves nothing.
+    expect(mentions).toBe("1");
 
     // The tool limit is `tools` (removes the tools), not `allowedTools` (auto-approves).
     // Dropping any of these flags gives the memory agent Bash again.

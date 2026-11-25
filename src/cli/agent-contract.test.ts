@@ -369,6 +369,29 @@ describe("publicContractMessage", () => {
 });
 
 describe("expectedErrorToContractError", () => {
+  it("carries allowlisted structured details to the envelope and drops the rest", () => {
+    const contract = expectedErrorToContractError(
+      "cron add",
+      new CliExpectedError(
+        "cron add is not available in a relayed turn.",
+        "PERMISSION_DENIED",
+        1,
+        "Ask the operator.",
+        {
+          automationHold: "held-relay",
+          internalNote: "never leaves the process",
+          cause: "a detail cannot replace the diagnostic",
+          suggestedAction: "nor the advice",
+        },
+      ),
+    );
+    const envelope = contract?.envelope().error;
+    expect(envelope).toMatchObject({ code: "PERMISSION_DENIED", automationHold: "held-relay" });
+    expect(envelope?.suggestedAction).toBe("Ask the operator.");
+    expect(envelope?.cause).toBe("cron add is not available in a relayed turn.");
+    expect(JSON.stringify(envelope)).not.toContain("never leaves the process");
+  });
+
   it("preserves the default COMMAND_FAILED code and the expected message", () => {
     const error = new CliExpectedError("--text-file must not contain '..' path segments.");
     expect(error.code).toBe("COMMAND_FAILED");

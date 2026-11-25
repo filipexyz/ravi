@@ -152,24 +152,28 @@ describe("createNatsRemoteSpawn SDK arguments", () => {
   );
 });
 
+/** Constants every Claude Code process must carry; not credentials, so sent without the opt-in. */
+const REQUIRED_ENV = { CLAUDE_CODE_DISABLE_FILE_MENTIONS: "1" };
+
 describe("createNatsRemoteSpawn credentials", () => {
   it("sends no credential values in the spawn payload by default", () => {
     const { raw, payload } = spawnAndCapturePayload({});
 
     expect(payload.args).toEqual(["--model", "sonnet"]);
-    expect(payload.env).toEqual({});
+    expect(payload.env).toEqual(REQUIRED_ENV);
     expect(raw).not.toContain(SECRET_ENV.CLAUDE_CODE_OAUTH_TOKEN);
     expect(raw).not.toContain(SECRET_ENV.ANTHROPIC_API_KEY);
   });
 
   it("ignores opt-in values other than exactly 1", () => {
     const { payload } = spawnAndCapturePayload({ RAVI_REMOTE_WORKER_FORWARD_CREDENTIALS: "true" });
-    expect(payload.env).toEqual({});
+    expect(payload.env).toEqual(REQUIRED_ENV);
   });
 
   it("forwards credentials only when RAVI_REMOTE_WORKER_FORWARD_CREDENTIALS=1", () => {
     const { payload } = spawnAndCapturePayload({ RAVI_REMOTE_WORKER_FORWARD_CREDENTIALS: "1" });
     expect(payload.env).toEqual({
+      ...REQUIRED_ENV,
       CLAUDE_CODE_OAUTH_TOKEN: SECRET_ENV.CLAUDE_CODE_OAUTH_TOKEN,
       ANTHROPIC_API_KEY: SECRET_ENV.ANTHROPIC_API_KEY,
     });

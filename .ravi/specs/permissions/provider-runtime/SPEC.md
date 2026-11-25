@@ -103,6 +103,80 @@ Required capability materializers:
   transitioning the daemon, restore only the managed processes that were
   running before the update, and verify that they return online.
 
+## Runtime Tool Calls
+
+- On a runtime with host session hooks (Claude Code), every tool call MUST be
+  authorized as `use:tool:<name>`, by the name the runtime reports for the call.
+- The check MUST NOT consult a list of known tool names. A name no list holds
+  MUST be denied unless the turn holds a matching capability. This covers tools
+  of MCP servers the runtime loaded from its own configuration or from a plugin
+  (`mcp__<server>__<tool>`), the MCP resource readers (`ListMcpResourcesTool`,
+  `ReadMcpResourceTool`, `ReadMcpResourceDirTool`) and tools a newer runtime
+  version adds.
+- A capability matches the reported name exactly, as `*`, or as a prefix when
+  it ends in `*`; there is no other pattern. `use:tool:mcp__<server>__*`
+  therefore grants every tool whose name starts with `mcp__<server>__`: the
+  tools of the server the runtime loaded under that name, and of a server
+  whose name starts with `<server>__`. Server names come from the runtime's
+  configuration, so the grant is a name prefix, not a server identity.
+- The MCP resource readers are not per-server: a grant of one reader covers
+  the resources of every server the session started.
+- A tool call without a tool name MUST be denied.
+- The tool and Bash permission hooks MUST turn their own failure into a denial.
+  Claude Code ignores a PreToolUse hook that throws and runs the tool, so an
+  exception while reading state or recording a denial would otherwise allow
+  the call.
+- When the agent is known, the denial record of an MCP tool MUST carry the
+  server name and source the runtime reported, as untrusted text.
+- Tools of an in-process MCP server that Ravi attaches to the session itself
+  are host tools: the agent setting that attaches the server is the grant, and
+  the tool check MUST skip them, on every turn of that session, a turn that
+  holds no capabilities included. Today the only such server is `spec`,
+  attached for spec-mode agents. A host server that forwards calls to servers outside
+  the Ravi process is not a host tool source and MUST NOT be declared as one.
+- The host-tool exemption MUST be decided from the server provenance the
+  runtime reports with the call (`mcp_server.source` equal to `sdk` and
+  `mcp_server.name` equal to a name the session declared). It MUST NOT be
+  decided from the tool-name prefix: a configured server may reuse a host
+  server's name, and both then answer under `mcp__<name>__`. The provenance
+  exempts only a name that starts with `mcp__`: a built-in tool name MUST be
+  checked whatever arrives beside it. A call without
+  provenance MUST be checked like any other tool; when its name is under a
+  host server's prefix, the denial SHOULD say that the runtime reported no
+  server (a Claude Code too old to report it).
+- Claude Code may load MCP tool definitions on demand through `ToolSearch`,
+  host tools included. `ToolSearch` is checked like any tool, so a turn
+  without `use:tool:ToolSearch` may be unable to reach an MCP tool it is
+  otherwise allowed to call.
+- The Bash permission hook MUST keep its `Bash` matcher. Claude Code delivers
+  the shell command of its `Monitor` tool to `Bash`-matched hooks as a Bash
+  call; a hook without a matcher sees that call only as `Monitor`.
+- This check is on the call. It does not stop the runtime from starting the
+  MCP servers its configuration lists when a session starts, and it does not
+  cover Codex, where MCP servers come from the operator's Codex configuration
+  and their tools reach no Ravi decision. On Grok one capability,
+  `use:tool:MCPTool`, covers every server and tool.
+
+## Prompt Text
+
+- Text in a prompt MUST NOT make the runtime read a file on its own. Claude
+  Code expands `@path` in prompt text into the file's content before any tool
+  call, so no PreToolUse hook sees that read, and Ravi prompts carry text
+  typed by other people in a chat.
+- Every Claude Code process Ravi starts MUST carry
+  `CLAUDE_CODE_DISABLE_FILE_MENTIONS=1`, over any value the agent's
+  environment holds: session turns (every path of
+  `buildClaudeCodeEnvironment`), the memory agent, and remote spawns over SSH
+  and NATS, where the value is a constant on the remote command line or in the
+  spawn payload and does not depend on the credential opt-in.
+- With the switch a mention stays text. A file reaches the model only through
+  a tool call, which Runtime Tool Calls covers.
+- The switch MUST NOT be replaced by the Agent SDK's `verbatimPrompts` without
+  a live check: that option also drops the context Claude Code attaches at the
+  start of a turn (skill and tool listings).
+- `@AGENTS.md` imports inside `CLAUDE.md` are instructions loading, not prompt
+  mentions, and MUST keep working with the switch.
+
 ## Provider Settings File Writes
 
 - File-writing tools and shell output redirects MUST require

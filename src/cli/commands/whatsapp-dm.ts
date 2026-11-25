@@ -10,7 +10,7 @@ import { hashForAudit } from "../provenance.js";
 import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
 import { nats } from "../../nats.js";
 import { getContact, getContactIdentities, normalizePhone, formatPhone, searchContacts } from "../../contacts.js";
-import { getFirstAccountName } from "../../router/router-db.js";
+import { resolveWhatsAppAccount } from "../whatsapp-account.js";
 import { phoneToJid, jidToSessionId } from "../../utils/phone.js";
 import { getRecentHistory } from "../../db.js";
 
@@ -106,7 +106,7 @@ export class WhatsAppDmCommands {
     execute?: boolean,
   ) {
     const { jid, displayName } = resolveWhatsAppJid("whatsapp dm send", contactRef, asJson);
-    const accountId = account ?? getFirstAccountName() ?? "";
+    const accountId = resolveWhatsAppAccount(account);
 
     // Strip common bash escape artifacts (e.g. Claude writes "oi\!" instead of "oi!")
     const cleanMessage = message.replace(/\\([!#$&*?])/g, "$1");
@@ -255,7 +255,7 @@ export class WhatsAppDmCommands {
     execute?: boolean,
   ) {
     const { jid, displayName } = resolveWhatsAppJid("whatsapp dm ack", contactRef, asJson);
-    const accountId = account ?? getFirstAccountName() ?? "";
+    const accountId = resolveWhatsAppAccount(account);
 
     if (execute !== true) {
       contractDryRun(

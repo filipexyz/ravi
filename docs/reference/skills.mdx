@@ -17,7 +17,7 @@ ravi skills show triggers        # the directory name works...
 ravi skills show trigger-manager # ...and so does the skill name
 ```
 
-`ravi skills list` pages at 50 items; pass `--limit 500` to see everything, or `--json` and follow `pagination.nextCommand`.
+`ravi skills list` shows up to 500 skills on its default page, which covers the whole catalog. Pass `--limit` and `--offset` to page; past 500, or with a smaller `--limit`, follow `pagination.nextCommand` from `--json`.
 
 <Note>
 This page describes `ravi.bot@next`. In `@latest` (3.260927.5) the `bases` and `solucoes` skills do not exist and `ravi skills show` has no `--file` or `--raw`. Install `@next` with `bun add -g ravi.bot@next`, or switch with `ravi update --next`.
