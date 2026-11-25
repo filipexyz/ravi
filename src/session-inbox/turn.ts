@@ -50,6 +50,8 @@ export interface PrepareInboxTurnInput {
   messages: readonly InboxTurnMessage[];
   drainOnHeartbeat: boolean;
   now?: number;
+  /** Test seam: the block renderer. */
+  render?: typeof renderInboxBlock;
 }
 
 /**
@@ -69,12 +71,20 @@ export function prepareInboxTurnBlock(input: PrepareInboxTurnInput): InboxTurnBl
     now: input.now,
   });
   if (reservation.items.length === 0) return null;
-  return {
-    block: renderInboxBlock({
+  let block: string;
+  try {
+    block = (input.render ?? renderInboxBlock)({
       items: reservation.items,
       overflow: reservation.overflow,
       targetSessionName: input.sessionName,
-    }),
+    });
+  } catch (error) {
+    // Nothing reached a turn: the items go back to pending for the next draining turn.
+    releaseInboxReservation(reservation.turnKey);
+    throw error;
+  }
+  return {
+    block,
     reason,
     itemIds: reservation.items.map((item) => item.id),
     overflow: reservation.overflow,

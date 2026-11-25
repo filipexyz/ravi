@@ -12,6 +12,9 @@ normative: false
 
 ## See what waits for a session
 
+The table is created by the first deferred delivery or the first draining turn. Before that,
+the query below fails with `no such table`, which means nothing was ever deferred.
+
 ```sql
 SELECT id, source_kind, source_ref, title, state, created_at, reserved_turn
 FROM session_inbox WHERE target_session_name = 'main' ORDER BY created_at;

@@ -211,9 +211,10 @@ export function reserveInboxItems(input: ReserveInboxInput): InboxReservation {
     ).map(rowToItem);
     let bytes = 0;
     for (const item of pending) {
-      const size = Buffer.byteLength(item.title) + Buffer.byteLength(item.body);
+      const size = renderedInboxItemBytes(item);
       // Chronological: once one item does not fit, every newer one waits too, so a later turn
-      // never sees a newer notice before an older one. The first item always fits.
+      // never sees a newer notice before an older one. The first item always fits; its rendered
+      // body is capped (INBOX_MAX_RENDERED_BODY_BYTES), so it cannot block the inbox forever.
       const fits =
         overflow === 0 && items.length < input.maxItems && (items.length === 0 || bytes + size <= input.maxBytes);
       if (!fits) {
@@ -260,6 +261,33 @@ export function releaseInboxReservation(turnKey: string): number {
     )
     .run(turnKey);
   return Number(result.changes ?? 0);
+}
+
+/** Rendered body cap per item: one notice never takes more than this of a turn's block. */
+export const INBOX_MAX_RENDERED_BODY_BYTES = 8 * 1024;
+
+/** Per-item overhead of the rendered line (time, source label, quote marks), counted against the turn cap. */
+const INBOX_RENDERED_ITEM_OVERHEAD_BYTES = 64;
+
+export function renderedInboxBody(item: Pick<InboxItem, "id" | "body">): string {
+  const bytes = Buffer.byteLength(item.body);
+  if (bytes <= INBOX_MAX_RENDERED_BODY_BYTES) return item.body;
+  let cut = item.body.slice(0, INBOX_MAX_RENDERED_BODY_BYTES);
+  while (Buffer.byteLength(cut) > INBOX_MAX_RENDERED_BODY_BYTES) cut = cut.slice(0, -1);
+  return `${cut}\n[cortado no bloco: ${bytes - Buffer.byteLength(cut)} bytes; texto inteiro no item ${item.id}]`;
+}
+
+/** What one item adds to the rendered block: title, body as rendered, quote prefixes and labels. */
+export function renderedInboxItemBytes(item: Pick<InboxItem, "id" | "title" | "body" | "sourceRef">): number {
+  const body = renderedInboxBody(item);
+  const lines = body.split(/\r?\n/).length;
+  return (
+    Buffer.byteLength(item.title) +
+    Buffer.byteLength(item.sourceRef) +
+    Buffer.byteLength(body) +
+    lines * 4 +
+    INBOX_RENDERED_ITEM_OVERHEAD_BYTES
+  );
 }
 
 export function countPendingInboxItems(targetSessionName: string): number {

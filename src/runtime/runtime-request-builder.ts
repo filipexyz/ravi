@@ -34,7 +34,12 @@ import {
   withoutTriggerAuthority,
 } from "./delivery-queue.js";
 import { commitRenderedSignals, releaseRenderedSignals, renderSignalsForTurn } from "../signals/render.js";
-import { INBOX_DRAIN_ON_HEARTBEAT_SETTING, prepareInboxTurnBlock, type InboxTurnBlock } from "../session-inbox/turn.js";
+import {
+  INBOX_DRAIN_ON_HEARTBEAT_SETTING,
+  type InboxTurnBlock,
+  type InboxTurnMessage,
+  prepareInboxTurnBlock,
+} from "../session-inbox/turn.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./task-runtime-context.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
@@ -135,7 +140,7 @@ export function getInboxRenderFailureCount(): number {
  */
 export function prepareInboxForTurn(
   sessionName: string,
-  deliverableMessages: readonly Pick<RuntimeUserMessage, "launchPrompt">[],
+  deliverableMessages: readonly InboxTurnMessage[],
 ): InboxTurnBlock | null {
   try {
     return prepareInboxTurnBlock({
@@ -166,13 +171,20 @@ export function composeInboxWithTurnPrompt(
   if (typeof rest === "string") return { prompt: rest, commit: inbox.commit, release: inbox.release };
   return {
     prompt: rest.prompt,
+    // The inbox settles even when the other settlement throws: its error still propagates.
     commit: () => {
-      rest.commit?.();
-      inbox.commit();
+      try {
+        rest.commit?.();
+      } finally {
+        inbox.commit();
+      }
     },
     release: (reason: string) => {
-      rest.release?.(reason);
-      inbox.release(reason);
+      try {
+        rest.release?.(reason);
+      } finally {
+        inbox.release(reason);
+      }
     },
   };
 }

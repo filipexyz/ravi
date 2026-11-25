@@ -1,12 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { closeRouterDb, dbSetSetting } from "../router/router-db.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { composeInboxWithTurnPrompt, prepareInboxForTurn } from "../runtime/runtime-request-builder.js";
 import { deliverToSession } from "./deliver.js";
 import { renderInboxBlock } from "./render.js";
 import {
+  INBOX_MAX_RENDERED_BODY_BYTES,
   INBOX_STALE_RESERVATION_MS,
   commitInboxReservation,
   countPendingInboxItems,
@@ -23,20 +22,16 @@ import {
   prepareInboxTurnBlock,
 } from "./turn.js";
 
-let root = "";
-const originalStateDir = process.env.RAVI_STATE_DIR;
+let stateDir: string | null = null;
 const SESSION = "main";
 
-beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), "ravi-session-inbox-"));
-  process.env.RAVI_STATE_DIR = join(root, ".ravi");
+beforeEach(async () => {
+  stateDir = await createIsolatedRaviState("ravi-session-inbox-");
 });
 
-afterEach(() => {
-  closeRouterDb();
-  if (originalStateDir === undefined) delete process.env.RAVI_STATE_DIR;
-  else process.env.RAVI_STATE_DIR = originalStateDir;
-  rmSync(root, { recursive: true, force: true });
+afterEach(async () => {
+  await cleanupIsolatedRaviState(stateDir);
+  stateDir = null;
 });
 
 const human = { launchPrompt: { prompt: "oi", source: { actorType: "contact" } } } as unknown as InboxTurnMessage;
@@ -266,5 +261,62 @@ describe("composeInboxWithTurnPrompt", () => {
       "inbox.release:y",
     ]);
     expect(composeInboxWithTurnPrompt(null, "r")).toBe("r");
+  });
+});
+
+describe("settlement under failure (Devin review of 31e603b)", () => {
+  it("a render that throws returns the reserved items to pending", () => {
+    const a = add("a");
+    expect(() =>
+      prepareInboxTurnBlock({
+        sessionName: SESSION,
+        messages: [human],
+        drainOnHeartbeat: false,
+        render: () => {
+          throw new Error("render boom");
+        },
+      }),
+    ).toThrow("render boom");
+    expect(getInboxItem(a.id)?.state).toBe("pending");
+  });
+
+  it("the inbox settles even when the other settlement throws, and the error still propagates", () => {
+    const calls: string[] = [];
+    const composed = composeInboxWithTurnPrompt(
+      { commit: () => calls.push("inbox.commit"), release: (r: string) => calls.push(`inbox.release:${r}`) },
+      {
+        prompt: "q",
+        commit: () => {
+          throw new Error("signals commit boom");
+        },
+        release: () => {
+          throw new Error("signals release boom");
+        },
+      },
+    );
+    if (typeof composed !== "object") throw new Error("expected a transform");
+    expect(() => composed.commit?.()).toThrow("signals commit boom");
+    expect(() => composed.release?.("z")).toThrow("signals release boom");
+    expect(calls).toEqual(["inbox.commit", "inbox.release:z"]);
+  });
+});
+
+describe("byte cap counts what is rendered", () => {
+  it("counts quote marks and labels, not only title and body", () => {
+    // 600 one-character lines: 1.2 KiB of raw body, ~3.6 KiB once every line gets its quote mark.
+    const body = Array.from({ length: 600 }, () => "x").join("\n");
+    add("a", { createdAt: 1, body });
+    add("b", { createdAt: 2, body });
+    const reservation = reserveInboxItems({ targetSessionName: SESSION, maxItems: 10, maxBytes: 6_000 });
+    expect(reservation.items.map((item) => item.title)).toEqual(["a"]);
+    expect(reservation.overflow).toBe(1);
+  });
+
+  it("caps the rendered body of a huge first item and names where the full text is", () => {
+    const item = add("big", { body: "y".repeat(12_000) });
+    const block = renderInboxBlock({ items: [item], overflow: 0, targetSessionName: SESSION });
+    expect(Buffer.byteLength(block)).toBeLessThan(INBOX_MAX_RENDERED_BODY_BYTES + 1_000);
+    expect(block).toContain(`texto inteiro no item ${item.id}`);
+    expect(getInboxItem(item.id)?.body.length).toBe(12_000);
   });
 });

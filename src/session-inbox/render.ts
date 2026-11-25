@@ -5,7 +5,7 @@
  * collapsed to one line when stored, so no line of a notice can pass for a `[System]` line.
  */
 
-import type { InboxItem, InboxSourceKind } from "./store.js";
+import { type InboxItem, type InboxSourceKind, renderedInboxBody } from "./store.js";
 
 const GROUP_ORDER: InboxSourceKind[] = ["handoff", "thread", "child_run", "cron", "observer", "system"];
 
@@ -54,7 +54,7 @@ export function renderInboxBlock(input: RenderInboxBlockInput): string {
     lines.push(`## ${GROUP_TITLES[kind]}`);
     for (const item of group) {
       lines.push(`- ${formatTime(item.createdAt, timeZone)} [${item.sourceRef}] ${item.title}`);
-      lines.push(...quote(item.body));
+      lines.push(...quote(renderedInboxBody(item)));
     }
   }
   if (input.overflow > 0) {
