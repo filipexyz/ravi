@@ -56,15 +56,18 @@ export function autoplayReplies(call: RaviVoiceCall, element: HTMLAudioElement =
     if (!audio?.item) return;
     const mine = generation;
     const download = call.audio(audio.item).catch(() => null);
-    queue = queue.then(async () => {
-      const blob = await download;
-      if (!blob || mine !== generation) return;
-      if (current) URL.revokeObjectURL(current);
-      current = URL.createObjectURL(blob);
-      element.src = current;
-      await element.play().catch(() => undefined);
-      await playbackDone(element);
-    });
+    // A clip that fails never holds the replies behind it.
+    queue = queue
+      .then(async () => {
+        const blob = await download;
+        if (!blob || mine !== generation) return;
+        if (current) URL.revokeObjectURL(current);
+        current = URL.createObjectURL(blob);
+        element.src = current;
+        await element.play().catch(() => undefined);
+        await playbackDone(element);
+      })
+      .catch(() => undefined);
   });
   const offSilence = call.on("agent.state", (event) => {
     if (event.data.state === "listening" && event.data.reason === "silenced") {
@@ -82,17 +85,19 @@ export function autoplayReplies(call: RaviVoiceCall, element: HTMLAudioElement =
   };
 }
 
-/** Resolves when the element stops: the clip ended, was paused, or never started. */
+/** Resolves when the element stops: the clip ended, was paused, failed, or never started. */
 function playbackDone(element: HTMLAudioElement): Promise<void> {
-  if (element.paused || element.ended) return Promise.resolve();
+  if (element.paused || element.ended || element.error) return Promise.resolve();
   return new Promise((resolve) => {
     const done = () => {
       element.removeEventListener("ended", done);
       element.removeEventListener("pause", done);
+      element.removeEventListener("error", done);
       resolve();
     };
     element.addEventListener("ended", done);
     element.addEventListener("pause", done);
+    element.addEventListener("error", done);
   });
 }
 
