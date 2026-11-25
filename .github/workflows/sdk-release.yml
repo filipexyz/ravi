@@ -154,8 +154,10 @@ jobs:
           push_out=$(git push origin "HEAD:refs/heads/${BRANCH}" 2>&1) || push_rc=$?
           echo "$push_out"
           if [ "$push_rc" -ne 0 ]; then
-            if echo "$push_out" | grep -Eq 'GH013|Repository rule violations|protected branch'; then
-              echo "::warning::Direct push to ${BRANCH} declined by the repository rules. The bump stays for the next promote; the release goes on."
+            # Only the server's own lines count: the log of the pre-push suite is in $push_out too, and a test
+            # that mentions a rule or a protected branch must not turn a red suite into a warning.
+            if echo "$push_out" | grep -Eq '^remote: error: GH(013|006):'; then
+              echo "::warning::Direct push to ${BRANCH} declined by the repository rules. The bump is not saved in the branch; its package.json stays behind npm and the version keeps coming from the registry. The release goes on."
             else
               echo "::error::The push of the version bump failed for a reason other than the repository rules (pre-push checks included)."
               exit "$push_rc"
