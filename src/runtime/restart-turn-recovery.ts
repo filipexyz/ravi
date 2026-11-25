@@ -117,7 +117,10 @@ export function judgeRestartInterruptedAttempt(
   if (reader.hasLaterAttempt(attempt)) {
     return { kind: "skip", reason: "superseded", attempt };
   }
-  const restored = restoreRestartTurnAuthority(attempt.metadata?.[RESTART_TURN_AUTHORITY_METADATA_KEY]);
+  const restored = crossCheckTurnOrigin(
+    attempt,
+    restoreRestartTurnAuthority(attempt.metadata?.[RESTART_TURN_AUTHORITY_METADATA_KEY]),
+  );
   if (isRestartResumeAttempt(attempt)) {
     // This turn was itself a restart resume and the daemon went down again:
     // resuming once more could loop on whatever brought the daemon down.
@@ -141,6 +144,22 @@ export function judgeRestartInterruptedAttempt(
     return { kind: "notice", attempt, fenceReason: restored.reason };
   }
   return { kind: "resume", attempt, authority: restored.authority };
+}
+
+/**
+ * A turn whose provenance came from a relay origin must have recorded that
+ * origin: an envelope without it would restore the turn without its narrowing.
+ */
+function crossCheckTurnOrigin(
+  attempt: Pick<RuntimeTurnAttemptRecord, "turnProvenance">,
+  restored: RestoredRestartTurnAuthority,
+): RestoredRestartTurnAuthority {
+  if (!restored.ok || restored.authority._turnOrigin) return restored;
+  const provenance = attempt.turnProvenance;
+  const reason = provenance && typeof provenance === "object" ? (provenance as { reason?: unknown }).reason : undefined;
+  return typeof reason === "string" && reason.startsWith("prompt._turnOrigin")
+    ? { ok: false, reason: "authority_unreadable" }
+    : restored;
 }
 
 /**

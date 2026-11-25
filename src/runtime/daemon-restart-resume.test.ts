@@ -564,6 +564,11 @@ describe("daemon restart inputs carry the interrupted turn's authority", () => {
       ok: false,
       reason: "authority_unreadable",
     });
+    // Protocol and version alone: the runtime would ignore this origin and drop its narrowing.
+    expect(
+      restoreRestartTurnAuthority({ v: 1, _turnOrigin: { protocol: "ravi.runtime.turn-origin", schemaVersion: 1 } }),
+    ).toEqual({ ok: false, reason: "authority_unreadable" });
+    expect(restoreRestartTurnAuthority({ v: 1, _turnOrigin: relayOrigin })).toMatchObject({ ok: true });
   });
 });
 

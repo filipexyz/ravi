@@ -112,7 +112,13 @@ Every restart input MUST carry the authority envelope of the turn it resumes, an
 - **What is recorded.** The envelope is `context`, `_turnOrigin` (relay narrowing and break-glass denies through its caller context) and `_approvalSource`.
 - **Where.** The attempt records it at turn start (`restartTurnAuthority`), and the restart snapshot records it at shutdown.
 - **How it is restored.** The envelope is restored before the recorded chat `source`, like a host-made continuation of the same turn.
-- **Failing closed.** A `continue` or `verify_continue` whose recorded envelope is missing (an attempt or snapshot written before this rule), unreadable, or carries automation authority does not resume. It resolves to a notice: `authority_missing`, `authority_unreadable` or `authority_automation`.
+- **Failing closed.** The rule protects an interrupted turn, never the messages queued behind it.
+  - A `continue` or `verify_continue` whose recorded envelope is missing (an attempt or snapshot written before this rule), unreadable, or carries automation authority does not continue the turn.
+  - A `continue` that still has durable queued messages degrades to `pending_only`: the messages carry their own envelopes and are redelivered.
+  - With nothing queued, it resolves to a notice: `authority_missing`, `authority_unreadable` or `authority_automation`.
+  - The restore validates `_turnOrigin` the way the runtime does (`resolveRuntimeTurnOrigin`).
+  - The sweep and the verify path also refuse an envelope without `_turnOrigin` for an attempt whose provenance came from one.
+- **Snapshots without a turn.** A snapshot of a session without a live turn (queued, stashed, debounced, starting, deferred after a task) records the empty envelope `{ v: 1 }` and keeps its `continue`.
 - **Notices.** A notice carries the recorded envelope when one is readable.
 
 An explicit capacity retry authorized by the host after its replay-safety and

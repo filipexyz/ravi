@@ -363,6 +363,10 @@ export class RuntimeSessionDispatcher {
         pendingMessages: [],
         metadata: {
           reason: options.reason,
+          // A session without a live turn (queued, stashed, debounced, starting) has no
+          // turn authority to restore: `{ v: 1 }` says so, and each durable queued
+          // message carries its own envelope. The live-session loop records the real one.
+          [RESTART_TURN_AUTHORITY_METADATA_KEY]: captureRestartTurnAuthority(undefined),
           ...(overrides.metadata ?? {}),
         },
       };

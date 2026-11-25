@@ -64,6 +64,7 @@ function createAttempt(input: {
   metadata?: Record<string, unknown>;
   /** Leave out the recorded authority envelope, like an attempt written before this release. */
   legacy?: boolean;
+  turnProvenance?: Record<string, unknown>;
 }) {
   const startedAt = input.startedAt ?? NOW - 135_000;
   createRuntimeTurnAttempt({
@@ -84,6 +85,7 @@ function createAttempt(input: {
     source: { channel: "slack", accountId: "ravi-slack", chatId: "D1", threadId: "1" },
     taskBarrierTaskId: input.taskBarrierTaskId ?? null,
     deliveryBarrier: "after_response",
+    ...(input.turnProvenance ? { turnProvenance: input.turnProvenance } : {}),
     pendingIds: [],
     metadata: {
       ...(input.legacy ? {} : { [RESTART_TURN_AUTHORITY_METADATA_KEY]: { v: 1 } }),
@@ -325,6 +327,25 @@ describe("orphaned turn recovery after an unclean restart", () => {
     const [run] = listRuntimeRecoveryRuns();
     expect(listRuntimeRecoveryCandidates(run!.recoveryRunId)).toEqual([
       expect.objectContaining({ decision: "reconcile_interrupted", reasonCode: "authority_missing" }),
+    ]);
+  });
+
+  it("only notifies a relay turn whose recorded envelope lost its relay origin", async () => {
+    createLiveBoot();
+    createBoot("boot-dead");
+    createAttempt({
+      attemptId: "attempt-relay",
+      bootEpoch: "boot-dead",
+      turnProvenance: { origin: "agent", reason: "prompt._turnOrigin:session-relay:execute" },
+    });
+    const { deps, deliveries } = harness();
+
+    await recover(deps);
+
+    expect(deliveries).toEqual([{ kind: "notice", sessionName: "main-t-1", attemptId: "attempt-relay" }]);
+    const [run] = listRuntimeRecoveryRuns();
+    expect(listRuntimeRecoveryCandidates(run!.recoveryRunId)).toEqual([
+      expect.objectContaining({ reasonCode: "authority_unreadable" }),
     ]);
   });
 

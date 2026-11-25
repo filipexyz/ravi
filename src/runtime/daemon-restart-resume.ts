@@ -2,6 +2,7 @@ import type { DaemonRestartDeliveryKind, DaemonRestartSessionSnapshotRecord } fr
 import { logger } from "../utils/logger.js";
 import type { RuntimeTurnAuthorityEnvelope } from "./delivery-queue.js";
 import type { MessageTarget, RuntimeLaunchPrompt } from "./message-types.js";
+import { resolveRuntimeTurnOrigin } from "./turn-origin.js";
 import type { RestartAttemptVerdict } from "./restart-turn-recovery.js";
 import type { RuntimeProviderId } from "./types.js";
 
@@ -63,11 +64,10 @@ export function restoreRestartTurnAuthority(value: unknown): RestoredRestartTurn
   const approvalSource = record._approvalSource;
   if (context !== undefined && !asRecord(context)) return { ok: false, reason: "authority_unreadable" };
   if (approvalSource !== undefined && !asRecord(approvalSource)) return { ok: false, reason: "authority_unreadable" };
-  if (turnOrigin !== undefined) {
-    const origin = asRecord(turnOrigin);
-    if (!origin || origin.protocol !== "ravi.runtime.turn-origin" || origin.schemaVersion !== 1) {
-      return { ok: false, reason: "authority_unreadable" };
-    }
+  // The same validation the runtime applies: an origin it would ignore would
+  // silently drop the relay narrowing.
+  if (turnOrigin !== undefined && resolveRuntimeTurnOrigin(turnOrigin) === null) {
+    return { ok: false, reason: "authority_unreadable" };
   }
   return {
     ok: true,
@@ -467,11 +467,15 @@ export async function deliverDaemonRestartSessionEvent(
     }
   }
   if (decision.mode === "continue") {
-    // A continuation carries the interrupted turn's own authority envelope; a
-    // snapshot without one (written before this release, or malformed) can
-    // only produce a notice.
+    // A continuation carries the interrupted turn's own authority envelope. A
+    // snapshot without a readable one (written before this release, or
+    // malformed) never continues the turn: its durable queued messages, which
+    // carry their own envelopes, are still redelivered (`pending_only`), and
+    // only a snapshot with nothing queued becomes a notice.
     if (snapshotAuthority.ok) {
       authority = snapshotAuthority.authority;
+    } else if ((snapshot?.pendingMessageCount ?? 0) > 0) {
+      decision = { mode: "pending_only", publish: true, reason: "pending_only" };
     } else {
       decision = { mode: "skip", publish: false, reason: snapshotAuthority.reason };
     }

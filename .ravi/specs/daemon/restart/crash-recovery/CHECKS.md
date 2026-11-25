@@ -78,7 +78,11 @@ normative: false
 - PM2 registers the daemon and the channels runner with `--kill-timeout 20000`, above the daemon's 15 s shutdown guard.
 - Every attempt records `restartTurnAuthority`, the turn's `context`, `_turnOrigin` and `_approvalSource`, JSON-safe and marked when the turn ran under automation authority. Every restart snapshot records the same for a live session.
 - A restart input restores that envelope before the recorded `source`, on both the sweep and the graceful path. For a relay narrowed to a contact's capabilities, a relay held below break-glass, and a Slack thread-child relay, the resumed runtime context has exactly the capabilities and break-glass withholding of the original turn (`restart-resume-authority.test.ts`).
-- A `continue` or `verify_continue` whose recorded envelope is missing, unreadable, or automation resolves to a notice (`authority_*`) and never to a continuation.
+- A `continue` or `verify_continue` whose recorded envelope is missing, unreadable, or automation never continues the turn.
+  - A `continue` with durable queued messages degrades to `pending_only` and redelivers them.
+  - With nothing queued, it gives a notice (`authority_*`).
+- Snapshots of sessions without a live turn record `{ v: 1 }`, and after a graceful restart their queued message is redelivered (`restart-snapshot-redelivery.test.ts`). The sources are `stashed`, `debounce`, `inFlightStart` and `deferredAfterTask`.
+- The restore rejects a `_turnOrigin` the runtime would ignore. The sweep rejects an envelope without `_turnOrigin` when the attempt's provenance came from one.
 - The snapshot records an interrupted attempt only for an active, non-replayable, unfinished turn that is not a scheduled capacity retry (`resolveRestartSnapshotInterruptedAttemptId`).
 - The sweep never touches its own boot, leaves a boot whose fence compare-and-set fails, and claims, without resuming, the turn of a task that is no longer active.
 - A `skip` decision MUST still publish one notice-only restart input (`_daemonRestartResume.noticeOnly`) with the restart reason and the fence reason; it never contains "Continue de onde parou" and the dispatcher never hydrates persisted pending work into it.
@@ -115,6 +119,7 @@ bun test src/runtime/crash-recovery.test.ts src/runtime/prompt-subscription.test
 bun test src/approval/service.test.ts src/runtime/control-host.test.ts src/runtime/session-trace.test.ts src/runtime/session-dispatcher.test.ts src/runtime/daemon-restart-resume.test.ts src/bot.runtime-guards.test.ts
 bun test src/runtime/restart-turn-recovery.test.ts
 bun test src/runtime/restart-resume-authority.test.ts
+bun test src/runtime/restart-snapshot-redelivery.test.ts
 bun test src/runtime/runtime-request-builder.crash-recovery.test.ts
 bun test src/daemon-stdin.test.ts
 bun run typecheck
