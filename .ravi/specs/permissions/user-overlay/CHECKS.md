@@ -33,9 +33,12 @@
 - In a governed chat the overlay MUST stay (`userOverlay=active`, automation
   held, threads held) for: a partial chat grant, no grant, a partial global
   tag, full access granted only in that chat, a partial global tag plus full
-  access in that chat, an admin with a `deny_*` grant in that chat, a global
-  tag that covers the effective set of an agent holding admin plus a `deny_*`,
-  and a member or a global-tag holder of a `chat-only` agent (same test block).
+  access in that chat, an admin with a `deny_*` grant in that chat (also when
+  the agent holds admin plus a `deny_*` of its own, which hides admin from an
+  effective-set comparison), an admin with a `deny_*` among their own tags, a
+  global tag that covers the effective set of an agent holding admin plus a
+  `deny_*`, and a member or a global-tag holder of a `chat-only` agent (same
+  test block).
 - `deny` of the global grant a lifted turn rests on MUST revoke that live turn,
   and the next turn without it MUST be narrowed again (same test block); it
   MUST also revoke a live lifted cron run of that owner, found by

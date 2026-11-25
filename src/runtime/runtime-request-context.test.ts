@@ -3408,6 +3408,44 @@ describe("verified human work handoffs", () => {
       expect(automationHoldCause(turn)).toBe("contact-chat-grants");
     });
 
+    it("a deny over an admin keeps the overlay even when an agent deny hides admin from the comparison", () => {
+      // CodeRabbit on #990: an agent deny_* drops admin from both effective sets, so comparing them could
+      // not see a chat deny over authority the agent reaches through admin; the Bash hook's live ceiling
+      // would then hand that authority back. Any deny_* in the contact's overlay keeps it.
+      dbUpdateAgent(originAgent.id, {
+        defaults: {
+          runtimePermissions: {
+            profile: "explicit-only",
+            capabilities: ["admin:system:*", "read:bases:list", "deny_use:tool:WebSearch"],
+          },
+        },
+      });
+      dbCreateTagDefinition({
+        slug: "permission-no-shell",
+        label: "No shell",
+        kind: "system",
+        source: "permissions",
+        metadata: { permissions: { capabilities: ["deny_execute:executable:*"] } },
+      });
+      const narrowedHere = person("Admin without a shell here", { tags: ["permission-owner"], status: "allowed" });
+      grantHere(narrowedHere.id, "permission-no-shell");
+      grantHere(narrowedHere.id, "permission-reader");
+      // The same deny in the admin's own tags keeps it too.
+      const narrowedEverywhere = person("Admin without a shell anywhere", {
+        tags: ["permission-owner", "permission-no-shell"],
+        status: "allowed",
+      });
+      const cases = [
+        ["deny-in-chat", narrowedHere],
+        ["deny-in-own-tags", narrowedEverywhere],
+      ] as const;
+      for (const [label, who] of cases) {
+        const turn = speak(who, label);
+        expect(turn.metadata).toMatchObject({ actorAuthorizationMode: "user-overlay", userOverlay: "active" });
+        expect(automationHoldCause(turn)).toBe("contact-chat-grants");
+      }
+    });
+
     it("a contact without full access of its own is never lifted, even for an agent that holds nothing", () => {
       dbUpdateAgent(originAgent.id, { defaults: { runtimePermissions: { profile: "chat-only" } } });
       const member = person("Member of a chat-only agent's chat");

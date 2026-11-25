@@ -132,11 +132,14 @@ speaking in a chat where another person had a grant.
     tags, `ContactChatOverlay.globalCapabilities`, never a grant bound to this
     chat), holds full access: `admin:system:*` by the core matcher, the
     capability `permissions request full-access` grants;
-  - the overlay as this chat reads it (chat, chat-tag and global grants)
-    covers the agent identity's authority on the turn, by the relay stamp's
-    rule (`capabilitySetCovers` over the same baseline as
-    `relayCallerUnrestricted`), so a grant here that narrows the contact (a
-    `deny_*` profile) keeps the overlay.
+  - nothing in the overlay as this chat reads it (chat, chat-tag and global
+    grants) narrows the contact: no `deny_*` capability. With admin of its
+    own, positive grants reduce nothing, so a deny is the only way the chat
+    (or the contact's own tags) can hold the contact below the agent, and it
+    keeps the overlay. Comparing effective sets MUST NOT decide this: an agent
+    `deny_*` drops admin from both sides of that comparison, so a chat deny
+    over authority the agent reaches through admin would go unseen and the
+    live ceiling would hand it back (CodeRabbit on #990).
 - Covering the agent's current effective set MUST NOT be enough. Admin on
   system short-circuits every check of the core matcher, in the snapshot and
   in the Bash hook's live executor ceiling alike, so full access covers this
@@ -321,4 +324,5 @@ Rules:
   automation hold and stamped threads; a contact whose power there comes from
   a chat grant (full access included), a partial grant, no grant, a global
   tag without full access (even one covering the agent's effective set), or a
-  narrowing grant in the chat keeps the overlay and its holds.
+  `deny_*` in the chat's grants or in their own tags keeps the overlay and its
+  holds.

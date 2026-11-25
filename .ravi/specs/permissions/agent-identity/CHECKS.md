@@ -50,8 +50,9 @@
   agent) MUST pass the automation guards, write an unbound cron job, and open
   stamped threads whose return is stamped; a contact whose power there comes
   from a chat grant (full access included), a partial grant, no grant, a
-  partial global tag, or an admin narrowed by a `deny_*` grant in that chat
-  MUST stay held, and so must its threads (`runtime-request-context.test.ts`,
+  partial global tag, or an admin narrowed by a `deny_*` (a grant in that
+  chat or one of their own tags, also when the agent holds a `deny_*` of its
+  own) MUST stay held, and so must its threads (`runtime-request-context.test.ts`,
   "a contact speaking in a chat governed by contact grants";
   `cron-commands.test.ts`, "lifted overlay unbound").
 - The automation refusal MUST name its cause, in the command and the store

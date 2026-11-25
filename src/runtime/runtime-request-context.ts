@@ -16,6 +16,7 @@ import {
 import {
   buildEffectiveCapabilities,
   capabilitySetCovers,
+  DENY_RELATION_PREFIX,
   hasAnyCapability,
   TURN_SCOPED_AUTHORITY_KIND,
   type AuthorityPrincipal,
@@ -625,7 +626,7 @@ function buildAgentIdentityRuntimeContextInput(options: {
   const taskSelfCapabilities = options.capabilities.filter(isTaskSelfCapability);
   // What the agent identity holds on this turn through an actor branch, before any relay or
   // observation narrowing; with no branch, the agent identity is its own actor. The relay stamp
-  // and the lifted overlay both compare against it.
+  // compares against it.
   const authorityThrough = (actorCapabilities?: ContextCapability[]): ContextCapability[] =>
     buildEffectiveCapabilities({
       agentCapabilities: agentIdentityCapabilities,
@@ -636,7 +637,7 @@ function buildAgentIdentityRuntimeContextInput(options: {
   // agent identity as the actor branch: agent_ceiling ∩ contact_chat_caps,
   // unless the sender's own power holds full access (`contactPowerCoversAgent`).
   const governingOverlay = shouldMaterializeIdentity && options.userOverlay?.active ? options.userOverlay : null;
-  const overlayLifted = governingOverlay !== null && contactPowerCoversAgent(governingOverlay, authorityThrough);
+  const overlayLifted = governingOverlay !== null && contactPowerCoversAgent(governingOverlay);
   const userOverlay = overlayLifted ? null : governingOverlay;
   const relayCaller = resolveRelayCaller(options.prompt);
   const relayNarrowing = relayCaller.narrowing;
@@ -800,16 +801,15 @@ function resolveRelayCaller(prompt: RuntimeLaunchPrompt): {
  *   enough: an agent `deny_*` drops admin from that set while the live ceiling keeps the admin
  *   shortcut, and an inform relay or a job reaches a stronger agent (Devin on #990). A chat grant
  *   never counts, full access included: automation written under it would outlive the grant.
- * - The overlay as this chat reads it covers the agent's authority, by the relay stamp's rule
- *   (`capabilitySetCovers` over `authorityThrough`), so a grant here that narrows the contact (a
- *   `deny_*` profile) keeps the overlay.
+ * - Nothing in the overlay narrows the contact: no `deny_*` in a grant covering this chat, nor in
+ *   the contact's own tags. With admin of its own, positive grants reduce nothing, so a deny is the
+ *   only way the chat can hold the contact below the agent, and it keeps the overlay. Comparing
+ *   effective sets cannot see it: an agent `deny_*` drops admin from both sides, while the live
+ *   ceiling would hand back what the chat denied (CodeRabbit on #990).
  */
-function contactPowerCoversAgent(
-  overlay: ContactChatOverlay,
-  authorityThrough: (actorCapabilities?: ContextCapability[]) => ContextCapability[],
-): boolean {
+function contactPowerCoversAgent(overlay: ContactChatOverlay): boolean {
   if (!canWithCapabilities(overlay.globalCapabilities, "admin", "system", "*")) return false;
-  return capabilitySetCovers(authorityThrough(overlay.capabilities), authorityThrough());
+  return !overlay.capabilities.some((capability) => capability.permission.startsWith(DENY_RELATION_PREFIX));
 }
 
 function buildUserOverlayMetadata(
