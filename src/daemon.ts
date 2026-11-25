@@ -76,6 +76,9 @@ import { startKnowledgeLeaderRunners, stopKnowledgeLeaderRunners } from "./knowl
 import { startSyncRunner, stopSyncRunner } from "./sync/index.js";
 import { startLibraryPinRunner, stopLibraryPinRunner } from "./library/pin-runner.js";
 import { startLibraryRequestRunner, stopLibraryRequestRunner } from "./library/request-runner.js";
+import { startMcpCallFollower, stopMcpCallFollower } from "./mcp/call-follower.js";
+import { getMcpGateway, startMcpGateway, stopMcpGateway } from "./mcp/gateway.js";
+import { scheduleNativeMcpStartupWarning } from "./mcp/native-startup-warning.js";
 import { startCloudTaskWatcher, stopCloudTaskWatcher } from "./cloud-agents/task-watcher.js";
 import { startCloudWorkerRunner, stopCloudWorkerRunner } from "./cloud-agents/worker-runner.js";
 import { startCloudApprovalClicks, stopCloudApprovalClicks } from "./cloud-agents/chat-routing.js";
@@ -339,6 +342,8 @@ async function shutdown(signal: string, exitCode = 0) {
       { name: "sync", stop: stopSyncRunner },
       { name: "library-pin", stop: stopLibraryPinRunner },
       { name: "library-request", stop: stopLibraryRequestRunner },
+      { name: "mcp-call-follower", stop: () => stopMcpCallFollower(getMcpGateway()) },
+      { name: "mcp-gateway", stop: stopMcpGateway },
       { name: "cloud-task", stop: stopCloudTaskWatcher },
       { name: "cloud-worker", stop: stopCloudWorkerRunner },
       { name: "cloud-delivery", stop: stopCloudDeliveryRunner },
@@ -686,6 +691,16 @@ export async function startDaemon() {
 
   await startLibraryRequestRunner();
   log.info("Library request runner started");
+
+  // Registered MCP servers: one connection per server, opened on first use; stdio servers run as children.
+  const mcpGateway = await startMcpGateway();
+  log.info("MCP gateway started");
+  // Servers a runtime still declares in its own configuration no longer load: one log warning per file.
+  scheduleNativeMcpStartupWarning();
+
+  // Background MCP calls (tasks and calls past their inline wait): follows them and delivers each outcome once.
+  startMcpCallFollower(mcpGateway);
+  log.info("MCP call follower started");
 
   await startCloudTaskWatcher();
   log.info("Cloud task watcher started");

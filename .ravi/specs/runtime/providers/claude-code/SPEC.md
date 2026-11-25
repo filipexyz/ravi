@@ -25,6 +25,8 @@ applies_to:
   - src/tui/components/ModelPicker.test.ts
   - src/remote-spawn.ts
   - src/remote-spawn.test.ts
+  - src/remote-spawn-nats.ts
+  - src/mcp/claude-facade.ts
 owners:
   - ravi-dev
 status: active
@@ -49,6 +51,9 @@ The Claude Code provider adapts the current default cloud execution bridge into 
 - Host session hooks: supported.
 - Plugins: supported.
 - Spec server: supported through MCP attachment.
+- Registered MCP servers: native tools `mcp__<server>__<tool>` through
+  in-process gateway facades (`mcp`, Claude Facade). Servers from `.mcp.json`,
+  plugins, user or managed settings and claude.ai connectors do not load.
 - Remote spawn: supported.
 - Dynamic tools through Ravi host services: not supported in the same path as Codex.
 - Runtime control operations: no provider-native `control()` handle today.
@@ -91,8 +96,51 @@ The Claude Code provider adapts the current default cloud execution bridge into 
   gate. It MUST check every tool call by name, including `mcp__*` tools of
   servers Claude Code loaded from its own configuration or plugins
   (`permissions/provider-runtime`, Runtime Tool Calls).
+- The PreToolUse hooks that ask a person (`mcp__spec__exit_spec_mode`,
+  `ExitPlanMode`, `AskUserQuestion`) MUST fail closed: Claude Code runs a tool
+  whose PreToolUse hook throws, so any error inside them (the approval or poll
+  request, the approval event, a crash recovery marker) MUST become a deny with
+  a fixed reason, and the error is logged, never put in the reason. A lost
+  attempt keeps its ownership-change denial. An approved, declined or
+  timed-out answer is handled as before.
 - The provider MUST start Claude Code with `@path` mentions off
   (`permissions/provider-runtime`, Prompt Text).
+- The provider MUST load registered MCP servers only (`mcp`):
+  - `Options.strictMcpConfig: true`, `skipMcpDiscovery: true` on every plugin
+    entry, and `settings.disableClaudeAiConnectors: true`, on every query;
+  - `Options.mcpServers` holds exactly the host servers plus the gateway
+    facades built for the turn, merged here and nowhere else; the two name
+    sets MUST be disjoint;
+  - only the host names go to the hook as `hostMcpServers`; only the facade
+    names go to it as `gatewayMcpServers`;
+  - the hook applies the provenance rule of `permissions/provider-runtime`
+    (Runtime Tool Calls): a tool reported from any source other than `sdk`
+    plus a declared name is denied, `use:tool:*` included;
+  - the `system/init` message's `mcp_servers` list MUST be compared with the
+    names of the query's final `Options.mcpServers` (host plus facade names).
+    Every declared server is in-process, so an entry under a declared name
+    from a source other than `sdk` is extra too; an entry without `source`
+    (a Claude Code older than the field) is compared by name. An extra entry
+    MUST fail the turn, not recoverable, with an error that names the server
+    and the source as quoted untrusted text, and MUST close the query, so the
+    turn does not run with that server attached. The turn failure is traced
+    with the server list. A missing entry does not fail the turn and is
+    logged; an init message without a server list is not compared (the hook
+    rule still applies).
+  - the three settings are set after the caller's permission options, so no
+    option a caller passes can turn them off; a caller's inline `settings`
+    object is kept, with `disableClaudeAiConnectors` forced to `true`.
+- `--strict-mcp-config` MUST survive the SSH and NATS remote-spawn argument
+  filters. A worker host that loads its own settings is still covered by the
+  hook rule and the init check.
+- Gateway facades are built per turn from the cached catalog with no network
+  call. A facade tool call runs `authorizeMcpUse` again and forwards under an
+  inline budget of 240 seconds, below the five-minute tool watchdog.
+- The tool watchdog MUST ignore a declared `timeout` argument for `mcp__`
+  names that are not host tools, so a remote tool cannot extend its own
+  inactivity window.
+- The runtime trace MUST list host and gateway servers with kind, transport,
+  era, tool count and status, and the server list Claude Code reported.
 - The provider MUST register the spec server under the name the tool gate
   declares as a host server (`SPEC_MCP_SERVER_NAME`).
 - The provider MUST attach host hooks only when capabilities allow it.
@@ -167,6 +215,16 @@ The Claude Code provider adapts the current default cloud execution bridge into 
 - Host exit-plan logic still reads a provider-specific plan directory; future providers need an explicit plan artifact/control contract instead of host hardcoding.
 - Provider-specific settings files are created during prepare but not captured as explicit runtime bootstrap state.
 - Host hooks are available here but not in Codex, which can hide permission behavior differences.
+- A Claude Code version, managed setting or connector that loads a server
+  despite the strict flags makes every turn fail on the init check until the
+  server is removed or registered.
+- A host with an enterprise MCP configuration (`managed-mcp.json`) cannot run
+  Ravi's Claude sessions: Claude Code 2.1.323 refuses to start with
+  `--strict-mcp-config` while that file exists ("You cannot use
+  --strict-mcp-config when an enterprise MCP config is present"), so every
+  query fails before the model runs. This fails closed by design.
+- A facade name placed in `hostMcpServers` exempts every remote tool from the
+  name check.
 - Regressing to a native query environment copied only at provider-session
   start freezes turn-scoped authority. Grants and revocations then remain stale
   until the provider session or daemon restarts.

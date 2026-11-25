@@ -20,6 +20,8 @@ applies_to:
   - src/plugins/codex-skills.ts
   - src/runtime/codex-provider.test.ts
   - src/runtime/codex-hooks.test.ts
+  - src/runtime/codex-mcp-isolation.ts
+  - src/runtime/codex-mcp-isolation.test.ts
 owners:
   - ravi-dev
 status: active
@@ -48,6 +50,10 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 - Runtime control: thread list/read/rollback/fork, turn interrupt, and goal get/set/clear through `ravi sessions runtime`. The provider also implements `turn.steer`, used only by the host dispatcher for implicit native steer; the host refuses an explicit `turn.steer`/`turn.follow_up` with `RUNTIME_CONTROL_DISABLED` until the durable attempt-input journal exists (`daemon/restart/crash-recovery`), and host-facing operation lists report them under `disabledOperations`.
 - Tool access requirement: `tool_surface`.
 - Host session hooks/plugins/spec server/remote spawn: not supported.
+- MCP: Codex's own MCP servers are disabled at launch. Registered servers
+  (`mcp`) are reached only through `ravi mcp tools` and
+  `ravi mcp call --execute` in the shell tool, under the same
+  `use:tool:mcp__<server>__<tool>` check as every runtime.
 
 ## Event Mapping
 
@@ -123,8 +129,81 @@ Stored goal control initializes an experimental app-server connection without `t
 - Codex `thread.fork` MUST remain a provider-native runtime control until a canonical fork materializer proves parent/child thread mapping, optional child rollback, prompt atom replay, and provider state persistence.
 - A provider-local fork used only to recover one failed ambiguous turn MUST NOT advertise canonical `supportsSessionFork`.
 
+## MCP Isolation
+
+- The provider MUST read the `[mcp_servers]` keys of every configuration
+  layer Codex loads for the session: `/etc/codex/config.toml`,
+  `/etc/codex/managed_config.toml`, `$CODEX_HOME/config.toml` (default
+  `<HOME>/.codex`), and the project layers `<dir>/.codex/config.toml` for each
+  folder from the project root (the nearest ancestor holding `.git`, else the
+  cwd) down to the cwd. A project layer counts only when its folder is
+  trusted: the folder's own `[projects."<path>"] trust_level` decides, and
+  without one the git root's entry decides. Codex does not load an untrusted
+  layer, and an override for a key no loaded layer defines makes Codex refuse
+  to start.
+- For each key the provider MUST append `-c mcp_servers.<key>.enabled=false`
+  to the app-server launch arguments, and `-c features.apps=false` to turn
+  Codex's apps (connectors) feature off, also when no server is configured.
+  `-c mcp_servers={}` MUST NOT be relied on: Codex merges tables, so it does
+  not clear configured servers.
+- Codex splits a `-c` key path on every dot and does not read quotes, so only
+  keys matching `^[A-Za-z0-9_-]+$` can be turned off. Any other key MUST fail
+  the session start closed, before Codex runs, with an error that names the
+  key and its file and points to `ravi mcp import`. One exported test,
+  `isCodexOverridableMcpKey`, decides it, for the launch and for `ravi
+  doctor`'s warning about such an entry (spec mcp); one exported walk,
+  `collectCodexMcpConfigSources`, lists the layers and their keys for both.
+- A leading UTF-8 byte order mark is dropped before a file is parsed (Bun's
+  TOML parser reads such a file as an empty table). Bun's parser also rejects
+  valid TOML that Codex accepts (offset and local date-times, local dates,
+  local times, on Bun 1.3; Bun 1.4 accepts them), so when it throws, a strict
+  line scan reads the file instead:
+  every `[mcp_servers.<key>...]` and `[[mcp_servers.<key>...]]` header,
+  every dotted `mcp_servers.<key>.` assignment (at the top level or under
+  `[mcp_servers]`), the keys of a top-level `mcp_servers = { ... }` inline
+  table, bare, basic-quoted and literal-quoted keys, and the
+  `[projects."<path>"] trust_level` strings, while skipping strings of all
+  four kinds, arrays and inline tables over several lines, comments and bare
+  values (whitespace around a value, before a comment or the line's end, is a
+  space or a tab, as in TOML). A line the scan cannot place, or a shape it cannot read
+  (`mcp_servers` that is not a table, `projects` as an inline table), means
+  it cannot decide.
+- A configuration file that exists but cannot be read, that neither the
+  parser nor the scan can read, or whose `mcp_servers` is not a table, MUST
+  fail the session start closed, with an error naming the file and saying
+  that Ravi could not read it (never that the file is invalid); it MUST NOT
+  be read as "no servers". A file with no MCP server at all simply works.
+- After `thread/start`, `thread/resume` and `thread/fork` (including the fork
+  that recovers an ambiguous turn), the provider MUST call
+  `mcpServerStatus/list` with the thread id (`detail: "toolsAndAuthOnly"`,
+  following `nextCursor`, bounded wait). Codex still lists a disabled server,
+  with `runtimeStatus: "disabled"` and no tools; any entry with another or a
+  missing status, or with tools, MUST fail the session closed with an error
+  that names the server(s) and points to `ravi mcp import`. An error, a
+  timeout or an answer without a `data` list MUST fail the session closed; a
+  failed call (a Codex too old to answer it, for example) says the check was
+  verified on Codex 0.172.0 and to update Codex, without guessing the
+  installed version. No
+  `turn/start` is sent before the check passes. The call MUST carry the thread
+  id: without it Codex reloads its configuration without the project layers.
+- An `item/mcpToolCall/*` event, or an `item/started|completed` item of the MCP
+  tool call type, MUST fail the turn closed and stop the app-server process:
+  Codex is not supposed to have an MCP tool, so such a call reached no Ravi
+  decision. The error names the server, never the arguments.
+- The launch overrides are part of the app-server respawn decision: a change
+  in the configured keys MUST respawn a reused app-server before the next
+  turn.
+- The global Bash hook and its `^(Bash|shell)$` matcher are unchanged by MCP
+  isolation.
+- Codex isolation uses the operator's Codex home, not a private
+  `CODEX_HOME` per agent, so Codex login refresh and native thread resume keep
+  working.
+- A thread forked by the native `thread.fork` runtime control is not checked;
+  no turn of this session runs on it until a later start or resume, which is.
+
 ## Validation
 
+- `bun test src/runtime/codex-mcp-isolation.test.ts`
 - `bun test src/runtime/codex-provider.test.ts`
 - `bun test src/runtime/codex-hooks.test.ts`
 - `bun test src/runtime/public-failure.test.ts`
@@ -146,4 +225,7 @@ Stored goal control initializes an experimental app-server connection without `t
 - Model provider/model metadata may be absent and must not break terminal persistence.
 - If a shell command cannot see `RAVI_CONTEXT_KEY`, treat it as a runtime/tool-boundary bug. Do not compensate by re-enabling Codex native dynamic tools.
 - Runtime control/capability metadata regressions can break dispatcher decisions; `RuntimeCapabilities` coverage must stay aligned with provider behavior.
+- A server enabled in Codex configuration after the thread started, or brought
+  by a Codex plugin the overrides do not name, is caught only by the next
+  start's status check or by the MCP tool call rule.
 - Skill sync can be mistaken for loaded state. The adapter MUST not populate `loadedSkills` from `syncCodexSkills` or prompt catalog text alone.

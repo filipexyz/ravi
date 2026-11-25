@@ -41,7 +41,8 @@ export function captureRestartTurnAuthority(
       envelope?._trigger ||
       envelope?._triggerAuthority ||
       envelope?._heartbeat ||
-      envelope?._sessionFollowup,
+      envelope?._sessionFollowup ||
+      envelope?._mcpCall,
   );
   const recorded = {
     v: 1 as const,

@@ -329,6 +329,22 @@ interface BashHookOptions {
    * is the grant. Every other MCP tool needs `use tool:<name>`.
    */
   hostMcpServers?: readonly string[];
+  /**
+   * Names of the gateway facades this session attached: in-process servers
+   * that forward calls to MCP servers registered in Ravi (spec mcp). They are
+   * never host servers: their tools are checked by name like any other tool,
+   * and the gateway authorizes each call again. Must not share a name with
+   * `hostMcpServers`. A function is read on every call: the Claude session
+   * rebuilds its facades per turn, so the list follows the current turn.
+   */
+  gatewayMcpServers?: readonly string[] | (() => readonly string[]);
+}
+
+/** The gateway names in force for this call. A list that cannot be read is empty: nothing passes as a gateway tool. */
+function currentGatewayMcpServers(options: Pick<BashHookOptions, "gatewayMcpServers">): readonly string[] {
+  const value = options.gatewayMcpServers;
+  const names = typeof value === "function" ? value() : value;
+  return Array.isArray(names) ? names : [];
 }
 
 /**
@@ -385,6 +401,120 @@ function isUnattributedHostMcpName(
 ): boolean {
   if (input.mcp_server !== undefined || !hostMcpServers) return false;
   return hostMcpServers.some((name) => toolName.startsWith(`mcp__${name}__`));
+}
+
+/** Untrusted server text for a denial the model reads: quoted, single line, bounded. */
+function quoteUntrustedMcpText(value: string): string {
+  return JSON.stringify(value.replace(/[\u0000-\u001f\u007f]/g, " "));
+}
+
+/**
+ * Registered-only provenance (permissions/provider-runtime, Runtime Tool
+ * Calls). Returns the denial reason for an `mcp__` tool that does not come
+ * from a server Ravi declared for this session, or undefined when the call may
+ * go on to the name check. Host tools are exempted before this runs.
+ *
+ * - With a reported `mcp_server`, only an in-process (`sdk`) server under a
+ *   gateway name passes. Anything else (a `.mcp.json`, user, local or plugin
+ *   server, a claude.ai connector, a managed server, an `sdk` server Ravi did
+ *   not declare) is denied, whatever the turn's grants say.
+ * - Without a report (an older Claude Code, for example on a remote-spawn
+ *   host), a name under a host or gateway prefix goes on to the name check, as
+ *   in phase 1a, and any other `mcp__` name is denied.
+ */
+function unregisteredMcpServerDenial(
+  input: PreToolUseHookInput,
+  toolName: string,
+  options: Pick<BashHookOptions, "hostMcpServers" | "gatewayMcpServers">,
+): string | undefined {
+  if (!toolName.startsWith("mcp__")) return undefined;
+  const gateway = currentGatewayMcpServers(options);
+  const server = input.mcp_server;
+  if (server !== undefined && server !== null) {
+    if (
+      server.source === "sdk" &&
+      typeof server.name === "string" &&
+      gateway.includes(server.name) &&
+      toolName.startsWith(`mcp__${server.name}__`)
+    ) {
+      return undefined;
+    }
+    const described = describeMcpServer(server);
+    const label = described
+      ? `MCP server ${quoteUntrustedMcpText(described.name)} (source ${quoteUntrustedMcpText(described.source)})`
+      : "An MCP server that did not report its name and source";
+    return `Permission denied: ${label} is not registered in Ravi, so tool:${toolName} cannot run. Register the server with ravi mcp add or ravi mcp import, or remove it from the runtime's configuration.`;
+  }
+  const declared = [...(options.hostMcpServers ?? []), ...gateway];
+  if (declared.some((name) => toolName.startsWith(`mcp__${name}__`))) return undefined;
+  return `Permission denied: tool:${toolName} belongs to no MCP server Ravi declared for this session, and the runtime did not report which server owns it.`;
+}
+
+/**
+ * Records a provenance denial. No tool grant resolves it, so it is recorded
+ * against the server (`use mcp_server:<name>`), as the gateway records an
+ * unregistered server, with the tool and the reported source in the detail.
+ */
+function recordUnregisteredMcpServerDenial(
+  input: PreToolUseHookInput,
+  toolName: string,
+  agentId: string | undefined,
+  reason: string,
+): void {
+  const mcpServer = describeMcpServer(input.mcp_server);
+  const reported = input.mcp_server !== undefined && input.mcp_server !== null;
+  log.warn("Tool blocked: MCP server not registered in Ravi", {
+    agentId: agentId ?? "unknown",
+    tool: toolName,
+    ...(mcpServer ? { mcpServer } : { mcpServerReported: reported }),
+  });
+  const detail = {
+    tool: toolName,
+    mcpCode: "not_registered",
+    mcpServer: mcpServer ?? { reported },
+  };
+  if (!agentId) {
+    emitPermissionDeniedAudit({ type: "mcp", agentId: "unknown", denied: `tool:${toolName}`, reason, detail });
+    return;
+  }
+  const scopeCtx = getScopeContext();
+  const provenance = buildAuditContextProvenance(scopeCtx);
+  const objectId = mcpServer?.name ?? "unknown";
+  recordAndEmitPermissionDenial({
+    subjectType: "agent",
+    subjectId: agentId,
+    agentId,
+    sessionKey: scopeCtx.sessionKey,
+    sessionName: scopeCtx.sessionName,
+    contextId: scopeCtx.contextId,
+    relation: "use",
+    objectType: "mcp_server",
+    objectId,
+    reason,
+    detail: { ...detail, ...(provenance ? { context: provenance } : {}) },
+    audit: {
+      type: "mcp",
+      agentId,
+      denied: `mcp_server:${objectId}`,
+      reason,
+      detail,
+      ...(provenance ? { context: provenance } : {}),
+    },
+  });
+}
+
+/** A name in both lists would exempt a forwarding server's tools from the name check. */
+function assertDisjointMcpServerNames(
+  hostMcpServers: readonly string[] | undefined,
+  gatewayMcpServers: readonly string[] | (() => readonly string[]) | undefined,
+): void {
+  if (typeof gatewayMcpServers === "function") return; // checked on every call
+
+  if (!hostMcpServers || !gatewayMcpServers) return;
+  const shared = gatewayMcpServers.filter((name) => hostMcpServers.includes(name));
+  if (shared.length > 0) {
+    throw new Error(`MCP server names cannot be both host and gateway servers: ${shared.join(", ")}`);
+  }
 }
 
 export interface BashPermissionContext {
@@ -531,6 +661,15 @@ function canWithMaterializedAgentCapabilities(
 
 function isSuperadminContext(ctx: BashPermissionContext): boolean {
   return canWithBashContext(ctx, "admin", "system", "*");
+}
+
+/**
+ * The `use tool:<name>` decision the tool hook makes, for callers outside the
+ * hook that must reach the same answer (the MCP gateway re-checks remote tool
+ * calls with it, spec mcp).
+ */
+export function canUseToolInContext(ctx: BashPermissionContext, toolName: string): boolean {
+  return canWithBashContext(ctx, "use", "tool", toolName);
 }
 
 /** Already-issued arbitrary execution authority, including all context narrowing. */
@@ -1150,6 +1289,7 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
  * names is not consulted, because a name outside it would run unchecked.
  */
 export function createToolPermissionHook(options: BashHookOptions): HookCallbackMatcher {
+  assertDisjointMcpServerNames(options.hostMcpServers, options.gatewayMcpServers);
   const toolPermissionHook: HookCallback = async (input) => {
     const agentId = options.getAgentId();
     const toolName = input.tool_name;
@@ -1157,7 +1297,18 @@ export function createToolPermissionHook(options: BashHookOptions): HookCallback
       return buildPreToolUseDenyResult("Permission denied: a tool call without a tool name cannot be checked");
     }
 
+    // A name in both lists would exempt a forwarding server's tools. The session never builds one; if it
+    // did, the throw becomes a denial (failClosed).
+    if (toolName.startsWith("mcp__")) {
+      assertDisjointMcpServerNames(options.hostMcpServers, currentGatewayMcpServers(options));
+    }
     if (isHostMcpTool(input, toolName, options.hostMcpServers)) return {};
+
+    const provenanceDenial = unregisteredMcpServerDenial(input, toolName, options);
+    if (provenanceDenial) {
+      recordUnregisteredMcpServerDenial(input, toolName, agentId, provenanceDenial);
+      return buildPreToolUseDenyResult(provenanceDenial);
+    }
 
     if (!agentId) {
       const reason = `Permission denied: missing agent identity cannot use tool:${toolName}`;

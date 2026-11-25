@@ -13,6 +13,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { isCloudAuthError } from "../cloud-auth/errors.js";
+import { mcpSkillPluginEntries } from "../mcp/skill-plugin.js";
 import type { listCloudProjects } from "../cloud-projects/client.js";
 import { resolveConsoleScope, type ConsoleScopeResolverDeps } from "../console-scope/resolver.js";
 import { publish } from "../nats.js";
@@ -35,6 +36,7 @@ import {
   dbListLibraryPins,
   dbRecordLibraryPinError,
   dbReplaceLibraryPins,
+  dbSetLibraryPluginDir,
   dbTouchLibraryPinState,
   type LibraryPinRow,
   type LibraryPinState,
@@ -43,8 +45,10 @@ import {
   assignLibrarySkillNames,
   baseLibrarySkillName,
   pruneLibraryPluginGenerations,
+  withLibraryPluginWriteLock,
   writeLibraryPluginGeneration,
   type LibraryPluginOptions,
+  type LibraryPluginSkill,
 } from "./plugin.js";
 import { libraryRef, type LibraryRef } from "./refs.js";
 import { LibraryCommandError } from "./service.js";
@@ -320,31 +324,39 @@ export async function applyLibraryPins(
       changed: false,
     };
   }
-  const pluginDir = writeLibraryPluginGeneration(
-    fingerprint,
-    rows.map((row) => ({
-      agentId: row.agentId,
-      skillName: row.skillName,
-      externalAllowed: row.externalAllowed,
-      sourceDir: sources.get(row.libraryId)!,
-      ref: row.ref,
-      version: row.version,
-    })),
-    deps.plugins,
-  );
-  dbReplaceLibraryPins({
-    consoleUrl: session.consoleUrl,
-    organizationId: session.orgId,
-    installationId: response.installation.id,
-    installationName: response.installation.name,
-    revision: response.revision,
-    // An apply that left pins out tries the missing ones again on the next sync.
-    fingerprint: storedFingerprint,
-    pluginDir,
-    pins: rows,
-    now,
-  });
-  pruneLibraryPluginGenerations(pluginDir, deps.plugins);
+  // One writer at a time: a remote skill pin change in the daemon writes generations too.
+  withLibraryPluginWriteLock(() => {
+    // The remote MCP skill stubs (spec mcp, Remote Skills) live in the same
+    // plugin, from their own table: a Console sync never drops them.
+    const pluginDir = writeLibraryPluginGeneration(
+      fingerprint,
+      [
+        ...rows.map((row) => ({
+          agentId: row.agentId,
+          skillName: row.skillName,
+          externalAllowed: row.externalAllowed,
+          sourceDir: sources.get(row.libraryId)!,
+          ref: row.ref,
+          version: row.version,
+        })),
+        ...mcpSkillPluginEntries(new Set(rows.map((row) => row.skillName.toLowerCase()))),
+      ],
+      deps.plugins,
+    );
+    dbReplaceLibraryPins({
+      consoleUrl: session.consoleUrl,
+      organizationId: session.orgId,
+      installationId: response.installation.id,
+      installationName: response.installation.name,
+      revision: response.revision,
+      // An apply that left pins out tries the missing ones again on the next sync.
+      fingerprint: storedFingerprint,
+      pluginDir,
+      pins: rows,
+      now,
+    });
+    pruneLibraryPluginGenerations(pluginDir, deps.plugins);
+  }, deps.plugins);
   log.info("Library pins applied", {
     installation: response.installation.id,
     revision: response.revision,
@@ -359,6 +371,59 @@ export async function applyLibraryPins(
     unavailable,
     changed: true,
   };
+}
+
+export interface LibraryPluginRebuild {
+  pluginDir: string | null;
+  /** Library pins whose cached files were missing: left out until the next Console sync. */
+  missing: number;
+}
+
+/**
+ * Write a new plugin generation from the pins as stored, without the Console:
+ * the Library pins of the last sync (from the Library cache) plus the remote
+ * MCP skill stubs. Called when a remote skill pin changes (spec mcp, Remote
+ * Skills). A Library pin whose cached files are gone is left out and the
+ * applied fingerprint is forgotten, so the next Console sync writes its full
+ * generation again. Throws when the generation cannot be written; the
+ * previous one stays current.
+ */
+export function rebuildLibraryPluginGeneration(deps: LibraryPinDeps = {}): LibraryPluginRebuild {
+  // One writer at a time: a Console Library sync (often in the CLI) writes generations too.
+  return withLibraryPluginWriteLock(() => {
+    const state = safeState();
+    const pins = dbListLibraryPins();
+    const orgId = state?.organizationId ?? null;
+    const library: LibraryPluginSkill[] = [];
+    let missing = 0;
+    for (const pin of pins) {
+      const dir = orgId ? libraryVersionDir(orgId, pin.item, pin.version, deps.cache) : "";
+      if (!dir || !existsSync(join(dir, "SKILL.md"))) {
+        missing++;
+        continue;
+      }
+      library.push({
+        agentId: pin.agentId,
+        skillName: pin.skillName,
+        externalAllowed: pin.externalAllowed,
+        sourceDir: dir,
+        ref: pin.ref,
+        version: pin.version,
+      });
+    }
+    const remote = mcpSkillPluginEntries(new Set(pins.map((pin) => pin.skillName.toLowerCase())));
+    const fingerprint = `${state?.fingerprint ?? "no-console-sync"}:local`;
+    const pluginDir = writeLibraryPluginGeneration(fingerprint, [...library, ...remote], deps.plugins);
+    dbSetLibraryPluginDir(pluginDir, { resetFingerprint: missing > 0 });
+    pruneLibraryPluginGenerations(pluginDir, deps.plugins);
+    log.info("Library plugin rebuilt for remote skill pins", {
+      library: library.length,
+      remote: remote.length,
+      missing,
+    });
+    emitConfigChanged(deps);
+    return { pluginDir, missing };
+  }, deps.plugins);
 }
 
 /** The local pins without one (agent, item): applied right away when the Console could not be read after an unpin. */

@@ -122,6 +122,8 @@ describe("knowledgeAudienceForPrompt", () => {
     expect(knowledgeAudienceForPrompt(dm(OWNER, OWNER_CHAT, { _heartbeat: true }), ctx, deps())).toBe("none");
     expect(knowledgeAudienceForPrompt({ prompt: "event", _trigger: true, _triggerId: "t1" }, ctx, deps())).toBe("none");
     expect(knowledgeAudienceForPrompt(dm(OWNER, OWNER_CHAT, { _trigger: true }), ctx, deps())).toBe("none");
+    const mcpCall = { id: "mc_01jd8x00000000000000000000", server: "console", tool: "publish", status: "ok" };
+    expect(knowledgeAudienceForPrompt(dm(OWNER, OWNER_CHAT, { _mcpCall: mcpCall }), ctx, deps())).toBe("none");
   });
 
   it("gives none for a turn with no chat and no operator marker", () => {

@@ -30,7 +30,8 @@ export type ApprovalInboundIgnoreReason =
   | "unauthorized_grantor"
   | "missing_actor"
   | "grant_not_allowed"
-  | "scope_not_allowed";
+  | "scope_not_allowed"
+  | "not_an_approval";
 
 export interface ApprovalGrantDecision {
   readonly intent: PermissionGrantIntent;
@@ -75,6 +76,9 @@ export function evaluateApprovalInboundEvent(event: ApprovalInboundEvent, now: n
     (candidate.requestId ? getApprovalRequest(candidate.requestId) : null) ??
     (candidate.messageId ? getApprovalRequestByMessageId(candidate.messageId) : null);
   if (!request) return { kind: "ignore", reason: "unknown_request" };
+  // A question asked of one person (an MCP elicitation) is answered only by
+  // that person through its own waiter; no reaction, reply or click decides it here.
+  if (request.type === "elicitation") return { kind: "ignore", reason: "not_an_approval" };
   if (!isApprovalRequestOpen(request, now)) return { kind: "ignore", reason: "not_open" };
 
   if (candidate.channel && candidate.channel !== request.channel) {

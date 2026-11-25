@@ -21,6 +21,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { registerCommands } from "./registry.js";
+import { AGENT_CONTRACT_DOMAINS } from "./agent-contract-domains.js";
 import * as allCommands from "./commands/index.js";
 import {
   argsForUsageContract,
@@ -80,77 +81,7 @@ registerCommands(program, Object.values(allCommands) as Array<new () => object>)
 // Manual v2 contract, installed per migrated domain group: commander usage
 // errors (unknown flag, missing required argument) exit 2 with the error
 // envelope instead of plain text with exit 1. Unlisted groups keep commander's
-// default behavior until they are migrated.
-const AGENT_CONTRACT_DOMAINS = [
-  "decisions",
-  "access",
-  "agents",
-  "artifacts",
-  "audio",
-  "bridges",
-  "bridge",
-  "bug",
-  "calendars",
-  "channels",
-  "chats",
-  "cloud",
-  "commands",
-  "connectors",
-  "contacts",
-  "context",
-  "costs",
-  "credentials",
-  "crm",
-  "cron",
-  "devin",
-  "feedback",
-  "gmail",
-  "heartbeat",
-  "hooks",
-  "identity",
-  "image",
-  "inbox",
-  "insights",
-  "instances",
-  "invites",
-  "knowledge",
-  "mail",
-  "media",
-  "meetings",
-  "metrics",
-  "observers",
-  "pages",
-  "pr",
-  "projects",
-  "prox",
-  "react",
-  "routes",
-  "rules",
-  "runtime",
-  "self",
-  "sessions",
-  "settings",
-  "skill-gates",
-  "skills",
-  "slack",
-  "specs",
-  "stickers",
-  "sync",
-  "tag-rules",
-  "tags",
-  "tasks",
-  "themes",
-  "threads",
-  "transcribe",
-  "triggers",
-  "video",
-  "watch",
-  "whatsapp",
-  "widgets",
-  "work-objects",
-  "workflows",
-  "yt",
-];
+// default behavior until they are migrated (src/cli/agent-contract-domains.ts).
 for (const domain of AGENT_CONTRACT_DOMAINS) installUsageContract(program, domain);
 
 /**

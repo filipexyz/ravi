@@ -4,6 +4,8 @@ import type { TurnProvenance } from "../runtime/turn-provenance.js";
 import type {
   RuntimeCapabilities,
   RuntimeEffort,
+  RuntimeMcpServerDetail,
+  RuntimeReportedMcpServers,
   RuntimeThinking,
   RuntimeToolAccessMode,
   RuntimeUsage,
@@ -67,6 +69,8 @@ export interface RuntimeTraceAdapterRequestInput extends RuntimeTraceIdentity {
   hasHooks: boolean;
   pluginNames: string[];
   mcpServerNames: string[];
+  /** Host and gateway servers declared to the runtime for this turn (spec mcp, Gateway). */
+  mcpServers?: RuntimeMcpServerDetail[];
   hasRemoteSpawn: boolean;
   toolAccessMode?: RuntimeToolAccessMode | null;
   capabilitySummary?: Record<string, unknown>;
@@ -188,6 +192,46 @@ export function recordRuntimeTraceEvent(input: RuntimeTraceEventInput): void {
   });
 }
 
+/**
+ * What the runtime itself reported loading (Claude Code `system/init`),
+ * compared with what Ravi declared: `match`, `mismatch` (an extra or a
+ * missing server; an extra one also fails the turn) or `unreported` (the
+ * runtime sent no list). Names, sources and statuses only.
+ */
+export function recordRuntimeMcpServersReport(identity: RuntimeTraceIdentity, report: RuntimeReportedMcpServers): void {
+  const status = !report.reported
+    ? "unreported"
+    : report.extra.length > 0 || report.missing.length > 0
+      ? "mismatch"
+      : "match";
+  recordRuntimeTraceEvent({
+    ...identity,
+    eventType: "runtime.mcp_servers",
+    eventGroup: "runtime",
+    status,
+    payloadJson: {
+      mcp_declared: report.declared,
+      mcp_runtime_reported: report.reported ? report.servers : null,
+      extra: report.extra,
+      missing: report.missing,
+    },
+  });
+}
+
+/**
+ * Gateway MCP servers a turn left out because a host server holds their
+ * names (spec mcp, Claude Facade): the host server wins, the turn goes on.
+ */
+export function recordRuntimeMcpNameOverlap(identity: RuntimeTraceIdentity, names: readonly string[]): void {
+  recordRuntimeTraceEvent({
+    ...identity,
+    eventType: "runtime.mcp_name_overlap",
+    eventGroup: "runtime",
+    status: "degraded",
+    payloadJson: { dropped_gateway_servers: names.map((name) => name.slice(0, 64)) },
+  });
+}
+
 export function recordAdapterRequestTrace(input: RuntimeTraceAdapterRequestInput): RuntimeTraceTurnStartResult | null {
   return safeTrace("record adapter request trace", () => {
     const now = Date.now();
@@ -236,6 +280,7 @@ export function recordAdapterRequestTrace(input: RuntimeTraceAdapterRequestInput
       plugin_count: input.pluginNames.length,
       plugin_names: input.pluginNames,
       mcp_server_names: input.mcpServerNames,
+      mcp_servers: input.mcpServers ?? [],
       has_remote_spawn: input.hasRemoteSpawn,
       tool_access_mode: input.toolAccessMode ?? null,
       capability_summary: input.capabilitySummary ?? {},

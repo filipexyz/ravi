@@ -16,19 +16,30 @@
  * thread. A generation is written once, atomically (staging directory, then
  * rename), and older generations are pruned only after a newer one exists, so
  * a running session never sees its plugin change under it.
+ *
+ * Two processes write generations: a Console Library sync (often the CLI) and
+ * a remote MCP skill pin change (the daemon). Each reads its inputs, writes
+ * the generation and records it under one lock file in the plugins root
+ * (`withLibraryPluginWriteLock`), so neither records a generation built from
+ * inputs the other has just replaced.
  */
 
 import { createHash, randomBytes } from "node:crypto";
 import {
+  closeSync,
   cpSync,
   existsSync,
+  linkSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
   renameSync,
   rmSync,
   statSync,
+  unlinkSync,
   writeFileSync,
+  writeSync,
 } from "node:fs";
 import { join, resolve, sep } from "node:path";
 
@@ -49,11 +60,18 @@ export interface LibraryPluginSkill {
   /** Directory and frontmatter name inside the plugin. */
   skillName: string;
   externalAllowed: boolean;
-  /** Cached version directory holding the skill's files (and `item.json`). */
+  /** Cached version directory holding the skill's files (and `item.json`); unused with `skillMarkdown`. */
   sourceDir: string;
-  /** `org/<slug>` or `<project>/<slug>`, for the plugin's README. */
+  /** `org/<slug>` or `<project>/<slug>` (`mcp:<server>:<path>` for a remote skill stub). */
   ref: string;
   version: number;
+  /**
+   * A generated `SKILL.md` written as the skill's only file instead of a copy
+   * of `sourceDir` (the stub of a remote MCP skill, spec mcp Remote Skills).
+   */
+  skillMarkdown?: string;
+  /** What else identifies the content (a remote stub's manifest digest); part of the generation key. */
+  contentKey?: string;
 }
 
 export interface LibraryPluginOptions {
@@ -62,6 +80,138 @@ export interface LibraryPluginOptions {
 
 export function libraryPluginsRoot(options: LibraryPluginOptions = {}): string {
   return join(options.stateDir ?? getRaviStateDir(), "library", "plugins");
+}
+
+export const LIBRARY_PLUGIN_LOCK_FILE = ".write.lock";
+export const LIBRARY_PLUGIN_LOCK_TIMEOUT_MS = 30_000;
+/** A lock older than this, or whose holder process is gone, is broken. */
+export const LIBRARY_PLUGIN_LOCK_STALE_MS = 120_000;
+
+export class LibraryPluginLockBusyError extends Error {
+  constructor() {
+    super("The Library plugin is being written by another process; try again.");
+    this.name = "LibraryPluginLockBusyError";
+  }
+}
+
+/**
+ * Whether the lock names a holder process that is gone. Content that names no
+ * process (empty, cut short) proves nothing: such a lock is broken by age only.
+ */
+function lockHolderGone(content: string): boolean {
+  const match = /^([1-9][0-9]*) \S+$/.exec(content);
+  if (!match) return false;
+  const pid = Number.parseInt(match[1]!, 10);
+  if (!Number.isSafeInteger(pid)) return false;
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch (error) {
+    // no-cause: EPERM means the process exists under another user; only ESRCH means it is gone.
+    return (error as NodeJS.ErrnoException).code === "ESRCH";
+  }
+}
+
+/** Remove the lock when its holder is gone or it is older than the stale limit; true when the caller may try again. */
+function breakStaleLibraryPluginLock(path: string, staleMs: number): boolean {
+  let content: string;
+  let mtimeMs: number;
+  let ino: number;
+  try {
+    content = readFileSync(path, "utf8");
+    const stat = statSync(path);
+    mtimeMs = stat.mtimeMs;
+    ino = stat.ino;
+  } catch {
+    // no-cause: the lock went away while it was read; try to take it again.
+    return true;
+  }
+  if (Date.now() - mtimeMs < staleMs && !lockHolderGone(content)) return false;
+  const aside = `${path}.stale-${randomBytes(6).toString("hex")}`;
+  try {
+    renameSync(path, aside);
+  } catch {
+    // no-cause: another waiter moved it first; try to take the lock again.
+    return true;
+  }
+  try {
+    const moved = statSync(aside);
+    if (moved.ino !== ino || readFileSync(aside, "utf8") !== content) {
+      // Not the lock that was judged stale: a live one. Put it back unless a new one took the path.
+      if (!existsSync(path)) renameSync(aside, path);
+      return false;
+    }
+  } catch {
+    // no-cause: a lock that cannot be compared is treated as live; the caller waits.
+    return false;
+  } finally {
+    try {
+      if (existsSync(aside)) unlinkSync(aside);
+    } catch {
+      // no-cause: a leftover aside file holds nothing anyone waits on.
+    }
+  }
+  return true;
+}
+
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * Run `fn` holding the plugin write lock: a file created exclusively in the
+ * plugins root, shared by the daemon and the CLI. `fn` reads the inputs of a
+ * generation, writes it and records it. Throws `LibraryPluginLockBusyError`
+ * when the lock stays held past the timeout; the previous generation stays.
+ */
+export function withLibraryPluginWriteLock<T>(
+  fn: () => T,
+  options: LibraryPluginOptions & { timeoutMs?: number; staleMs?: number } = {},
+): T {
+  const root = libraryPluginsRoot(options);
+  mkdirSync(root, { recursive: true });
+  const path = join(root, LIBRARY_PLUGIN_LOCK_FILE);
+  const owner = `${process.pid} ${randomBytes(8).toString("hex")}`;
+  const deadline = Date.now() + (options.timeoutMs ?? LIBRARY_PLUGIN_LOCK_TIMEOUT_MS);
+  const staleMs = options.staleMs ?? LIBRARY_PLUGIN_LOCK_STALE_MS;
+  // The owner is written to a file of its own first and linked into place, so
+  // the lock never exists without its owner line.
+  const pending = `${path}.${owner.replace(" ", "-")}`;
+  const fd = openSync(pending, "wx", 0o600);
+  try {
+    writeSync(fd, owner);
+  } finally {
+    closeSync(fd);
+  }
+  try {
+    for (;;) {
+      try {
+        linkSync(pending, path);
+        break;
+      } catch (error) {
+        // no-cause: EEXIST is the expected contention for the lock; any other error is thrown as it is.
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        if (breakStaleLibraryPluginLock(path, staleMs)) continue;
+        if (Date.now() >= deadline) throw new LibraryPluginLockBusyError();
+        sleepSync(25);
+      }
+    }
+  } finally {
+    try {
+      unlinkSync(pending);
+    } catch {
+      // no-cause: a leftover owner file holds nothing anyone waits on.
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    try {
+      if (readFileSync(path, "utf8") === owner) unlinkSync(path);
+    } catch {
+      // no-cause: the lock was broken as stale meanwhile; nothing of ours is left to remove.
+    }
+  }
 }
 
 /** Whether a path lies inside a generated Library plugin tree. */
@@ -173,7 +323,15 @@ export function writeLibraryPluginGeneration(
 function generationKey(fingerprint: string, skills: readonly LibraryPluginSkill[]): string {
   const written = skills
     .map((skill) =>
-      [skill.agentId, skill.skillName, skill.externalAllowed ? 1 : 0, skill.ref, skill.version].join("\0"),
+      [
+        skill.agentId,
+        skill.skillName,
+        skill.externalAllowed ? 1 : 0,
+        skill.ref,
+        skill.version,
+        skill.contentKey ?? "",
+        skill.skillMarkdown === undefined ? "" : createHash("sha256").update(skill.skillMarkdown).digest("hex"),
+      ].join("\0"),
     )
     .sort()
     .join("\n");
@@ -223,6 +381,11 @@ function writePlugin(pluginDir: string, skills: readonly LibraryPluginSkill[]): 
   );
   for (const skill of skills) {
     const target = join(pluginDir, "skills", skill.skillName);
+    if (skill.skillMarkdown !== undefined) {
+      mkdirSync(target, { recursive: true });
+      writeFileSync(join(target, "SKILL.md"), withSkillName(skill.skillMarkdown, skill.skillName));
+      continue;
+    }
     if (!existsSync(join(skill.sourceDir, "SKILL.md"))) {
       throw new Error(`Library skill ${skill.ref}@${skill.version} is not in the local cache.`);
     }

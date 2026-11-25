@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { RESTART_TURN_AUTHORITY_METADATA_KEY } from "./daemon-restart-resume.js";
 import { RESTART_RESUME_ATTEMPT_METADATA_KEY } from "./restart-turn-recovery.js";
 import { getOrCreateSession, type AgentConfig, type SessionEntry } from "../router/index.js";
+import { dbUpdateAgent } from "../router/router-db.js";
 import { getSessionTurn } from "../session-trace/session-trace-db.js";
 import { saveMessage } from "../db.js";
 import { listSessionEventsForTest } from "../test/session-trace-events.js";
@@ -11,6 +12,12 @@ import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import type { RuntimeHostStreamingSession, RuntimeMessageTarget } from "./host-session.js";
 import { installCrashRecoveryApprovalFences } from "./runtime-request-builder.js";
 import { buildRuntimeStartRequest } from "./runtime-request-builder.js";
+import {
+  attachMcpServer,
+  createMcpServer,
+  recordMcpServerProbe,
+  setMcpConfigChangedEmitterForTests,
+} from "../mcp/registry-db.js";
 import { registerModelBroker, unregisterModelBroker } from "./model-broker-registry.js";
 import type { ModelBrokerAttemptFeedback, ModelBrokerResolveRequest } from "./model-broker.js";
 import type {
@@ -656,6 +663,92 @@ describe("runtime request durable attempt preparation", () => {
       unregisterModelBroker(brokerId);
       if (previousRuntimeId === undefined) delete process.env.RAVI_RUNTIME_ID;
       else process.env.RAVI_RUNTIME_ID = previousRuntimeId;
+    }
+  });
+
+  it("prepares the turn's MCP facades and traces the host and gateway servers it declares", async () => {
+    const sessionCwd = stateDir!;
+    setMcpConfigChangedEmitterForTests(() => {});
+    try {
+      dbUpdateAgent(TRACE_AGENT_ID, {
+        defaults: { runtimePermissions: { profile: "explicit-only", capabilities: ["use:tool:mcp__open__search"] } },
+      });
+      createMcpServer({ name: "open", transport: "http", url: "https://open.example.com/mcp", authKind: "none" });
+      attachMcpServer({ agentId: TRACE_AGENT_ID, server: "open", audience: "any" });
+      recordMcpServerProbe("open", {
+        status: "ok",
+        era: "modern",
+        catalog: { tools: [{ name: "search", exposedName: "mcp__open__search" }], dropped: [] },
+      });
+      const mcpCapabilities: RuntimeCapabilities = { ...traceCapabilities, supportsMcpServers: true };
+      const runtimeProvider: SessionRuntimeProvider = {
+        id: TRACE_PROVIDER_ID,
+        getCapabilities: () => mcpCapabilities,
+        startSession: () => emptyRuntimeSession(),
+      };
+      const crashRecovery = {
+        startTurnAttempt: () => {
+          throw new Error("attempt ledger unavailable");
+        },
+        markTurnAttemptSafety: () => undefined,
+      } as unknown as RuntimeCrashRecoveryCoordinator;
+      const built = await buildRuntimeStartRequest({
+        runId: "run-builder-mcp",
+        sessionName: TRACE_SESSION_NAME,
+        prompt: { prompt: "persist me" },
+        session: traceSession(sessionCwd),
+        agent: { ...traceAgent(sessionCwd), specMode: true },
+        runtimeProviderId: TRACE_PROVIDER_ID,
+        runtimeProvider,
+        runtimeCapabilities: mcpCapabilities,
+        sessionCwd,
+        dbSessionKey: TRACE_SESSION_KEY,
+        model: TRACE_MODEL,
+        runtimeResolution: {
+          options: { model: TRACE_MODEL },
+          sources: { model: "agent_default", effort: null, thinking: null },
+          hasTaskRuntimeContext: false,
+        },
+        storedRuntimeSessionParams: undefined,
+        canResumeStoredSession: false,
+        streamingSession: {
+          ...traceStreamingSession(),
+          currentSource: undefined,
+          pendingMessages: [createQueuedRuntimeUserMessage({ prompt: "persist me" })],
+        },
+        stashedMessages: new Map(),
+        defaultRuntimeProviderId: "claude",
+        crashRecovery,
+      });
+      const { runtimeRequest } = built;
+      // Host servers are registered as built; the facades come per turn, apart from them.
+      expect(Object.keys(runtimeRequest.mcpServers ?? {})).toEqual(["spec"]);
+      const facades = runtimeRequest.gatewayMcpServers!;
+      expect(facades.names()).toEqual([]);
+
+      await expect(runtimeRequest.prompt.next()).rejects.toThrow("attempt ledger unavailable");
+
+      const adapterRequest = listSessionEventsForTest(TRACE_SESSION_KEY).find(
+        (event) => event.eventType === "adapter.request",
+      );
+      const payload = adapterRequest?.payloadJson as Record<string, unknown>;
+      const names = facades.names();
+      expect(names).toEqual(["open"]);
+      expect(payload.mcp_server_names).toEqual(["spec", ...names]);
+      expect(payload.mcp_servers).toEqual([
+        { name: "spec", kind: "host", transport: "in-process", era: null, toolCount: null, status: "attached" },
+        ...names.map((name) => ({
+          name,
+          kind: "gateway",
+          transport: "http",
+          era: "modern",
+          toolCount: 1,
+          status: "ok",
+        })),
+      ]);
+      for (const name of names) expect(Object.keys(runtimeRequest.mcpServers ?? {})).not.toContain(name);
+    } finally {
+      setMcpConfigChangedEmitterForTests(null);
     }
   });
 

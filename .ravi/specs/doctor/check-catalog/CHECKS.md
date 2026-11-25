@@ -86,6 +86,20 @@ channels.runner_release
 - Healthy free space and a passing smoke test on all targets emits
   `runtime.disk_space_low` at `pass`.
 
+- A runtime-native MCP entry that no registered server covers emits
+  `mcp.native_unregistered` at `warn`, with the source path and native name
+  and without the URL or any env value; once every importable entry is
+  registered only the entries `ravi mcp import` cannot take stay listed; no
+  native entry is a `pass`; a Codex entry whose key is not bare is a `warn`
+  naming the file and the key, also once a registered server covers it,
+  read from the layers the launch reads: an untrusted project file is not
+  warned about, a trusted one, a trusted parent layer below the git root and
+  the system file are; a Codex file the launch reads and cannot use is a
+  `warn` naming it;
+  `managed-mcp.json` present at the platform's path (macOS, Windows, Linux)
+  is a `warn` quoting Claude Code's refusal of `--strict-mcp-config`, and
+  another platform's path is not read (`src/cli/commands/doctor.test.ts`).
+
 ## False Positive Guards
 
 - `bun test src/security/nats-url-controls.test.ts` MUST cover real TAB/LF/CR in

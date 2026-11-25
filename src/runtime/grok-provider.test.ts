@@ -12,6 +12,9 @@ import {
   extractGrokPermissionTool,
   isGrokAcpPromptCompletedOk,
   GROK_FAIL_CLOSED_TOOL_IDS,
+  GROK_MCP_TOOL_IDS,
+  isGrokMcpPermissionRequest,
+  isGrokScopedPermissionRule,
   mapGrokToolNameToRavi,
   resolveGrokAcpClientVersion,
   resolveGrokToolAccessRules,
@@ -1699,6 +1702,159 @@ describe("Grok Build runtime provider", () => {
     };
     expect(recorded.result?.outcome).toEqual({ outcome: "selected", optionId: "reject-once" });
     await transport.close();
+  });
+});
+
+describe("Grok's own MCP tools are always off", () => {
+  const PERMISSION_OPTIONS = [
+    { optionId: "reject-once", kind: "reject_once" },
+    { optionId: "allow-once", kind: "allow_once" },
+  ];
+  const allowEverything = async () => ({ behavior: "allow" as const });
+  const approveEverything = async () => ({ approved: true });
+
+  function disallowedOf(args: string[]): string[] {
+    const index = args.indexOf("--disallowed-tools");
+    expect(index).toBeGreaterThan(-1);
+    return args[index + 1]!.split(",");
+  }
+
+  function toolsOf(args: string[]): string[] {
+    const index = args.indexOf("--tools");
+    return index === -1 ? [] : args[index + 1]!.split(",");
+  }
+
+  function expectMcpOff(args: string[]): void {
+    expect(args.join("\0")).toContain("--deny\0MCPTool");
+    expect(disallowedOf(args)).toEqual(expect.arrayContaining(["search_tool", "use_tool"]));
+    expect(toolsOf(args)).not.toContain("search_tool");
+    expect(toolsOf(args)).not.toContain("use_tool");
+    expect(args.join("\0")).not.toContain("--allow\0MCPTool");
+  }
+
+  it("names search_tool and use_tool as the MCPTool internal ids", () => {
+    expect([...GROK_MCP_TOOL_IDS]).toEqual(["search_tool", "use_tool"]);
+  });
+
+  it("spawns with --deny MCPTool and the MCPTool ids disallowed under empty grants", () => {
+    expectMcpOff(buildGrokAcpProcessArgs({ allowTools: [], denyTools: [] }));
+    expectMcpOff(buildGrokAcpProcessArgs({}));
+  });
+
+  it("spawns with MCP off even when the caller grants MCPTool and omits it from the deny list", () => {
+    const args = buildGrokAcpProcessArgs({ allowTools: ["MCPTool"], denyTools: ["Bash"] });
+    expectMcpOff(args);
+    const everything = buildGrokAcpProcessArgs({
+      allowTools: ["Bash", "Edit", "Read", "Grep", "WebFetch", "WebSearch", "MCPTool", "TodoWrite", "Agent", "Skill"],
+      denyTools: [],
+    });
+    expectMcpOff(everything);
+    expect(toolsOf(everything)).toEqual(expect.arrayContaining(["run_terminal_cmd", "read_file", "todo_write"]));
+  });
+
+  it("never emits a scoped --allow rule for MCPTool", () => {
+    expect(isGrokScopedPermissionRule("MCPTool(ravi-console__*)")).toBe(false);
+    expect(isGrokScopedPermissionRule("Bash(git *)")).toBe(true);
+    const args = buildGrokAcpProcessArgs({
+      allowTools: ["Read"],
+      allowRules: ["MCPTool(*)", "Read(src/**)"],
+    });
+    expectMcpOff(args);
+    expect(args).toEqual(expect.arrayContaining(["--allow", "Read(src/**)"]));
+  });
+
+  it("keeps MCPTool denied in spawn rules under use:tool:MCPTool and use:tool:*", async () => {
+    const onlyMcp = await resolveGrokToolAccessRules(async (toolName) => ({
+      behavior: toolName === "MCPTool" ? "allow" : "deny",
+      reason: "denied",
+    }));
+    expect(onlyMcp.allow).toEqual([]);
+    expect(onlyMcp.deny).toContain("MCPTool");
+    expect(onlyMcp.denyToolIds).toEqual(expect.arrayContaining(["search_tool", "use_tool"]));
+    expect(onlyMcp.allowToolIds).not.toContain("use_tool");
+
+    const wildcard = await resolveGrokToolAccessRules(allowEverything);
+    expect(wildcard.allow).not.toContain("MCPTool");
+    expect(wildcard.deny).toEqual(["MCPTool"]);
+    expect(wildcard.allowToolIds).not.toContain("search_tool");
+    expect(wildcard.allowToolIds).not.toContain("use_tool");
+    expect(wildcard.denyToolIds).toEqual(expect.arrayContaining(["search_tool", "use_tool"]));
+  });
+
+  it("passes the always-denied MCPTool class to the subprocess of a fully granted session", async () => {
+    const transport = new FakeGrokAcpTransport();
+    transport.responseFor = (method) => {
+      if (method === "session/prompt") {
+        transport.pushEvent(sessionUpdate("agent_message_chunk", { content: { type: "text", text: "ok" } }));
+        return { stopReason: "end_turn" };
+      }
+      return defaultGrokResponse(method);
+    };
+    await collectRuntimeEvents(
+      createGrokRuntimeProvider({ transport }).startSession(createStartRequest("oi", { canUseTool: allowEverything }))
+        .events,
+    );
+    const start = transport.starts[0]!;
+    expect(start.allowTools).not.toContain("MCPTool");
+    expect(start.denyTools).toContain("MCPTool");
+    expectMcpOff(buildGrokAcpProcessArgs(start));
+    expect(transport.requests.find((request) => request.method === "session/new")?.params).toEqual({
+      cwd: "/tmp",
+      mcpServers: [],
+    });
+  });
+
+  it("rejects MCP permission requests under a full grant, whatever name Grok reports", async () => {
+    const toolCalls: Record<string, unknown>[] = [
+      { toolName: "use_tool", rawInput: { server: "x", tool: "y" } },
+      { toolName: "search_tool", rawInput: { query: "y" } },
+      { toolName: "MCPTool", rawInput: {} },
+      { kind: "mcp", title: "agents.list", rawInput: {} },
+      { kind: "mcp", toolName: "run_terminal_cmd", rawInput: { command: "ls" } },
+      { toolName: "mcp__a__bash", rawInput: { command: "ls" } },
+      { toolName: "mcp__a__web_fetch", rawInput: { url: "https://example.com" } },
+      { tool_name: "mcp__a__read_file", rawInput: { path: "README.md" } },
+      { title: "mcp__a__run_terminal_cmd", rawInput: { command: "ls" } },
+    ];
+    for (const toolCall of toolCalls) {
+      const tools: string[] = [];
+      const approvals: string[] = [];
+      const outcome = await authorizeGrokAcpPermission(
+        { options: PERMISSION_OPTIONS, toolCall },
+        {
+          canUseTool: async (toolName) => {
+            tools.push(toolName);
+            return { behavior: "allow" };
+          },
+          approveRuntimeRequest: async (request) => {
+            approvals.push(request.kind);
+            return { approved: true };
+          },
+        },
+      );
+      expect({ toolCall, outcome }).toEqual({ toolCall, outcome: { outcome: "selected", optionId: "reject-once" } });
+      expect(tools).toEqual([]);
+      expect(approvals).toEqual([]);
+    }
+  });
+
+  it("rejects MCP permission requests when only host approval is available", async () => {
+    const outcome = await authorizeGrokAcpPermission(
+      { options: PERMISSION_OPTIONS, toolCall: { toolName: "use_tool", rawInput: {} } },
+      { approveRuntimeRequest: approveEverything },
+    );
+    expect(outcome).toEqual({ outcome: "selected", optionId: "reject-once" });
+  });
+
+  it("does not treat ordinary Grok tools as MCP", async () => {
+    expect(isGrokMcpPermissionRequest("Read", { toolCall: { toolName: "read_file" } })).toBe(false);
+    expect(isGrokMcpPermissionRequest("Bash", { toolCall: { kind: "execute", title: "Run npm run mcp" } })).toBe(false);
+    expect(isGrokMcpPermissionRequest("MCPTool", { toolCall: {} })).toBe(true);
+    const outcome = await authorizeGrokAcpPermission(
+      { options: PERMISSION_OPTIONS, toolCall: { toolName: "read_file", rawInput: { path: "README.md" } } },
+      { canUseTool: allowEverything },
+    );
+    expect(outcome).toEqual({ outcome: "selected", optionId: "allow-once" });
   });
 });
 

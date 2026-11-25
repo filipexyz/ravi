@@ -75,6 +75,30 @@ export function spawnedAutomationEnv(kind: SpawnedAutomationKind, id: string): R
   return { [RAVI_AUTOMATION_PRINCIPAL_ENV]: `automation:${kind}:${id}` };
 }
 
+/**
+ * Env that only runtimes and daemon-spawned processes carry, never the
+ * operator's terminal: a session's markers, a trigger's id and the spawned
+ * automation principal. One list for every check that decides "this is the
+ * terminal" (connector turns, the MCP forward to the daemon).
+ */
+export const RAVI_RUNTIME_ENV_MARKERS = [
+  "RAVI_SESSION_KEY",
+  "RAVI_SESSION_NAME",
+  "RAVI_AGENT_ID",
+  "RAVI_TRIGGER_ID",
+  RAVI_AUTOMATION_PRINCIPAL_ENV,
+] as const;
+
+/**
+ * Whether this process carries any runtime marker. A marker counts once it is
+ * set, whatever its value: an empty, blank or malformed one too (fail closed),
+ * so blanking a marker (`RAVI_SESSION_KEY= ravi ...`) never makes a process
+ * look like the terminal.
+ */
+export function carriesRaviRuntimeEnvMarker(env: NodeJS.ProcessEnv = process.env): boolean {
+  return RAVI_RUNTIME_ENV_MARKERS.some((name) => env[name] !== undefined);
+}
+
 /** The automation a daemon-spawned process acts for, or null outside one (or when the marker is malformed). */
 export function readSpawnedAutomationPrincipal(env: NodeJS.ProcessEnv = process.env): string | null {
   const value = env[RAVI_AUTOMATION_PRINCIPAL_ENV]?.trim();

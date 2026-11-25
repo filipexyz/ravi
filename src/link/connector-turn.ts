@@ -46,7 +46,7 @@ import {
   RAVI_CONTEXT_KEY_ENV,
   resolveRuntimeContext,
 } from "../runtime/context-registry.js";
-import { RAVI_AUTOMATION_PRINCIPAL_ENV, readSpawnedAutomationPrincipal } from "../runtime/turn-origin.js";
+import { carriesRaviRuntimeEnvMarker, readSpawnedAutomationPrincipal } from "../runtime/turn-origin.js";
 import { readTurnReplyTarget } from "../runtime/turn-reply-target.js";
 import { resolveHumanRequestCaller } from "../runtime/human-request.js";
 import { resolveThreadCronRequester, resolveThreadInheritedRequester } from "../runtime/thread-requester.js";
@@ -217,14 +217,6 @@ export const CRON_OPERATOR_OWNER = "operator";
 const MAX_LINEAGE_DEPTH = 32;
 /** Set by the caller only when the actor context is a turn the host issued (never a CLI child). */
 const HOST_ISSUED_TURN_KEY = "__hostIssuedTurn";
-/** Env that only runtimes and daemon-spawned processes carry: never the terminal. */
-const RUNTIME_ENV_MARKERS = [
-  "RAVI_SESSION_KEY",
-  "RAVI_SESSION_NAME",
-  "RAVI_AGENT_ID",
-  "RAVI_TRIGGER_ID",
-  RAVI_AUTOMATION_PRINCIPAL_ENV,
-] as const;
 /** Session-relay actions that mean the operator asked something directly. */
 const OPERATOR_RELAY_ACTIONS = new Set(["send", "ask"]);
 
@@ -1083,7 +1075,7 @@ export function currentConnectorRuntimeContext(env: NodeJS.ProcessEnv = process.
   }
   const spawnedPrincipal = readSpawnedAutomationPrincipal(env);
   if (spawnedPrincipal) return { present: true, record: null, spawnedPrincipal };
-  if (RUNTIME_ENV_MARKERS.some((name) => Boolean(env[name]?.trim()))) {
+  if (carriesRaviRuntimeEnvMarker(env)) {
     return { present: true, record: null };
   }
   return { present: false, record: null };

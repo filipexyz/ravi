@@ -18,6 +18,7 @@ import {
   createPiPermissionHooksReadyEvent,
   formatPiPermissionUiDecisionValue,
   isPiPermissionBridgeError,
+  isPiNativeMcpToolName,
   isPiPermissionHooksReadyEvent,
   mapPiToolNameToRavi,
   materializePiPermissionExtensionFile,
@@ -759,6 +760,94 @@ describe("Pi tool permission bridge", () => {
       handlers,
     );
     expectBashAuthorized(install, "ravi skills install --source ~/.agents/skills/find-skills/SKILL.md --json");
+  });
+});
+
+describe("Pi has no native MCP tools", () => {
+  const MCP_NAMES = [
+    "mcp__a__webfetch_x",
+    "mcp__a__run_terminal",
+    "mcp__a__bash",
+    "mcp__a__read",
+    "mcp__a__skill_show",
+    "MCP__A__Bash",
+  ];
+
+  it("maps mcp__ names to themselves instead of a Pi tool class", () => {
+    expect(mapPiToolNameToRavi("mcp__a__webfetch_x")).toBe("mcp__a__webfetch_x");
+    expect(mapPiToolNameToRavi("mcp__a__run_terminal")).toBe("mcp__a__run_terminal");
+    expect(mapPiToolNameToRavi("  mcp__a__bash  ")).toBe("mcp__a__bash");
+    expect(mapPiToolNameToRavi("MCP__A__Bash")).toBe("MCP__A__Bash");
+    for (const name of MCP_NAMES) {
+      expect(isPiNativeMcpToolName(name)).toBe(true);
+    }
+  });
+
+  it("keeps the existing mappings of Pi's own tools and the dynamic MCP tools", () => {
+    expect(mapPiToolNameToRavi("bash")).toBe("Bash");
+    expect(mapPiToolNameToRavi("run_terminal")).toBe("Bash");
+    expect(mapPiToolNameToRavi("read")).toBe("Read");
+    expect(mapPiToolNameToRavi("write")).toBe("Write");
+    expect(mapPiToolNameToRavi("edit")).toBe("Edit");
+    expect(mapPiToolNameToRavi("grep")).toBe("Grep");
+    expect(mapPiToolNameToRavi("glob")).toBe("Glob");
+    expect(mapPiToolNameToRavi("webfetch")).toBe("WebFetch");
+    expect(mapPiToolNameToRavi("websearch")).toBe("WebSearch");
+    expect(mapPiToolNameToRavi("skill")).toBe("Skill");
+    expect(mapPiToolNameToRavi("mcp_tools")).toBe("mcp_tools");
+    expect(mapPiToolNameToRavi("mcp_call")).toBe("mcp_call");
+    expect(isPiNativeMcpToolName("mcp_call")).toBe(false);
+    expect(isPiNativeMcpToolName("mcp_tools")).toBe(false);
+    expect(isPiNativeMcpToolName(undefined)).toBe(false);
+  });
+
+  it("denies every mcp__ tool under use:tool:* without asking the host", async () => {
+    for (const name of MCP_NAMES) {
+      const tools: string[] = [];
+      const approvals: string[] = [];
+      const decision = await authorizePiToolCall(
+        name,
+        { command: "ls", url: "https://example.com", path: "README.md" },
+        {
+          canUseTool: async (toolName) => {
+            tools.push(toolName);
+            return { behavior: "allow" };
+          },
+          approveRuntimeRequest: async (request) => {
+            approvals.push(request.kind);
+            return { approved: true };
+          },
+        },
+      );
+      expect(decision.allowed).toBe(false);
+      expect(decision.command).toBeUndefined();
+      expect(decision.reason).toContain("mcp_tools and mcp_call");
+      expect(tools).toEqual([]);
+      expect(approvals).toEqual([]);
+    }
+  });
+
+  it("answers a Pi permission UI request for an mcp__ tool with a deny", async () => {
+    const response = await resolvePiExtensionUiResponse(
+      {
+        type: "extension_ui_request",
+        id: "ui-mcp",
+        method: "confirm",
+        title: PI_PERMISSION_UI_TITLE,
+        message: JSON.stringify({ toolName: "mcp__a__webfetch_x", input: { url: "https://example.com" } }),
+      },
+      { canUseTool: async () => ({ behavior: "allow" }) },
+    );
+    expect(response).toMatchObject({ type: "extension_ui_response", id: "ui-mcp", confirmed: false });
+  });
+
+  it("still allows the dynamic tool mcp_call when it is granted", async () => {
+    const decision = await authorizePiToolCall(
+      "mcp_call",
+      { server: "a", tool: "b" },
+      { canUseTool: async (toolName) => ({ behavior: toolName === "mcp_call" ? "allow" : "deny" }) },
+    );
+    expect(decision).toEqual({ allowed: true });
   });
 });
 

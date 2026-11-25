@@ -1770,6 +1770,49 @@ describe("runtime request context authority", () => {
     expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
   });
 
+  it("runs background MCP call deliveries as the automation principal of the call, never as the chat's person", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+    const callId = "mc_01jd8x00000000000000000000";
+    const personSource = {
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: "120363428243036323@g.us",
+      canonicalChatId: "chat_group_1",
+      actorType: "contact" as const,
+      contactId: "c_person",
+      rawSenderId: "5511999999999",
+    };
+    const build = (marker: RuntimeLaunchPrompt["_mcpCall"]) =>
+      buildRuntimeRequestContext({
+        dbSessionKey: sessionKey,
+        sessionName,
+        sessionCwd: "/tmp/provider-agent",
+        agent,
+        prompt: { prompt: "[System] Background MCP call", _mcpCall: marker },
+        runtimeProviderId: "codex",
+        model: "gpt-5",
+        runtimeResolution,
+        resolvedSource: personSource,
+      }).runtimeContext;
+
+    const delivery = build({ id: callId, server: "console", tool: "publish", status: "ok" });
+    expect(delivery.metadata).toMatchObject({
+      actorPrincipal: `automation:mcp-call:${callId}`,
+      actor: {
+        actorType: "automation",
+        automationId: `mcp-call:${callId}`,
+        identityProvenance: { source: "mcp-call", callId },
+      },
+    });
+    expect(JSON.stringify(delivery.metadata)).not.toContain("c_person");
+    expect(canWithCapabilities(delivery.capabilities, "admin", "system", "*")).toBe(false);
+
+    // A malformed id still runs as an automation, never as the person or the operator.
+    const forged = build({ id: "../operator", server: "console", tool: "publish", status: "ok" });
+    expect(forged.metadata).toMatchObject({ actorPrincipal: "automation:mcp-call:invalid" });
+  });
+
   it("runs daemon restart resume prompts as automation principals with their delivery surface", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });

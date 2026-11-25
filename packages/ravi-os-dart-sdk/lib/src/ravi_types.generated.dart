@@ -18041,6 +18041,752 @@ class MailThreadsReadReturn {
 
 MailThreadsReadReturn mailThreadsReadReturnFromJson(Object? json) => MailThreadsReadReturn.fromJsonValue(json);
 
+class McpAddOptions {
+  const McpAddOptions({this.agent, this.arg, this.auth, this.command, this.env, this.execute, this.protocol, this.url, this.urlStdin});
+
+  final List<String>? agent;
+  final List<String>? arg;
+  final String? auth;
+  final String? command;
+  final List<String>? env;
+  final bool? execute;
+  final String? protocol;
+  final String? url;
+  final bool? urlStdin;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (agent != null) {
+      into["agent"] = RaviJson.from(agent);
+    }
+    if (arg != null) {
+      into["arg"] = RaviJson.from(arg);
+    }
+    if (auth != null) {
+      into["auth"] = RaviJson.from(auth);
+    }
+    if (command != null) {
+      into["command"] = RaviJson.from(command);
+    }
+    if (env != null) {
+      into["env"] = RaviJson.from(env);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (protocol != null) {
+      into["protocol"] = RaviJson.from(protocol);
+    }
+    if (url != null) {
+      into["url"] = RaviJson.from(url);
+    }
+    if (urlStdin != null) {
+      into["urlStdin"] = RaviJson.from(urlStdin);
+    }
+  }
+}
+
+class McpAddReturn {
+  const McpAddReturn({required this.attached, required this.secretStored, required this.server});
+
+  final List<String> attached;
+  final bool secretStored;
+  final RaviJson server;
+
+  factory McpAddReturn.fromJson(Map<String, Object?> json) {
+    return McpAddReturn(
+      attached: raviJsonAsList(json["attached"], raviJsonAsString),
+      secretStored: raviJsonAsBool(json["secretStored"]),
+      server: RaviJson.from(json["server"]),
+    );
+  }
+
+  static McpAddReturn fromJsonValue(Object? json) {
+    return McpAddReturn.fromJson(raviJsonObject(json, "McpAddReturn"));
+  }
+}
+
+McpAddReturn mcpAddReturnFromJson(Object? json) => McpAddReturn.fromJsonValue(json);
+
+class McpAttachOptions {
+  const McpAttachOptions({this.execute});
+
+  final bool? execute;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+  }
+}
+
+class McpAttachReturn {
+  const McpAttachReturn({required this.agentId, required this.audience, required this.created, required this.server, required this.uploads, required this.warnings});
+
+  final String agentId;
+  final String audience;
+  final bool created;
+  final String server;
+  final bool uploads;
+  final List<String> warnings;
+
+  factory McpAttachReturn.fromJson(Map<String, Object?> json) {
+    return McpAttachReturn(
+      agentId: raviJsonAsString(json["agentId"]),
+      audience: raviJsonAsString(json["audience"]),
+      created: raviJsonAsBool(json["created"]),
+      server: raviJsonAsString(json["server"]),
+      uploads: raviJsonAsBool(json["uploads"]),
+      warnings: raviJsonAsList(json["warnings"], raviJsonAsString),
+    );
+  }
+
+  static McpAttachReturn fromJsonValue(Object? json) {
+    return McpAttachReturn.fromJson(raviJsonObject(json, "McpAttachReturn"));
+  }
+}
+
+McpAttachReturn mcpAttachReturnFromJson(Object? json) => McpAttachReturn.fromJsonValue(json);
+
+class McpCallOptions {
+  const McpCallOptions({this.agent, this.execute, this.input, this.wait});
+
+  final String? agent;
+  final bool? execute;
+  final String? input;
+  final String? wait;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (agent != null) {
+      into["agent"] = RaviJson.from(agent);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (input != null) {
+      into["input"] = RaviJson.from(input);
+    }
+    if (wait != null) {
+      into["wait"] = RaviJson.from(wait);
+    }
+  }
+}
+
+class McpCallReturn {
+  const McpCallReturn({required this.bytes, required this.callId, required this.content, required this.era, required this.name, required this.outcome, required this.server, required this.structuredContent, required this.tool, required this.truncated, required this.waitSeconds});
+
+  final double bytes;
+  final RaviJson callId;
+  final List<RaviJson> content;
+  final String era;
+  final String name;
+  final String outcome;
+  final String server;
+  final RaviJson structuredContent;
+  final String tool;
+  final bool truncated;
+  final double waitSeconds;
+
+  factory McpCallReturn.fromJson(Map<String, Object?> json) {
+    return McpCallReturn(
+      bytes: raviJsonAsDouble(json["bytes"]),
+      callId: RaviJson.from(json["callId"]),
+      content: raviJsonAsList(json["content"], RaviJson.from),
+      era: raviJsonAsString(json["era"]),
+      name: raviJsonAsString(json["name"]),
+      outcome: raviJsonAsString(json["outcome"]),
+      server: raviJsonAsString(json["server"]),
+      structuredContent: RaviJson.from(json["structuredContent"]),
+      tool: raviJsonAsString(json["tool"]),
+      truncated: raviJsonAsBool(json["truncated"]),
+      waitSeconds: raviJsonAsDouble(json["waitSeconds"]),
+    );
+  }
+
+  static McpCallReturn fromJsonValue(Object? json) {
+    return McpCallReturn.fromJson(raviJsonObject(json, "McpCallReturn"));
+  }
+}
+
+McpCallReturn mcpCallReturnFromJson(Object? json) => McpCallReturn.fromJsonValue(json);
+
+class McpCallsCancelReturn {
+  const McpCallsCancelReturn({required this.call, required this.cancelRequested});
+
+  final RaviJson call;
+  final bool cancelRequested;
+
+  factory McpCallsCancelReturn.fromJson(Map<String, Object?> json) {
+    return McpCallsCancelReturn(
+      call: RaviJson.from(json["call"]),
+      cancelRequested: raviJsonAsBool(json["cancelRequested"]),
+    );
+  }
+
+  static McpCallsCancelReturn fromJsonValue(Object? json) {
+    return McpCallsCancelReturn.fromJson(raviJsonObject(json, "McpCallsCancelReturn"));
+  }
+}
+
+McpCallsCancelReturn mcpCallsCancelReturnFromJson(Object? json) => McpCallsCancelReturn.fromJsonValue(json);
+
+class McpCallsListOptions {
+  const McpCallsListOptions({this.limit, this.offset, this.server, this.session, this.state});
+
+  final String? limit;
+  final String? offset;
+  final String? server;
+  final String? session;
+  final String? state;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+    if (server != null) {
+      into["server"] = RaviJson.from(server);
+    }
+    if (session != null) {
+      into["session"] = RaviJson.from(session);
+    }
+    if (state != null) {
+      into["state"] = RaviJson.from(state);
+    }
+  }
+}
+
+class McpCallsListReturn {
+  const McpCallsListReturn({required this.calls, required this.pagination, required this.scope, required this.total});
+
+  final List<RaviJson> calls;
+  final RaviJson pagination;
+  final String scope;
+  final double total;
+
+  factory McpCallsListReturn.fromJson(Map<String, Object?> json) {
+    return McpCallsListReturn(
+      calls: raviJsonAsList(json["calls"], RaviJson.from),
+      pagination: RaviJson.from(json["pagination"]),
+      scope: raviJsonAsString(json["scope"]),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static McpCallsListReturn fromJsonValue(Object? json) {
+    return McpCallsListReturn.fromJson(raviJsonObject(json, "McpCallsListReturn"));
+  }
+}
+
+McpCallsListReturn mcpCallsListReturnFromJson(Object? json) => McpCallsListReturn.fromJsonValue(json);
+
+class McpDetachReturn {
+  const McpDetachReturn({required this.agentId, required this.detached, required this.server, required this.skillPinsDropped});
+
+  final String agentId;
+  final bool detached;
+  final String server;
+  final double skillPinsDropped;
+
+  factory McpDetachReturn.fromJson(Map<String, Object?> json) {
+    return McpDetachReturn(
+      agentId: raviJsonAsString(json["agentId"]),
+      detached: raviJsonAsBool(json["detached"]),
+      server: raviJsonAsString(json["server"]),
+      skillPinsDropped: raviJsonAsDouble(json["skillPinsDropped"]),
+    );
+  }
+
+  static McpDetachReturn fromJsonValue(Object? json) {
+    return McpDetachReturn.fromJson(raviJsonObject(json, "McpDetachReturn"));
+  }
+}
+
+McpDetachReturn mcpDetachReturnFromJson(Object? json) => McpDetachReturn.fromJsonValue(json);
+
+class McpDisableReturn {
+  const McpDisableReturn({required this.changed, required this.server});
+
+  final bool changed;
+  final RaviJson server;
+
+  factory McpDisableReturn.fromJson(Map<String, Object?> json) {
+    return McpDisableReturn(
+      changed: raviJsonAsBool(json["changed"]),
+      server: RaviJson.from(json["server"]),
+    );
+  }
+
+  static McpDisableReturn fromJsonValue(Object? json) {
+    return McpDisableReturn.fromJson(raviJsonObject(json, "McpDisableReturn"));
+  }
+}
+
+McpDisableReturn mcpDisableReturnFromJson(Object? json) => McpDisableReturn.fromJsonValue(json);
+
+class McpEnableOptions {
+  const McpEnableOptions({this.execute});
+
+  final bool? execute;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+  }
+}
+
+class McpEnableReturn {
+  const McpEnableReturn({required this.changed, required this.server});
+
+  final bool changed;
+  final RaviJson server;
+
+  factory McpEnableReturn.fromJson(Map<String, Object?> json) {
+    return McpEnableReturn(
+      changed: raviJsonAsBool(json["changed"]),
+      server: RaviJson.from(json["server"]),
+    );
+  }
+
+  static McpEnableReturn fromJsonValue(Object? json) {
+    return McpEnableReturn.fromJson(raviJsonObject(json, "McpEnableReturn"));
+  }
+}
+
+McpEnableReturn mcpEnableReturnFromJson(Object? json) => McpEnableReturn.fromJsonValue(json);
+
+class McpListOptions {
+  const McpListOptions({this.agent, this.limit, this.offset});
+
+  final String? agent;
+  final String? limit;
+  final String? offset;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (agent != null) {
+      into["agent"] = RaviJson.from(agent);
+    }
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+  }
+}
+
+class McpListReturn {
+  const McpListReturn({required this.items, required this.pagination, required this.total});
+
+  final List<RaviJson> items;
+  final RaviJson pagination;
+  final double total;
+
+  factory McpListReturn.fromJson(Map<String, Object?> json) {
+    return McpListReturn(
+      items: raviJsonAsList(json["items"], RaviJson.from),
+      pagination: RaviJson.from(json["pagination"]),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static McpListReturn fromJsonValue(Object? json) {
+    return McpListReturn.fromJson(raviJsonObject(json, "McpListReturn"));
+  }
+}
+
+McpListReturn mcpListReturnFromJson(Object? json) => McpListReturn.fromJsonValue(json);
+
+class McpLogoutReturn {
+  const McpLogoutReturn({required this.removed, required this.revocation, required this.server, required this.status});
+
+  final bool removed;
+  final String revocation;
+  final String server;
+  final String status;
+
+  factory McpLogoutReturn.fromJson(Map<String, Object?> json) {
+    return McpLogoutReturn(
+      removed: raviJsonAsBool(json["removed"]),
+      revocation: raviJsonAsString(json["revocation"]),
+      server: raviJsonAsString(json["server"]),
+      status: raviJsonAsString(json["status"]),
+    );
+  }
+
+  static McpLogoutReturn fromJsonValue(Object? json) {
+    return McpLogoutReturn.fromJson(raviJsonObject(json, "McpLogoutReturn"));
+  }
+}
+
+McpLogoutReturn mcpLogoutReturnFromJson(Object? json) => McpLogoutReturn.fromJsonValue(json);
+
+class McpRemoveReturn {
+  const McpRemoveReturn({required this.callsCancelled, required this.detachedAgents, required this.removed, required this.secretDeleteFailed, required this.secretDeleted, required this.skillPinsDropped});
+
+  final double callsCancelled;
+  final List<String> detachedAgents;
+  final RaviJson removed;
+  final bool secretDeleteFailed;
+  final bool secretDeleted;
+  final double skillPinsDropped;
+
+  factory McpRemoveReturn.fromJson(Map<String, Object?> json) {
+    return McpRemoveReturn(
+      callsCancelled: raviJsonAsDouble(json["callsCancelled"]),
+      detachedAgents: raviJsonAsList(json["detachedAgents"], raviJsonAsString),
+      removed: RaviJson.from(json["removed"]),
+      secretDeleteFailed: raviJsonAsBool(json["secretDeleteFailed"]),
+      secretDeleted: raviJsonAsBool(json["secretDeleted"]),
+      skillPinsDropped: raviJsonAsDouble(json["skillPinsDropped"]),
+    );
+  }
+
+  static McpRemoveReturn fromJsonValue(Object? json) {
+    return McpRemoveReturn.fromJson(raviJsonObject(json, "McpRemoveReturn"));
+  }
+}
+
+McpRemoveReturn mcpRemoveReturnFromJson(Object? json) => McpRemoveReturn.fromJsonValue(json);
+
+class McpSetOptions {
+  const McpSetOptions({this.agent, this.audience, this.execute, this.protocol, this.uploads});
+
+  final String? agent;
+  final String? audience;
+  final bool? execute;
+  final String? protocol;
+  final String? uploads;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (agent != null) {
+      into["agent"] = RaviJson.from(agent);
+    }
+    if (audience != null) {
+      into["audience"] = RaviJson.from(audience);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (protocol != null) {
+      into["protocol"] = RaviJson.from(protocol);
+    }
+    if (uploads != null) {
+      into["uploads"] = RaviJson.from(uploads);
+    }
+  }
+}
+
+class McpSetReturn {
+  const McpSetReturn({required this.attachments, required this.changed, required this.protocol, required this.server});
+
+  final List<RaviJson> attachments;
+  final bool changed;
+  final RaviJson protocol;
+  final RaviJson server;
+
+  factory McpSetReturn.fromJson(Map<String, Object?> json) {
+    return McpSetReturn(
+      attachments: raviJsonAsList(json["attachments"], RaviJson.from),
+      changed: raviJsonAsBool(json["changed"]),
+      protocol: RaviJson.from(json["protocol"]),
+      server: RaviJson.from(json["server"]),
+    );
+  }
+
+  static McpSetReturn fromJsonValue(Object? json) {
+    return McpSetReturn.fromJson(raviJsonObject(json, "McpSetReturn"));
+  }
+}
+
+McpSetReturn mcpSetReturnFromJson(Object? json) => McpSetReturn.fromJsonValue(json);
+
+class McpShowReturn {
+  const McpShowReturn({required this.calls, required this.server, required this.skills, required this.uploadCatalog, required this.warnings});
+
+  final RaviJson calls;
+  final RaviJson server;
+  final List<RaviJson> skills;
+  final RaviJson uploadCatalog;
+  final List<String> warnings;
+
+  factory McpShowReturn.fromJson(Map<String, Object?> json) {
+    return McpShowReturn(
+      calls: RaviJson.from(json["calls"]),
+      server: RaviJson.from(json["server"]),
+      skills: raviJsonAsList(json["skills"], RaviJson.from),
+      uploadCatalog: RaviJson.from(json["uploadCatalog"]),
+      warnings: raviJsonAsList(json["warnings"], raviJsonAsString),
+    );
+  }
+
+  static McpShowReturn fromJsonValue(Object? json) {
+    return McpShowReturn.fromJson(raviJsonObject(json, "McpShowReturn"));
+  }
+}
+
+McpShowReturn mcpShowReturnFromJson(Object? json) => McpShowReturn.fromJsonValue(json);
+
+class McpSkillsListOptions {
+  const McpSkillsListOptions({this.agent, this.limit, this.offset});
+
+  final String? agent;
+  final String? limit;
+  final String? offset;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (agent != null) {
+      into["agent"] = RaviJson.from(agent);
+    }
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+  }
+}
+
+class McpSkillsListReturn {
+  const McpSkillsListReturn({required this.agentId, required this.invalid, required this.pagination, required this.pinCheck, required this.restoredPins, required this.scopeMissing, required this.server, required this.skills, required this.stalePins, required this.suggestedAction, required this.supported, required this.total, required this.unlistedPins});
+
+  final String agentId;
+  final double invalid;
+  final RaviJson pagination;
+  final String pinCheck;
+  final List<RaviJson> restoredPins;
+  final bool scopeMissing;
+  final String server;
+  final List<RaviJson> skills;
+  final List<RaviJson> stalePins;
+  final RaviJson suggestedAction;
+  final bool supported;
+  final double total;
+  final List<RaviJson> unlistedPins;
+
+  factory McpSkillsListReturn.fromJson(Map<String, Object?> json) {
+    return McpSkillsListReturn(
+      agentId: raviJsonAsString(json["agentId"]),
+      invalid: raviJsonAsDouble(json["invalid"]),
+      pagination: RaviJson.from(json["pagination"]),
+      pinCheck: raviJsonAsString(json["pinCheck"]),
+      restoredPins: raviJsonAsList(json["restoredPins"], RaviJson.from),
+      scopeMissing: raviJsonAsBool(json["scopeMissing"]),
+      server: raviJsonAsString(json["server"]),
+      skills: raviJsonAsList(json["skills"], RaviJson.from),
+      stalePins: raviJsonAsList(json["stalePins"], RaviJson.from),
+      suggestedAction: RaviJson.from(json["suggestedAction"]),
+      supported: raviJsonAsBool(json["supported"]),
+      total: raviJsonAsDouble(json["total"]),
+      unlistedPins: raviJsonAsList(json["unlistedPins"], RaviJson.from),
+    );
+  }
+
+  static McpSkillsListReturn fromJsonValue(Object? json) {
+    return McpSkillsListReturn.fromJson(raviJsonObject(json, "McpSkillsListReturn"));
+  }
+}
+
+McpSkillsListReturn mcpSkillsListReturnFromJson(Object? json) => McpSkillsListReturn.fromJsonValue(json);
+
+class McpSkillsPinOptions {
+  const McpSkillsPinOptions({this.agent, this.digest, this.execute, this.external_});
+
+  final String? agent;
+  final String? digest;
+  final bool? execute;
+  final bool? external_;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (agent != null) {
+      into["agent"] = RaviJson.from(agent);
+    }
+    if (digest != null) {
+      into["digest"] = RaviJson.from(digest);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (external_ != null) {
+      into["external"] = RaviJson.from(external_);
+    }
+  }
+}
+
+class McpSkillsPinReturn {
+  const McpSkillsPinReturn({required this.agent, required this.created, required this.externalAllowed, required this.id, required this.manifestDigest, required this.pinned, required this.pluginRebuilt, required this.skill, required this.warnings});
+
+  final String agent;
+  final bool created;
+  final bool externalAllowed;
+  final String id;
+  final String manifestDigest;
+  final bool pinned;
+  final bool pluginRebuilt;
+  final String skill;
+  final List<String> warnings;
+
+  factory McpSkillsPinReturn.fromJson(Map<String, Object?> json) {
+    return McpSkillsPinReturn(
+      agent: raviJsonAsString(json["agent"]),
+      created: raviJsonAsBool(json["created"]),
+      externalAllowed: raviJsonAsBool(json["externalAllowed"]),
+      id: raviJsonAsString(json["id"]),
+      manifestDigest: raviJsonAsString(json["manifestDigest"]),
+      pinned: raviJsonAsBool(json["pinned"]),
+      pluginRebuilt: raviJsonAsBool(json["pluginRebuilt"]),
+      skill: raviJsonAsString(json["skill"]),
+      warnings: raviJsonAsList(json["warnings"], raviJsonAsString),
+    );
+  }
+
+  static McpSkillsPinReturn fromJsonValue(Object? json) {
+    return McpSkillsPinReturn.fromJson(raviJsonObject(json, "McpSkillsPinReturn"));
+  }
+}
+
+McpSkillsPinReturn mcpSkillsPinReturnFromJson(Object? json) => McpSkillsPinReturn.fromJsonValue(json);
+
+class McpSkillsReadOptions {
+  const McpSkillsReadOptions({this.agent, this.file});
+
+  final String? agent;
+  final String? file;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (agent != null) {
+      into["agent"] = RaviJson.from(agent);
+    }
+    if (file != null) {
+      into["file"] = RaviJson.from(file);
+    }
+  }
+}
+
+class McpSkillsReadReturn {
+  const McpSkillsReadReturn({required this.binary, required this.cached, required this.digest, required this.file, required this.id, required this.mimeType, required this.server, required this.size, required this.text, required this.truncated, required this.uri});
+
+  final bool binary;
+  final bool cached;
+  final String digest;
+  final String file;
+  final String id;
+  final RaviJson mimeType;
+  final String server;
+  final double size;
+  final RaviJson text;
+  final bool truncated;
+  final String uri;
+
+  factory McpSkillsReadReturn.fromJson(Map<String, Object?> json) {
+    return McpSkillsReadReturn(
+      binary: raviJsonAsBool(json["binary"]),
+      cached: raviJsonAsBool(json["cached"]),
+      digest: raviJsonAsString(json["digest"]),
+      file: raviJsonAsString(json["file"]),
+      id: raviJsonAsString(json["id"]),
+      mimeType: RaviJson.from(json["mimeType"]),
+      server: raviJsonAsString(json["server"]),
+      size: raviJsonAsDouble(json["size"]),
+      text: RaviJson.from(json["text"]),
+      truncated: raviJsonAsBool(json["truncated"]),
+      uri: raviJsonAsString(json["uri"]),
+    );
+  }
+
+  static McpSkillsReadReturn fromJsonValue(Object? json) {
+    return McpSkillsReadReturn.fromJson(raviJsonObject(json, "McpSkillsReadReturn"));
+  }
+}
+
+McpSkillsReadReturn mcpSkillsReadReturnFromJson(Object? json) => McpSkillsReadReturn.fromJsonValue(json);
+
+class McpSkillsUnpinOptions {
+  const McpSkillsUnpinOptions({this.agent});
+
+  final String? agent;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (agent != null) {
+      into["agent"] = RaviJson.from(agent);
+    }
+  }
+}
+
+class McpSkillsUnpinReturn {
+  const McpSkillsUnpinReturn({required this.agent, required this.id, required this.pluginRebuilt, required this.removed});
+
+  final String agent;
+  final String id;
+  final bool pluginRebuilt;
+  final bool removed;
+
+  factory McpSkillsUnpinReturn.fromJson(Map<String, Object?> json) {
+    return McpSkillsUnpinReturn(
+      agent: raviJsonAsString(json["agent"]),
+      id: raviJsonAsString(json["id"]),
+      pluginRebuilt: raviJsonAsBool(json["pluginRebuilt"]),
+      removed: raviJsonAsBool(json["removed"]),
+    );
+  }
+
+  static McpSkillsUnpinReturn fromJsonValue(Object? json) {
+    return McpSkillsUnpinReturn.fromJson(raviJsonObject(json, "McpSkillsUnpinReturn"));
+  }
+}
+
+McpSkillsUnpinReturn mcpSkillsUnpinReturnFromJson(Object? json) => McpSkillsUnpinReturn.fromJsonValue(json);
+
+class McpToolsOptions {
+  const McpToolsOptions({this.agent, this.query});
+
+  final String? agent;
+  final String? query;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (agent != null) {
+      into["agent"] = RaviJson.from(agent);
+    }
+    if (query != null) {
+      into["query"] = RaviJson.from(query);
+    }
+  }
+}
+
+class McpToolsReturn {
+  const McpToolsReturn({required this.agentId, required this.note, required this.omitted, required this.query, required this.server, required this.tools, required this.total, required this.unavailable});
+
+  final String agentId;
+  final RaviJson note;
+  final List<RaviJson> omitted;
+  final RaviJson query;
+  final RaviJson server;
+  final List<RaviJson> tools;
+  final double total;
+  final List<RaviJson> unavailable;
+
+  factory McpToolsReturn.fromJson(Map<String, Object?> json) {
+    return McpToolsReturn(
+      agentId: raviJsonAsString(json["agentId"]),
+      note: RaviJson.from(json["note"]),
+      omitted: raviJsonAsList(json["omitted"], RaviJson.from),
+      query: RaviJson.from(json["query"]),
+      server: RaviJson.from(json["server"]),
+      tools: raviJsonAsList(json["tools"], RaviJson.from),
+      total: raviJsonAsDouble(json["total"]),
+      unavailable: raviJsonAsList(json["unavailable"], RaviJson.from),
+    );
+  }
+
+  static McpToolsReturn fromJsonValue(Object? json) {
+    return McpToolsReturn.fromJson(raviJsonObject(json, "McpToolsReturn"));
+  }
+}
+
+McpToolsReturn mcpToolsReturnFromJson(Object? json) => McpToolsReturn.fromJsonValue(json);
+
 class MediaSendOptions {
   const MediaSendOptions({this.account, this.caption, this.channel, this.execute, this.ptt, this.threadId, this.to});
 

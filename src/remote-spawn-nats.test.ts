@@ -152,6 +152,28 @@ describe("createNatsRemoteSpawn SDK arguments", () => {
   );
 });
 
+describe("createNatsRemoteSpawn registered-only MCP flags", () => {
+  it("keeps --strict-mcp-config and the connectors setting in the worker payload", () => {
+    const { payload } = spawnAndCapturePayload({}, [
+      "/local/sdk.mjs",
+      "--output-format",
+      "stream-json",
+      "--strict-mcp-config",
+      "--plugin-dir-no-mcp=/local/plugins",
+      "--settings",
+      '{"disableClaudeAiConnectors":true}',
+    ]);
+
+    expect(payload.args).toEqual([
+      "--output-format",
+      "stream-json",
+      "--strict-mcp-config",
+      "--settings",
+      '{"disableClaudeAiConnectors":true}',
+    ]);
+  });
+});
+
 /** Constants every Claude Code process must carry; not credentials, so sent without the opt-in. */
 const REQUIRED_ENV = { CLAUDE_CODE_DISABLE_FILE_MENTIONS: "1" };
 

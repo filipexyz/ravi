@@ -86914,6 +86914,3282 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let McpAddInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "description": "Attach to this agent with audience operator (repeatable)",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "arg": {
+        "description": "Argument of the stdio command (repeatable)",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "auth": {
+        "description": "none (default), bearer or oauth (http only)",
+        "type": "string"
+      },
+      "command": {
+        "description": "Command of a stdio server",
+        "type": "string"
+      },
+      "env": {
+        "description": "Environment key of the stdio command; values come from stdin",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "execute": {
+        "description": "Actually register the server; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
+      "name": {
+        "description": "Server name: lowercase letters, digits and hyphens",
+        "type": "string"
+      },
+      "protocol": {
+        "description": "auto (default), 2026-07-28 or legacy",
+        "type": "string"
+      },
+      "url": {
+        "description": "https URL of an http server (no token in it)",
+        "type": "string"
+      },
+      "urlStdin": {
+        "description": "Read the server URL from stdin (a URL that carries a token)",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "name"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpAddReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "attached": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "secretStored": {
+        "type": "boolean"
+      },
+      "server": {
+        "additionalProperties": false,
+        "properties": {
+          "attachments": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "agentId": {
+                  "type": "string"
+                },
+                "audience": {
+                  "enum": [
+                    "operator",
+                    "any"
+                  ],
+                  "type": "string"
+                },
+                "uploads": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "agentId",
+                "audience",
+                "uploads"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "authKind": {
+            "enum": [
+              "none",
+              "bearer",
+              "oauth"
+            ],
+            "type": "string"
+          },
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "droppedCount": {
+            "type": "number"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "era": {
+            "anyOf": [
+              {
+                "enum": [
+                  "modern",
+                  "legacy"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "protocol": {
+            "enum": [
+              "auto",
+              "2026-07-28",
+              "legacy"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "unknown",
+              "ok",
+              "needs_login",
+              "error"
+            ],
+            "type": "string"
+          },
+          "toolCount": {
+            "type": "number"
+          },
+          "transport": {
+            "enum": [
+              "http",
+              "stdio"
+            ],
+            "type": "string"
+          },
+          "urlDisplay": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "transport",
+          "urlDisplay",
+          "command",
+          "authKind",
+          "protocol",
+          "enabled",
+          "origin",
+          "status",
+          "era",
+          "toolCount",
+          "droppedCount",
+          "attachments"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "server",
+      "attached",
+      "secretStored"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpAttachInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "description": "Agent id",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Actually attach; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
+      "name": {
+        "description": "Server name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "agent",
+      "name"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpAttachReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agentId": {
+        "type": "string"
+      },
+      "audience": {
+        "enum": [
+          "operator",
+          "any"
+        ],
+        "type": "string"
+      },
+      "created": {
+        "type": "boolean"
+      },
+      "server": {
+        "type": "string"
+      },
+      "uploads": {
+        "type": "boolean"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "server",
+      "agentId",
+      "audience",
+      "uploads",
+      "created",
+      "warnings"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpCallInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "description": "The agent, only when the context belongs to none",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Actually call the tool; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
+      "input": {
+        "description": "Tool arguments as one JSON object (default {})",
+        "type": "string"
+      },
+      "server": {
+        "description": "Server name",
+        "type": "string"
+      },
+      "tool": {
+        "description": "Tool name (remote name, or mcp__<server>__<tool>)",
+        "type": "string"
+      },
+      "wait": {
+        "description": "Seconds to wait for the result (default 45, at most 110)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "server",
+      "tool"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpCallReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "bytes": {
+        "type": "number"
+      },
+      "callId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "content": {
+        "items": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "type": {
+                  "const": "text",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "text"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "bytes": {
+                  "type": "number"
+                },
+                "contentType": {
+                  "type": "string"
+                },
+                "mimeType": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": {
+                  "const": "omitted",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "contentType",
+                "mimeType",
+                "bytes"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "type": "array"
+      },
+      "era": {
+        "enum": [
+          "modern",
+          "legacy"
+        ],
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "outcome": {
+        "enum": [
+          "ok",
+          "tool_error",
+          "detached"
+        ],
+        "type": "string"
+      },
+      "server": {
+        "type": "string"
+      },
+      "structuredContent": {
+        "anyOf": [
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "tool": {
+        "type": "string"
+      },
+      "truncated": {
+        "type": "boolean"
+      },
+      "waitSeconds": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "server",
+      "tool",
+      "name",
+      "outcome",
+      "callId",
+      "content",
+      "structuredContent",
+      "bytes",
+      "truncated",
+      "era",
+      "waitSeconds"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpCallsCancelInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Call id (mc_...)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpCallsCancelReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "call": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "cancelRequestedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "deliveredAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "detachReason": {
+            "enum": [
+              "task",
+              "budget"
+            ],
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ok",
+                  "tool_error",
+                  "error",
+                  "cancelled",
+                  "expired",
+                  "lost",
+                  "discarded"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "server": {
+            "type": "string"
+          },
+          "sessionName": {
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "running",
+              "task",
+              "delivering",
+              "delivered",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "taskStatus": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tool": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "server",
+          "tool",
+          "agentId",
+          "sessionName",
+          "state",
+          "outcome",
+          "detachReason",
+          "taskStatus",
+          "cancelRequestedAt",
+          "lastError",
+          "createdAt",
+          "updatedAt",
+          "expiresAt",
+          "deliveredAt"
+        ],
+        "type": "object"
+      },
+      "cancelRequested": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "call",
+      "cancelRequested"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpCallsListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "limit": {
+        "default": "50",
+        "description": "Page size",
+        "type": "string"
+      },
+      "offset": {
+        "default": "0",
+        "description": "Offset",
+        "type": "string"
+      },
+      "server": {
+        "description": "Only calls of this server",
+        "type": "string"
+      },
+      "session": {
+        "description": "Only calls of this session (operator only)",
+        "type": "string"
+      },
+      "state": {
+        "description": "open, running, task, delivering, delivered or failed",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let McpCallsListReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "calls": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "type": "string"
+            },
+            "cancelRequestedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "deliveredAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "detachReason": {
+              "enum": [
+                "task",
+                "budget"
+              ],
+              "type": "string"
+            },
+            "expiresAt": {
+              "type": "number"
+            },
+            "id": {
+              "type": "string"
+            },
+            "lastError": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "outcome": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "ok",
+                    "tool_error",
+                    "error",
+                    "cancelled",
+                    "expired",
+                    "lost",
+                    "discarded"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "server": {
+              "type": "string"
+            },
+            "sessionName": {
+              "type": "string"
+            },
+            "state": {
+              "enum": [
+                "running",
+                "task",
+                "delivering",
+                "delivered",
+                "failed"
+              ],
+              "type": "string"
+            },
+            "taskStatus": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "tool": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "server",
+            "tool",
+            "agentId",
+            "sessionName",
+            "state",
+            "outcome",
+            "detachReason",
+            "taskStatus",
+            "cancelRequestedAt",
+            "lastError",
+            "createdAt",
+            "updatedAt",
+            "expiresAt",
+            "deliveredAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": false,
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "scope": {
+        "enum": [
+          "all",
+          "session"
+        ],
+        "type": "string"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "scope",
+      "total",
+      "calls",
+      "pagination"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpDetachInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "description": "Agent id",
+        "type": "string"
+      },
+      "name": {
+        "description": "Server name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "agent",
+      "name"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpDetachReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agentId": {
+        "type": "string"
+      },
+      "detached": {
+        "type": "boolean"
+      },
+      "server": {
+        "type": "string"
+      },
+      "skillPinsDropped": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "server",
+      "agentId",
+      "detached",
+      "skillPinsDropped"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpDisableInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "name": {
+        "description": "Server name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "name"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpDisableReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "changed": {
+        "type": "boolean"
+      },
+      "server": {
+        "additionalProperties": false,
+        "properties": {
+          "attachments": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "agentId": {
+                  "type": "string"
+                },
+                "audience": {
+                  "enum": [
+                    "operator",
+                    "any"
+                  ],
+                  "type": "string"
+                },
+                "uploads": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "agentId",
+                "audience",
+                "uploads"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "authKind": {
+            "enum": [
+              "none",
+              "bearer",
+              "oauth"
+            ],
+            "type": "string"
+          },
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "droppedCount": {
+            "type": "number"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "era": {
+            "anyOf": [
+              {
+                "enum": [
+                  "modern",
+                  "legacy"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "protocol": {
+            "enum": [
+              "auto",
+              "2026-07-28",
+              "legacy"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "unknown",
+              "ok",
+              "needs_login",
+              "error"
+            ],
+            "type": "string"
+          },
+          "toolCount": {
+            "type": "number"
+          },
+          "transport": {
+            "enum": [
+              "http",
+              "stdio"
+            ],
+            "type": "string"
+          },
+          "urlDisplay": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "transport",
+          "urlDisplay",
+          "command",
+          "authKind",
+          "protocol",
+          "enabled",
+          "origin",
+          "status",
+          "era",
+          "toolCount",
+          "droppedCount",
+          "attachments"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "server",
+      "changed"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpEnableInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "execute": {
+        "description": "Actually enable; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
+      "name": {
+        "description": "Server name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "name"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpEnableReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "changed": {
+        "type": "boolean"
+      },
+      "server": {
+        "additionalProperties": false,
+        "properties": {
+          "attachments": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "agentId": {
+                  "type": "string"
+                },
+                "audience": {
+                  "enum": [
+                    "operator",
+                    "any"
+                  ],
+                  "type": "string"
+                },
+                "uploads": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "agentId",
+                "audience",
+                "uploads"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "authKind": {
+            "enum": [
+              "none",
+              "bearer",
+              "oauth"
+            ],
+            "type": "string"
+          },
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "droppedCount": {
+            "type": "number"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "era": {
+            "anyOf": [
+              {
+                "enum": [
+                  "modern",
+                  "legacy"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "protocol": {
+            "enum": [
+              "auto",
+              "2026-07-28",
+              "legacy"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "unknown",
+              "ok",
+              "needs_login",
+              "error"
+            ],
+            "type": "string"
+          },
+          "toolCount": {
+            "type": "number"
+          },
+          "transport": {
+            "enum": [
+              "http",
+              "stdio"
+            ],
+            "type": "string"
+          },
+          "urlDisplay": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "transport",
+          "urlDisplay",
+          "command",
+          "authKind",
+          "protocol",
+          "enabled",
+          "origin",
+          "status",
+          "era",
+          "toolCount",
+          "droppedCount",
+          "attachments"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "server",
+      "changed"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "description": "Only servers attached to this agent",
+        "type": "string"
+      },
+      "limit": {
+        "default": "50",
+        "description": "Page size",
+        "type": "string"
+      },
+      "offset": {
+        "default": "0",
+        "description": "Offset",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let McpListReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "attachments": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "agentId": {
+                    "type": "string"
+                  },
+                  "audience": {
+                    "enum": [
+                      "operator",
+                      "any"
+                    ],
+                    "type": "string"
+                  },
+                  "uploads": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "agentId",
+                  "audience",
+                  "uploads"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "authKind": {
+              "enum": [
+                "none",
+                "bearer",
+                "oauth"
+              ],
+              "type": "string"
+            },
+            "command": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "droppedCount": {
+              "type": "number"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "era": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "modern",
+                    "legacy"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "origin": {
+              "type": "string"
+            },
+            "protocol": {
+              "enum": [
+                "auto",
+                "2026-07-28",
+                "legacy"
+              ],
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "unknown",
+                "ok",
+                "needs_login",
+                "error"
+              ],
+              "type": "string"
+            },
+            "toolCount": {
+              "type": "number"
+            },
+            "transport": {
+              "enum": [
+                "http",
+                "stdio"
+              ],
+              "type": "string"
+            },
+            "urlDisplay": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "name",
+            "transport",
+            "urlDisplay",
+            "command",
+            "authKind",
+            "protocol",
+            "enabled",
+            "origin",
+            "status",
+            "era",
+            "toolCount",
+            "droppedCount",
+            "attachments"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": false,
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpLogoutInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "name": {
+        "description": "Server name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "name"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpLogoutReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "removed": {
+        "type": "boolean"
+      },
+      "revocation": {
+        "enum": [
+          "revoked",
+          "not_confirmed",
+          "not_offered"
+        ],
+        "type": "string"
+      },
+      "server": {
+        "type": "string"
+      },
+      "status": {
+        "enum": [
+          "unknown",
+          "ok",
+          "needs_login",
+          "error"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "server",
+      "removed",
+      "revocation",
+      "status"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpRemoveInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "name": {
+        "description": "Server name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "name"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpRemoveReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "callsCancelled": {
+        "type": "number"
+      },
+      "detachedAgents": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "removed": {
+        "additionalProperties": false,
+        "properties": {
+          "attachments": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "agentId": {
+                  "type": "string"
+                },
+                "audience": {
+                  "enum": [
+                    "operator",
+                    "any"
+                  ],
+                  "type": "string"
+                },
+                "uploads": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "agentId",
+                "audience",
+                "uploads"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "authKind": {
+            "enum": [
+              "none",
+              "bearer",
+              "oauth"
+            ],
+            "type": "string"
+          },
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "droppedCount": {
+            "type": "number"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "era": {
+            "anyOf": [
+              {
+                "enum": [
+                  "modern",
+                  "legacy"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "protocol": {
+            "enum": [
+              "auto",
+              "2026-07-28",
+              "legacy"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "unknown",
+              "ok",
+              "needs_login",
+              "error"
+            ],
+            "type": "string"
+          },
+          "toolCount": {
+            "type": "number"
+          },
+          "transport": {
+            "enum": [
+              "http",
+              "stdio"
+            ],
+            "type": "string"
+          },
+          "urlDisplay": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "transport",
+          "urlDisplay",
+          "command",
+          "authKind",
+          "protocol",
+          "enabled",
+          "origin",
+          "status",
+          "era",
+          "toolCount",
+          "droppedCount",
+          "attachments"
+        ],
+        "type": "object"
+      },
+      "secretDeleteFailed": {
+        "type": "boolean"
+      },
+      "secretDeleted": {
+        "type": "boolean"
+      },
+      "skillPinsDropped": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "removed",
+      "detachedAgents",
+      "callsCancelled",
+      "skillPinsDropped",
+      "secretDeleted",
+      "secretDeleteFailed"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpSetInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "description": "Only this agent's attachment",
+        "type": "string"
+      },
+      "audience": {
+        "description": "operator (narrow) or any (widen)",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Actually widen; default is a dry-run that only shows the plan (exit 3). Narrowing applies at once",
+        "type": "boolean"
+      },
+      "name": {
+        "description": "Server name",
+        "type": "string"
+      },
+      "protocol": {
+        "description": "auto, 2026-07-28 or legacy (braked)",
+        "type": "string"
+      },
+      "uploads": {
+        "description": "on (widen, needs --agent) or off (narrow)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "name"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpSetReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "attachments": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "type": "string"
+            },
+            "audience": {
+              "enum": [
+                "operator",
+                "any"
+              ],
+              "type": "string"
+            },
+            "uploads": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "agentId",
+            "audience",
+            "uploads"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "changed": {
+        "type": "boolean"
+      },
+      "protocol": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "from": {
+                "enum": [
+                  "auto",
+                  "2026-07-28",
+                  "legacy"
+                ],
+                "type": "string"
+              },
+              "to": {
+                "enum": [
+                  "auto",
+                  "2026-07-28",
+                  "legacy"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "from",
+              "to"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "server": {
+        "additionalProperties": false,
+        "properties": {
+          "attachments": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "agentId": {
+                  "type": "string"
+                },
+                "audience": {
+                  "enum": [
+                    "operator",
+                    "any"
+                  ],
+                  "type": "string"
+                },
+                "uploads": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "agentId",
+                "audience",
+                "uploads"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "authKind": {
+            "enum": [
+              "none",
+              "bearer",
+              "oauth"
+            ],
+            "type": "string"
+          },
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "droppedCount": {
+            "type": "number"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "era": {
+            "anyOf": [
+              {
+                "enum": [
+                  "modern",
+                  "legacy"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "protocol": {
+            "enum": [
+              "auto",
+              "2026-07-28",
+              "legacy"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "unknown",
+              "ok",
+              "needs_login",
+              "error"
+            ],
+            "type": "string"
+          },
+          "toolCount": {
+            "type": "number"
+          },
+          "transport": {
+            "enum": [
+              "http",
+              "stdio"
+            ],
+            "type": "string"
+          },
+          "urlDisplay": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "transport",
+          "urlDisplay",
+          "command",
+          "authKind",
+          "protocol",
+          "enabled",
+          "origin",
+          "status",
+          "era",
+          "toolCount",
+          "droppedCount",
+          "attachments"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "server",
+      "changed",
+      "protocol",
+      "attachments"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpShowInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "name": {
+        "description": "Server name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "name"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpShowReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "calls": {
+        "additionalProperties": false,
+        "properties": {
+          "lastRateLimitedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "open": {
+            "type": "number"
+          },
+          "rateLimitedMethod": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rateLimitedUntil": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "open",
+          "lastRateLimitedAt",
+          "rateLimitedUntil",
+          "rateLimitedMethod"
+        ],
+        "type": "object"
+      },
+      "server": {
+        "additionalProperties": false,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "attachments": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "agentId": {
+                  "type": "string"
+                },
+                "audience": {
+                  "enum": [
+                    "operator",
+                    "any"
+                  ],
+                  "type": "string"
+                },
+                "uploads": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "agentId",
+                "audience",
+                "uploads"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "authKind": {
+            "enum": [
+              "none",
+              "bearer",
+              "oauth"
+            ],
+            "type": "string"
+          },
+          "catalogFingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "createdBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dropped": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "reason"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "droppedCount": {
+            "type": "number"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "envKeys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "era": {
+            "anyOf": [
+              {
+                "enum": [
+                  "modern",
+                  "legacy"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "extensions": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "login": {
+            "enum": [
+              "not_needed",
+              "logged_in",
+              "needs_login",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          "loginExpiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "loginRenews": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "protocol": {
+            "enum": [
+              "auto",
+              "2026-07-28",
+              "legacy"
+            ],
+            "type": "string"
+          },
+          "secretStored": {
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "unknown",
+              "ok",
+              "needs_login",
+              "error"
+            ],
+            "type": "string"
+          },
+          "statusDetail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "toolCount": {
+            "type": "number"
+          },
+          "tools": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "exposedName": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "exposedName"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "transport": {
+            "enum": [
+              "http",
+              "stdio"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "urlDisplay": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "transport",
+          "urlDisplay",
+          "command",
+          "authKind",
+          "protocol",
+          "enabled",
+          "origin",
+          "status",
+          "era",
+          "toolCount",
+          "droppedCount",
+          "attachments",
+          "args",
+          "envKeys",
+          "statusDetail",
+          "extensions",
+          "tools",
+          "dropped",
+          "catalogFingerprint",
+          "checkedAt",
+          "createdBy",
+          "createdAt",
+          "updatedAt",
+          "secretStored",
+          "login",
+          "loginExpiresAt",
+          "loginRenews"
+        ],
+        "type": "object"
+      },
+      "skills": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "type": "string"
+            },
+            "externalAllowed": {
+              "type": "boolean"
+            },
+            "skillId": {
+              "type": "string"
+            },
+            "skillName": {
+              "type": "string"
+            },
+            "staleReason": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "manifest_changed",
+                    "digest_mismatch",
+                    "dynamic",
+                    "gone"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "state": {
+              "enum": [
+                "active",
+                "stale"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "agentId",
+            "skillId",
+            "skillName",
+            "state",
+            "staleReason",
+            "externalAllowed"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "uploadCatalog": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "dropped": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "reason"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "tools": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "exposedName": {
+                      "type": "string"
+                    },
+                    "fileArguments": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "exposedName",
+                    "fileArguments"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "tools",
+              "dropped"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "server",
+      "calls",
+      "skills",
+      "uploadCatalog",
+      "warnings"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpSkillsListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "description": "The agent, only when the context belongs to none",
+        "type": "string"
+      },
+      "limit": {
+        "default": "50",
+        "description": "Page size (1 to 500)",
+        "type": "string"
+      },
+      "offset": {
+        "default": "0",
+        "description": "Offset",
+        "type": "string"
+      },
+      "server": {
+        "description": "Server name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "server"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpSkillsListReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agentId": {
+        "type": "string"
+      },
+      "invalid": {
+        "type": "number"
+      },
+      "pagination": {
+        "additionalProperties": false,
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "pinCheck": {
+        "enum": [
+          "done",
+          "empty_listing",
+          "scope_missing"
+        ],
+        "type": "string"
+      },
+      "restoredPins": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "agent": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "agent",
+            "id"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "scopeMissing": {
+        "type": "boolean"
+      },
+      "server": {
+        "type": "string"
+      },
+      "skills": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": {
+              "type": "string"
+            },
+            "dynamic": {
+              "type": "boolean"
+            },
+            "files": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "libraryRef": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "manifestDigest": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "pins": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "agent": {
+                    "type": "string"
+                  },
+                  "externalAllowed": {
+                    "type": "boolean"
+                  },
+                  "skill": {
+                    "type": "string"
+                  },
+                  "staleReason": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "manifest_changed",
+                          "digest_mismatch",
+                          "dynamic",
+                          "gone"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "state": {
+                    "enum": [
+                      "active",
+                      "stale"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "agent",
+                  "skill",
+                  "state",
+                  "staleReason",
+                  "externalAllowed"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "uri": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "uri",
+            "id",
+            "name",
+            "description",
+            "dynamic",
+            "files",
+            "bytes",
+            "manifestDigest",
+            "libraryRef",
+            "pins"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "stalePins": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "agent": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "reason": {
+              "enum": [
+                "manifest_changed",
+                "digest_mismatch",
+                "dynamic",
+                "gone"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "agent",
+            "id",
+            "reason"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "suggestedAction": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "supported": {
+        "type": "boolean"
+      },
+      "total": {
+        "type": "number"
+      },
+      "unlistedPins": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "agent": {
+              "type": "string"
+            },
+            "externalAllowed": {
+              "type": "boolean"
+            },
+            "id": {
+              "type": "string"
+            },
+            "skill": {
+              "type": "string"
+            },
+            "staleReason": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "manifest_changed",
+                    "digest_mismatch",
+                    "dynamic",
+                    "gone"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "state": {
+              "enum": [
+                "active",
+                "stale"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "agent",
+            "skill",
+            "state",
+            "staleReason",
+            "externalAllowed",
+            "id"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "server",
+      "agentId",
+      "supported",
+      "total",
+      "pagination",
+      "skills",
+      "invalid",
+      "stalePins",
+      "restoredPins",
+      "unlistedPins",
+      "pinCheck",
+      "scopeMissing",
+      "suggestedAction"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpSkillsPinInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "description": "The agent to pin it to (needed when the context has none)",
+        "type": "string"
+      },
+      "digest": {
+        "description": "Pin only if the manifest still has this digest (the one the dry run showed)",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Actually pin it; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
+      "external": {
+        "description": "Also load it in turns with people outside the organization",
+        "type": "boolean"
+      },
+      "server": {
+        "description": "Server name",
+        "type": "string"
+      },
+      "skill": {
+        "description": "Skill id (mcp:<server>:<path>), URI or path",
+        "type": "string"
+      }
+    },
+    "required": [
+      "server",
+      "skill"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpSkillsPinReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "type": "string"
+      },
+      "created": {
+        "type": "boolean"
+      },
+      "externalAllowed": {
+        "type": "boolean"
+      },
+      "id": {
+        "type": "string"
+      },
+      "manifestDigest": {
+        "type": "string"
+      },
+      "pinned": {
+        "const": true,
+        "type": "boolean"
+      },
+      "pluginRebuilt": {
+        "type": "boolean"
+      },
+      "skill": {
+        "type": "string"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "pinned",
+      "created",
+      "id",
+      "agent",
+      "skill",
+      "manifestDigest",
+      "externalAllowed",
+      "pluginRebuilt",
+      "warnings"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpSkillsReadInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "description": "The agent, only when the context belongs to none",
+        "type": "string"
+      },
+      "file": {
+        "description": "A file of the skill, relative to its root (default SKILL.md)",
+        "type": "string"
+      },
+      "id": {
+        "description": "Skill id (mcp:<server>:<path>)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpSkillsReadReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "binary": {
+        "type": "boolean"
+      },
+      "cached": {
+        "type": "boolean"
+      },
+      "digest": {
+        "type": "string"
+      },
+      "file": {
+        "type": "string"
+      },
+      "id": {
+        "type": "string"
+      },
+      "mimeType": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "server": {
+        "type": "string"
+      },
+      "size": {
+        "type": "number"
+      },
+      "text": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "truncated": {
+        "type": "boolean"
+      },
+      "uri": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "server",
+      "uri",
+      "file",
+      "digest",
+      "size",
+      "cached",
+      "mimeType",
+      "text",
+      "truncated",
+      "binary"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpSkillsUnpinInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "description": "The agent to unpin it from",
+        "type": "string"
+      },
+      "id": {
+        "description": "Skill id (mcp:<server>:<path>)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpSkillsUnpinReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "type": "string"
+      },
+      "id": {
+        "type": "string"
+      },
+      "pluginRebuilt": {
+        "type": "boolean"
+      },
+      "removed": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "removed",
+      "id",
+      "agent",
+      "pluginRebuilt"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let McpToolsInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "description": "The agent, only when the context belongs to none",
+        "type": "string"
+      },
+      "query": {
+        "description": "Only tools whose name or description holds this text",
+        "type": "string"
+      },
+      "server": {
+        "description": "Only this server",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let McpToolsReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "agentId": {
+        "type": "string"
+      },
+      "note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "omitted": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "type": "number"
+            },
+            "server": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "server",
+            "count"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "query": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "server": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "tools": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "inputSchema": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "name": {
+              "type": "string"
+            },
+            "server": {
+              "type": "string"
+            },
+            "tool": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "server",
+            "name",
+            "tool",
+            "description",
+            "inputSchema"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      },
+      "unavailable": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "enum": [
+                "no_turn",
+                "not_registered",
+                "disabled",
+                "not_attached",
+                "audience",
+                "audience_legacy",
+                "capability",
+                "needs_login",
+                "invalid_request",
+                "error"
+              ],
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "server": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "server",
+            "code",
+            "reason"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "agentId",
+      "server",
+      "query",
+      "total",
+      "tools",
+      "omitted",
+      "note",
+      "unavailable"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let MediaSendInputSchema = #"""
   {
     "additionalProperties": false,

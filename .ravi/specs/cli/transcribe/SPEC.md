@@ -90,7 +90,7 @@ immediate.
   command via `--help` only. A dedicated skill (or a section in the audio
   skill) is pending.
 - Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope because
-  `transcribe` is registered in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`).
+  `transcribe` is registered in `AGENT_CONTRACT_DOMAINS` (`src/cli/agent-contract-domains.ts`).
 
 ## Validation
 

@@ -28,7 +28,12 @@ import {
   type ApprovalServiceDependencies,
   APPROVAL_REFUSAL_REASON,
   isFixedApprovalRefusalReason,
+  MAX_PERSON_ANSWER_OPTION_LENGTH,
+  MAX_PERSON_ANSWER_QUESTION_LENGTH,
+  requestPersonAnswer,
+  type PersonAnswerRequest,
 } from "./service.js";
+import { resolvePersonDirectChatTarget } from "./direct-chat-target.js";
 import { setApprovalGrantorRouterConfigForTest } from "../channels/slack/grantors.js";
 import {
   SLACK_APPROVAL_ACTION_APPROVE,
@@ -40,7 +45,7 @@ import {
 import { attachApprovalRequestMessageId, createApprovalRequest, getApprovalRequest } from "./store.js";
 import { sameGrantTuple } from "./grant-metadata.js";
 import { dbGetContactChatGrant, dbListContactChatGrants } from "../permissions/contact-chat-grants.js";
-import { getContact } from "../contacts.js";
+import { getContact, getContactDetails, updateContact } from "../contacts.js";
 import { readAgentRuntimePermissionsConfig } from "../permissions/agent-default-capabilities-provider.js";
 import { recordPermissionDenial } from "../permissions/denials.js";
 import { dbCreateTagDefinition } from "../tags/index.js";
@@ -1852,5 +1857,506 @@ describe("isFixedApprovalRefusalReason", () => {
     const other =
       "Ninguém neste Slack pode aprovar execute:slack:chat.delete: nenhuma pessoa vinculada a um usuário do Slack tem a permissão execute:slack:chat.delete. Nenhum pedido foi enviado. Quem tem essa permissão precisa vincular o próprio usuário do Slack ao seu contato, ou conceder a permissão direto ao agente.";
     expect(isFixedApprovalRefusalReason(other, "permission", options)).toBe(false);
+  });
+});
+
+describe("person-bound answers", () => {
+  const STRANGER_PHONE = APPROVAL_TEST_STRANGER_PHONE;
+  const OWNER_JID = `${OWNER_PHONE}@s.whatsapp.net`;
+  let personEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];
+  let sent: Array<Record<string, unknown>> = [];
+  let deliver: (data: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  let subscribedTopics: string[][] = [];
+
+  function personDependencies(overrides: Partial<ApprovalServiceDependencies> = {}): void {
+    setApprovalServiceDependenciesForTest({
+      now: () => nowMs,
+      requestReply: (async <T>(_topic: string, data: Record<string, unknown>) => {
+        sent.push(data);
+        return (await deliver(data)) as T;
+      }) satisfies ApprovalServiceDependencies["requestReply"],
+      nats: {
+        emit: async () => {},
+        subscribe: ((...args: unknown[]) => {
+          const topics = args.filter((arg): arg is string => typeof arg === "string");
+          subscribedTopics.push(topics);
+          return (async function* () {
+            for (const event of personEvents) {
+              if (topics.includes(event.topic)) yield event;
+            }
+          })();
+        }) satisfies ApprovalServiceDependencies["nats"]["subscribe"],
+      },
+      ...overrides,
+    });
+  }
+
+  function seedPeople() {
+    const owner = seedApprovalContact({ phone: OWNER_PHONE, name: "Owner", tags: [] });
+    const stranger = seedApprovalContact({ phone: STRANGER_PHONE, name: "Stranger", tags: [] });
+    return { owner, stranger };
+  }
+
+  function seedDirectChat(input: {
+    channel: string;
+    instanceId: string;
+    platformChatId: string;
+    contactId: string;
+    userId: string;
+    seenAt?: number;
+    chatType?: "dm" | "group";
+  }) {
+    const chat = dbUpsertChat({
+      channel: input.channel,
+      instanceId: input.instanceId,
+      platformChatId: input.platformChatId,
+      chatType: input.chatType ?? "dm",
+      ...(input.seenAt ? { seenAt: input.seenAt } : {}),
+    });
+    // As the inbound consumer records it: the participant names the sender's platform identity.
+    const identity = getContactDetails(input.contactId)?.platformIdentities.find(
+      (entry) => entry.normalizedPlatformUserId.toLowerCase() === input.userId.toLowerCase(),
+    );
+    dbUpsertChatParticipant({
+      chatId: chat.id,
+      contactId: input.contactId,
+      ...(identity ? { platformIdentityId: identity.id } : {}),
+      rawPlatformUserId: input.userId,
+      normalizedPlatformUserId: input.userId,
+      role: "member",
+      source: "inbound_message",
+    });
+    return chat;
+  }
+
+  function ownerTarget() {
+    return { channel: "whatsapp", accountId: "main", chatId: OWNER_JID };
+  }
+
+  function ask(overrides: Partial<PersonAnswerRequest> & { contactId: string }) {
+    const { contactId, ...rest } = overrides;
+    return requestPersonAnswer({
+      target: ownerTarget(),
+      expectedActor: { contactId },
+      kind: "reply",
+      text: "Qual o nome do projeto?",
+      timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+      ...rest,
+    });
+  }
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-approval-person-answer-test-");
+    setApprovalGrantorRouterConfigForTest(() => ({ instances: {}, instanceToAccount: {} }));
+    nowMs = APPROVAL_TEST_NOW_MS;
+    personEvents = [];
+    sent = [];
+    subscribedTopics = [];
+    deliver = async () => ({ messageId: "q_1" });
+    personDependencies();
+  });
+
+  afterEach(async () => {
+    setApprovalServiceDependenciesForTest();
+    setApprovalGrantorRouterConfigForTest();
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  describe("direct chat target", () => {
+    it("finds the contact's own WhatsApp DM on the turn's instance only", () => {
+      const { owner, stranger } = seedPeople();
+      seedDirectChat({
+        channel: "whatsapp",
+        instanceId: "main",
+        platformChatId: OWNER_JID,
+        contactId: owner.id,
+        userId: OWNER_PHONE,
+      });
+      seedDirectChat({
+        channel: "whatsapp",
+        instanceId: "main",
+        platformChatId: "120363000000000001@g.us",
+        contactId: owner.id,
+        userId: OWNER_PHONE,
+        chatType: "group",
+        seenAt: Date.now() + 60_000,
+      });
+      seedDirectChat({
+        channel: "whatsapp",
+        instanceId: "other",
+        platformChatId: `${OWNER_PHONE}@other`,
+        contactId: owner.id,
+        userId: OWNER_PHONE,
+        seenAt: Date.now() + 120_000,
+      });
+
+      expect(resolvePersonDirectChatTarget({ channel: "whatsapp", accountId: "main", contactId: owner.id })).toEqual({
+        channel: "whatsapp",
+        accountId: "main",
+        chatId: OWNER_JID,
+      });
+      expect(
+        resolvePersonDirectChatTarget({ channel: "whatsapp", accountId: "third", contactId: owner.id }),
+      ).toBeNull();
+      expect(
+        resolvePersonDirectChatTarget({ channel: "whatsapp", accountId: "main", contactId: stranger.id }),
+      ).toBeNull();
+      expect(resolvePersonDirectChatTarget({ channel: "telegram", accountId: "main", contactId: owner.id })).toBeNull();
+    });
+
+    it("matches a WhatsApp DM stored under the instance id when the turn names the instance", () => {
+      const { owner } = seedPeople();
+      seedDirectChat({
+        channel: "whatsapp",
+        instanceId: "omni-uuid-1",
+        platformChatId: OWNER_JID,
+        contactId: owner.id,
+        userId: OWNER_PHONE,
+      });
+      expect(
+        resolvePersonDirectChatTarget({
+          channel: "whatsapp",
+          accountId: "main",
+          instanceId: "omni-uuid-1",
+          contactId: owner.id,
+        }),
+      ).toEqual({ channel: "whatsapp", accountId: "main", chatId: OWNER_JID, instanceId: "omni-uuid-1" });
+    });
+
+    it("refuses a DM that another contact also takes part in, or whose peer the contact no longer owns", () => {
+      const { owner, stranger } = seedPeople();
+      const shared = seedDirectChat({
+        channel: "whatsapp",
+        instanceId: "main",
+        platformChatId: OWNER_JID,
+        contactId: owner.id,
+        userId: OWNER_PHONE,
+      });
+      dbUpsertChatParticipant({
+        chatId: shared.id,
+        contactId: stranger.id,
+        rawPlatformUserId: STRANGER_PHONE,
+        normalizedPlatformUserId: STRANGER_PHONE,
+        role: "member",
+        source: "inbound_message",
+      });
+      expect(resolvePersonDirectChatTarget({ channel: "whatsapp", accountId: "main", contactId: owner.id })).toBeNull();
+
+      seedDirectChat({
+        channel: "whatsapp",
+        instanceId: "main",
+        platformChatId: "5511000000000@s.whatsapp.net",
+        contactId: stranger.id,
+        userId: "5511000000000",
+      });
+      expect(
+        resolvePersonDirectChatTarget({ channel: "whatsapp", accountId: "main", contactId: stranger.id }),
+      ).toBeNull();
+    });
+
+    it("finds the contact's Slack DM in the same workspace only", () => {
+      const owner = seedSlackOwner();
+      seedDirectChat({
+        channel: "slack",
+        instanceId: "main",
+        platformChatId: "D0OWNER",
+        contactId: owner.id,
+        userId: OWNER_SLACK_USER,
+      });
+      seedDirectChat({
+        channel: "slack",
+        instanceId: "main",
+        platformChatId: "C0GROUP",
+        contactId: owner.id,
+        userId: OWNER_SLACK_USER,
+        chatType: "group",
+        seenAt: Date.now() + 60_000,
+      });
+
+      expect(resolvePersonDirectChatTarget({ channel: "slack", accountId: "main", contactId: owner.id })).toEqual({
+        channel: "slack",
+        accountId: "main",
+        chatId: "D0OWNER",
+      });
+      expect(
+        resolvePersonDirectChatTarget({ channel: "slack", accountId: "other-ws", contactId: owner.id }),
+      ).toBeNull();
+    });
+  });
+
+  describe("requestPersonAnswer", () => {
+    function seedOwnerDm() {
+      const people = seedPeople();
+      seedDirectChat({
+        channel: "whatsapp",
+        instanceId: "main",
+        platformChatId: OWNER_JID,
+        contactId: people.owner.id,
+        userId: OWNER_PHONE,
+      });
+      return people;
+    }
+
+    it("ignores a reply from another sender and takes the person's own reply", async () => {
+      const { owner } = seedOwnerDm();
+      personEvents = [
+        { topic: "ravi.inbound.reply", data: { targetMessageId: "q_other", text: "x", senderId: OWNER_PHONE } },
+        {
+          topic: "ravi.inbound.reply",
+          data: { targetMessageId: "q_1", text: "stranger answer", senderId: STRANGER_PHONE, accountId: "main" },
+        },
+        {
+          topic: "ravi.inbound.reply",
+          data: { targetMessageId: "q_1", text: "  Atlas  ", senderId: OWNER_PHONE, accountId: "main" },
+        },
+      ];
+
+      const result = await ask({ contactId: owner.id });
+
+      expect(result).toEqual({
+        status: "answered",
+        messageId: "q_1",
+        contactId: owner.id,
+        answer: { kind: "text", text: "Atlas" },
+        ignoredAnswers: 1,
+      });
+      expect(sent).toHaveLength(1);
+      expect(sent[0]).toMatchObject({ channel: "whatsapp", accountId: "main", to: OWNER_JID });
+      expect(sent[0].poll).toBeUndefined();
+      expect(String(sent[0].text)).toContain("Qual o nome do projeto?");
+      expect(subscribedTopics).toEqual([["ravi.inbound.reply"]]);
+    });
+
+    it("ignores the person's own reply when it arrives through another account", async () => {
+      const { owner } = seedOwnerDm();
+      personEvents = [
+        {
+          topic: "ravi.inbound.reply",
+          data: { targetMessageId: "q_1", text: "Atlas", senderId: OWNER_PHONE, accountId: "other" },
+        },
+      ];
+
+      const result = await ask({ contactId: owner.id });
+
+      expect(result).toEqual({ status: "timeout", messageId: "q_1", reason: "expired", ignoredAnswers: 1 });
+    });
+
+    it("times out when only other people answer", async () => {
+      const { owner } = seedOwnerDm();
+      personEvents = [
+        { topic: "ravi.inbound.reply", data: { targetMessageId: "q_1", text: "sim", senderId: STRANGER_PHONE } },
+        { topic: "ravi.inbound.reply", data: { targetMessageId: "q_1", text: "sim", senderId: "5599000000000" } },
+      ];
+
+      const result = await ask({ contactId: owner.id });
+
+      expect(result).toEqual({ status: "timeout", messageId: "q_1", reason: "expired", ignoredAnswers: 2 });
+    });
+
+    it("times out with nothing received", async () => {
+      const { owner } = seedOwnerDm();
+      const result = await ask({ contactId: owner.id });
+      expect(result).toEqual({ status: "timeout", messageId: "q_1", reason: "expired", ignoredAnswers: 0 });
+    });
+
+    it("turns a send failure into send_failed, never into an answer or the error text", async () => {
+      const { owner } = seedOwnerDm();
+      deliver = async () => {
+        throw new Error("upstream said: token=sk-secret");
+      };
+      personEvents = [
+        { topic: "ravi.inbound.reply", data: { targetMessageId: "q_1", text: "Atlas", senderId: OWNER_PHONE } },
+      ];
+
+      const failed = await ask({ contactId: owner.id });
+
+      expect(failed).toEqual({ status: "send_failed", reason: "delivery_failed" });
+      expect(JSON.stringify(failed)).not.toContain("sk-secret");
+      expect(subscribedTopics).toEqual([]);
+
+      deliver = async () => ({});
+      expect(await ask({ contactId: owner.id })).toEqual({ status: "send_failed", reason: "no_message_id" });
+    });
+
+    it("sends a poll as numbered text where votes cannot be tied to a person, and maps the reply", async () => {
+      const { owner } = seedOwnerDm();
+      personEvents = [
+        { topic: "ravi.inbound.reply", data: { targetMessageId: "q_1", text: "1", senderId: STRANGER_PHONE } },
+        { topic: "ravi.inbound.reply", data: { targetMessageId: "q_1", text: "2", senderId: OWNER_PHONE } },
+      ];
+
+      const result = await ask({ contactId: owner.id, kind: "poll", text: "Qual cor?", options: ["Red", "Blue"] });
+
+      expect(result).toMatchObject({
+        status: "answered",
+        answer: { kind: "choice", label: "Blue" },
+        ignoredAnswers: 1,
+      });
+      expect(sent[0].poll).toBeUndefined();
+      expect(String(sent[0].text)).toContain("1. Red\n2. Blue");
+      expect(subscribedTopics).toEqual([["ravi.inbound.reply"]]);
+
+      personEvents = [
+        { topic: "ravi.inbound.reply", data: { targetMessageId: "q_1", text: "  blue ", senderId: OWNER_PHONE } },
+      ];
+      expect(
+        await ask({ contactId: owner.id, kind: "poll", text: "Qual cor?", options: ["Red", "Blue"] }),
+      ).toMatchObject({ status: "answered", answer: { kind: "choice", label: "Blue" } });
+
+      personEvents = [
+        { topic: "ravi.inbound.reply", data: { targetMessageId: "q_1", text: "verde", senderId: OWNER_PHONE } },
+      ];
+      expect(
+        await ask({ contactId: owner.id, kind: "poll", text: "Qual cor?", options: ["Red", "Blue"] }),
+      ).toMatchObject({ status: "answered", answer: { kind: "text", text: "verde" } });
+    });
+
+    it("reads a numeric option by its label before its position", async () => {
+      const { owner } = seedOwnerDm();
+      const seats = { contactId: owner.id, kind: "poll" as const, text: "Quantos lugares?", options: ["5", "10", "1"] };
+
+      // "1" is the option "1" (third), not the first option "5".
+      personEvents = [
+        { topic: "ravi.inbound.reply", data: { targetMessageId: "q_1", text: "1", senderId: OWNER_PHONE } },
+      ];
+      expect(await ask(seats)).toMatchObject({ status: "answered", answer: { kind: "choice", label: "1" } });
+
+      // "10" is the option "10", not a missing tenth option.
+      personEvents = [
+        { topic: "ravi.inbound.reply", data: { targetMessageId: "q_1", text: "10", senderId: OWNER_PHONE } },
+      ];
+      expect(await ask(seats)).toMatchObject({ status: "answered", answer: { kind: "choice", label: "10" } });
+
+      // A number that names no label is still a position.
+      personEvents = [
+        { topic: "ravi.inbound.reply", data: { targetMessageId: "q_1", text: "2", senderId: OWNER_PHONE } },
+      ];
+      expect(await ask(seats)).toMatchObject({ status: "answered", answer: { kind: "choice", label: "10" } });
+    });
+
+    it("refuses an option longer than 100 characters or a question longer than 4000, with nothing sent", async () => {
+      const { owner } = seedOwnerDm();
+      const longOption = await ask({
+        contactId: owner.id,
+        kind: "poll",
+        text: "Qual plano?",
+        options: ["x".repeat(MAX_PERSON_ANSWER_OPTION_LENGTH + 1), "short"],
+      });
+      expect(longOption).toEqual({ status: "send_failed", reason: "invalid_request" });
+      const longQuestion = await ask({
+        contactId: owner.id,
+        text: "q".repeat(MAX_PERSON_ANSWER_QUESTION_LENGTH + 1),
+      });
+      expect(longQuestion).toEqual({ status: "send_failed", reason: "invalid_request" });
+      expect(sent).toEqual([]);
+
+      personEvents = [
+        { topic: "ravi.inbound.reply", data: { targetMessageId: "q_1", text: "1", senderId: OWNER_PHONE } },
+      ];
+      const atLimit = "x".repeat(MAX_PERSON_ANSWER_OPTION_LENGTH);
+      expect(
+        await ask({ contactId: owner.id, kind: "poll", text: "Qual plano?", options: [atLimit, "short"] }),
+      ).toMatchObject({ status: "answered", answer: { kind: "choice", label: atLimit } });
+    });
+
+    it("sends a native poll only where votes name the voter, and counts the person's vote alone", async () => {
+      const { owner } = seedOwnerDm();
+      personDependencies({ attributedPollVoteChannels: new Set(["whatsapp"]) });
+      personEvents = [
+        { topic: "ravi.inbound.pollVote", data: { pollMessageId: "q_1", votes: [{ name: "Red", voters: [] }] } },
+        {
+          topic: "ravi.inbound.pollVote",
+          data: { pollMessageId: "q_1", votes: [{ name: "Red", voters: [`${STRANGER_PHONE}@s.whatsapp.net`] }] },
+        },
+        {
+          topic: "ravi.inbound.pollVote",
+          data: {
+            pollMessageId: "q_1",
+            votes: [
+              { name: "Red", voters: [`${STRANGER_PHONE}@s.whatsapp.net`] },
+              { name: "Blue", voters: [OWNER_JID] },
+            ],
+          },
+        },
+      ];
+
+      const result = await ask({ contactId: owner.id, kind: "poll", text: "Qual cor?", options: ["Red", "Blue"] });
+
+      expect(result).toEqual({
+        status: "answered",
+        messageId: "q_1",
+        contactId: owner.id,
+        answer: { kind: "choice", label: "Blue" },
+        ignoredAnswers: 1,
+      });
+      expect(sent[0].poll).toEqual({ name: "Qual cor?", values: ["Red", "Blue"], selectableCount: 1 });
+      expect(subscribedTopics).toEqual([["ravi.inbound.reply", "ravi.inbound.pollVote"]]);
+    });
+
+    it("ignores poll votes when the question was not sent as a native poll", async () => {
+      const { owner } = seedOwnerDm();
+      personEvents = [
+        {
+          topic: "ravi.inbound.pollVote",
+          data: { pollMessageId: "q_1", votes: [{ name: "Red", voters: [OWNER_JID] }] },
+        },
+      ];
+      const result = await ask({ contactId: owner.id, kind: "poll", text: "Qual cor?", options: ["Red", "Blue"] });
+      expect(result).toMatchObject({ status: "timeout", ignoredAnswers: 0 });
+    });
+
+    it("refuses, with nothing sent, a target that is not the person's own direct chat", async () => {
+      const { owner, stranger } = seedOwnerDm();
+      seedDirectChat({
+        channel: "whatsapp",
+        instanceId: "main",
+        platformChatId: "120363000000000001@g.us",
+        contactId: owner.id,
+        userId: OWNER_PHONE,
+        chatType: "group",
+      });
+
+      expect(
+        await ask({
+          contactId: owner.id,
+          target: { channel: "whatsapp", accountId: "main", chatId: "120363000000000001@g.us" },
+        }),
+      ).toEqual({ status: "wrong_actor", reason: "target_not_actor_dm" });
+      expect(await ask({ contactId: stranger.id })).toEqual({ status: "wrong_actor", reason: "target_not_actor_dm" });
+      expect(await ask({ contactId: owner.id, target: { ...ownerTarget(), threadId: "t1" } })).toEqual({
+        status: "wrong_actor",
+        reason: "target_not_actor_dm",
+      });
+      expect(await ask({ contactId: "contact_missing" })).toEqual({ status: "wrong_actor", reason: "actor_not_found" });
+
+      updateContact(STRANGER_PHONE, { status: "blocked" });
+      expect(await ask({ contactId: stranger.id })).toEqual({ status: "wrong_actor", reason: "actor_not_allowed" });
+      expect(sent).toEqual([]);
+    });
+
+    it("refuses Slack and malformed requests with nothing sent", async () => {
+      const { owner } = seedOwnerDm();
+      expect(
+        await ask({ contactId: owner.id, target: { channel: "slack", accountId: "main", chatId: "D0OWNER" } }),
+      ).toEqual({ status: "send_failed", reason: "unsupported_channel" });
+      expect(await ask({ contactId: owner.id, kind: "poll", options: ["Only"] })).toEqual({
+        status: "send_failed",
+        reason: "invalid_request",
+      });
+      expect(await ask({ contactId: owner.id, kind: "poll", options: ["Same", "same"] })).toEqual({
+        status: "send_failed",
+        reason: "invalid_request",
+      });
+      expect(await ask({ contactId: owner.id, options: ["A", "B"] })).toEqual({
+        status: "send_failed",
+        reason: "invalid_request",
+      });
+      expect(await ask({ contactId: owner.id, text: "   " })).toEqual({
+        status: "send_failed",
+        reason: "invalid_request",
+      });
+      expect(sent).toEqual([]);
+    });
   });
 });

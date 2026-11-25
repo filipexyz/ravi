@@ -227,6 +227,20 @@ Implement these generic Ravi changes before building the Pi adapter:
 - Create one dev agent/session using `provider=pi`.
 - Validate text, tool, interrupt, resume, and model/thinking switch flows before exposing to task workers.
 
+## MCP
+
+- Pi has no native MCP tools in Ravi. Registered servers (`mcp`) reach Pi as
+  the dynamic tools `mcp_tools` and `mcp_call`, which host services export from
+  `ravi mcp tools` and `ravi mcp call` like every other CLI command; they run
+  in the daemon and check `use:tool:mcp__<server>__<tool>` there.
+- `mapPiToolNameToRavi` MUST return a name that starts with `mcp__` unchanged.
+  Substring rules MUST NOT apply to it: `mcp__a__webfetch_x` is not `WebFetch`
+  and `mcp__a__run_terminal` is not `Bash`.
+- The Pi permission gate MUST deny every tool whose name starts with `mcp__`,
+  whatever the grants say: such a tool did not come from Ravi and reached no
+  gateway check.
+- The existing name mappings for Pi's own tools are unchanged.
+
 ## Permission Hook Bridge
 
 This slice keeps the RPC JSONL execution path (prompt, steer, interrupt, resume). It does not migrate sessions onto `createAgentSession`.

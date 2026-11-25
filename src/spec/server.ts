@@ -16,6 +16,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { logger } from "../utils/logger.js";
 import { DEFAULT_SPEC_PROMPT } from "./default-prompt.js";
+import { SPEC_MCP_SERVER_NAME } from "./server-name.js";
 
 const log = logger.child("spec");
 
@@ -66,7 +67,7 @@ function loadSpecPrompt(cwd: string): string {
  * `hooks/tool-safety.ts`: a rename must change those too, or
  * `exit_spec_mode` stops asking for approval.
  */
-export const SPEC_MCP_SERVER_NAME = "spec";
+export { SPEC_MCP_SERVER_NAME };
 
 export function createSpecServer(sessionId: string, cwd: string) {
   return createSdkMcpServer({

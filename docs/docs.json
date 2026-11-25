@@ -104,7 +104,8 @@
           {
             "group": "Security",
             "pages": [
-              "guides/permissions"
+              "guides/permissions",
+              "guides/mcp"
             ]
           },
           {

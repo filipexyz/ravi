@@ -167,6 +167,10 @@ public final class RaviClient {
     MailNamespace(transport: transport)
   }
 
+  public var mcp: McpNamespace {
+    McpNamespace(transport: transport)
+  }
+
   public var media: MediaNamespace {
     MediaNamespace(transport: transport)
   }
@@ -4384,6 +4388,162 @@ public struct MailThreadsNamespace: Sendable {
     requestBody["thread"] = try RaviJSON.fromEncodable(thread)
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["mail","threads"], command: "read", body: requestBody, as: MailThreadsReadReturn.self)
+  }
+}
+
+public struct McpNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public var calls: McpCallsNamespace {
+    McpCallsNamespace(transport: transport)
+  }
+
+  public var skills: McpSkillsNamespace {
+    McpSkillsNamespace(transport: transport)
+  }
+
+  public func add(_ name: String, _ options: McpAddOptions = .init()) async throws -> McpAddReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["name"] = try RaviJSON.fromEncodable(name)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mcp"], command: "add", body: requestBody, as: McpAddReturn.self)
+  }
+
+  public func attach(_ name: String, _ agent: String, _ options: McpAttachOptions = .init()) async throws -> McpAttachReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["name"] = try RaviJSON.fromEncodable(name)
+    requestBody["agent"] = try RaviJSON.fromEncodable(agent)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mcp"], command: "attach", body: requestBody, as: McpAttachReturn.self)
+  }
+
+  public func call(_ server: String, _ tool: String, _ options: McpCallOptions = .init()) async throws -> McpCallReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["server"] = try RaviJSON.fromEncodable(server)
+    requestBody["tool"] = try RaviJSON.fromEncodable(tool)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mcp"], command: "call", body: requestBody, as: McpCallReturn.self)
+  }
+
+  public func detach(_ name: String, _ agent: String) async throws -> McpDetachReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["name"] = try RaviJSON.fromEncodable(name)
+    requestBody["agent"] = try RaviJSON.fromEncodable(agent)
+    return try await transport.call(groupSegments: ["mcp"], command: "detach", body: requestBody, as: McpDetachReturn.self)
+  }
+
+  public func disable(_ name: String) async throws -> McpDisableReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["name"] = try RaviJSON.fromEncodable(name)
+    return try await transport.call(groupSegments: ["mcp"], command: "disable", body: requestBody, as: McpDisableReturn.self)
+  }
+
+  public func enable(_ name: String, _ options: McpEnableOptions = .init()) async throws -> McpEnableReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["name"] = try RaviJSON.fromEncodable(name)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mcp"], command: "enable", body: requestBody, as: McpEnableReturn.self)
+  }
+
+  public func list(_ options: McpListOptions = .init()) async throws -> McpListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mcp"], command: "list", body: requestBody, as: McpListReturn.self)
+  }
+
+  public func logout(_ name: String) async throws -> McpLogoutReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["name"] = try RaviJSON.fromEncodable(name)
+    return try await transport.call(groupSegments: ["mcp"], command: "logout", body: requestBody, as: McpLogoutReturn.self)
+  }
+
+  public func remove(_ name: String) async throws -> McpRemoveReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["name"] = try RaviJSON.fromEncodable(name)
+    return try await transport.call(groupSegments: ["mcp"], command: "remove", body: requestBody, as: McpRemoveReturn.self)
+  }
+
+  public func set(_ name: String, _ options: McpSetOptions = .init()) async throws -> McpSetReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["name"] = try RaviJSON.fromEncodable(name)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mcp"], command: "set", body: requestBody, as: McpSetReturn.self)
+  }
+
+  public func show(_ name: String) async throws -> McpShowReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["name"] = try RaviJSON.fromEncodable(name)
+    return try await transport.call(groupSegments: ["mcp"], command: "show", body: requestBody, as: McpShowReturn.self)
+  }
+
+  public func tools(_ server: String? = nil, _ options: McpToolsOptions = .init()) async throws -> McpToolsReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let server {
+      requestBody["server"] = try RaviJSON.fromEncodable(server)
+    }
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mcp"], command: "tools", body: requestBody, as: McpToolsReturn.self)
+  }
+}
+
+public struct McpCallsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func cancel(_ id: String) async throws -> McpCallsCancelReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    return try await transport.call(groupSegments: ["mcp","calls"], command: "cancel", body: requestBody, as: McpCallsCancelReturn.self)
+  }
+
+  public func list(_ options: McpCallsListOptions = .init()) async throws -> McpCallsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mcp","calls"], command: "list", body: requestBody, as: McpCallsListReturn.self)
+  }
+}
+
+public struct McpSkillsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func list(_ server: String, _ options: McpSkillsListOptions = .init()) async throws -> McpSkillsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["server"] = try RaviJSON.fromEncodable(server)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mcp","skills"], command: "list", body: requestBody, as: McpSkillsListReturn.self)
+  }
+
+  public func pin(_ server: String, _ skill: String, _ options: McpSkillsPinOptions = .init()) async throws -> McpSkillsPinReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["server"] = try RaviJSON.fromEncodable(server)
+    requestBody["skill"] = try RaviJSON.fromEncodable(skill)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mcp","skills"], command: "pin", body: requestBody, as: McpSkillsPinReturn.self)
+  }
+
+  public func read(_ id: String, _ options: McpSkillsReadOptions = .init()) async throws -> McpSkillsReadReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mcp","skills"], command: "read", body: requestBody, as: McpSkillsReadReturn.self)
+  }
+
+  public func unpin(_ id: String, _ options: McpSkillsUnpinOptions = .init()) async throws -> McpSkillsUnpinReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["mcp","skills"], command: "unpin", body: requestBody, as: McpSkillsUnpinReturn.self)
   }
 }
 

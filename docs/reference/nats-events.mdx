@@ -75,6 +75,7 @@ The catalog is a set of templates, not a whitelist: a trigger can listen on any 
 | `ravi.whatsapp.>` | no | yes | `ravi.whatsapp.qr.<instanceId>` and `ravi.whatsapp.connected.<instanceId>` during pairing. |
 | `ravi.runtime.>`, `ravi.rtk.>`, `ravi.work_objects.>` | no | yes | Runtime telemetry, hook rewrites and Work Object requests. |
 | `ravi.config.changed`, `ravi.triggers.>`, `ravi.cron.>`, `ravi.heartbeat.>`, `ravi.hooks.>` | no | yes | Internal refresh signals between the CLI and the daemon. |
+| `ravi.mcp.>` | no | no | MCP notices: `ravi.mcp.catalog.changed`. `ravi.mcp.elicitation.*` is internal (a person's answer to a server's question) and never reaches a trigger, not even through `ravi.mcp.>` or `ravi.>`. |
 
 The `ravi.session.*` and internal families are for observing and debugging. Do not build triggers on them.
 
@@ -182,6 +183,16 @@ If the agent writes to the same base that wakes it, filter on `data.actor.type =
 </Tip>
 
 See [Bases](/console/bases) for queues, per-row sessions and cooldown behaviour.
+
+### `ravi.mcp.catalog.changed`
+
+Published by the daemon when the tool list of a registered MCP server changes (see [MCP servers](/guides/mcp)):
+
+```
+{ server, variant?, fingerprint, previousFingerprint, toolCount, droppedCount }
+```
+
+`variant: "files"` marks the list that agents with file uploads on see. The event carries names, fingerprints and counts only, never tool descriptions, schemas or addresses. It is a notice for observing, not a trigger topic.
 
 ## Related
 

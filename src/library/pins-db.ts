@@ -8,6 +8,7 @@
  * row at once; a failed sync never touches them.
  */
 
+import { loadableMcpSkillPluginPins } from "../mcp/skill-plugin.js";
 import { getDb } from "../router/router-db.js";
 import type { LibraryItem } from "./types.js";
 
@@ -105,19 +106,29 @@ export function dbListLibraryPinsForAgent(agentId: string): LibraryPinRow[] {
 
 /**
  * The agent's pins for authorization and the skill allowlist: the Library ids
- * (they authorize like a grant) and the plugin skill names. Never throws: an
- * unreadable table means no pins.
+ * (they authorize like a grant) and the plugin skill names, remote MCP skill
+ * stubs that may load now included (spec mcp, Remote Skills; they add a name,
+ * never a Library id). Never throws: an unreadable table means no pins.
  */
 export function readAgentLibraryPins(agentId: string): { libraryIds: string[]; skillNames: string[] } {
+  let rows: LibraryPinRow[];
   try {
-    const rows = dbListLibraryPinsForAgent(agentId);
-    return {
-      libraryIds: [...new Set(rows.map((row) => row.libraryId))],
-      skillNames: [...new Set(rows.map((row) => row.skillName))],
-    };
+    rows = dbListLibraryPinsForAgent(agentId);
   } catch {
     return { libraryIds: [], skillNames: [] };
   }
+  let remote: string[] = [];
+  try {
+    const libraryNames = new Set(dbListLibraryPins().map((row) => row.skillName.toLowerCase()));
+    remote = loadableMcpSkillPluginPins(libraryNames, agentId).map((pin) => pin.skillName);
+  } catch {
+    // no-cause: an unreadable remote pin table adds no name (fail closed); the Library pins still count.
+    remote = [];
+  }
+  return {
+    libraryIds: [...new Set(rows.map((row) => row.libraryId))],
+    skillNames: [...new Set([...rows.map((row) => row.skillName), ...remote])],
+  };
 }
 
 export function dbGetLibraryPinState(): LibraryPinState | null {
@@ -216,6 +227,22 @@ export function dbTouchLibraryPinState(input: { installationName?: string | null
         WHERE id = 1`,
     )
     .run(now, now, input.installationName ?? null);
+}
+
+/**
+ * Point the state at a new plugin generation outside a Console sync (a remote
+ * MCP skill pin changed). `resetFingerprint` forgets the applied fingerprint,
+ * so the next Console sync writes its own full generation again.
+ */
+export function dbSetLibraryPluginDir(pluginDir: string | null, options: { resetFingerprint?: boolean } = {}): void {
+  getDb()
+    .prepare(
+      `INSERT INTO library_pin_state (id, plugin_dir) VALUES (1, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         plugin_dir = excluded.plugin_dir,
+         fingerprint = CASE WHEN ? = 1 THEN NULL ELSE fingerprint END`,
+    )
+    .run(pluginDir, options.resetFingerprint ? 1 : 0);
 }
 
 /** A failed sync: the pins stay as they are; only the error is recorded. */

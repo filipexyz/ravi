@@ -112,6 +112,15 @@ export function findSlackUserIdForContact(input: {
 }
 
 /**
+ * Every `instance_id` a Slack row of this instance may carry (its configured
+ * slug, its UUID and the received value), for lookups confined to one
+ * workspace. Without config it is only the received value: narrower, never wider.
+ */
+export function listSlackInstanceScopeAliases(instanceId: string | null | undefined): string[] {
+  return [...resolveSlackInstanceAliases(readGrantorRouterConfig(), instanceId ?? null).scopedAliases];
+}
+
+/**
  * A Slack clicker resolves exactly like a Slack message author
  * (`resolveSlackActorIdentity`): only the receiving instance's configured
  * aliases, then the empty legacy scope. No cross-instance or cross-channel

@@ -168,6 +168,12 @@ and transport names follow [`SPEC.md`](./SPEC.md).
   operations.
 - Migrated roots match `AGENT_CONTRACT_DOMAINS`; list JSON supports bounded
   `--fields` projection.
+- Every registered root is in `AGENT_CONTRACT_DOMAINS` or in
+  `AGENT_CONTRACT_UNMIGRATED_ROOTS`, never both, and both lists name only
+  registered roots (`usage-exit.smoke.test.ts`); `ravi mcp` usage errors
+  (missing argument, unknown option or subcommand, a group without a
+  subcommand, in `mcp`, `mcp calls` and `mcp skills`) exit 2 with the
+  envelope.
 - Public SDK commands keep concrete return contracts and do not increase a
   return-schema baseline.
 - CI comparisons use failing test identities and platform evidence, never only

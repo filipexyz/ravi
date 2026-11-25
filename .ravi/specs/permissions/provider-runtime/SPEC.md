@@ -117,9 +117,15 @@ Required capability materializers:
   it ends in `*`; there is no other pattern, apart from the two names of the
   subagent tool below. `use:tool:mcp__<server>__*`
   therefore grants every tool whose name starts with `mcp__<server>__`: the
-  tools of the server the runtime loaded under that name, and of a server
-  whose name starts with `<server>__`. Server names come from the runtime's
-  configuration, so the grant is a name prefix, not a server identity.
+  tools of the server under that name, and of any server whose name starts
+  with `<server>__`. The grant is a name prefix, not a server identity.
+- Server names come from Ravi's MCP registry (`mcp`), not from the runtime's
+  configuration. A registered name matches `^[a-z][a-z0-9-]{0,23}$` and holds
+  no underscore, so `use:tool:mcp__<server>__*` reaches no other registered
+  server. Host server names (`spec`) and `ravi` are reserved and cannot be
+  registered.
+- `use:tool:mcp_*` (written for Pi's `mcp_tools` and `mcp_call`) is also a
+  prefix of every `mcp__<server>__<tool>` name and grants all of them.
 - The MCP resource readers are not per-server: a grant of one reader covers
   the resources of every server the session started.
 - The subagent tool goes by two names and the two are one tool. Claude Code
@@ -151,7 +157,10 @@ Required capability materializers:
 - The tool and Bash permission hooks MUST turn their own failure into a denial.
   Claude Code ignores a PreToolUse hook that throws and runs the tool, so an
   exception while reading state or recording a denial would otherwise allow
-  the call.
+  the call. The same holds for the hooks that ask a person for approval
+  (`mcp__spec__exit_spec_mode`, `ExitPlanMode`, `AskUserQuestion`): a failed
+  approval request MUST deny the call, not let it run unapproved
+  (`runtime/providers/claude-code`).
 - When the agent is known, the denial record of an MCP tool MUST carry the
   server name and source the runtime reported, as untrusted text.
 - Tools of an in-process MCP server that Ravi attaches to the session itself
@@ -160,6 +169,27 @@ Required capability materializers:
   holds no capabilities included. Today the only such server is `spec`,
   attached for spec-mode agents. A host server that forwards calls to servers outside
   the Ravi process is not a host tool source and MUST NOT be declared as one.
+- Gateway facades are such forwarding servers: in-process servers Ravi attaches
+  to a Claude session to expose registered MCP servers (`mcp`, Claude
+  Facade). Their names MUST NOT enter the host server list; the hook receives
+  them in a separate gateway list. Their tools MUST be checked by name like any
+  other tool, and the gateway authorizes the call again (`authorizeMcpUse`).
+  Host and gateway names MUST be disjoint.
+- Provenance of unregistered servers. For an `mcp__` name that is not a host
+  tool:
+  - when the runtime reports `mcp_server`, the call MUST be denied unless
+    `source` is `sdk` and `name` is in the session's gateway list. The denial
+    MUST say that the server (name and source, as untrusted text) is not
+    registered in Ravi, and MUST hold even when the turn holds `use:tool:*`;
+  - when the runtime reports no `mcp_server`, a name under a host or gateway
+    prefix falls through to the name check (the gateway re-authorizes a
+    gateway tool), and any other `mcp__` name MUST be denied;
+  - a provenance denial is recorded against the server
+    (`use mcp_server:<reported name>`, with the tool, the source and code
+    `not_registered` in the detail), not against the tool, because no tool
+    grant can resolve it. Without an agent identity only the audit event is
+    emitted;
+  - a call that passes these rules is then checked by name as above.
 - The host-tool exemption MUST be decided from the server provenance the
   runtime reports with the call (`mcp_server.source` equal to `sdk` and
   `mcp_server.name` equal to a name the session declared). It MUST NOT be
@@ -177,11 +207,25 @@ Required capability materializers:
 - The Bash permission hook MUST keep its `Bash` matcher. Claude Code delivers
   the shell command of its `Monitor` tool to `Bash`-matched hooks as a Bash
   call; a hook without a matcher sees that call only as `Monitor`.
-- This check is on the call. It does not stop the runtime from starting the
-  MCP servers its configuration lists when a session starts, and it does not
-  cover Codex, where MCP servers come from the operator's Codex configuration
-  and their tools reach no Ravi decision. On Grok one capability,
-  `use:tool:MCPTool`, covers every server and tool.
+- This check is on the call. Which servers a runtime may start is a separate
+  rule: every runtime MUST load registered servers only (`mcp`,
+  Registered-Only Loading Per Runtime). Claude Code starts with strict MCP
+  configuration and fails a turn whose `system/init` lists a server Ravi did
+  not declare. Codex starts with each server of its own configuration
+  disabled and fails closed when one is still reported or an MCP tool call
+  item appears. Grok's MCPTool class is always refused, whatever the grants
+  say. Pi has no native MCP tools, and any `mcp__*` tool name is denied there.
+- Pi, Codex and Grok reach registered servers through `ravi mcp tools` and
+  `ravi mcp call`, which check the same `use:tool:mcp__<server>__<tool>`
+  capability in the daemon.
+  The runtime bootstrap floor grants the two command actions
+  (`read:mcp.tools:list`, `mutate:mcp.tools:call`), `read:mcp.skills:read`
+  (a pinned skill's stub), and `read:mcp.calls:list` and
+  `mutate:mcp.calls:cancel` (a background call's own commands, narrowed per
+  turn to the session's calls on servers and tools that turn may use), and
+  no other `ravi mcp` command, so an agent reaches a registered server on
+  every runtime by the same two decisions: the operator's attachment and the
+  tool grant.
 
 ## Prompt Text
 
@@ -207,7 +251,7 @@ Required capability materializers:
 
 - File-writing tools and shell output redirects MUST require
   `execute:executable:*` or `admin:system:*` when their destination is runtime
-  provider configuration (`.claude`, `.codex`, `.pi`, or `.mcp.json`). `use:tool:Write`
+  provider configuration (`.claude`, `.codex`, `.pi`, `.grok`, or `.mcp.json`). `use:tool:Write`
   alone MUST NOT authorize that write. Case variants MUST also be protected on
   case-insensitive filesystems.
 - Destination checks MUST resolve paths against the executing tool's working

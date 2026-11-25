@@ -79,6 +79,36 @@ describe("createRemoteSpawn SDK arguments", () => {
   );
 });
 
+describe("createRemoteSpawn registered-only MCP flags", () => {
+  it("keeps --strict-mcp-config and the connectors setting on the remote claude", () => {
+    const { spawnImpl, calls } = createFakeSpawn();
+    createRemoteSpawn(
+      "worker.example",
+      "ravi",
+      spawnImpl,
+      {},
+    )({
+      ...spawnOptions({}),
+      // The order and form the Agent SDK uses (checked against 0.3.323).
+      args: [
+        "/local/sdk.mjs",
+        "--output-format",
+        "stream-json",
+        "--strict-mcp-config",
+        "--plugin-dir-no-mcp=/local/plugins",
+        "--settings",
+        '{"disableClaudeAiConnectors":true}',
+      ],
+    });
+
+    expect(calls).toHaveLength(1);
+    const command = calls[0]?.args.at(-1) ?? "";
+    expect(command).toContain("'--strict-mcp-config'");
+    expect(command).toContain(`'--settings' '{"disableClaudeAiConnectors":true}'`);
+    expect(command).not.toContain("/local/plugins");
+  });
+});
+
 describe("createRemoteSpawn credentials", () => {
   it("never puts credential values in the ssh argv or child env", () => {
     const { spawnImpl, calls } = createFakeSpawn();

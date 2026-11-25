@@ -87,7 +87,7 @@ by an origin chat on `image generate`.
 ## Known gaps
 
 - Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope because
-  `image` is registered in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`).
+  `image` is registered in `AGENT_CONTRACT_DOMAINS` (`src/cli/agent-contract-domains.ts`).
 
 ## Validation
 

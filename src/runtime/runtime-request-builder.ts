@@ -4,7 +4,7 @@ import { RESTART_RESUME_ATTEMPT_METADATA_KEY } from "./restart-turn-recovery.js"
 import { reopenThreadsForDeliveredInstructions } from "../channels/slack/thread-instruction-delivery.js";
 import { DEFAULT_DELIVERY_BARRIER } from "../delivery-barriers.js";
 import { getSessionByName, type AgentConfig, type SessionEntry } from "../router/index.js";
-import { dbGetChat, dbGetSessionDefaultChatId, dbGetSetting } from "../router/router-db.js";
+import { type ContextRecord, dbGetChat, dbGetSessionDefaultChatId, dbGetSetting } from "../router/router-db.js";
 import { markSessionTriggerOwnerLent, sessionHoldsTriggerOwnerHistory } from "../router/sessions.js";
 import { configStore } from "../config-store.js";
 import { applyProviderModelRule } from "./model-catalog.js";
@@ -13,6 +13,8 @@ import {
   buildRuntimeTracePromptSectionMetadata,
   createSessionTraceTurnId,
   recordAdapterRequestTrace,
+  recordRuntimeMcpNameOverlap,
+  recordRuntimeMcpServersReport,
   recordTerminalTurnTrace,
   recordRuntimeTraceEvent,
   summarizeRuntimeCapabilities,
@@ -105,6 +107,7 @@ import type {
   RuntimeApprovalResult,
   RuntimeCapabilities,
   RuntimeHostServices,
+  RuntimeMcpServerDetail,
   RuntimeProviderId,
   RuntimeDynamicToolCallRequest,
   RuntimeStartRequest,
@@ -710,7 +713,9 @@ async function buildRuntimeStartRequestInternal(
       historyTruncated: recovery?.truncated ?? false,
     },
   });
-  const { mcpServers, hooks, remoteSpawn } = buildRuntimeHostAttachments({
+  // The turn the runtime is running, for the trace of what it reported loading.
+  let currentTraceTurnId: string | null = null;
+  const { mcpServers, gatewayMcpServers, hooks, remoteSpawn } = buildRuntimeHostAttachments({
     runtimeCapabilities,
     agent,
     sessionName,
@@ -719,6 +724,32 @@ async function buildRuntimeStartRequestInternal(
     approvalSource,
     streamingSession,
     crashRecovery,
+    // Refreshed in place before each turn (refreshRuntimeRequestContextForTurn).
+    getTurnContext: () => (toolContext.context as ContextRecord | undefined) ?? runtimeContext,
+    onRuntimeReportedMcpServers: (report) =>
+      recordRuntimeMcpServersReport(
+        {
+          sessionKey: dbSessionKey,
+          sessionName,
+          agentId: agent.id,
+          runId,
+          turnId: currentTraceTurnId,
+          provider: runtimeProviderId,
+        },
+        report,
+      ),
+    onMcpNameOverlap: (names) =>
+      recordRuntimeMcpNameOverlap(
+        {
+          sessionKey: dbSessionKey,
+          sessionName,
+          agentId: agent.id,
+          runId,
+          turnId: currentTraceTurnId,
+          provider: runtimeProviderId,
+        },
+        names,
+      ),
   });
   const { text: systemPromptAppend, sections: systemPromptSections } = await buildRuntimeSystemPrompt({
     agent,
@@ -731,7 +762,15 @@ async function buildRuntimeStartRequestInternal(
   });
   const systemPromptSectionMetadata = buildRuntimeTracePromptSectionMetadata(systemPromptSections);
   const pluginNames = runtimePlugins.map((plugin) => plugin.path);
-  const mcpServerNames = Object.keys(mcpServers ?? {});
+  const hostMcpServerNames = Object.keys(mcpServers ?? {});
+  const hostMcpServerDetail: RuntimeMcpServerDetail[] = hostMcpServerNames.map((name) => ({
+    name,
+    kind: "host",
+    transport: "in-process",
+    era: null,
+    toolCount: null,
+    status: "attached",
+  }));
   const toolAccessMode = getRuntimeToolAccessMode(runtimeCapabilities, agent.id, runtimeContext);
   let initialModelBrokerAttemptAvailable = Boolean(modelBroker);
   let pendingModelBrokerTurnId = initialModelBrokerTurnId;
@@ -885,6 +924,10 @@ async function buildRuntimeStartRequestInternal(
     }
     bindRuntimeCredentialAttemptTurn(runtimeCredential?.attemptId, turnId);
     markRuntimeCredentialAttemptStarted(runtimeCredential?.attemptId);
+    // The gateway facades of this turn, built on the context record just refreshed for it.
+    const gatewayMcpServerDetail = gatewayMcpServers?.prepareTurn() ?? [];
+    const turnMcpServers = [...hostMcpServerDetail, ...gatewayMcpServerDetail];
+    currentTraceTurnId = turnId;
     const traceTurn = recordAdapterRequestTrace({
       sessionKey: dbSessionKey,
       sessionName,
@@ -917,7 +960,8 @@ async function buildRuntimeStartRequestInternal(
       settingSources: agent.settingSources ?? ["project"],
       hasHooks: Boolean(hooks && Object.keys(hooks).length > 0),
       pluginNames,
-      mcpServerNames,
+      mcpServerNames: turnMcpServers.map((server) => server.name),
+      mcpServers: turnMcpServers,
       hasRemoteSpawn: Boolean(remoteSpawn),
       toolAccessMode,
       capabilitySummary: summarizeRuntimeCapabilities(runtimeCapabilities),
@@ -1292,6 +1336,7 @@ async function buildRuntimeStartRequestInternal(
       env: runtimeEnv,
       // Registered as built: the tool gate exempts exactly these keys.
       ...(mcpServers ? { mcpServers } : {}),
+      ...(gatewayMcpServers ? { gatewayMcpServers } : {}),
       systemPromptAppend,
       settingSources: agent.settingSources ?? ["project"],
       ...(hooks ? { hooks } : {}),

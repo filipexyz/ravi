@@ -15,6 +15,7 @@ tags:
   - agents
 applies_to:
   - src/library/
+  - src/mcp/skill-plugin.ts
   - src/cli/commands/skills.ts
   - src/cli/commands/agents.ts
   - src/cli/commands/agents-library.ts
@@ -66,6 +67,9 @@ enforces which agent and which turn sees each one.
 - A ref is never resolved against local skills, and an id is never matched
   against local skill names by slug, so `org/x` and a local skill `org-x` stay
   distinct.
+- An id that starts with `mcp:` names a remote skill pinned from an MCP
+  server (spec `mcp`, Remote Skills); it is never resolved against local
+  skills or the Library.
 - `proposals` is a reserved slug, like the Console's route words: a bare-slug
   show (`GET /skills/<slug>`) could never reach such an item, and a bare
   `ravi skills show proposals` never asks the Library.
@@ -359,6 +363,37 @@ the same name or the name is longer than 64 characters (ids are named in
 sorted order, so names are stable). The current generation and the two before
 it are kept.
 
+#### Remote skill pins in the generation
+
+Remote skills pinned from an MCP server (`mcp_skill_pins`, spec `mcp`,
+Remote Skills) are entries of the same generation. Each active pin of a
+registered server is a stub skill named `mcp-<server>-<slug>`: a `SKILL.md`
+written by Ravi with the approved name and description and the command that
+reads the skill on demand, never remote instructions. It goes to the agent's
+`all` plugin, to its `external` plugin when the pin is `externalAllowed`, and
+to `union`. A stub whose name a Library pin of the generation uses is left
+out (the Library pin wins). The generation key covers each stub's content.
+
+- A Console sync writes its generation with the remote stubs added and never
+  deletes `mcp_skill_pins` rows: replacing `library_pins` leaves remote pins
+  in place.
+- A remote pin change (pin, unpin, stale, detach, remove) rebuilds the
+  generation locally from the current `library_pins` rows (their cached
+  versions) plus the remote stubs, without a Console call. A Library pin whose
+  cached version is missing is left out of that rebuild and the stored
+  fingerprint is cleared, so the next sync writes a full generation.
+- The two writers (the Console sync, usually in the CLI or the pin runner,
+  and the remote pin rebuild, in the daemon or the CLI) take one write lock:
+  a file in the plugins root (`.write.lock`), put in place by a hard link
+  from a file already holding the owner line (`<pid> <token>`), so the lock
+  never exists without its owner. Each one
+  reads its inputs, writes the generation, records it and prunes under the
+  lock, so neither records a generation built from the other's stale rows.
+  A writer waits up to 30 seconds and then fails without writing (the
+  previous generation stays). A lock is broken when its owner line names a
+  process that is gone, or when it is older than two minutes; a younger lock
+  whose content names no process (empty, cut short) is waited on.
+
 ### What a session loads
 
 At session start the runtime reads the pins (never failing the session):
@@ -401,6 +436,11 @@ every turn: a skill pinned to another agent is denied, and one not marked
 `externalAllowed` is denied unless the turn is the operator's own
 (`SKILL_NOT_AUTHORIZED`, block type `runtime_library_skill_not_for_turn`). An
 unreadable pin table denies.
+
+Remote skill pins count the same way, in the gate, the session plugin choice
+and the skill allowlist, while the pin is active and its server is
+registered, enabled and attached to the agent; a stale pin, a disabled or
+detached server, or an unreadable remote pin table counts as no pin.
 
 ### `ravi skills pin <ref> --agent <id>`
 

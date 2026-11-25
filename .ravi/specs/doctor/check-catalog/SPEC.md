@@ -297,6 +297,40 @@ Recent inbound messages without resolved actor metadata SHOULD be `error`.
 Recent inbound messages without contact or agent metadata SHOULD be `error`
 unless the message type is explicitly anonymous/system.
 
+## MCP
+
+- `mcp.native_unregistered` lists the MCP server entries that a runtime's own
+  configuration still declares and that no registered server covers
+  (`.ravi/specs/mcp`, Import): `<agent cwd>/.mcp.json`, `~/.claude.json` user
+  and project entries, the plugin files under `~/ravi/plugins`,
+  `$CODEX_HOME/config.toml` and `<agent cwd>/.codex/config.toml`, read for
+  every local (non-remote) agent. The Codex key and file warnings read, for
+  each Codex agent's directory, the same layers the launch reads
+  (`/etc/codex/config.toml`, `/etc/codex/managed_config.toml`,
+  `$CODEX_HOME/config.toml` and the trusted project layers from the project
+  root down to the cwd; `runtime/providers/codex`), so an untrusted project
+  file is not warned about and a trusted parent layer is. Runtimes load only registered servers, so
+  these entries no longer load. It is `warn` when any entry is unregistered,
+  a source cannot be read, a Codex entry a Codex agent loads has a key the
+  launch overrides cannot address (not a bare key: every such session is
+  refused until the entry is removed from the file, whether or not a
+  registered server covers it; the warning names the file and the key, never
+  a value), a Codex file the launch reads cannot be used (the warning names
+  the file), or Claude Code's enterprise MCP configuration
+  (`managed-mcp.json`) exists where Claude Code reads it on the host's
+  platform (`/Library/Application Support/ClaudeCode/` on macOS,
+  `C:\Program Files\ClaudeCode\` on Windows, `/etc/claude-code/` on Linux
+  and WSL; Claude Code's documentation of managed MCP)
+  (with that enterprise MCP configuration present, Claude Code refused to
+  start with `--strict-mcp-config`: "You cannot use --strict-mcp-config when
+  an enterprise MCP config is present", so Ravi's Claude sessions cannot run
+  on the host), `pass` otherwise.
+- An entry counts as registered when a registry row shows the same values
+  (transport, display URL, or command, args and env key names). The check
+  reads only those columns of `mcp_servers`; it never reads a secret, and its
+  evidence holds paths, native names, transports and reasons, never a URL or an
+  env value.
+
 ## Evidence Standards
 
 Evidence SHOULD include counts and representative examples.

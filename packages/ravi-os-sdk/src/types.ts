@@ -16117,6 +16117,595 @@ export type MailThreadsReadReturn = {
   };
 };
 
+/** Input shape for `mcp.add`. */
+export type McpAddInput = {
+  agent?: string[];
+  arg?: string[];
+  auth?: string;
+  command?: string;
+  env?: string[];
+  execute?: boolean;
+  name: string;
+  protocol?: string;
+  url?: string;
+  urlStdin?: boolean;
+};
+
+/** Return shape for `mcp.add`. */
+export type McpAddReturn = {
+  attached: string[];
+  secretStored: boolean;
+  server: {
+    attachments: Array<{
+      agentId: string;
+      audience: "operator" | "any";
+      uploads: boolean;
+    }>;
+    authKind: "none" | "bearer" | "oauth";
+    command: string | null;
+    droppedCount: number;
+    enabled: boolean;
+    era: ("modern" | "legacy") | null;
+    name: string;
+    origin: string;
+    protocol: "auto" | "2026-07-28" | "legacy";
+    status: "unknown" | "ok" | "needs_login" | "error";
+    toolCount: number;
+    transport: "http" | "stdio";
+    urlDisplay: string | null;
+  };
+};
+
+/** Input shape for `mcp.attach`. */
+export type McpAttachInput = {
+  agent: string;
+  execute?: boolean;
+  name: string;
+};
+
+/** Return shape for `mcp.attach`. */
+export type McpAttachReturn = {
+  agentId: string;
+  audience: "operator" | "any";
+  created: boolean;
+  server: string;
+  uploads: boolean;
+  warnings: string[];
+};
+
+/** Input shape for `mcp.call`. */
+export type McpCallInput = {
+  agent?: string;
+  execute?: boolean;
+  input?: string;
+  server: string;
+  tool: string;
+  wait?: string;
+};
+
+/** Return shape for `mcp.call`. */
+export type McpCallReturn = {
+  bytes: number;
+  callId: string | null;
+  content: Array<({
+    text: string;
+    type: "text";
+  }) | ({
+    bytes: number;
+    contentType: string;
+    mimeType: string | null;
+    type: "omitted";
+  })>;
+  era: "modern" | "legacy";
+  name: string;
+  outcome: "ok" | "tool_error" | "detached";
+  server: string;
+  structuredContent: (Record<string, unknown>) | null;
+  tool: string;
+  truncated: boolean;
+  waitSeconds: number;
+};
+
+/** Input shape for `mcp.calls.cancel`. */
+export type McpCallsCancelInput = {
+  id: string;
+};
+
+/** Return shape for `mcp.calls.cancel`. */
+export type McpCallsCancelReturn = {
+  call: {
+    agentId: string;
+    cancelRequestedAt: number | null;
+    createdAt: number;
+    deliveredAt: number | null;
+    detachReason: "task" | "budget";
+    expiresAt: number;
+    id: string;
+    lastError: string | null;
+    outcome: ("ok" | "tool_error" | "error" | "cancelled" | "expired" | "lost" | "discarded") | null;
+    server: string;
+    sessionName: string;
+    state: "running" | "task" | "delivering" | "delivered" | "failed";
+    taskStatus: string | null;
+    tool: string;
+    updatedAt: number;
+  };
+  cancelRequested: boolean;
+};
+
+/** Input shape for `mcp.calls.list`. */
+export type McpCallsListInput = {
+  limit?: string;
+  offset?: string;
+  server?: string;
+  session?: string;
+  state?: string;
+};
+
+/** Return shape for `mcp.calls.list`. */
+export type McpCallsListReturn = {
+  calls: Array<{
+    agentId: string;
+    cancelRequestedAt: number | null;
+    createdAt: number;
+    deliveredAt: number | null;
+    detachReason: "task" | "budget";
+    expiresAt: number;
+    id: string;
+    lastError: string | null;
+    outcome: ("ok" | "tool_error" | "error" | "cancelled" | "expired" | "lost" | "discarded") | null;
+    server: string;
+    sessionName: string;
+    state: "running" | "task" | "delivering" | "delivered" | "failed";
+    taskStatus: string | null;
+    tool: string;
+    updatedAt: number;
+  }>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  scope: "all" | "session";
+  total: number;
+};
+
+/** Input shape for `mcp.detach`. */
+export type McpDetachInput = {
+  agent: string;
+  name: string;
+};
+
+/** Return shape for `mcp.detach`. */
+export type McpDetachReturn = {
+  agentId: string;
+  detached: boolean;
+  server: string;
+  skillPinsDropped: number;
+};
+
+/** Input shape for `mcp.disable`. */
+export type McpDisableInput = {
+  name: string;
+};
+
+/** Return shape for `mcp.disable`. */
+export type McpDisableReturn = {
+  changed: boolean;
+  server: {
+    attachments: Array<{
+      agentId: string;
+      audience: "operator" | "any";
+      uploads: boolean;
+    }>;
+    authKind: "none" | "bearer" | "oauth";
+    command: string | null;
+    droppedCount: number;
+    enabled: boolean;
+    era: ("modern" | "legacy") | null;
+    name: string;
+    origin: string;
+    protocol: "auto" | "2026-07-28" | "legacy";
+    status: "unknown" | "ok" | "needs_login" | "error";
+    toolCount: number;
+    transport: "http" | "stdio";
+    urlDisplay: string | null;
+  };
+};
+
+/** Input shape for `mcp.enable`. */
+export type McpEnableInput = {
+  execute?: boolean;
+  name: string;
+};
+
+/** Return shape for `mcp.enable`. */
+export type McpEnableReturn = {
+  changed: boolean;
+  server: {
+    attachments: Array<{
+      agentId: string;
+      audience: "operator" | "any";
+      uploads: boolean;
+    }>;
+    authKind: "none" | "bearer" | "oauth";
+    command: string | null;
+    droppedCount: number;
+    enabled: boolean;
+    era: ("modern" | "legacy") | null;
+    name: string;
+    origin: string;
+    protocol: "auto" | "2026-07-28" | "legacy";
+    status: "unknown" | "ok" | "needs_login" | "error";
+    toolCount: number;
+    transport: "http" | "stdio";
+    urlDisplay: string | null;
+  };
+};
+
+/** Input shape for `mcp.list`. */
+export type McpListInput = {
+  agent?: string;
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `mcp.list`. */
+export type McpListReturn = {
+  items: Array<{
+    attachments: Array<{
+      agentId: string;
+      audience: "operator" | "any";
+      uploads: boolean;
+    }>;
+    authKind: "none" | "bearer" | "oauth";
+    command: string | null;
+    droppedCount: number;
+    enabled: boolean;
+    era: ("modern" | "legacy") | null;
+    name: string;
+    origin: string;
+    protocol: "auto" | "2026-07-28" | "legacy";
+    status: "unknown" | "ok" | "needs_login" | "error";
+    toolCount: number;
+    transport: "http" | "stdio";
+    urlDisplay: string | null;
+  }>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  total: number;
+};
+
+/** Input shape for `mcp.logout`. */
+export type McpLogoutInput = {
+  name: string;
+};
+
+/** Return shape for `mcp.logout`. */
+export type McpLogoutReturn = {
+  removed: boolean;
+  revocation: "revoked" | "not_confirmed" | "not_offered";
+  server: string;
+  status: "unknown" | "ok" | "needs_login" | "error";
+};
+
+/** Input shape for `mcp.remove`. */
+export type McpRemoveInput = {
+  name: string;
+};
+
+/** Return shape for `mcp.remove`. */
+export type McpRemoveReturn = {
+  callsCancelled: number;
+  detachedAgents: string[];
+  removed: {
+    attachments: Array<{
+      agentId: string;
+      audience: "operator" | "any";
+      uploads: boolean;
+    }>;
+    authKind: "none" | "bearer" | "oauth";
+    command: string | null;
+    droppedCount: number;
+    enabled: boolean;
+    era: ("modern" | "legacy") | null;
+    name: string;
+    origin: string;
+    protocol: "auto" | "2026-07-28" | "legacy";
+    status: "unknown" | "ok" | "needs_login" | "error";
+    toolCount: number;
+    transport: "http" | "stdio";
+    urlDisplay: string | null;
+  };
+  secretDeleteFailed: boolean;
+  secretDeleted: boolean;
+  skillPinsDropped: number;
+};
+
+/** Input shape for `mcp.set`. */
+export type McpSetInput = {
+  agent?: string;
+  audience?: string;
+  execute?: boolean;
+  name: string;
+  protocol?: string;
+  uploads?: string;
+};
+
+/** Return shape for `mcp.set`. */
+export type McpSetReturn = {
+  attachments: Array<{
+    agentId: string;
+    audience: "operator" | "any";
+    uploads: boolean;
+  }>;
+  changed: boolean;
+  protocol: ({
+    from: "auto" | "2026-07-28" | "legacy";
+    to: "auto" | "2026-07-28" | "legacy";
+  }) | null;
+  server: {
+    attachments: Array<{
+      agentId: string;
+      audience: "operator" | "any";
+      uploads: boolean;
+    }>;
+    authKind: "none" | "bearer" | "oauth";
+    command: string | null;
+    droppedCount: number;
+    enabled: boolean;
+    era: ("modern" | "legacy") | null;
+    name: string;
+    origin: string;
+    protocol: "auto" | "2026-07-28" | "legacy";
+    status: "unknown" | "ok" | "needs_login" | "error";
+    toolCount: number;
+    transport: "http" | "stdio";
+    urlDisplay: string | null;
+  };
+};
+
+/** Input shape for `mcp.show`. */
+export type McpShowInput = {
+  name: string;
+};
+
+/** Return shape for `mcp.show`. */
+export type McpShowReturn = {
+  calls: {
+    lastRateLimitedAt: number | null;
+    open: number;
+    rateLimitedMethod: string | null;
+    rateLimitedUntil: number | null;
+  };
+  server: {
+    args: string[];
+    attachments: Array<{
+      agentId: string;
+      audience: "operator" | "any";
+      uploads: boolean;
+    }>;
+    authKind: "none" | "bearer" | "oauth";
+    catalogFingerprint: string | null;
+    checkedAt: number | null;
+    command: string | null;
+    createdAt: number;
+    createdBy: string | null;
+    dropped: Array<{
+      name: string;
+      reason: string;
+    }>;
+    droppedCount: number;
+    enabled: boolean;
+    envKeys: string[];
+    era: ("modern" | "legacy") | null;
+    extensions: (Record<string, unknown>) | null;
+    login: "not_needed" | "logged_in" | "needs_login" | "unknown";
+    loginExpiresAt: number | null;
+    loginRenews: boolean;
+    name: string;
+    origin: string;
+    protocol: "auto" | "2026-07-28" | "legacy";
+    secretStored: boolean;
+    status: "unknown" | "ok" | "needs_login" | "error";
+    statusDetail: string | null;
+    toolCount: number;
+    tools: Array<{
+      exposedName: string;
+      name: string;
+    }>;
+    transport: "http" | "stdio";
+    updatedAt: number;
+    urlDisplay: string | null;
+  };
+  skills: Array<{
+    agentId: string;
+    externalAllowed: boolean;
+    skillId: string;
+    skillName: string;
+    staleReason: ("manifest_changed" | "digest_mismatch" | "dynamic" | "gone") | null;
+    state: "active" | "stale";
+  }>;
+  uploadCatalog: ({
+    dropped: Array<{
+      name: string;
+      reason: string;
+    }>;
+    tools: Array<{
+      exposedName: string;
+      fileArguments: string[];
+      name: string;
+    }>;
+  }) | null;
+  warnings: string[];
+};
+
+/** Input shape for `mcp.skills.list`. */
+export type McpSkillsListInput = {
+  agent?: string;
+  limit?: string;
+  offset?: string;
+  server: string;
+};
+
+/** Return shape for `mcp.skills.list`. */
+export type McpSkillsListReturn = {
+  agentId: string;
+  invalid: number;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  pinCheck: "done" | "empty_listing" | "scope_missing";
+  restoredPins: Array<{
+    agent: string;
+    id: string;
+  }>;
+  scopeMissing: boolean;
+  server: string;
+  skills: Array<{
+    bytes: number | null;
+    description: string;
+    dynamic: boolean;
+    files: number | null;
+    id: string | null;
+    libraryRef: string | null;
+    manifestDigest: string | null;
+    name: string;
+    pins: Array<{
+      agent: string;
+      externalAllowed: boolean;
+      skill: string;
+      staleReason: ("manifest_changed" | "digest_mismatch" | "dynamic" | "gone") | null;
+      state: "active" | "stale";
+    }>;
+    uri: string;
+  }>;
+  stalePins: Array<{
+    agent: string;
+    id: string;
+    reason: "manifest_changed" | "digest_mismatch" | "dynamic" | "gone";
+  }>;
+  suggestedAction: string | null;
+  supported: boolean;
+  total: number;
+  unlistedPins: Array<{
+    agent: string;
+    externalAllowed: boolean;
+    id: string;
+    skill: string;
+    staleReason: ("manifest_changed" | "digest_mismatch" | "dynamic" | "gone") | null;
+    state: "active" | "stale";
+  }>;
+};
+
+/** Input shape for `mcp.skills.pin`. */
+export type McpSkillsPinInput = {
+  agent?: string;
+  digest?: string;
+  execute?: boolean;
+  external?: boolean;
+  server: string;
+  skill: string;
+};
+
+/** Return shape for `mcp.skills.pin`. */
+export type McpSkillsPinReturn = {
+  agent: string;
+  created: boolean;
+  externalAllowed: boolean;
+  id: string;
+  manifestDigest: string;
+  pinned: true;
+  pluginRebuilt: boolean;
+  skill: string;
+  warnings: string[];
+};
+
+/** Input shape for `mcp.skills.read`. */
+export type McpSkillsReadInput = {
+  agent?: string;
+  file?: string;
+  id: string;
+};
+
+/** Return shape for `mcp.skills.read`. */
+export type McpSkillsReadReturn = {
+  binary: boolean;
+  cached: boolean;
+  digest: string;
+  file: string;
+  id: string;
+  mimeType: string | null;
+  server: string;
+  size: number;
+  text: string | null;
+  truncated: boolean;
+  uri: string;
+};
+
+/** Input shape for `mcp.skills.unpin`. */
+export type McpSkillsUnpinInput = {
+  agent?: string;
+  id: string;
+};
+
+/** Return shape for `mcp.skills.unpin`. */
+export type McpSkillsUnpinReturn = {
+  agent: string;
+  id: string;
+  pluginRebuilt: boolean;
+  removed: boolean;
+};
+
+/** Input shape for `mcp.tools`. */
+export type McpToolsInput = {
+  agent?: string;
+  query?: string;
+  server?: string;
+};
+
+/** Return shape for `mcp.tools`. */
+export type McpToolsReturn = {
+  agentId: string;
+  note: string | null;
+  omitted: Array<{
+    count: number;
+    server: string;
+  }>;
+  query: string | null;
+  server: string | null;
+  tools: Array<{
+    description: string | null;
+    inputSchema: Record<string, unknown>;
+    name: string;
+    server: string;
+    tool: string;
+  }>;
+  total: number;
+  unavailable: Array<{
+    code: "no_turn" | "not_registered" | "disabled" | "not_attached" | "audience" | "audience_legacy" | "capability" | "needs_login" | "invalid_request" | "error";
+    reason: string;
+    server: string;
+  }>;
+};
+
 /** Input shape for `media.send`. */
 export type MediaSendInput = {
   account?: string;

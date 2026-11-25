@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { NatsExposureReport } from "../../security/nats-exposure.js";
@@ -1473,5 +1473,288 @@ describe("probeDoctorRunnerAdapters", () => {
     expect(await probeDoctorRunnerAdapters(probe, { online: true, pid: 0 }, undefined)).toBeNull();
     expect(await probeDoctorRunnerAdapters(probe, onlineRunner, "runtime")).toBeNull();
     expect(probes).toBe(0);
+  });
+});
+
+describe("mcp.native_unregistered", () => {
+  const TOKEN = "doctorTOKENvalue0123456789abcdef";
+
+  function mcpDeps(registeredRows: Array<Record<string, unknown>> = []) {
+    const deps = makeHealthyDeps();
+    const home = deps.homeDir();
+    const cwd = join(home, "agents", "main");
+    mkdirSync(cwd, { recursive: true });
+    writeFileSync(
+      join(cwd, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          docs: { type: "http", url: "https://docs.example.com/mcp" },
+          bridge: { type: "http", url: `https://mcp.example.com/b/${TOKEN}/mcp` },
+          hdr: { type: "http", url: "https://h.example.com/mcp", headers: { Authorization: `Bearer ${TOKEN}` } },
+        },
+      }),
+    );
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      `[mcp_servers.files]\ncommand = "files"\n[mcp_servers.files.env]\nK = "${TOKEN}"\n`,
+    );
+    const baseExists = deps.exists;
+    return {
+      ...deps,
+      dbListAgents: () =>
+        [
+          { id: "main", cwd, provider: "claude" },
+          { id: "coder", cwd, provider: "codex" },
+          { id: "far", cwd, provider: "claude", remote: "worker.example" },
+        ] as any,
+      codexHome: () => null,
+      codexSystemConfigPaths: () => ({
+        system: join(home, "etc-codex", "config.toml"),
+        managed: join(home, "etc-codex", "managed_config.toml"),
+      }),
+      exists: (path: string) => baseExists(path) || existsSync(path),
+      queryRows: (sql: string) => (sql.includes("FROM mcp_servers") ? (registeredRows as any) : deps.queryRows(sql)),
+    };
+  }
+
+  it("warns about native entries no registered server covers, without a URL or a value", () => {
+    const report = inspectDoctor(mcpDeps(), { domain: "mcp" });
+    const check = report.checks.find((entry) => entry.id === "mcp.native_unregistered");
+    expect(check).toMatchObject({ domain: "mcp", status: "fail", severity: "warn" });
+    const unregistered = (check?.data?.unregistered ?? []) as Array<Record<string, unknown>>;
+    expect(unregistered.map((entry) => entry.nativeName).sort()).toEqual(["bridge", "docs", "files", "hdr"]);
+    expect(unregistered.find((entry) => entry.nativeName === "hdr")?.unsupported).toContain("HTTP headers");
+    // Remote agents load their own host's configuration.
+    expect(unregistered.every((entry) => !(entry.agentIds as string[]).includes("far"))).toBe(true);
+    expect(JSON.stringify(report)).not.toContain(TOKEN);
+    const finding = report.findings.find((entry) => entry.id === "mcp.native_unregistered");
+    expect(finding?.fixHint).toContain("ravi mcp import");
+  });
+
+  it("passes once every importable entry is registered; unsupported ones stay listed", () => {
+    const rows = [
+      {
+        name: "docs",
+        origin: "import:/x",
+        transport: "http",
+        url_display: "https://docs.example.com/mcp",
+        command: null,
+        args_json: "[]",
+        env_keys_json: "[]",
+      },
+      {
+        name: "bridge-renamed",
+        origin: "manual",
+        transport: "http",
+        url_display: "https://mcp.example.com/b/…/mcp",
+        command: null,
+        args_json: "[]",
+        env_keys_json: "[]",
+      },
+      {
+        name: "files",
+        origin: "import:/y",
+        transport: "stdio",
+        url_display: null,
+        command: "files",
+        args_json: "[]",
+        env_keys_json: '["K"]',
+      },
+    ];
+    const report = inspectDoctor(mcpDeps(rows), { domain: "mcp" });
+    const check = report.checks.find((entry) => entry.id === "mcp.native_unregistered");
+    const unregistered = (check?.data?.unregistered ?? []) as Array<Record<string, unknown>>;
+    expect(unregistered.map((entry) => entry.nativeName)).toEqual(["hdr"]);
+    expect(report.findings.find((entry) => entry.id === "mcp.native_unregistered")?.fixHint).toContain("ravi mcp add");
+  });
+
+  it("leaves out entries no runtime loaded: a server disabled in Claude Code never ran", () => {
+    const deps = mcpDeps();
+    const cwd = join(deps.homeDir(), "agents", "main");
+    mkdirSync(join(cwd, ".claude"), { recursive: true });
+    writeFileSync(join(cwd, ".claude", "settings.json"), JSON.stringify({ disabledMcpjsonServers: ["hdr"] }));
+    const report = inspectDoctor(deps, { domain: "mcp" });
+    const check = report.checks.find((entry) => entry.id === "mcp.native_unregistered");
+    const unregistered = (check?.data?.unregistered ?? []) as Array<Record<string, unknown>>;
+    expect(unregistered.map((entry) => entry.nativeName).sort()).toEqual(["bridge", "docs", "files"]);
+    // Each runtime's file is counted for that runtime's agents only.
+    expect(unregistered.find((entry) => entry.nativeName === "files")?.agentIds).toEqual(["coder"]);
+    expect(unregistered.find((entry) => entry.nativeName === "docs")?.agentIds).toEqual(["main"]);
+  });
+
+  it("warns about a Codex key the launch overrides cannot address, even once a registered server covers it", () => {
+    const deps = mcpDeps([
+      {
+        name: "my-server",
+        origin: "import:/z",
+        transport: "stdio",
+        url_display: null,
+        command: "files",
+        args_json: "[]",
+        env_keys_json: '["K"]',
+      },
+    ]);
+    const codexFile = join(deps.homeDir(), ".codex", "config.toml");
+    writeFileSync(
+      codexFile,
+      `[mcp_servers."my.server"]\ncommand = "files"\n[mcp_servers."my.server".env]\nK = "${TOKEN}"\n`,
+    );
+    const report = inspectDoctor(deps, { domain: "mcp" });
+    const check = report.checks.find((entry) => entry.id === "mcp.native_unregistered");
+    expect(check).toMatchObject({ status: "fail", severity: "warn" });
+    // The registered server covers the entry, so it is not listed as unregistered...
+    const unregistered = (check?.data?.unregistered ?? []) as Array<Record<string, unknown>>;
+    expect(unregistered.map((entry) => entry.nativeName)).not.toContain("my.server");
+    // ...but Codex sessions are still refused until the entry leaves the file.
+    expect(check?.data?.codexKeysNotOverridable).toEqual([{ path: codexFile, key: "my.server", agentIds: ["coder"] }]);
+    const finding = report.findings.find((entry) => entry.id === "mcp.native_unregistered");
+    const text = JSON.stringify(finding);
+    expect(text).toContain(codexFile);
+    expect(text).toContain('\\"my.server\\" is not a bare key');
+    expect(text).toContain("until the entry is removed from it");
+    expect(finding?.fixHint).toContain("remove each named entry from its Codex configuration file");
+    expect(JSON.stringify(report)).not.toContain(TOKEN);
+  });
+
+  it("reads the Codex layers the launch reads: an untrusted project file is left out, a trusted one is counted", () => {
+    const deps = mcpDeps();
+    const home = deps.homeDir();
+    const cwd = join(home, "agents", "main");
+    mkdirSync(join(cwd, ".codex"), { recursive: true });
+    const projectFile = join(cwd, ".codex", "config.toml");
+    writeFileSync(projectFile, '[mcp_servers."my.server"]\ncommand = "files"\n');
+    const keysOf = () =>
+      inspectDoctor(deps, { domain: "mcp" }).checks.find((entry) => entry.id === "mcp.native_unregistered")?.data
+        ?.codexKeysNotOverridable;
+    // Codex does not load an untrusted project file, so the launch never refuses on it.
+    expect(keysOf()).toEqual([]);
+    const userFile = join(home, ".codex", "config.toml");
+    const userText = readFileSync(userFile, "utf8");
+    writeFileSync(userFile, `${userText}\n[projects.${JSON.stringify(realpathSync(cwd))}]\ntrust_level = "trusted"\n`);
+    expect(keysOf()).toEqual([
+      { path: join(realpathSync(cwd), ".codex", "config.toml"), key: "my.server", agentIds: ["coder"] },
+    ]);
+  });
+
+  it("counts a trusted parent layer between the git root and the cwd, and the system files", () => {
+    const deps = mcpDeps();
+    const home = deps.homeDir();
+    const repo = join(home, "repo");
+    const cwd = join(repo, "packages", "app");
+    mkdirSync(join(repo, ".git"), { recursive: true });
+    mkdirSync(join(repo, "packages", ".codex"), { recursive: true });
+    mkdirSync(cwd, { recursive: true });
+    writeFileSync(join(repo, "packages", ".codex", "config.toml"), '[mcp_servers."a.b"]\ncommand = "x"\n');
+    const userFile = join(home, ".codex", "config.toml");
+    writeFileSync(
+      userFile,
+      `${readFileSync(userFile, "utf8")}\n[projects.${JSON.stringify(realpathSync(repo))}]\ntrust_level = "trusted"\n`,
+    );
+    mkdirSync(join(home, "etc-codex"), { recursive: true });
+    const systemFile = join(home, "etc-codex", "config.toml");
+    writeFileSync(systemFile, '[mcp_servers."sys.tem"]\ncommand = "y"\n');
+    const withAgent = {
+      ...deps,
+      dbListAgents: () => [{ id: "coder", cwd, provider: "codex" }] as any,
+    };
+    const check = inspectDoctor(withAgent, { domain: "mcp" }).checks.find(
+      (entry) => entry.id === "mcp.native_unregistered",
+    );
+    expect(check).toMatchObject({ status: "fail", severity: "warn" });
+    expect(check?.data?.codexKeysNotOverridable).toEqual([
+      { path: systemFile, key: "sys.tem", agentIds: ["coder"] },
+      { path: join(realpathSync(repo), "packages", ".codex", "config.toml"), key: "a.b", agentIds: ["coder"] },
+    ]);
+  });
+
+  it("names a Codex file the launch reads but cannot use, without its content", () => {
+    const deps = mcpDeps();
+    const home = deps.homeDir();
+    mkdirSync(join(home, "etc-codex", "managed_config.toml"), { recursive: true });
+    const check = inspectDoctor(deps, { domain: "mcp" }).checks.find((entry) => entry.id === "mcp.native_unregistered");
+    const unreadable = (check?.data?.codexConfigUnreadable ?? []) as string[];
+    expect(unreadable).toHaveLength(1);
+    expect(unreadable[0]).toContain(join(home, "etc-codex", "managed_config.toml"));
+    expect(JSON.stringify(check)).not.toContain(TOKEN);
+  });
+
+  it("passes a bare Codex key once it is registered", () => {
+    const rows = [
+      {
+        name: "files",
+        origin: "import:/y",
+        transport: "stdio",
+        url_display: null,
+        command: "files",
+        args_json: "[]",
+        env_keys_json: '["K"]',
+      },
+    ];
+    const report = inspectDoctor(mcpDeps(rows), { domain: "mcp" });
+    const check = report.checks.find((entry) => entry.id === "mcp.native_unregistered");
+    expect(check?.data?.codexKeysNotOverridable).toEqual([]);
+  });
+
+  it("passes when no runtime configuration declares a server", () => {
+    const report = inspectDoctor(makeHealthyDeps(), { domain: "mcp" });
+    expect(report.checks.find((entry) => entry.id === "mcp.native_unregistered")).toMatchObject({ status: "pass" });
+  });
+
+  it("warns when an enterprise MCP configuration is present, with the refusal the runbook recorded", () => {
+    const deps = makeHealthyDeps();
+    const baseExists = deps.exists;
+    const report = inspectDoctor(
+      {
+        ...deps,
+        platform: () => "linux",
+        exists: (path: string) => path === "/etc/claude-code/managed-mcp.json" || baseExists(path),
+      },
+      { domain: "mcp" },
+    );
+    const check = report.checks.find((entry) => entry.id === "mcp.native_unregistered");
+    expect(check).toMatchObject({ status: "fail", severity: "warn" });
+    expect(check?.data?.enterpriseMcpConfig).toBe("/etc/claude-code/managed-mcp.json");
+    const finding = report.findings.find((entry) => entry.id === "mcp.native_unregistered");
+    expect(JSON.stringify(finding)).toContain(
+      "You cannot use --strict-mcp-config when an enterprise MCP config is present",
+    );
+    expect(finding?.fixHint).toContain("remove /etc/claude-code/managed-mcp.json");
+  });
+
+  it("looks for the enterprise MCP configuration where Claude Code reads it on macOS and Windows", () => {
+    const cases = [
+      { platform: "darwin", path: "/Library/Application Support/ClaudeCode/managed-mcp.json" },
+      { platform: "win32", path: "C:\\Program Files\\ClaudeCode\\managed-mcp.json" },
+      { platform: "linux", path: "/etc/claude-code/managed-mcp.json" },
+    ] as const;
+    for (const { platform, path } of cases) {
+      const deps = makeHealthyDeps();
+      const baseExists = deps.exists;
+      const report = inspectDoctor(
+        {
+          ...deps,
+          platform: () => platform,
+          exists: (candidate: string) => candidate === path || baseExists(candidate),
+        },
+        { domain: "mcp" },
+      );
+      const check = report.checks.find((entry) => entry.id === "mcp.native_unregistered");
+      expect(check).toMatchObject({ status: "fail", severity: "warn" });
+      expect(check?.data?.enterpriseMcpConfig).toBe(path);
+      expect(report.findings.find((entry) => entry.id === "mcp.native_unregistered")?.fixHint).toContain(
+        `remove ${path}`,
+      );
+      // Another platform's path is not this host's file.
+      const other = inspectDoctor(
+        {
+          ...deps,
+          platform: () => (platform === "darwin" ? "linux" : "darwin"),
+          exists: (candidate: string) => candidate === path || baseExists(candidate),
+        },
+        { domain: "mcp" },
+      );
+      expect(other.checks.find((entry) => entry.id === "mcp.native_unregistered")).toMatchObject({ status: "pass" });
+    }
   });
 });

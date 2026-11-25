@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { dbCreateAgent, dbUpdateAgent } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { BasesChartsCommands, BasesCommands, BasesRowsCommands, BasesViewsCommands } from "../cli/commands/bases.js";
+import { McpCallsCommands, McpCommands, McpSkillsCommands } from "../cli/commands/mcp.js";
 import { getCommandAccessMetadata, getCommandsMetadata, getGroupMetadata } from "../cli/decorators.js";
 import { runtimeBootstrapProvider } from "./runtime-bootstrap-provider.js";
 
@@ -92,6 +93,41 @@ describe("runtimeBootstrapProvider — least-privilege default", () => {
     expect(basesCaps.some((cap) => cap.startsWith("mutate:"))).toBe(false);
     expect(basesCaps).not.toContain("read:bases.rows:query");
     expect(basesCaps).not.toContain("read:bases:aggregate");
+  });
+
+  test("grants exactly the MCP CLI pair (tools, call), skills read and calls list/cancel as their @CommandAccess asks, and no other mcp command", () => {
+    const derived: string[] = [];
+    const others: string[] = [];
+    for (const [group, floor] of [
+      [McpCommands, ["tools", "call"]],
+      [McpSkillsCommands, ["read"]],
+      [McpCallsCommands, ["list", "cancel"]],
+    ] as const) {
+      const access = getCommandAccessMetadata(group);
+      for (const command of getCommandsMetadata(group)) {
+        const declared = access.get(command.method);
+        const cap = `${declared?.kind}:${declared?.resource}:${declared?.action}`;
+        if ((floor as readonly string[]).includes(command.name)) derived.push(cap);
+        else others.push(cap);
+      }
+    }
+    expect(derived.sort()).toEqual([
+      "mutate:mcp.calls:cancel",
+      "mutate:mcp.tools:call",
+      "read:mcp.calls:list",
+      "read:mcp.skills:read",
+      "read:mcp.tools:list",
+    ]);
+
+    const caps = materialize("agent", "newbie");
+    const mcpCaps = caps
+      .filter((c) => c.objectType === "mcp" || c.objectType.startsWith("mcp."))
+      .map((c) => `${c.permission}:${c.objectType}:${c.objectId}`)
+      .sort();
+    expect(mcpCaps).toEqual([...derived].sort());
+    for (const other of others) expect(mcpCaps).not.toContain(other);
+    expect(groupIds(caps)).not.toContain("mcp");
+    expect(groupIds(caps)).not.toContain("mcp_call");
   });
 
   test("subject não-confiável não recebe capability nenhuma", () => {

@@ -7,6 +7,10 @@
  *   org/<slug>                     org:<slug>
  *   <projectSlug>/<slug>           project:<projectSlug>:<slug>
  *
+ *   mcp:<server>:<path>           a remote skill of a registered MCP server
+ *                                  (spec mcp, Remote Skills); never a Library
+ *                                  item and never a local skill
+ *
  * `org` is a reserved project slug in the Console, so the two ref forms never
  * collide. Ids keep their `:` separators and are never slugified, so `org:x`
  * stays distinct from a local skill named `org-x`.
@@ -18,6 +22,13 @@ import { listCatalogSkills, slugifySkillName } from "../skills/manager.js";
 export const LIBRARY_ORG_SCOPE = "org";
 export const LIBRARY_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 const LIBRARY_ID_PREFIXES = ["org:", "project:"] as const;
+/** Prefix of a remote MCP skill id (`mcp:<server>:<path>`). */
+export const MCP_SKILL_ID_PREFIX = "mcp:";
+
+/** Whether a value has the form of a remote MCP skill id (`mcp:...`), valid or not. */
+export function isMcpSkillId(value: string | null | undefined): boolean {
+  return (value?.trim().toLowerCase() ?? "").startsWith(MCP_SKILL_ID_PREFIX);
+}
 
 export type LibraryScope = "org" | "project";
 
@@ -80,12 +91,13 @@ export function looksLikeLibraryRef(input: string | null | undefined): boolean {
 
 /**
  * Whether a stored skill name or a `use:skill:<id>` object id is a Library id
- * (wildcards allowed: `org:*`, `project:*`, `project:clinica:*`). Such ids
- * never name a local skill.
+ * (wildcards allowed: `org:*`, `project:*`, `project:clinica:*`) or a remote
+ * MCP skill id (`mcp:<server>:<path>`, `mcp:*`). Such ids never name a local
+ * skill, and never configure the local catalog.
  */
 export function isLibrarySkillId(value: string | null | undefined): boolean {
   const normalized = value?.trim().toLowerCase() ?? "";
-  return LIBRARY_ID_PREFIXES.some((prefix) => normalized.startsWith(prefix));
+  return LIBRARY_ID_PREFIXES.some((prefix) => normalized.startsWith(prefix)) || isMcpSkillId(normalized);
 }
 
 /** Normalize a Library id or `use:skill:` pattern: lowercase, trimmed, separators kept. */

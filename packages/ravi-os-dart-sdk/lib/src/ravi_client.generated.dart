@@ -50,6 +50,7 @@ class RaviClient {
   JobsNamespace get jobs => JobsNamespace(_transport);
   KnowledgeNamespace get knowledge => KnowledgeNamespace(_transport);
   MailNamespace get mail => MailNamespace(_transport);
+  McpNamespace get mcp => McpNamespace(_transport);
   MediaNamespace get media => MediaNamespace(_transport);
   MeetingsNamespace get meetings => MeetingsNamespace(_transport);
   MetricsNamespace get metrics => MetricsNamespace(_transport);
@@ -6128,6 +6129,242 @@ class MailThreadsNamespace {
       command: "read",
       body: requestBody,
       decode: mailThreadsReadReturnFromJson,
+    );
+  }
+}
+
+class McpNamespace {
+  const McpNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  McpCallsNamespace get calls => McpCallsNamespace(_transport);
+
+  McpSkillsNamespace get skills => McpSkillsNamespace(_transport);
+
+  Future<McpAddReturn> add(String name, [McpAddOptions options = const McpAddOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["name"] = RaviJson.from(name);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["mcp"],
+      command: "add",
+      body: requestBody,
+      decode: mcpAddReturnFromJson,
+    );
+  }
+
+  Future<McpAttachReturn> attach(String name, String agent, [McpAttachOptions options = const McpAttachOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["name"] = RaviJson.from(name);
+    requestBody["agent"] = RaviJson.from(agent);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["mcp"],
+      command: "attach",
+      body: requestBody,
+      decode: mcpAttachReturnFromJson,
+    );
+  }
+
+  Future<McpCallReturn> call(String server, String tool, [McpCallOptions options = const McpCallOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["server"] = RaviJson.from(server);
+    requestBody["tool"] = RaviJson.from(tool);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["mcp"],
+      command: "call",
+      body: requestBody,
+      decode: mcpCallReturnFromJson,
+    );
+  }
+
+  Future<McpDetachReturn> detach(String name, String agent) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["name"] = RaviJson.from(name);
+    requestBody["agent"] = RaviJson.from(agent);
+    return _transport.callJson(
+      groupSegments: const ["mcp"],
+      command: "detach",
+      body: requestBody,
+      decode: mcpDetachReturnFromJson,
+    );
+  }
+
+  Future<McpDisableReturn> disable(String name) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["name"] = RaviJson.from(name);
+    return _transport.callJson(
+      groupSegments: const ["mcp"],
+      command: "disable",
+      body: requestBody,
+      decode: mcpDisableReturnFromJson,
+    );
+  }
+
+  Future<McpEnableReturn> enable(String name, [McpEnableOptions options = const McpEnableOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["name"] = RaviJson.from(name);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["mcp"],
+      command: "enable",
+      body: requestBody,
+      decode: mcpEnableReturnFromJson,
+    );
+  }
+
+  Future<McpListReturn> list([McpListOptions options = const McpListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["mcp"],
+      command: "list",
+      body: requestBody,
+      decode: mcpListReturnFromJson,
+    );
+  }
+
+  Future<McpLogoutReturn> logout(String name) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["name"] = RaviJson.from(name);
+    return _transport.callJson(
+      groupSegments: const ["mcp"],
+      command: "logout",
+      body: requestBody,
+      decode: mcpLogoutReturnFromJson,
+    );
+  }
+
+  Future<McpRemoveReturn> remove(String name) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["name"] = RaviJson.from(name);
+    return _transport.callJson(
+      groupSegments: const ["mcp"],
+      command: "remove",
+      body: requestBody,
+      decode: mcpRemoveReturnFromJson,
+    );
+  }
+
+  Future<McpSetReturn> set_(String name, [McpSetOptions options = const McpSetOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["name"] = RaviJson.from(name);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["mcp"],
+      command: "set",
+      body: requestBody,
+      decode: mcpSetReturnFromJson,
+    );
+  }
+
+  Future<McpShowReturn> show(String name) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["name"] = RaviJson.from(name);
+    return _transport.callJson(
+      groupSegments: const ["mcp"],
+      command: "show",
+      body: requestBody,
+      decode: mcpShowReturnFromJson,
+    );
+  }
+
+  Future<McpToolsReturn> tools([String? server, McpToolsOptions options = const McpToolsOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    if (server != null) {
+      requestBody["server"] = RaviJson.from(server);
+    }
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["mcp"],
+      command: "tools",
+      body: requestBody,
+      decode: mcpToolsReturnFromJson,
+    );
+  }
+}
+
+class McpCallsNamespace {
+  const McpCallsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<McpCallsCancelReturn> cancel(String id) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    return _transport.callJson(
+      groupSegments: const ["mcp", "calls"],
+      command: "cancel",
+      body: requestBody,
+      decode: mcpCallsCancelReturnFromJson,
+    );
+  }
+
+  Future<McpCallsListReturn> list([McpCallsListOptions options = const McpCallsListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["mcp", "calls"],
+      command: "list",
+      body: requestBody,
+      decode: mcpCallsListReturnFromJson,
+    );
+  }
+}
+
+class McpSkillsNamespace {
+  const McpSkillsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<McpSkillsListReturn> list(String server, [McpSkillsListOptions options = const McpSkillsListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["server"] = RaviJson.from(server);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["mcp", "skills"],
+      command: "list",
+      body: requestBody,
+      decode: mcpSkillsListReturnFromJson,
+    );
+  }
+
+  Future<McpSkillsPinReturn> pin(String server, String skill, [McpSkillsPinOptions options = const McpSkillsPinOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["server"] = RaviJson.from(server);
+    requestBody["skill"] = RaviJson.from(skill);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["mcp", "skills"],
+      command: "pin",
+      body: requestBody,
+      decode: mcpSkillsPinReturnFromJson,
+    );
+  }
+
+  Future<McpSkillsReadReturn> read(String id, [McpSkillsReadOptions options = const McpSkillsReadOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["mcp", "skills"],
+      command: "read",
+      body: requestBody,
+      decode: mcpSkillsReadReturnFromJson,
+    );
+  }
+
+  Future<McpSkillsUnpinReturn> unpin(String id, [McpSkillsUnpinOptions options = const McpSkillsUnpinOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["mcp", "skills"],
+      command: "unpin",
+      body: requestBody,
+      decode: mcpSkillsUnpinReturnFromJson,
     );
   }
 }

@@ -85,6 +85,8 @@ describe("event topic registry", () => {
       "ravi.session.prune.completed",
       "ravi.runtime.session_pool.gauge",
       "ravi.hooks.refresh",
+      "ravi.mcp.catalog.changed",
+      "ravi.mcp.elicitation.answer",
       "ravi.rtk.rewrite",
       "ravi.work_objects.resolve",
       "omni.work_objects.resolve",

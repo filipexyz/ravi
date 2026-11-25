@@ -90,6 +90,20 @@ import {
   type NatsExposureReport,
 } from "../../security/nats-exposure.js";
 import { inspectStateDirPermissions } from "../../security/state-dir-permissions.js";
+import {
+  discoverNativeMcpEntries,
+  findUnregisteredNativeMcpEntries,
+  type McpImportRegisteredView,
+} from "../../mcp/import.js";
+import { mcpImportAgentsOf } from "../../mcp/import-agents.js";
+import type { McpImportAgent } from "../../mcp/import.js";
+import {
+  CODEX_MANAGED_CONFIG_PATH,
+  CODEX_SYSTEM_CONFIG_PATH,
+  CodexMcpIsolationError,
+  collectCodexMcpConfigSources,
+  isCodexOverridableMcpKey,
+} from "../../runtime/codex-mcp-isolation.js";
 
 export type DoctorSeverity = "error" | "warn" | "info";
 export type DoctorCheckStatus = "pass" | "fail" | "skip";
@@ -260,6 +274,12 @@ type DoctorDeps = {
   readFile: (path: string) => string;
   readDir: (path: string) => Dirent[];
   homeDir: () => string;
+  /** `$CODEX_HOME`, or null for the default `~/.codex`. */
+  codexHome: () => string | null;
+  /** Codex's system and managed configuration files, which every Codex session loads. */
+  codexSystemConfigPaths: () => { system: string; managed: string };
+  /** The operating system the daemon host runs (`process.platform`). */
+  platform: () => NodeJS.Platform;
   cwd: () => string;
   now: () => Date;
   tempDir: () => string;
@@ -338,6 +358,9 @@ const DEFAULT_DEPS: DoctorDeps = {
   readFile: (path: string) => readFileSync(path, "utf8"),
   readDir: (path: string) => readdirSync(path, { withFileTypes: true }),
   homeDir: homedir,
+  codexHome: () => process.env.CODEX_HOME?.trim() || null,
+  codexSystemConfigPaths: () => ({ system: CODEX_SYSTEM_CONFIG_PATH, managed: CODEX_MANAGED_CONFIG_PATH }),
+  platform: () => process.platform,
   cwd: () => process.cwd(),
   now: () => new Date(),
   tempDir: () => tmpdir(),
@@ -637,6 +660,7 @@ export function inspectDoctor(overrides: Partial<DoctorDeps> = {}, options: Insp
     });
     addCheck(checks, () => buildCostPricingCoverageCheck(deps));
     addCheck(checks, () => buildCostCompletenessCheck(deps));
+    addCheck(checks, () => buildNativeMcpCheck(deps));
   }
 
   addCheck(checks, () => buildCodexHookCheck(codexHooksPath, deps));
@@ -3231,6 +3255,250 @@ function buildCronTargetsCheck(deps: DoctorDeps): LegacyDoctorCheck {
       enabled: enabledJobs.length,
       findings,
     },
+  };
+}
+
+/**
+ * Where Claude Code looks for its enterprise MCP configuration
+ * (`managed-mcp.json`) on each platform, as Claude Code's documentation of
+ * managed MCP lists it: macOS, Windows, and Linux and WSL (spec mcp, RUNBOOK).
+ */
+export function claudeEnterpriseMcpConfigPath(platform: NodeJS.Platform): string {
+  if (platform === "darwin") return "/Library/Application Support/ClaudeCode/managed-mcp.json";
+  if (platform === "win32") return "C:\\Program Files\\ClaudeCode\\managed-mcp.json";
+  return "/etc/claude-code/managed-mcp.json";
+}
+
+/** What the RUNBOOK recorded with that file present, and nothing more. */
+function claudeEnterpriseMcpConfigDetail(path: string): string {
+  return `${path}: with this enterprise MCP configuration present, Claude Code refused to start with --strict-mcp-config ("You cannot use --strict-mcp-config when an enterprise MCP config is present"), so Ravi's Claude sessions cannot run on this host`;
+}
+
+/**
+ * The Codex keys the launch would refuse, read from the same layers the launch
+ * reads for each Codex agent's directory (system, managed, `$CODEX_HOME`, and
+ * the trusted project layers from the project root down to the cwd), so an
+ * untrusted project file is left out and a trusted parent layer is counted.
+ * File and key only, never a value.
+ */
+function findCodexKeysNotOverridable(
+  agents: readonly McpImportAgent[],
+  deps: DoctorDeps,
+): { keys: Array<{ path: string; key: string; agentIds: string[] }>; unreadable: string[] } {
+  const { system, managed } = deps.codexSystemConfigPaths();
+  const codexHome = deps.codexHome();
+  const found = new Map<string, { path: string; key: string; agentIds: string[] }>();
+  const unreadable = new Set<string>();
+  for (const agent of agents) {
+    if (agent.runtime !== "codex" || !agent.cwd) continue;
+    let sources: ReturnType<typeof collectCodexMcpConfigSources>;
+    try {
+      sources = collectCodexMcpConfigSources({
+        cwd: agent.cwd,
+        env: codexHome ? { CODEX_HOME: codexHome } : {},
+        homeDir: deps.homeDir(),
+        systemConfigPath: system,
+        managedConfigPath: managed,
+      });
+    } catch (error) {
+      if (!(error instanceof CodexMcpIsolationError)) throw error;
+      // no-cause: the message names the file the launch cannot read (a path, never a value) and becomes a finding.
+      unreadable.add(error.message);
+      continue;
+    }
+    for (const source of sources) {
+      for (const key of source.keys) {
+        if (isCodexOverridableMcpKey(key)) continue;
+        const id = `${source.path}\0${key}`;
+        const entry = found.get(id) ?? { path: source.path, key, agentIds: [] };
+        if (!entry.agentIds.includes(agent.id)) entry.agentIds.push(agent.id);
+        found.set(id, entry);
+      }
+    }
+  }
+  return { keys: [...found.values()], unreadable: [...unreadable] };
+}
+
+interface McpServerViewRow extends Record<string, unknown> {
+  name: string;
+  origin: string;
+  transport: string;
+  url_display: string | null;
+  command: string | null;
+  args_json: string | null;
+  env_keys_json: string | null;
+}
+
+function parseStringList(text: string | null): string[] {
+  try {
+    const parsed = JSON.parse(text ?? "[]");
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    // no-cause: a damaged list matches no native entry, so the entry is reported as unregistered.
+    return [];
+  }
+}
+
+/**
+ * Runtimes load only registered MCP servers. Entries still sitting in a
+ * runtime's own configuration (Claude Code, Codex, plugins) are no longer
+ * loaded; list them so the operator can import them. Names, paths and
+ * reasons only: never a URL or an env value.
+ */
+function buildNativeMcpCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const agents = mcpImportAgentsOf(deps.dbListAgents().filter((agent) => !agent.remote));
+  const discovery = discoverNativeMcpEntries({
+    agents,
+    homeDir: deps.homeDir(),
+    codexHome: deps.codexHome(),
+    fs: {
+      exists: deps.exists,
+      readFile: deps.readFile,
+      listDirs: (path) => {
+        try {
+          return deps
+            .readDir(path)
+            .filter((entry) => entry.isDirectory())
+            .map((entry) => entry.name);
+        } catch {
+          // no-cause: a directory that cannot be listed holds no plugin to report.
+          return [];
+        }
+      },
+    },
+  });
+  let registered: McpImportRegisteredView[] = [];
+  try {
+    registered = deps
+      .queryRows<McpServerViewRow>(
+        "SELECT name, origin, transport, url_display, command, args_json, env_keys_json FROM mcp_servers",
+      )
+      .filter((row) => row.transport === "http" || row.transport === "stdio")
+      .map((row) => ({
+        name: row.name,
+        origin: row.origin,
+        transport: row.transport as "http" | "stdio",
+        urlDisplay: row.url_display,
+        command: row.command,
+        args: parseStringList(row.args_json),
+        envKeys: parseStringList(row.env_keys_json),
+      }));
+  } catch {
+    // no-cause: without a registry table nothing is registered, so every native entry is reported.
+    registered = [];
+  }
+  const { unregistered, invalidSources } = findUnregisteredNativeMcpEntries(discovery, registered);
+  const importable = unregistered.filter((entry) => !entry.unsupported);
+  // A Codex key the launch overrides cannot address makes Ravi refuse every Codex session that loads its file,
+  // whether or not a registered server covers it: the entry has to leave the file.
+  const codexLaunch = findCodexKeysNotOverridable(agents, deps);
+  const codexKeysNotOverridable = codexLaunch.keys;
+  // A file the launch reads but cannot use refuses every Codex session in that directory; a file discovery already
+  // reported as unreadable is not repeated.
+  const codexConfigUnreadable = codexLaunch.unreadable.filter(
+    (message) => !invalidSources.some((source) => message.includes(source.path)),
+  );
+  // An enterprise MCP configuration makes Claude Code refuse the strict MCP flag Ravi starts every Claude session with.
+  const enterpriseMcpConfigPath = claudeEnterpriseMcpConfigPath(deps.platform());
+  const enterpriseMcpConfig = deps.exists(enterpriseMcpConfigPath);
+  // Entries no agent's runtime loaded never ran, so they are not counted.
+  const loadedEntries = discovery.entries.filter((entry) => entry.agentIds.length > 0).length;
+  const data = {
+    sources: discovery.sources.length,
+    entries: loadedEntries,
+    unregistered: unregistered.map((entry) => ({
+      kind: entry.kind,
+      path: entry.path,
+      scope: entry.scope,
+      nativeName: entry.nativeName,
+      transport: entry.transport,
+      agentIds: entry.agentIds,
+      unsupported: entry.unsupported,
+    })),
+    invalidSources: invalidSources.map((source) => ({ kind: source.kind, path: source.path, problem: source.problem })),
+    codexKeysNotOverridable,
+    codexConfigUnreadable,
+    enterpriseMcpConfig: enterpriseMcpConfig ? enterpriseMcpConfigPath : null,
+  };
+  if (
+    unregistered.length === 0 &&
+    invalidSources.length === 0 &&
+    codexKeysNotOverridable.length === 0 &&
+    codexConfigUnreadable.length === 0 &&
+    !enterpriseMcpConfig
+  ) {
+    return {
+      id: "mcp.native_unregistered",
+      domain: "mcp",
+      title: "Runtime-native MCP servers",
+      status: "ok",
+      summary:
+        loadedEntries === 0
+          ? "no runtime configuration declares an MCP server"
+          : `every runtime-native MCP entry (${loadedEntries}) is registered`,
+      data,
+    };
+  }
+  const details = [
+    ...unregistered.map(
+      (entry) =>
+        `${entry.path}${entry.scope ? ` [${entry.scope}]` : ""}: ${entry.nativeName} (${entry.unsupported ? `cannot be imported: ${entry.unsupported}` : (entry.transport ?? "unknown")})`,
+    ),
+    ...invalidSources.map((source) => `${source.path}: ${source.problem ?? "invalid"}`),
+    ...codexKeysNotOverridable.map(
+      (entry) =>
+        `${entry.path}: Codex MCP server key ${JSON.stringify(entry.key)} is not a bare key, so Ravi cannot turn it off at launch and refuses every Codex session that loads this file until the entry is removed from it`,
+    ),
+    ...codexConfigUnreadable,
+    ...(enterpriseMcpConfig ? [claudeEnterpriseMcpConfigDetail(enterpriseMcpConfigPath)] : []),
+  ];
+  const summaries = [
+    ...(unregistered.length || invalidSources.length
+      ? [
+          `${unregistered.length} MCP server entr${unregistered.length === 1 ? "y" : "ies"} in runtime configuration ${unregistered.length === 1 ? "is not registered and no longer loads" : "are not registered and no longer load"}${invalidSources.length ? `; ${invalidSources.length} source file${invalidSources.length === 1 ? "" : "s"} could not be read` : ""}`,
+        ]
+      : []),
+    ...(codexKeysNotOverridable.length
+      ? [
+          `${codexKeysNotOverridable.length} Codex MCP server entr${codexKeysNotOverridable.length === 1 ? "y stops" : "ies stop"} every Codex session that loads ${codexKeysNotOverridable.length === 1 ? "its file" : "their files"}`,
+        ]
+      : []),
+    ...(enterpriseMcpConfig
+      ? [`an enterprise MCP configuration (${enterpriseMcpConfigPath}) stops Claude sessions on this host`]
+      : []),
+    ...(codexConfigUnreadable.length
+      ? [
+          `${codexConfigUnreadable.length} Codex configuration file${codexConfigUnreadable.length === 1 ? "" : "s"} the launch reads could not be read`,
+        ]
+      : []),
+  ];
+  const fixHints = [
+    ...(unregistered.length || invalidSources.length
+      ? [
+          importable.length
+            ? "review the plan with `ravi mcp import`, then run it with --execute; entries that cannot be imported are registered with `ravi mcp add`"
+            : "register these servers with `ravi mcp add`, or remove them from the runtime configuration",
+        ]
+      : []),
+    ...(codexKeysNotOverridable.length
+      ? [
+          "remove each named entry from its Codex configuration file (register the server under a bare name with `ravi mcp import` or `ravi mcp add` first if it is still wanted)",
+        ]
+      : []),
+    ...(enterpriseMcpConfig
+      ? [`remove ${enterpriseMcpConfigPath} on the host or move the Claude agents to another runtime`]
+      : []),
+    ...(codexConfigUnreadable.length ? ["fix or remove each named Codex configuration file"] : []),
+  ];
+  return {
+    id: "mcp.native_unregistered",
+    domain: "mcp",
+    title: "Runtime-native MCP servers",
+    status: "warn",
+    summary: summaries.join("; "),
+    details,
+    fixHint: fixHints.join("; "),
+    data,
   };
 }
 

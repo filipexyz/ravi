@@ -58,6 +58,18 @@
 - `turn_end` with error stop reason maps to `turn.failed`.
 - `agent_end` maps to `turn.complete` exactly once when no earlier terminal event exists.
 
+## MCP Tests
+
+- `bun test src/runtime/pi-tool-permissions.test.ts`
+- `mcp__a__webfetch_x` and `mcp__a__run_terminal` map to themselves, and the
+  gate denies them under `use:tool:*`.
+- The existing mappings (`bash`, `read`, `write`, `edit`, `grep`, `glob`,
+  `webfetch`, `websearch`, skill names) are unchanged.
+- The dynamic tool catalog holds `mcp_tools` and `mcp_call` only when the turn
+  is granted them (`src/cli/commands/mcp-call.test.ts`).
+- Live check before relying on it (`mcp` RUNBOOK): the installed Pi has no
+  native MCP loader.
+
 ## Negative Tests
 
 - RPC process exits before terminal event.

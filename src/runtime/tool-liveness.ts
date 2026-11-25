@@ -1,4 +1,5 @@
 import { DEFAULT_APPROVAL_TIMEOUT_MS } from "../approval/timeouts.js";
+import { isHostMcpToolName } from "./host-mcp-server-names.js";
 
 export const DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -25,9 +26,22 @@ export function isApprovalGatedTool(toolName: string | undefined): boolean {
   return toolName !== undefined && APPROVAL_GATED_TOOL_NAMES.has(toolName);
 }
 
+/**
+ * A tool of a registered MCP server, forwarded through the gateway (spec mcp,
+ * Claude Facade): an `mcp__` name outside the host servers' prefixes. Its
+ * arguments belong to the remote server, so a `timeout` among them is the
+ * server's own parameter, not a runtime Ravi agreed to wait for; the gateway
+ * bounds the call itself (240 s inline).
+ */
+export function isForwardedMcpToolName(toolName: string | undefined): boolean {
+  return typeof toolName === "string" && toolName.startsWith("mcp__") && !isHostMcpToolName(toolName);
+}
+
 /** Inactivity window for a tool that just started. */
 export function resolveToolInactivityTimeoutMs(toolName: string | undefined, input: unknown): number {
-  const declared = resolveDeclaredToolTimeoutMs(input);
+  const declared = isForwardedMcpToolName(toolName)
+    ? DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS
+    : resolveDeclaredToolTimeoutMs(input);
   return isApprovalGatedTool(toolName) ? Math.max(declared, APPROVAL_GATED_TOOL_TIMEOUT_MS) : declared;
 }
 

@@ -6284,6 +6284,48 @@ describe("Slack sensitive modal ingress ordering", () => {
     expect(JSON.stringify(acks)).not.toContain(secret);
     expect(JSON.stringify(acks)).not.toContain(responseUrl);
   });
+
+  it("consumes an MCP elicitation envelope before the generic interaction pipeline", async () => {
+    const published: unknown[] = [];
+    const envelope: SlackSocketEnvelope = {
+      type: "interactive",
+      envelope_id: "mcp-elicitation-boundary",
+      payload: {
+        type: "block_actions",
+        team: { id: "TTEST" },
+        user: { id: "UTEST1" },
+        channel: { id: "CTEST1" },
+        trigger_id: "trigger-1",
+        actions: [{ action_id: "ravi_mcp_elicit:open", value: "sme_unknown" }],
+      },
+    };
+    const viewsOpen = mock(async () => ({ ok: true, view: { id: "VTEST1" } }));
+    const postEphemeral = mock(async () => ({ ok: true, messageId: "1.1" }));
+    const service = new SlackSocketModeService({
+      accountId: "slack-mcp-boundary",
+      appToken: "xapp-fixture",
+      botToken: "xoxb-fixture",
+      webClient: { viewsOpen, postEphemeral } as unknown as SlackWebApiClient,
+      publishInteraction: async (...args) => {
+        published.push(args);
+      },
+      getRouterConfig: () => {
+        throw new Error("An MCP elicitation envelope must not enter routing");
+      },
+      // No such request exists, so the modal is refused: the routing is what this asserts.
+      mcpElicitationDependencies: { getRequest: () => null, now: () => 1 },
+    });
+    const acks: unknown[] = [];
+    expect(
+      await service.handleEnvelope(envelope, (id, payload) => {
+        acks.push({ id, payload });
+      }),
+    ).toBe("processed");
+    expect(published).toEqual([]);
+    expect(viewsOpen).not.toHaveBeenCalled();
+    expect(acks).toEqual([{ id: "mcp-elicitation-boundary", payload: undefined }]);
+    expect(postEphemeral).toHaveBeenCalledTimes(1);
+  });
 });
 
 async function normalizeContentEnvelope(envelope: SlackSocketEnvelope): Promise<SlackNormalizedMessage | null> {

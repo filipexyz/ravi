@@ -55,24 +55,8 @@ export function actorCanGrantRequestedPermission(input: ApprovalGrantorInput): A
     return { allowed: false, reason: "missing_actor" };
   }
 
-  const channelResolver = identityResolvers.get(input.channel.trim().toLowerCase());
-  const identity = channelResolver
-    ? channelResolver({
-        senderId,
-        ...(input.senderAliases?.length ? { senderAliases: input.senderAliases } : {}),
-        ...(input.instanceId !== undefined ? { instanceId: input.instanceId } : {}),
-        ...(input.accountId ? { accountId: input.accountId } : {}),
-      })
-    : resolveGrantorIdentity(
-        input.channel,
-        [senderId, ...(input.senderAliases ?? [])],
-        [input.instanceId, input.accountId, ""],
-      );
-  if (
-    !identity?.ownerType ||
-    !identity.ownerId ||
-    (identity.ownerType !== "contact" && identity.ownerType !== "agent")
-  ) {
+  const identity = resolveVerifiedSenderOwner({ ...input, senderId });
+  if (!identity) {
     return { allowed: false, reason: "unresolved_identity" };
   }
 
@@ -91,6 +75,53 @@ export function actorCanGrantRequestedPermission(input: ApprovalGrantorInput): A
     subjectType: identity.ownerType,
     subjectId: identity.ownerId,
   };
+}
+
+export interface VerifiedSenderInput {
+  readonly channel: string;
+  /** The platform's own sender id of the event, never text the sender typed. */
+  readonly senderId: string;
+  /** Other forms of the same verified sender id; the channel's own lookup decides what they mean. */
+  readonly senderAliases?: readonly string[];
+  readonly accountId?: string;
+  readonly instanceId?: string | null;
+}
+
+export interface VerifiedSenderOwner {
+  readonly ownerType: "contact" | "agent";
+  readonly ownerId: string;
+}
+
+/**
+ * Who a verified platform sender is: the contact or agent that owns that
+ * identity on this channel, through the channel's registered resolver (Slack
+ * workspaces) or the generic platform-identity lookup. Null when the sender is
+ * unknown or ambiguous. This is identity only; it grants nothing.
+ */
+export function resolveVerifiedSenderOwner(input: VerifiedSenderInput): VerifiedSenderOwner | null {
+  const senderId = input.senderId?.trim();
+  if (!senderId) return null;
+  const channelResolver = identityResolvers.get(input.channel.trim().toLowerCase());
+  const identity = channelResolver
+    ? channelResolver({
+        senderId,
+        ...(input.senderAliases?.length ? { senderAliases: input.senderAliases } : {}),
+        ...(input.instanceId !== undefined ? { instanceId: input.instanceId } : {}),
+        ...(input.accountId ? { accountId: input.accountId } : {}),
+      })
+    : resolveGrantorIdentity(
+        input.channel,
+        [senderId, ...(input.senderAliases ?? [])],
+        [input.instanceId, input.accountId, ""],
+      );
+  if (
+    !identity?.ownerType ||
+    !identity.ownerId ||
+    (identity.ownerType !== "contact" && identity.ownerType !== "agent")
+  ) {
+    return null;
+  }
+  return { ownerType: identity.ownerType, ownerId: identity.ownerId };
 }
 
 function resolveGrantorIdentity(

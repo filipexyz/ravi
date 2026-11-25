@@ -46,6 +46,7 @@ const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
 
 rl.on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.id && message.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: message.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
   if (message.id && message.method) {
     appendFileSync(logPath, JSON.stringify({ method: message.method, params: message.params ?? {} }) + "\\n");
   }

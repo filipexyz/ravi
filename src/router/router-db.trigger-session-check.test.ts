@@ -1,6 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
-import { migrateTriggerDebounce, migrateTriggerOwner, migrateTriggerSessionCheck } from "./router-db.js";
+import {
+  migrateMcpFileColumns,
+  migrateTriggerDebounce,
+  migrateTriggerOwner,
+  migrateTriggerSessionCheck,
+} from "./router-db.js";
 
 describe("migrateTriggerSessionCheck", () => {
   it("drops the legacy main|isolated CHECK and keeps existing rows", () => {
@@ -118,5 +123,24 @@ describe("migrateTriggerOwner", () => {
       { id: "t2", owner_principal: null },
     ]);
     columnFirst.close();
+  });
+});
+
+describe("migrateMcpFileColumns", () => {
+  it("adds the upload and catalog freshness columns to existing MCP tables, idempotently, keeping rows", () => {
+    const db = new Database(":memory:");
+    db.exec("CREATE TABLE mcp_calls (id TEXT PRIMARY KEY, server TEXT NOT NULL)");
+    db.exec("CREATE TABLE mcp_servers (name TEXT PRIMARY KEY, catalog_json TEXT)");
+    db.exec("INSERT INTO mcp_calls VALUES ('mc_old', 'docs')");
+    db.exec("INSERT INTO mcp_servers VALUES ('docs', '{}')");
+
+    migrateMcpFileColumns(db);
+    migrateMcpFileColumns(db); // idempotent
+
+    expect(db.prepare("SELECT id, files_upload FROM mcp_calls").all()).toEqual([{ id: "mc_old", files_upload: 0 }]);
+    expect(
+      db.prepare("SELECT name, catalog_json, files_catalog_json, catalog_expires_at FROM mcp_servers").all(),
+    ).toEqual([{ name: "docs", catalog_json: "{}", files_catalog_json: null, catalog_expires_at: null }]);
+    db.close();
   });
 });

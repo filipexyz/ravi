@@ -84,6 +84,21 @@ describe("writes to runtime provider settings", () => {
     expect(await writeDecision(WRITER, "Write", { file_path: " innocent /settings.json", content: "{}" })).toBe("deny");
   });
 
+  it("treats Grok's .grok directory as provider settings", async () => {
+    expect(isProviderConfigPath(".grok/config.toml", workspace)).toBe(true);
+    expect(isProviderConfigPath(join(homedir(), ".grok", "settings.json"), workspace)).toBe(true);
+    expect(isProviderConfigPath("grok/config.toml", workspace)).toBe(false);
+    expect(await writeDecision(WRITER, "Write", { file_path: ".grok/config.toml", content: "x" })).toBe("deny");
+    expect(await writeDecision(WRITER, "Edit", { file_path: join(workspace, ".GROK", "mcp.json") })).toBe("deny");
+    mkdirSync(join(workspace, ".grok"));
+    symlinkSync(join(workspace, ".grok"), join(workspace, "innocent-grok"));
+    expect(await writeDecision(WRITER, "Write", { file_path: "innocent-grok/config.toml", content: "x" })).toBe("deny");
+    const shell = { agentId, capabilities: caps("use:tool:Write", "execute:executable:echo") };
+    expect(evaluateBashPermission("echo x > .grok/config.toml", shell).allowed).toBe(false);
+    const full = caps("use:tool:*", "execute:executable:*");
+    expect(await writeDecision(full, "Write", { file_path: ".grok/config.toml", content: "x" })).toBe("allow");
+  });
+
   it("allows them for a context that can already run any executable", async () => {
     const full = caps("use:tool:*", "execute:executable:*");
     expect(await writeDecision(full, "Write", { file_path: ".claude/settings.json", content: "{}" })).toBe("allow");

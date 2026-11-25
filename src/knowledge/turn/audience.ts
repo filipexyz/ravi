@@ -76,6 +76,7 @@ export function resolveKnowledgeAudience(
       prompt._heartbeat ||
       prompt._trigger ||
       prompt._sessionFollowup ||
+      prompt._mcpCall ||
       prompt._observation ||
       prompt._taskRuntime ||
       prompt._channelBackend

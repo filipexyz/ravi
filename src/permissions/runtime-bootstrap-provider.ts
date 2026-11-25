@@ -59,6 +59,32 @@ const SAFE_EXECUTABLES = [
   "xargs",
 ];
 
+/**
+ * The MCP CLI pair (spec mcp, CLI Pair): `ravi mcp tools` and `ravi mcp call`
+ * exactly as their `@CommandAccess` asks. The command grant only opens the
+ * door; every listing and call still passes `authorizeMcpUse` (a server the
+ * operator attached to the agent, its audience, and
+ * `use:tool:mcp__<server>__<tool>`), the same check a Claude turn passes for
+ * the same tool. `ravi mcp skills read` is in the floor too (spec mcp,
+ * Remote Skills): the stub of a pinned remote skill tells the model to run
+ * it, and the read still needs the operator's pin of that skill to that
+ * agent, the per-turn Library gate and `authorizeMcpUse` (surface `skill`).
+ * `ravi mcp calls list` and `ravi mcp calls cancel` are in the floor too
+ * (spec mcp, Background Calls): the handle of a detached call tells the model
+ * to follow and cancel it with them. The daemon limits a turn that is not the
+ * operator's own to background calls of its own agent and session whose
+ * server and tool that turn may use (`authorizeMcpUse`, the same check as
+ * making the call), plus, on a call's delivery turn, that one call.
+ * No other `ravi mcp` command is in the floor.
+ */
+export const BASELINE_MCP_CLI_PAIR_ACTIONS = [
+  ["read", "mcp.tools", "list"],
+  ["mutate", "mcp.tools", "call"],
+  ["read", "mcp.skills", "read"],
+  ["read", "mcp.calls", "list"],
+  ["mutate", "mcp.calls", "cancel"],
+] as const;
+
 export const BASELINE_SIGNAL_ACTIONS = [
   ["read", "signals", "list"],
   ["read", "signals", "show"],
@@ -137,6 +163,12 @@ export function bootstrapCapabilitiesFor(subjectType: string): ContextCapability
       source,
     })),
     ...BASELINE_SIGNAL_ACTIONS.map(([permission, objectType, objectId]) => ({
+      permission: permission as "read" | "mutate",
+      objectType,
+      objectId,
+      source,
+    })),
+    ...BASELINE_MCP_CLI_PAIR_ACTIONS.map(([permission, objectType, objectId]) => ({
       permission: permission as "read" | "mutate",
       objectType,
       objectId,

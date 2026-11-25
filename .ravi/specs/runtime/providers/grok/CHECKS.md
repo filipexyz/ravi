@@ -36,6 +36,25 @@
 - Tools then `handle_prompt.done` / `end_turn` / `cancelled` with zero post-tool assistant text MUST NOT emit `turn.complete`. Open tools fail immediately; closed tools get one continuation `session/prompt`, then visible `turn.failed` if the model still does not reply.
 - The 15:52-shaped timeline (announce, Read completed, Bash started without `exec_done` / without a matching terminal, then prompt end) MUST emit `turn.failed` with a user-visible explanation and MUST NOT emit `turn.complete`.
 
+## MCP Tests
+
+- `bun test src/runtime/grok-provider.test.ts src/bash/provider-config-writes.test.ts`
+- Spawn arguments with empty grants, with `use:tool:MCPTool` and with
+  `use:tool:*` all carry `--deny MCPTool` and `search_tool,use_tool` in
+  `--disallowed-tools`, and never put them in `--tools`.
+- A permission request for an MCP tool under a full MCPTool grant is rejected.
+  This holds for `use_tool`, `search_tool`, `kind: "mcp"` (also with a shell
+  `toolName`), and `mcp__a__bash` / `mcp__a__web_fetch` style names, and
+  neither `canUseTool` nor the command authorizer is asked.
+- A spawn under `allowTools: ["MCPTool"]` or every class granted still carries
+  `--deny MCPTool`, never `--allow MCPTool(...)`, and a session whose
+  `canUseTool` allows everything starts its subprocess with MCPTool denied.
+- `session/new` and `session/load` send `mcpServers: []`.
+- A file-tool write or shell redirect into `.grok/` is refused without an
+  executable or admin grant.
+- Live check before relying on it (`mcp` RUNBOOK): Grok starts no server from
+  its own configuration.
+
 ## Negative Tests
 
 - ACP process exits before terminal event.
