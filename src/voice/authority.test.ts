@@ -1,0 +1,167 @@
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { runWithContext } from "../cli/context.js";
+import { ADMIN_BOOTSTRAP_KIND, createRuntimeContext } from "../runtime/context-registry.js";
+import { dbCreateAgent } from "../router/router-db.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import {
+  assertCallerControlsCall,
+  assertCallerMayCallSession,
+  resolveVoiceCaller,
+  VOICE_DEVICE_CAPABILITIES,
+  VOICE_DEVICE_CONTEXT_KIND,
+  VoiceAuthorityError,
+} from "./authority.js";
+import { insertVoiceDevice, markVoiceDeviceRevoked } from "./store.js";
+import { emptyVoiceUsage, type VoiceCall } from "./types.js";
+
+let stateDir: string | null = null;
+
+function pairedDevice(sessions: string[]) {
+  const context = createRuntimeContext({
+    kind: VOICE_DEVICE_CONTEXT_KIND,
+    capabilities: VOICE_DEVICE_CAPABILITIES.map((capability) => ({ ...capability })),
+    metadata: { voiceDeviceId: "vd_1" },
+    ttlMs: 60_000,
+  });
+  insertVoiceDevice({
+    id: "vd_1",
+    label: "phone",
+    contactId: "contact_1",
+    sessions,
+    contextId: context.contextId,
+    createdAt: Date.now(),
+    expiresAt: Date.now() + 60_000,
+  });
+  return context;
+}
+
+function callFor(speakerId: string, mode: VoiceCall["mode"] = "push"): VoiceCall {
+  return {
+    id: "vc_1",
+    sessionKey: "agent:main:main",
+    sessionName: "main",
+    mode,
+    engine: mode,
+    profileId: "default",
+    state: "active",
+    agentState: "listening",
+    speaker: { kind: "device", id: speakerId },
+    connectionKind: "none",
+    usage: emptyVoiceUsage(),
+    createdAt: 0,
+    updatedAt: 0,
+  };
+}
+
+function code(fn: () => unknown): string | null {
+  try {
+    fn();
+    return null;
+  } catch (error) {
+    return error instanceof VoiceAuthorityError ? error.code : String(error);
+  }
+}
+
+describe("voice authority", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-voice-authority-");
+  });
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("refuses agent turns", () => {
+    const result = runWithContext({ sessionKey: "agent:main:main", sessionName: "main", agentId: "main" }, () =>
+      code(() => resolveVoiceCaller("voice calls start")),
+    );
+    expect(result).toBe("VOICE_AGENT_TURN_REFUSED");
+  });
+
+  it("the local operator is the operator speaker", () => {
+    const caller = runWithContext({}, () => resolveVoiceCaller("voice calls start"));
+    expect(caller.kind).toBe("operator");
+    expect(caller.speaker).toEqual({ kind: "operator", id: "operator" });
+  });
+
+  it("a paired device speaks as its contact, only on its sessions and its own calls", () => {
+    const context = pairedDevice(["agent:main:main"]);
+    const caller = runWithContext({ context, contextId: context.contextId }, () =>
+      resolveVoiceCaller("voice calls start"),
+    );
+    expect(caller.kind).toBe("device");
+    expect(caller.speaker).toMatchObject({ kind: "device", id: "vd_1", contactId: "contact_1" });
+    expect(code(() => assertCallerMayCallSession(caller, { name: "main", sessionKey: "agent:main:main" }))).toBeNull();
+    expect(code(() => assertCallerMayCallSession(caller, { name: "ops", sessionKey: "agent:ops:main" }))).toBe(
+      "VOICE_SESSION_FORBIDDEN",
+    );
+    expect(code(() => assertCallerControlsCall(caller, callFor("vd_1"), "approve"))).toBeNull();
+    expect(code(() => assertCallerControlsCall(caller, callFor("vd_other"), "read"))).toBe("VOICE_CALL_FORBIDDEN");
+  });
+
+  it("a device paired to a session key keeps it after a rename and never gets the released name", () => {
+    const context = pairedDevice(["agent:main:main"]);
+    const caller = runWithContext({ context, contextId: context.contextId }, () =>
+      resolveVoiceCaller("voice calls start"),
+    );
+    expect(
+      code(() => assertCallerMayCallSession(caller, { name: "renamed", sessionKey: "agent:main:main" })),
+    ).toBeNull();
+    expect(code(() => assertCallerMayCallSession(caller, { name: "main", sessionKey: "agent:other:main" }))).toBe(
+      "VOICE_SESSION_FORBIDDEN",
+    );
+  });
+
+  it("an issued context reaches only the calls it opened", () => {
+    const context = createRuntimeContext({ kind: "cli", capabilities: [], ttlMs: 60_000 });
+    const caller = runWithContext({ context, contextId: context.contextId }, () =>
+      resolveVoiceCaller("voice calls show"),
+    );
+    expect(caller.kind).toBe("context");
+    const operatorCall = { ...callFor("operator"), speaker: { kind: "operator" as const, id: "operator" } };
+    expect(code(() => assertCallerControlsCall(caller, operatorCall, "read"))).toBe("VOICE_CALL_FORBIDDEN");
+    expect(
+      code(() => assertCallerControlsCall(caller, { ...operatorCall, callerContextId: context.contextId }, "control")),
+    ).toBeNull();
+  });
+
+  it("the operator's terminal (default credential) and its admin key through the gateway are the operator", () => {
+    // What getContext() returns in the operator's terminal with ~/.ravi/credentials.json
+    // (src/cli/context.ts) and what src/cli/registry.ts runs the command with.
+    const key = createRuntimeContext({ kind: ADMIN_BOOTSTRAP_KIND, capabilities: [], ttlMs: 60_000 });
+    const local = runWithContext(
+      { contextOrigin: "default-credential", contextId: key.contextId, context: key, agentId: "bootstrap" },
+      () => resolveVoiceCaller("voice devices pair"),
+    );
+    expect(local.kind).toBe("operator");
+    // The same key presented to the gateway (no contextOrigin there).
+    const gateway = runWithContext({ contextId: key.contextId, context: key }, () =>
+      resolveVoiceCaller("voice calls approve"),
+    );
+    expect(gateway.kind).toBe("operator");
+  });
+
+  it("a key bound to an agent is refused even without a session", () => {
+    dbCreateAgent({ id: "voice-agent", cwd: "/tmp/voice-agent" });
+    // `ravi context issue x --as-agent voice-agent` from an admin agent turn: no session.
+    const delegated = createRuntimeContext({
+      kind: "cli-runtime",
+      agentId: "voice-agent",
+      capabilities: [],
+      ttlMs: 60_000,
+    });
+    const result = runWithContext({ context: delegated, contextId: delegated.contextId, agentId: "voice-agent" }, () =>
+      code(() => resolveVoiceCaller("voice calls start")),
+    );
+    expect(result).toBe("VOICE_AGENT_TURN_REFUSED");
+  });
+
+  it("a revoked device key is refused", () => {
+    const context = pairedDevice(["agent:main:main"]);
+    markVoiceDeviceRevoked("vd_1");
+    const result = runWithContext({ context, contextId: context.contextId }, () =>
+      code(() => resolveVoiceCaller("voice calls start")),
+    );
+    expect(result).toBe("VOICE_DEVICE_REVOKED");
+  });
+});

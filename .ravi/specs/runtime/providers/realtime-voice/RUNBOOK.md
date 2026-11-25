@@ -3,6 +3,10 @@ id: runtime/providers/realtime-voice
 mode: runbook
 ---
 
+## SUPERSEDED — 2026-11-24
+
+Replaced by the `voice` spec: the session is the brain and the realtime model is only the ears and mouth (engine `live`). Nothing below is normative.
+
 # Runbook
 
 ## Inspect Runtime Provider Fit

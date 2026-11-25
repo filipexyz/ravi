@@ -17,6 +17,13 @@ const stores = [
     table: "devin_sessions",
     foreignKeys: 1,
   },
+  {
+    name: "voice",
+    path: "../voice/store.ts",
+    open: "store.ensureVoiceSchema()",
+    table: "voice_calls",
+    foreignKeys: 1,
+  },
 ] as const;
 
 describe("database setup retry after journal lock contention", () => {

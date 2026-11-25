@@ -154,6 +154,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/allowed-skills.test.ts",
   ],
   "src/runtime/": [
+    // Person credentials: a relay made with one person's key is that person's turn, never the agent's.
+    "src/runtime/person-credential.test.ts",
     // A finishing session keeps its slot until its loop restarts the stashed recovery (pool reclaimer race).
     "src/runtime/recoverable-interrupt-slot-release.test.ts",
     // Agent runtime env: the provider spawn carries no daemon secret (allowlist, per-provider login).

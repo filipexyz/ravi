@@ -299,6 +299,10 @@ public final class RaviClient {
     VideoNamespace(transport: transport)
   }
 
+  public var voice: VoiceNamespace {
+    VoiceNamespace(transport: transport)
+  }
+
   public var watch: WatchNamespace {
     WatchNamespace(transport: transport)
   }
@@ -7649,6 +7653,255 @@ public struct VideoNamespace: Sendable {
     requestBody["url"] = try RaviJSON.fromEncodable(url)
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["video"], command: "analyze", body: requestBody, as: VideoAnalyzeReturn.self)
+  }
+}
+
+public struct VoiceNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public var calls: VoiceCallsNamespace {
+    VoiceCallsNamespace(transport: transport)
+  }
+
+  public var devices: VoiceDevicesNamespace {
+    VoiceDevicesNamespace(transport: transport)
+  }
+
+  public var engines: VoiceEnginesNamespace {
+    VoiceEnginesNamespace(transport: transport)
+  }
+
+  public var profiles: VoiceProfilesNamespace {
+    VoiceProfilesNamespace(transport: transport)
+  }
+
+  public var targets: VoiceTargetsNamespace {
+    VoiceTargetsNamespace(transport: transport)
+  }
+
+  public var voices: VoiceVoicesNamespace {
+    VoiceVoicesNamespace(transport: transport)
+  }
+}
+
+public struct VoiceCallsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func approve(_ call: String, _ approval: String, _ options: VoiceCallsApproveOptions = .init()) async throws -> VoiceCallsApproveReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["call"] = try RaviJSON.fromEncodable(call)
+    requestBody["approval"] = try RaviJSON.fromEncodable(approval)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["voice","calls"], command: "approve", body: requestBody, as: VoiceCallsApproveReturn.self)
+  }
+
+  public func audio(_ call: String, _ item: String, _ options: VoiceCallsAudioOptions = .init()) async throws -> VoiceCallsAudioReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["call"] = try RaviJSON.fromEncodable(call)
+    requestBody["item"] = try RaviJSON.fromEncodable(item)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["voice","calls"], command: "audio", body: requestBody, as: VoiceCallsAudioReturn.self)
+  }
+
+  public func cancelTurn(_ call: String, _ options: VoiceCallsCancelTurnOptions = .init()) async throws -> VoiceCallsCancelTurnReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["call"] = try RaviJSON.fromEncodable(call)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["voice","calls"], command: "cancel-turn", body: requestBody, as: VoiceCallsCancelTurnReturn.self)
+  }
+
+  public func connect(_ call: String, _ options: VoiceCallsConnectOptions = .init()) async throws -> VoiceCallsConnectReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["call"] = try RaviJSON.fromEncodable(call)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["voice","calls"], command: "connect", body: requestBody, as: VoiceCallsConnectReturn.self)
+  }
+
+  public func deny(_ call: String, _ approval: String) async throws -> VoiceCallsDenyReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["call"] = try RaviJSON.fromEncodable(call)
+    requestBody["approval"] = try RaviJSON.fromEncodable(approval)
+    return try await transport.call(groupSegments: ["voice","calls"], command: "deny", body: requestBody, as: VoiceCallsDenyReturn.self)
+  }
+
+  public func end(_ call: String) async throws -> VoiceCallsEndReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["call"] = try RaviJSON.fromEncodable(call)
+    return try await transport.call(groupSegments: ["voice","calls"], command: "end", body: requestBody, as: VoiceCallsEndReturn.self)
+  }
+
+  public func events(_ call: String, _ options: VoiceCallsEventsOptions = .init()) async throws -> VoiceCallsEventsReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["call"] = try RaviJSON.fromEncodable(call)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["voice","calls"], command: "events", body: requestBody, as: VoiceCallsEventsReturn.self)
+  }
+
+  public func list(_ options: VoiceCallsListOptions = .init()) async throws -> VoiceCallsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["voice","calls"], command: "list", body: requestBody, as: VoiceCallsListReturn.self)
+  }
+
+  public func push(_ call: String, _ options: VoiceCallsPushOptions = .init()) async throws -> VoiceCallsPushReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["call"] = try RaviJSON.fromEncodable(call)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["voice","calls"], command: "push", body: requestBody, as: VoiceCallsPushReturn.self)
+  }
+
+  public func send(_ call: String, _ text: [String], _ options: VoiceCallsSendOptions = .init()) async throws -> VoiceCallsSendReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["call"] = try RaviJSON.fromEncodable(call)
+    requestBody["text"] = try RaviJSON.fromEncodable(text)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["voice","calls"], command: "send", body: requestBody, as: VoiceCallsSendReturn.self)
+  }
+
+  public func show(_ call: String) async throws -> VoiceCallsShowReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["call"] = try RaviJSON.fromEncodable(call)
+    return try await transport.call(groupSegments: ["voice","calls"], command: "show", body: requestBody, as: VoiceCallsShowReturn.self)
+  }
+
+  public func silence(_ call: String) async throws -> VoiceCallsSilenceReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["call"] = try RaviJSON.fromEncodable(call)
+    return try await transport.call(groupSegments: ["voice","calls"], command: "silence", body: requestBody, as: VoiceCallsSilenceReturn.self)
+  }
+
+  public func start(_ session: String, _ options: VoiceCallsStartOptions = .init()) async throws -> VoiceCallsStartReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["session"] = try RaviJSON.fromEncodable(session)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["voice","calls"], command: "start", body: requestBody, as: VoiceCallsStartReturn.self)
+  }
+
+  public func transcript(_ call: String) async throws -> VoiceCallsTranscriptReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["call"] = try RaviJSON.fromEncodable(call)
+    return try await transport.call(groupSegments: ["voice","calls"], command: "transcript", body: requestBody, as: VoiceCallsTranscriptReturn.self)
+  }
+}
+
+public struct VoiceDevicesNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func list(_ options: VoiceDevicesListOptions = .init()) async throws -> VoiceDevicesListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["voice","devices"], command: "list", body: requestBody, as: VoiceDevicesListReturn.self)
+  }
+
+  public func pair(_ options: VoiceDevicesPairOptions = .init()) async throws -> VoiceDevicesPairReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["voice","devices"], command: "pair", body: requestBody, as: VoiceDevicesPairReturn.self)
+  }
+
+  public func revoke(_ device: String) async throws -> VoiceDevicesRevokeReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["device"] = try RaviJSON.fromEncodable(device)
+    return try await transport.call(groupSegments: ["voice","devices"], command: "revoke", body: requestBody, as: VoiceDevicesRevokeReturn.self)
+  }
+}
+
+public struct VoiceEnginesNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func check() async throws -> VoiceEnginesCheckReturn {
+    let requestBody: [String: RaviJSON] = [:]
+    return try await transport.call(groupSegments: ["voice","engines"], command: "check", body: requestBody, as: VoiceEnginesCheckReturn.self)
+  }
+
+  public func list(_ options: VoiceEnginesListOptions = .init()) async throws -> VoiceEnginesListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["voice","engines"], command: "list", body: requestBody, as: VoiceEnginesListReturn.self)
+  }
+}
+
+public struct VoiceProfilesNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func create(_ id: String, _ options: VoiceProfilesCreateOptions = .init()) async throws -> VoiceProfilesCreateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["voice","profiles"], command: "create", body: requestBody, as: VoiceProfilesCreateReturn.self)
+  }
+
+  public func delete(_ id: String) async throws -> VoiceProfilesDeleteReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    return try await transport.call(groupSegments: ["voice","profiles"], command: "delete", body: requestBody, as: VoiceProfilesDeleteReturn.self)
+  }
+
+  public func list(_ options: VoiceProfilesListOptions = .init()) async throws -> VoiceProfilesListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["voice","profiles"], command: "list", body: requestBody, as: VoiceProfilesListReturn.self)
+  }
+
+  public func show(_ id: String) async throws -> VoiceProfilesShowReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    return try await transport.call(groupSegments: ["voice","profiles"], command: "show", body: requestBody, as: VoiceProfilesShowReturn.self)
+  }
+
+  public func update(_ id: String, _ options: VoiceProfilesUpdateOptions = .init()) async throws -> VoiceProfilesUpdateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["voice","profiles"], command: "update", body: requestBody, as: VoiceProfilesUpdateReturn.self)
+  }
+}
+
+public struct VoiceTargetsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func list(_ options: VoiceTargetsListOptions = .init()) async throws -> VoiceTargetsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["voice","targets"], command: "list", body: requestBody, as: VoiceTargetsListReturn.self)
+  }
+}
+
+public struct VoiceVoicesNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func list(_ options: VoiceVoicesListOptions = .init()) async throws -> VoiceVoicesListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["voice","voices"], command: "list", body: requestBody, as: VoiceVoicesListReturn.self)
   }
 }
 

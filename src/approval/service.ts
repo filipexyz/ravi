@@ -302,6 +302,9 @@ export async function requestApproval(
         accountId: source.accountId,
         to: source.chatId,
         text: deliveryText,
+        // Names the request this text shows, so a channel that lists open
+        // requests (voice calls) never pairs one request's text with another's id.
+        approvalRequestId: requestId,
         ...(slackDelivery ? { blocks: slackDelivery.blocks, privateTo: recipients } : {}),
         ...(source.threadId ? { threadId: source.threadId } : {}),
       },

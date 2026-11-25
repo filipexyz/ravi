@@ -17,6 +17,7 @@ import { parseSessionKey } from "../../router/session-key.js";
 import { ADMIN_BOOTSTRAP_AGENT_ID } from "../../runtime/context-registry.js";
 import type { MessageTarget, RuntimeLaunchPrompt } from "../../runtime/message-types.js";
 import { resolveRuntimeTurnOrigin } from "../../runtime/turn-origin.js";
+import { resolvePersonCredentialCaller } from "../../runtime/person-credential.js";
 import { dmContactForChat } from "../contacts.js";
 import { OWNER_CONTACT_TAG } from "../owner.js";
 import { isOperatorPrivateSession } from "../safety/turn.js";
@@ -40,6 +41,8 @@ export interface KnowledgeAudienceDeps {
   isLinkedOwner?: (contactId: string) => boolean;
   /** Whether a relay or owner cron runs in a session that is the operator's alone, as the classifier requires. */
   isOperatorSession?: (sessionName: string) => boolean;
+  /** The person whose credential produced the prompt (runtime/person-credential), or null. */
+  personCredential?: (prompt: RuntimeLaunchPrompt) => { contactId: string; usable: boolean } | null;
 }
 
 export interface KnowledgeAudienceResult {
@@ -87,6 +90,14 @@ export function resolveKnowledgeAudience(
       if (!prompt._jobId || !cronIsOperators(prompt, deps)) return none;
       if (!isOperatorSession(ctx.sessionName, deps)) return none;
       return !chat || isOwnersDirectChat(prompt, chat, deps) ? operator() : none;
+    }
+    // A person's credential is that person speaking, never the operator's
+    // terminal or relay, whatever the producer marked: only the linked owner
+    // in the operator's own session reads as the operator.
+    const person = (deps.personCredential ?? resolvePersonCredentialCaller)(prompt);
+    if (person) {
+      const owner = person.usable && ownerIds(deps).has(person.contactId) && isLinkedOwner(person.contactId, deps);
+      return owner && isOperatorSession(ctx.sessionName, deps) ? operator() : none;
     }
     if (prompt._cliDestination) return isOperatorSession(ctx.sessionName, deps) ? operator() : none;
 

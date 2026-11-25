@@ -6,6 +6,7 @@ import { assertBridgeProvider, isBridgeSessionRef } from "../bridge/isolation.js
 import {
   dbGetContext,
   dbGetAgent,
+  dbGetSessionDefaultChatId,
   dbRenewActiveContext,
   dbUpdateContextCapabilities,
   dbUpdateContextRuntimeState,
@@ -63,6 +64,7 @@ import { readTriggerRunAuthority } from "../triggers/authority.js";
 import { TURN_REPLY_TARGET_METADATA_KEY, type TurnReplyTarget } from "./turn-reply-target.js";
 import { isRuntimeContextLive } from "./context-liveness.js";
 import { isWorkHandoff, resolveHumanRequestCaller } from "./human-request.js";
+import { resolvePersonCredentialCaller } from "./person-credential.js";
 
 export interface RuntimeRequestContextOptions {
   dbSessionKey: string;
@@ -275,6 +277,7 @@ export function buildRuntimeRequestContext(options: RuntimeRequestContextOptions
     resolvedSource,
     capabilities,
     metadata: buildRuntimeContextMetadata({
+      sessionKey: dbSessionKey,
       prompt,
       resolvedSource,
       runtimeProviderId,
@@ -343,6 +346,7 @@ export function refreshRuntimeRequestContextForTurn(options: {
     resolvedSource: options.resolvedSource,
     capabilities: buildRuntimeContextCapabilities(options.agent.id, options.sessionName, options.prompt),
     metadata: buildRuntimeContextMetadata({
+      sessionKey: options.dbSessionKey,
       prompt: options.prompt,
       resolvedSource: options.resolvedSource,
       runtimeProviderId: options.runtimeProviderId,
@@ -524,6 +528,7 @@ function replaceRuntimeContextSnapshot(target: ContextRecord, snapshot: ContextR
 
 function buildAgentIdentityRuntimeContextInputForPrompt(options: {
   agentId: string;
+  sessionKey?: string;
   prompt: RuntimeLaunchPrompt;
   resolvedSource?: RuntimeMessageTarget;
   capabilities: ContextCapability[];
@@ -531,7 +536,7 @@ function buildAgentIdentityRuntimeContextInputForPrompt(options: {
   capabilities: ContextCapability[];
   metadata: Record<string, unknown>;
 } {
-  const actorMetadata = resolveAuthorityActorMetadata(options.prompt, options.resolvedSource);
+  const actorMetadata = resolveAuthorityActorMetadata(options.prompt, options.resolvedSource, options.sessionKey);
   const actorPrincipal = resolveActorPrincipal(actorMetadata);
   const surfacePrincipal = resolveSurfacePrincipal(actorMetadata);
   const consoleBinding = resolveConsoleBindingMetadata(actorPrincipal);
@@ -733,6 +738,11 @@ function resolveRelayCaller(prompt: RuntimeLaunchPrompt): {
   if (!callerContextId) return {};
   const caller = dbGetContext(callerContextId);
   if (!caller) return { narrowing: [] };
+  // A person's credential lends nothing of its own: the relay is that person's
+  // turn (resolveAuthorityActorMetadata), built from their grants and with the
+  // break-glass they do not hold withheld. A dead credential lends nothing.
+  const person = resolvePersonCredentialCaller(prompt);
+  if (person) return person.usable ? { contactId: person.contactId } : { narrowing: [], contactId: person.contactId };
   const metadata = caller.metadata ?? {};
   const human = resolveHumanRequestCaller(prompt);
   // A lost/revoked human handoff must not fall back to the agent's ambient
@@ -912,6 +922,7 @@ export function shouldUseTurnScopedAuthorityForPrompt(
 function resolveAuthorityActorMetadata(
   prompt: RuntimeLaunchPrompt,
   resolvedSource?: RuntimeMessageTarget,
+  sessionKey?: string,
 ):
   | (MessageActorMetadata & {
       channel?: string;
@@ -930,6 +941,12 @@ function resolveAuthorityActorMetadata(
   const turnOrigin = resolveRuntimeTurnOrigin(prompt._turnOrigin);
   const human = resolveHumanRequestCaller(prompt);
   const humanActor = human?.caller.metadata?.actor as MessageActorMetadata | undefined;
+  // A relay produced with a person's credential is that person's turn, never
+  // the operator's or the producer's: the actor is the contact, and the surface
+  // is the session's chat, so their grants there apply as if they had typed.
+  const person = human ? null : resolvePersonCredentialCaller(prompt);
+  const personChatId = person && sessionKey ? (dbGetSessionDefaultChatId(sessionKey) ?? undefined) : undefined;
+  const asContact = Boolean(human || person);
   const promptPrincipal =
     resolveTurnOriginPrincipal(turnOrigin) ?? resolveAutomationPromptPrincipal(prompt, source, context);
   const promptIdentityProvenance = turnOrigin
@@ -939,24 +956,28 @@ function resolveAuthorityActorMetadata(
   return {
     ...(source ?? {}),
     ...(context ?? {}),
-    canonicalChatId: context?.canonicalChatId ?? source?.canonicalChatId,
-    actorType: human
+    canonicalChatId: context?.canonicalChatId ?? source?.canonicalChatId ?? personChatId,
+    actorType: asContact
       ? "contact"
       : promptPrincipal
         ? promptPrincipal.subjectType === "agent"
           ? "agent"
           : "automation"
         : (context?.actorType ?? source?.actorType),
-    contactId: human?.contactId ?? (promptPrincipal ? undefined : (context?.contactId ?? source?.contactId)),
-    actorAgentId: human
+    contactId:
+      human?.contactId ??
+      person?.contactId ??
+      (promptPrincipal ? undefined : (context?.contactId ?? source?.contactId)),
+    actorAgentId: asContact
       ? undefined
       : promptPrincipal?.subjectType === "agent"
         ? promptPrincipal.subjectId
         : promptPrincipal
           ? undefined
           : (context?.actorAgentId ?? source?.actorAgentId),
-    automationId:
-      promptPrincipal?.subjectType === "automation"
+    automationId: person
+      ? undefined
+      : promptPrincipal?.subjectType === "automation"
         ? promptPrincipal.subjectId
         : promptPrincipal
           ? undefined
@@ -979,11 +1000,13 @@ function resolveAuthorityActorMetadata(
     sourceMessageId: source?.sourceMessageId,
     senderName: human
       ? cleanStringValue(human.caller.metadata?.actorDisplayName)
-      : turnOrigin
-        ? turnOrigin.producer === "session-relay"
-          ? (turnOrigin.session?.name ?? turnOrigin.principal.id)
-          : turnOrigin.principal.id
-        : context?.senderName,
+      : person
+        ? person.displayName
+        : turnOrigin
+          ? turnOrigin.producer === "session-relay"
+            ? (turnOrigin.session?.name ?? turnOrigin.principal.id)
+            : turnOrigin.principal.id
+          : context?.senderName,
     groupName: context?.groupName,
   };
 }
@@ -1054,6 +1077,7 @@ function formatPrincipal(principal: AuthorityPrincipal): string {
 }
 
 function buildRuntimeContextMetadata(options: {
+  sessionKey: string;
   prompt: RuntimeLaunchPrompt;
   resolvedSource?: RuntimeMessageTarget;
   runtimeProviderId: RuntimeProviderId;
@@ -1062,7 +1086,7 @@ function buildRuntimeContextMetadata(options: {
   approvalSource?: RuntimeMessageTarget;
   replyTarget?: TurnReplyTarget;
 }): Record<string, unknown> {
-  const actorMetadata = buildRuntimeContextActorMetadata(options.prompt, options.resolvedSource);
+  const actorMetadata = buildRuntimeContextActorMetadata(options.prompt, options.resolvedSource, options.sessionKey);
   const turnOrigin = resolveRuntimeTurnOrigin(options.prompt._turnOrigin);
   const human = resolveHumanRequestCaller(options.prompt);
   return {
@@ -1105,8 +1129,9 @@ function buildRuntimeContextMetadata(options: {
 function buildRuntimeContextActorMetadata(
   prompt: RuntimeLaunchPrompt,
   resolvedSource?: RuntimeMessageTarget,
+  sessionKey?: string,
 ): Record<string, unknown> | null {
-  const actor = resolveAuthorityActorMetadata(prompt, resolvedSource);
+  const actor = resolveAuthorityActorMetadata(prompt, resolvedSource, sessionKey);
   const context = prompt.context;
   const turnOrigin = resolveRuntimeTurnOrigin(prompt._turnOrigin);
   const metadata: Record<string, unknown> = {};

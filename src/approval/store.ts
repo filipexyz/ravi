@@ -289,6 +289,23 @@ export function listPendingApprovalRequestsForChat(chatId: string, now: number):
   return rows.map(rowToRecord);
 }
 
+/** Open requests of any type for one chat of one channel, newest first. */
+export function listOpenApprovalRequestsForChannelChat(
+  channel: string,
+  chatId: string,
+  now: number,
+): ApprovalRequestRecord[] {
+  ensureApprovalRequestTable();
+  const rows = getDb()
+    .prepare(
+      `SELECT * FROM approval_requests
+        WHERE channel = ? AND chat_id = ? AND status = 'pending' AND expires_at > ?
+        ORDER BY created_at DESC`,
+    )
+    .all(channel, chatId, now) as ApprovalRequestRow[];
+  return rows.map(rowToRecord);
+}
+
 /**
  * Which scope a person picked on their own card. Slack sends the select change
  * as its own interaction, so the choice has to survive until the button click.

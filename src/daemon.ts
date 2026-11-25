@@ -82,6 +82,7 @@ import { startCloudApprovalClicks, stopCloudApprovalClicks } from "./cloud-agent
 import { startSlackCommandConsumer, stopSlackCommandConsumer } from "./channels/slack/slash-command-handler.js";
 import { startSlackThreadControls, stopSlackThreadControls } from "./channels/slack/thread-controls.js";
 import { startSlackThreadShortcuts, stopSlackThreadShortcuts } from "./channels/slack/thread-shortcuts.js";
+import { startVoiceDoor, stopVoiceDoor } from "./voice/door.js";
 import { startCloudDeliveryRunner, stopCloudDeliveryRunner } from "./cloud-agents/delivery-runner.js";
 import { startCalendarAssistantRunner, stopCalendarAssistantRunner } from "./calendar/assistant-runner.js";
 import { createSessionAdapterBus } from "./adapters/index.js";
@@ -346,6 +347,7 @@ async function shutdown(signal: string, exitCode = 0) {
       { name: "slack-commands", stop: stopSlackCommandConsumer },
       { name: "slack-thread-controls", stop: stopSlackThreadControls },
       { name: "slack-thread-shortcuts", stop: stopSlackThreadShortcuts },
+      { name: "voice-door", stop: stopVoiceDoor },
       { name: "calendar-assistant", stop: stopCalendarAssistantRunner },
       { name: "ephemeral", stop: stopEphemeralRunner },
       { name: "hook", stop: stopHookRunner },
@@ -702,6 +704,13 @@ export async function startDaemon() {
   log.info("Slack thread controls started");
   await startSlackThreadShortcuts();
   log.info("Slack thread shortcuts started");
+  // Voice is optional: a failure here must never keep the daemon from serving chats.
+  try {
+    await startVoiceDoor();
+    log.info("Voice door started");
+  } catch (error) {
+    log.error("Voice door failed to start; voice calls are unavailable", { error });
+  }
 
   sessionAdapterBus = createSessionAdapterBus();
   await sessionAdapterBus.start();

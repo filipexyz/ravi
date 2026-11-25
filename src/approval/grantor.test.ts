@@ -19,6 +19,8 @@ import {
   APPROVAL_TEST_WA_OWNER_PHONE,
   seedApprovalContact,
 } from "./test-support.js";
+import { registerVoiceGrantorResolver } from "../voice/approvals.js";
+import { insertVoiceDevice, markVoiceDeviceRevoked } from "../voice/store.js";
 
 let stateDir: string | null = null;
 
@@ -409,5 +411,37 @@ describe("approval grantor identity resolvers", () => {
     expect(
       actorCanGrantRequestedPermission({ channel: "whatsapp", senderId: APPROVAL_TEST_SLACK_OWNER_PHONE }),
     ).toMatchObject({ allowed: true, subjectId: admin.id });
+  });
+
+  it("voice: a paired device grants as its contact; unknown or revoked devices fail closed", () => {
+    registerVoiceGrantorResolver();
+    const admin = seedApprovalContact({
+      phone: APPROVAL_TEST_WA_OWNER_PHONE,
+      name: "Owner",
+      tags: ["permission.admin"],
+    });
+    const now = Date.now();
+    insertVoiceDevice({
+      id: "vd_grantor",
+      label: "phone",
+      contactId: admin.id,
+      sessions: ["main"],
+      contextId: "ctx_vd_grantor",
+      createdAt: now,
+      expiresAt: now + 60_000,
+    });
+    const voiceGrant = (senderId: string) =>
+      actorCanGrantRequestedPermission({
+        channel: "voice",
+        accountId: "voice",
+        senderId,
+        permission: "execute",
+        objectType: "group",
+        objectId: "daemon",
+      });
+    expect(voiceGrant("vd_grantor")).toMatchObject({ allowed: true, subjectType: "contact", subjectId: admin.id });
+    expect(voiceGrant("vd_unknown").reason).toBe("unresolved_identity");
+    markVoiceDeviceRevoked("vd_grantor");
+    expect(voiceGrant("vd_grantor").reason).toBe("unresolved_identity");
   });
 });

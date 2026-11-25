@@ -257,6 +257,7 @@ it("daemon prepares all stores; channels validates and uses those stores with ze
     `const { initializeRuntimeState } = await import('./src/db/runtime-state.ts'); await initializeRuntimeState();`,
   );
   expect(prepared.status, prepared.stderr).toBe(0);
+  expect(existsSync(join(state, "voice.db"))).toBe(true);
   const snapshot = () =>
     Object.fromEntries(
       readdirSync(state, { recursive: true })
@@ -307,6 +308,8 @@ it("daemon prepares all stores; channels validates and uses those stores with ze
       threadTs: '1.1', isGroup: true, contactId: 'fixture-contact', text: 'hello',
     }, async () => { throw new Error('UNEXPECTED_CLOUD_REPLY'); });
     if (handled) throw new Error('UNEXPECTED_CLOUD_BINDING');
+    const { listVoiceCalls } = await import('./src/voice/store.ts');
+    if (listVoiceCalls().length !== 0) throw new Error('NORMAL_VOICE_QUERY_FAILED');
   `,
   );
   expect(consumer.status, consumer.stderr).toBe(0);

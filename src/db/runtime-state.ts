@@ -21,6 +21,7 @@ export async function initializeRuntimeState(): Promise<void> {
   (await import("../insights/insight-db.js")).ensureInsightsDb();
   (await import("../knowledge/store/db.js")).ensureKnowledgeDb();
   (await import("../devin/store.js")).ensureDevinSchema();
+  (await import("../voice/store.js")).ensureVoiceSchema();
 }
 
 /** Read-only preflight, before NATS connects or a channel starts serving. */
@@ -36,6 +37,7 @@ export function assertRuntimeStateReady(env: NodeJS.ProcessEnv = process.env): v
     [join(root, "insights.db"), ["insights"]],
     [join(root, "knowledge.db"), ["knowledge"]],
     [join(root, "devin.db"), ["devin"]],
+    [join(root, "voice.db"), ["voice"]],
     [join(root, "human-bridge", "bridge.db"), ["bridge"]],
   ];
   for (const [path, components] of stores) {

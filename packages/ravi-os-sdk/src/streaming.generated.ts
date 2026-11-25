@@ -30,6 +30,12 @@ export interface SessionViewStreamOptions {
   signal?: AbortSignal;
 }
 
+export interface VoiceCallStreamOptions {
+  /** Replay stored events with seq greater than this. */
+  after?: number;
+  signal?: AbortSignal;
+}
+
 export interface EventsStreamOptions {
   subject?: string;
   filter?: string;
@@ -138,6 +144,14 @@ export type SessionViewStreamPayload = {
     sequence: number;
     type: "approval.state";
   })>;
+};
+
+export type VoiceCallStreamPayload = {
+  callId: string;
+  createdAt?: number;
+  data: Record<string, unknown>;
+  seq: number;
+  type: "call.snapshot" | "call.state" | "call.ended" | "agent.state" | "work.state" | "work.tool" | "user.transcript" | "agent.transcript" | "turn.accepted" | "turn.completed" | "turn.approval_requested" | "turn.approval_resolved" | "usage" | "error";
 };
 
 export type GatewayTopicEvent = {
@@ -270,6 +284,15 @@ export class RaviStreamClient {
     appendString(params, "conversationId", options.conversationId);
     appendString(params, "cursor", options.cursor);
     return this.stream<SessionViewStreamPayload>("session-view", params, options.signal);
+  }
+
+  /**
+   * Follow one voice call: call.snapshot first, then stored events after `after`, then live events (transcripts, agent state, work state, approvals, usage). Resume with the last `seq` seen.
+   */
+  voiceCall(call: string, options: VoiceCallStreamOptions = {}): AsyncIterable<RaviSseEvent<VoiceCallStreamPayload>> {
+    const params = new URLSearchParams();
+    appendNumber(params, "after", options.after);
+    return this.stream<VoiceCallStreamPayload>("voice/" + encodeURIComponent(call), params, options.signal);
   }
 
   /**
