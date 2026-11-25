@@ -26944,11 +26944,22 @@ export type VoiceCallsEventsReturn = {
 export type VoiceCallsListInput = {
   active?: boolean;
   limit?: string;
+  offset?: string;
 };
 
 /** Return shape for `voice.calls.list`. */
 export type VoiceCallsListReturn = {
   calls: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
   total: number;
 };
 
@@ -27043,11 +27054,23 @@ export type VoiceCallsTranscriptReturn = {
 /** Input shape for `voice.devices.list`. */
 export type VoiceDevicesListInput = {
   all?: boolean;
+  limit?: string;
+  offset?: string;
 };
 
 /** Return shape for `voice.devices.list`. */
 export type VoiceDevicesListReturn = {
   devices: Array<(Record<string, unknown>) | null>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
   total: number;
 };
 
@@ -27087,11 +27110,25 @@ export type VoiceEnginesCheckReturn = {
 };
 
 /** Input shape for `voice.engines.list`. */
-export type VoiceEnginesListInput = Record<string, never>;
+export type VoiceEnginesListInput = {
+  limit?: string;
+  offset?: string;
+};
 
 /** Return shape for `voice.engines.list`. */
 export type VoiceEnginesListReturn = {
   engines: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  total: number;
 };
 
 /** Input shape for `voice.profiles.create`. */
@@ -27128,10 +27165,23 @@ export type VoiceProfilesDeleteReturn = {
 };
 
 /** Input shape for `voice.profiles.list`. */
-export type VoiceProfilesListInput = Record<string, never>;
+export type VoiceProfilesListInput = {
+  limit?: string;
+  offset?: string;
+};
 
 /** Return shape for `voice.profiles.list`. */
 export type VoiceProfilesListReturn = {
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
   profiles: Array<Record<string, unknown>>;
   total: number;
 };
@@ -27170,10 +27220,23 @@ export type VoiceProfilesUpdateReturn = {
 };
 
 /** Input shape for `voice.targets.list`. */
-export type VoiceTargetsListInput = Record<string, never>;
+export type VoiceTargetsListInput = {
+  limit?: string;
+  offset?: string;
+};
 
 /** Return shape for `voice.targets.list`. */
 export type VoiceTargetsListReturn = {
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
   targets: Array<Record<string, unknown>>;
   total: number;
 };
@@ -27181,11 +27244,22 @@ export type VoiceTargetsListReturn = {
 /** Input shape for `voice.voices.list`. */
 export type VoiceVoicesListInput = {
   limit?: string;
+  offset?: string;
   search?: string;
 };
 
 /** Return shape for `voice.voices.list`. */
 export type VoiceVoicesListReturn = {
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
   total: number;
   voices: Array<Record<string, unknown>>;
 };

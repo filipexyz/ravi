@@ -39990,15 +39990,18 @@ public struct VoiceCallsEventsReturn: Codable, Sendable {
 public struct VoiceCallsListOptions: Codable, Sendable {
   public var active: Bool?
   public var limit: String?
+  public var offset: String?
 
-  public init(active: Bool? = nil, limit: String? = nil) {
+  public init(active: Bool? = nil, limit: String? = nil, offset: String? = nil) {
     self.active = active
     self.limit = limit
+    self.offset = offset
   }
 
   enum CodingKeys: String, CodingKey {
     case active = "active"
     case limit = "limit"
+    case offset = "offset"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
@@ -40008,20 +40011,26 @@ public struct VoiceCallsListOptions: Codable, Sendable {
     if let value = self.limit {
       body["limit"] = try RaviJSON.fromEncodable(value)
     }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
   }
 }
 
 public struct VoiceCallsListReturn: Codable, Sendable {
   public var calls: [[String: RaviJSON]]
+  public var pagination: RaviJSON
   public var total: Double
 
-  public init(calls: [[String: RaviJSON]], total: Double) {
+  public init(calls: [[String: RaviJSON]], pagination: RaviJSON, total: Double) {
     self.calls = calls
+    self.pagination = pagination
     self.total = total
   }
 
   enum CodingKeys: String, CodingKey {
     case calls = "calls"
+    case pagination = "pagination"
     case total = "total"
   }
 }
@@ -40238,33 +40247,48 @@ public struct VoiceCallsTranscriptReturn: Codable, Sendable {
 
 public struct VoiceDevicesListOptions: Codable, Sendable {
   public var all: Bool?
+  public var limit: String?
+  public var offset: String?
 
-  public init(all: Bool? = nil) {
+  public init(all: Bool? = nil, limit: String? = nil, offset: String? = nil) {
     self.all = all
+    self.limit = limit
+    self.offset = offset
   }
 
   enum CodingKeys: String, CodingKey {
     case all = "all"
+    case limit = "limit"
+    case offset = "offset"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
     if let value = self.all {
       body["all"] = try RaviJSON.fromEncodable(value)
     }
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
   }
 }
 
 public struct VoiceDevicesListReturn: Codable, Sendable {
   public var devices: [RaviJSON]
+  public var pagination: RaviJSON
   public var total: Double
 
-  public init(devices: [RaviJSON], total: Double) {
+  public init(devices: [RaviJSON], pagination: RaviJSON, total: Double) {
     self.devices = devices
+    self.pagination = pagination
     self.total = total
   }
 
   enum CodingKeys: String, CodingKey {
     case devices = "devices"
+    case pagination = "pagination"
     case total = "total"
   }
 }
@@ -40356,15 +40380,45 @@ public struct VoiceEnginesCheckReturn: Codable, Sendable {
   }
 }
 
+public struct VoiceEnginesListOptions: Codable, Sendable {
+  public var limit: String?
+  public var offset: String?
+
+  public init(limit: String? = nil, offset: String? = nil) {
+    self.limit = limit
+    self.offset = offset
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case limit = "limit"
+    case offset = "offset"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
 public struct VoiceEnginesListReturn: Codable, Sendable {
   public var engines: [[String: RaviJSON]]
+  public var pagination: RaviJSON
+  public var total: Double
 
-  public init(engines: [[String: RaviJSON]]) {
+  public init(engines: [[String: RaviJSON]], pagination: RaviJSON, total: Double) {
     self.engines = engines
+    self.pagination = pagination
+    self.total = total
   }
 
   enum CodingKeys: String, CodingKey {
     case engines = "engines"
+    case pagination = "pagination"
+    case total = "total"
   }
 }
 
@@ -40479,16 +40533,43 @@ public struct VoiceProfilesDeleteReturn: Codable, Sendable {
   }
 }
 
+public struct VoiceProfilesListOptions: Codable, Sendable {
+  public var limit: String?
+  public var offset: String?
+
+  public init(limit: String? = nil, offset: String? = nil) {
+    self.limit = limit
+    self.offset = offset
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case limit = "limit"
+    case offset = "offset"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
 public struct VoiceProfilesListReturn: Codable, Sendable {
+  public var pagination: RaviJSON
   public var profiles: [[String: RaviJSON]]
   public var total: Double
 
-  public init(profiles: [[String: RaviJSON]], total: Double) {
+  public init(pagination: RaviJSON, profiles: [[String: RaviJSON]], total: Double) {
+    self.pagination = pagination
     self.profiles = profiles
     self.total = total
   }
 
   enum CodingKeys: String, CodingKey {
+    case pagination = "pagination"
     case profiles = "profiles"
     case total = "total"
   }
@@ -40608,16 +40689,43 @@ public struct VoiceProfilesUpdateReturn: Codable, Sendable {
   }
 }
 
+public struct VoiceTargetsListOptions: Codable, Sendable {
+  public var limit: String?
+  public var offset: String?
+
+  public init(limit: String? = nil, offset: String? = nil) {
+    self.limit = limit
+    self.offset = offset
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case limit = "limit"
+    case offset = "offset"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
 public struct VoiceTargetsListReturn: Codable, Sendable {
+  public var pagination: RaviJSON
   public var targets: [[String: RaviJSON]]
   public var total: Double
 
-  public init(targets: [[String: RaviJSON]], total: Double) {
+  public init(pagination: RaviJSON, targets: [[String: RaviJSON]], total: Double) {
+    self.pagination = pagination
     self.targets = targets
     self.total = total
   }
 
   enum CodingKeys: String, CodingKey {
+    case pagination = "pagination"
     case targets = "targets"
     case total = "total"
   }
@@ -40625,21 +40733,27 @@ public struct VoiceTargetsListReturn: Codable, Sendable {
 
 public struct VoiceVoicesListOptions: Codable, Sendable {
   public var limit: String?
+  public var offset: String?
   public var search: String?
 
-  public init(limit: String? = nil, search: String? = nil) {
+  public init(limit: String? = nil, offset: String? = nil, search: String? = nil) {
     self.limit = limit
+    self.offset = offset
     self.search = search
   }
 
   enum CodingKeys: String, CodingKey {
     case limit = "limit"
+    case offset = "offset"
     case search = "search"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
     if let value = self.limit {
       body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.search {
       body["search"] = try RaviJSON.fromEncodable(value)
@@ -40648,15 +40762,18 @@ public struct VoiceVoicesListOptions: Codable, Sendable {
 }
 
 public struct VoiceVoicesListReturn: Codable, Sendable {
+  public var pagination: RaviJSON
   public var total: Double
   public var voices: [[String: RaviJSON]]
 
-  public init(total: Double, voices: [[String: RaviJSON]]) {
+  public init(pagination: RaviJSON, total: Double, voices: [[String: RaviJSON]]) {
+    self.pagination = pagination
     self.total = total
     self.voices = voices
   }
 
   enum CodingKeys: String, CodingKey {
+    case pagination = "pagination"
     case total = "total"
     case voices = "voices"
   }

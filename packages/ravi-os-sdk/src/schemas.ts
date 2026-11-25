@@ -137461,7 +137461,11 @@ export const VoiceCallsListInputSchema = {
       "type": "boolean"
     },
     "limit": {
-      "description": "Maximum calls (default 50)",
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Items to skip (default: 0)",
       "type": "string"
     }
   },
@@ -137480,13 +137484,61 @@ export const VoiceCallsListReturnSchema = {
       },
       "type": "array"
     },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
     "total": {
       "type": "number"
     }
   },
   "required": [
     "calls",
-    "total"
+    "total",
+    "pagination"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -137849,6 +137901,14 @@ export const VoiceDevicesListInputSchema = {
     "all": {
       "description": "Include revoked devices",
       "type": "boolean"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Items to skip (default: 0)",
+      "type": "string"
     }
   },
   "type": "object"
@@ -137873,13 +137933,61 @@ export const VoiceDevicesListReturnSchema = {
       },
       "type": "array"
     },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
     "total": {
       "type": "number"
     }
   },
   "required": [
     "devices",
-    "total"
+    "total",
+    "pagination"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -138018,7 +138126,16 @@ export const VoiceEnginesCheckReturnSchema = {
 /** JSON Schema for the input body of `voice.engines.list`. */
 export const VoiceEnginesListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Items to skip (default: 0)",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -138033,10 +138150,62 @@ export const VoiceEnginesListReturnSchema = {
         "type": "object"
       },
       "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
     }
   },
   "required": [
-    "engines"
+    "engines",
+    "total",
+    "pagination"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -138157,7 +138326,16 @@ export const VoiceProfilesDeleteReturnSchema = {
 /** JSON Schema for the input body of `voice.profiles.list`. */
 export const VoiceProfilesListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Items to skip (default: 0)",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -138165,6 +138343,53 @@ export const VoiceProfilesListInputSchema = {
 export const VoiceProfilesListReturnSchema = {
   "additionalProperties": false,
   "properties": {
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
     "profiles": {
       "items": {
         "additionalProperties": {},
@@ -138179,7 +138404,8 @@ export const VoiceProfilesListReturnSchema = {
   },
   "required": [
     "profiles",
-    "total"
+    "total",
+    "pagination"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -138302,7 +138528,16 @@ export const VoiceProfilesUpdateReturnSchema = {
 /** JSON Schema for the input body of `voice.targets.list`. */
 export const VoiceTargetsListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Items to skip (default: 0)",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -138310,6 +138545,53 @@ export const VoiceTargetsListInputSchema = {
 export const VoiceTargetsListReturnSchema = {
   "additionalProperties": false,
   "properties": {
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
     "targets": {
       "items": {
         "additionalProperties": {},
@@ -138324,7 +138606,8 @@ export const VoiceTargetsListReturnSchema = {
   },
   "required": [
     "targets",
-    "total"
+    "total",
+    "pagination"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -138334,7 +138617,11 @@ export const VoiceVoicesListInputSchema = {
   "additionalProperties": false,
   "properties": {
     "limit": {
-      "description": "Maximum voices (default 40)",
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Items to skip (default: 0)",
       "type": "string"
     },
     "search": {
@@ -138349,6 +138636,53 @@ export const VoiceVoicesListInputSchema = {
 export const VoiceVoicesListReturnSchema = {
   "additionalProperties": false,
   "properties": {
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
     "total": {
       "type": "number"
     },
@@ -138363,7 +138697,8 @@ export const VoiceVoicesListReturnSchema = {
   },
   "required": [
     "voices",
-    "total"
+    "total",
+    "pagination"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

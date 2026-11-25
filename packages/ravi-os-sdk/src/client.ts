@@ -10499,6 +10499,7 @@ export class RaviClient {
       list: async (options?: {
         active?: boolean;
         limit?: string;
+        offset?: string;
       }): Promise<VoiceCallsListReturn> => {
         return this.transport.call({
           groupSegments: ["voice","calls"],
@@ -10569,6 +10570,8 @@ export class RaviClient {
       /** List paired devices (never their keys) */
       list: async (options?: {
         all?: boolean;
+        limit?: string;
+        offset?: string;
       }): Promise<VoiceDevicesListReturn> => {
         return this.transport.call({
           groupSegments: ["voice","devices"],
@@ -10609,11 +10612,14 @@ export class RaviClient {
         });
       },
       /** List voice engines and their capabilities */
-      list: async (): Promise<VoiceEnginesListReturn> => {
+      list: async (options?: {
+        limit?: string;
+        offset?: string;
+      }): Promise<VoiceEnginesListReturn> => {
         return this.transport.call({
           groupSegments: ["voice","engines"],
           command: "list",
-          body: {},
+          body: { ...(options ?? {}) },
         });
       }
     },
@@ -10648,11 +10654,14 @@ export class RaviClient {
         });
       },
       /** List voice profiles */
-      list: async (): Promise<VoiceProfilesListReturn> => {
+      list: async (options?: {
+        limit?: string;
+        offset?: string;
+      }): Promise<VoiceProfilesListReturn> => {
         return this.transport.call({
           groupSegments: ["voice","profiles"],
           command: "list",
-          body: {},
+          body: { ...(options ?? {}) },
         });
       },
       /** Show one voice profile */
@@ -10688,11 +10697,14 @@ export class RaviClient {
     },
     targets: {
       /** List sessions this caller can open a voice call on */
-      list: async (): Promise<VoiceTargetsListReturn> => {
+      list: async (options?: {
+        limit?: string;
+        offset?: string;
+      }): Promise<VoiceTargetsListReturn> => {
         return this.transport.call({
           groupSegments: ["voice","targets"],
           command: "list",
-          body: {},
+          body: { ...(options ?? {}) },
         });
       }
     },
@@ -10700,6 +10712,7 @@ export class RaviClient {
       /** List ElevenLabs voices for push-to-talk and hands-free */
       list: async (options?: {
         limit?: string;
+        offset?: string;
         search?: string;
       }): Promise<VoiceVoicesListReturn> => {
         return this.transport.call({

@@ -91,6 +91,8 @@ import {
 import { getContext } from "../context.js";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { declareCommandReturns, looseObjectSchema } from "./operational-return-schemas.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
+import { cliOffsetPaginationSchema } from "../return-schemas.js";
 
 const DEVICE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_CLIP_BYTES = 25 * 1024 * 1024;
@@ -165,6 +167,28 @@ function parseNumber(op: string, flag: string, value: string | undefined, asJson
     fail(op, "USAGE_ERROR", `${flag} must be a positive number.`, asJson, CONTRACT_EXIT_USAGE);
   }
   return parsed;
+}
+
+function pageOf<T>(
+  items: readonly T[],
+  baseCommand: string[],
+  limit: string | undefined,
+  offset: string | undefined,
+  options: Array<string | null> = [],
+) {
+  const page = paginateCliItems(items, { limit, offset });
+  return {
+    items: page.items,
+    total: page.total,
+    pagination: buildCliOffsetPagination({
+      baseCommand,
+      limit: page.limit,
+      offset: page.offset,
+      returned: page.items.length,
+      total: page.total,
+      options,
+    }),
+  };
 }
 
 function splitList(value: string | string[] | undefined): string[] {
@@ -341,7 +365,11 @@ function approvalSender(caller: VoiceCaller): string {
 export class VoiceTargetsCommands {
   @Command({ name: "list", description: "List sessions this caller can open a voice call on" })
   @CommandAccess({ kind: "read", resource: "voice", action: "targets", risk: "low" })
-  async list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+  async list(
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Items to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const op = "voice targets list";
     return run(op, asJson, () => {
       const caller = resolveVoiceCaller(op);
@@ -363,9 +391,10 @@ export class VoiceTargetsCommands {
         agentId: session.agentId ?? null,
         activeCalls: listVoiceCalls({ activeOnly: true, sessionKey: session.sessionKey }).length,
       }));
-      return emit({ targets, total: targets.length }, asJson, () => {
-        if (targets.length === 0) console.log("No sessions to call.");
-        for (const target of targets) console.log(`${target.sessionName}\t${target.agentId ?? "-"}`);
+      const page = pageOf(targets, ["ravi", "voice", "targets", "list"], limit, offset);
+      return emit({ targets: page.items, total: page.total, pagination: page.pagination }, asJson, () => {
+        if (page.items.length === 0) console.log("No sessions to call.");
+        for (const target of page.items) console.log(`${target.sessionName}\t${target.agentId ?? "-"}`);
       });
     });
   }
@@ -517,17 +546,19 @@ export class VoiceCallsCommands {
   @CommandAccess({ kind: "read", resource: "voice", action: "calls.list", risk: "low" })
   async list(
     @Option({ flags: "--active", description: "Only calls that have not ended" }) activeOnly?: boolean,
-    @Option({ flags: "--limit <n>", description: "Maximum calls (default 50)" }) limit?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Items to skip (default: 0)" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const op = "voice calls list";
     return run(op, asJson, () => {
       const caller = resolveVoiceCaller(op);
-      const max = parseNumber(op, "--limit", limit, asJson) ?? 50;
-      const calls = callsVisibleTo(caller, listVoiceCalls({ activeOnly: Boolean(activeOnly), limit: max })).map(
+      const all = callsVisibleTo(caller, listVoiceCalls({ activeOnly: Boolean(activeOnly), limit: 5000 })).map(
         publicCall,
       );
-      return emit({ calls, total: calls.length }, asJson, () => {
+      const page = pageOf(all, ["ravi", "voice", "calls", "list"], limit, offset, [activeOnly ? "--active" : null]);
+      const calls = page.items;
+      return emit({ calls, total: page.total, pagination: page.pagination }, asJson, () => {
         if (calls.length === 0) console.log("No calls.");
         for (const call of calls) console.log(`${call.id}\t${call.sessionName}\t${call.mode}\t${call.state}`);
       });
@@ -913,12 +944,17 @@ function applyProfileFlags(op: string, base: VoiceProfile, flags: ProfileFlags, 
 export class VoiceProfilesCommands {
   @Command({ name: "list", description: "List voice profiles" })
   @CommandAccess({ kind: "read", resource: "voice", action: "profiles.list", risk: "low" })
-  async list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+  async list(
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Items to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const op = "voice profiles list";
     return run(op, asJson, () => {
       resolveVoiceCaller(op);
-      const profiles = listVoiceProfiles();
-      return emit({ profiles, total: profiles.length }, asJson, () => {
+      const page = pageOf(listVoiceProfiles(), ["ravi", "voice", "profiles", "list"], limit, offset);
+      const profiles = page.items;
+      return emit({ profiles, total: page.total, pagination: page.pagination }, asJson, () => {
         for (const profile of profiles)
           console.log(`${profile.id}\t${profile.mode}\t${profile.language}\t${profile.label}`);
       });
@@ -1075,7 +1111,8 @@ export class VoiceVoicesCommands {
   @CommandAccess({ kind: "read", resource: "voice", action: "voices.list", risk: "low" })
   async list(
     @Option({ flags: "--search <text>", description: "Filter by name or description" }) search?: string,
-    @Option({ flags: "--limit <n>", description: "Maximum voices (default 40)" }) limit?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Items to skip (default: 0)" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const op = "voice voices list";
@@ -1083,15 +1120,17 @@ export class VoiceVoicesCommands {
       resolveVoiceCaller(op);
       const result = await listElevenLabsVoices({
         ...(search ? { search } : {}),
-        limit: parseNumber(op, "--limit", limit, asJson) ?? 40,
+        limit: 100,
       });
-      const voices = result.voices.map((voice) => ({
+      const all = result.voices.map((voice) => ({
         voiceId: voice.voiceId,
         name: voice.name,
         ...(voice.category ? { category: voice.category } : {}),
         ...(voice.labels ? { labels: voice.labels } : {}),
       }));
-      return emit({ voices, total: voices.length }, asJson, () => {
+      const page = pageOf(all, ["ravi", "voice", "voices", "list"], limit, offset, ["--search", search ?? null]);
+      const voices = page.items;
+      return emit({ voices, total: page.total, pagination: page.pagination }, asJson, () => {
         for (const voice of voices) console.log(`${voice.voiceId}\t${voice.name}`);
       });
     });
@@ -1213,15 +1252,19 @@ export class VoiceDevicesCommands {
   @CommandAccess({ kind: "read", resource: "voice", action: "devices.list", risk: "low" })
   async list(
     @Option({ flags: "--all", description: "Include revoked devices" }) all?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Items to skip (default: 0)" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const op = "voice devices list";
     return run(op, asJson, () => {
       const caller = resolveVoiceCaller(op);
-      const devices = listVoiceDevices({ includeRevoked: Boolean(all) })
+      const visible = listVoiceDevices({ includeRevoked: Boolean(all) })
         .filter((device) => caller.kind === "operator" || device.id === caller.device?.id)
         .map(publicDevice);
-      return emit({ devices, total: devices.length }, asJson, () => {
+      const page = pageOf(visible, ["ravi", "voice", "devices", "list"], limit, offset, [all ? "--all" : null]);
+      const devices = page.items;
+      return emit({ devices, total: page.total, pagination: page.pagination }, asJson, () => {
         for (const device of devices) console.log(`${device?.id}\t${device?.label}\t${device?.contactId}`);
       });
     });
@@ -1265,18 +1308,24 @@ export class VoiceDevicesCommands {
 export class VoiceEnginesCommands {
   @Command({ name: "list", description: "List voice engines and their capabilities" })
   @CommandAccess({ kind: "read", resource: "voice", action: "engines.list", risk: "low" })
-  async list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+  async list(
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Items to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const op = "voice engines list";
     return run(op, asJson, () => {
       resolveVoiceCaller(op);
-      const engines = listVoiceEngines().map((engine) => ({
+      const all = listVoiceEngines().map((engine) => ({
         id: engine.id,
         label: engine.label,
         connectionKind: engine.connectionKind,
         capabilities: engine.capabilities,
         costPerMinuteUsd: engine.costPerMinuteUsd,
       }));
-      return emit({ engines }, asJson, () => {
+      const page = pageOf(all, ["ravi", "voice", "engines", "list"], limit, offset);
+      const engines = page.items;
+      return emit({ engines, total: page.total, pagination: page.pagination }, asJson, () => {
         for (const engine of engines) console.log(`${engine.id}\t${engine.label}`);
       });
     });
@@ -1315,7 +1364,7 @@ const connectionSchema = z.object({
 });
 
 declareCommandReturns(VoiceTargetsCommands, {
-  list: z.object({ targets: z.array(looseObjectSchema), total: z.number() }),
+  list: z.object({ targets: z.array(looseObjectSchema), total: z.number(), pagination: cliOffsetPaginationSchema }),
 });
 
 declareCommandReturns(VoiceCallsCommands, {
@@ -1327,7 +1376,7 @@ declareCommandReturns(VoiceCallsCommands, {
     capabilities: looseObjectSchema,
   }),
   connect: connectionSchema,
-  list: z.object({ calls: z.array(callSchema), total: z.number() }),
+  list: z.object({ calls: z.array(callSchema), total: z.number(), pagination: cliOffsetPaginationSchema }),
   show: z.object({
     call: callSchema,
     engine: looseObjectSchema,
@@ -1355,7 +1404,7 @@ declareCommandReturns(VoiceCallsCommands, {
 });
 
 declareCommandReturns(VoiceProfilesCommands, {
-  list: z.object({ profiles: z.array(looseObjectSchema), total: z.number() }),
+  list: z.object({ profiles: z.array(looseObjectSchema), total: z.number(), pagination: cliOffsetPaginationSchema }),
   show: z.object({ profile: looseObjectSchema }),
   create: z.object({ profile: looseObjectSchema }),
   update: z.object({ profile: looseObjectSchema }),
@@ -1363,16 +1412,20 @@ declareCommandReturns(VoiceProfilesCommands, {
 });
 
 declareCommandReturns(VoiceVoicesCommands, {
-  list: z.object({ voices: z.array(looseObjectSchema), total: z.number() }),
+  list: z.object({ voices: z.array(looseObjectSchema), total: z.number(), pagination: cliOffsetPaginationSchema }),
 });
 
 declareCommandReturns(VoiceDevicesCommands, {
   pair: z.object({ device: looseObjectSchema.nullable(), contextKey: z.string(), shownOnce: z.literal(true) }),
-  list: z.object({ devices: z.array(looseObjectSchema.nullable()), total: z.number() }),
+  list: z.object({
+    devices: z.array(looseObjectSchema.nullable()),
+    total: z.number(),
+    pagination: cliOffsetPaginationSchema,
+  }),
   revoke: z.object({ device: looseObjectSchema.nullable(), endedCalls: z.array(z.string()) }),
 });
 
 declareCommandReturns(VoiceEnginesCommands, {
-  list: z.object({ engines: z.array(looseObjectSchema) }),
+  list: z.object({ engines: z.array(looseObjectSchema), total: z.number(), pagination: cliOffsetPaginationSchema }),
   check: z.object({ checks: z.array(looseObjectSchema) }),
 });

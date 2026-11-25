@@ -11351,8 +11351,9 @@ class VoiceEnginesNamespace {
     );
   }
 
-  Future<VoiceEnginesListReturn> list() async {
+  Future<VoiceEnginesListReturn> list([VoiceEnginesListOptions options = const VoiceEnginesListOptions()]) async {
     final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
     return _transport.callJson(
       groupSegments: const ["voice", "engines"],
       command: "list",
@@ -11390,8 +11391,9 @@ class VoiceProfilesNamespace {
     );
   }
 
-  Future<VoiceProfilesListReturn> list() async {
+  Future<VoiceProfilesListReturn> list([VoiceProfilesListOptions options = const VoiceProfilesListOptions()]) async {
     final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
     return _transport.callJson(
       groupSegments: const ["voice", "profiles"],
       command: "list",
@@ -11429,8 +11431,9 @@ class VoiceTargetsNamespace {
 
   final RaviTransport _transport;
 
-  Future<VoiceTargetsListReturn> list() async {
+  Future<VoiceTargetsListReturn> list([VoiceTargetsListOptions options = const VoiceTargetsListOptions()]) async {
     final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
     return _transport.callJson(
       groupSegments: const ["voice", "targets"],
       command: "list",

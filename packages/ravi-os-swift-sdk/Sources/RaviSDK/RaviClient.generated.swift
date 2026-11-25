@@ -7830,8 +7830,9 @@ public struct VoiceEnginesNamespace: Sendable {
     return try await transport.call(groupSegments: ["voice","engines"], command: "check", body: requestBody, as: VoiceEnginesCheckReturn.self)
   }
 
-  public func list() async throws -> VoiceEnginesListReturn {
-    let requestBody: [String: RaviJSON] = [:]
+  public func list(_ options: VoiceEnginesListOptions = .init()) async throws -> VoiceEnginesListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["voice","engines"], command: "list", body: requestBody, as: VoiceEnginesListReturn.self)
   }
 }
@@ -7856,8 +7857,9 @@ public struct VoiceProfilesNamespace: Sendable {
     return try await transport.call(groupSegments: ["voice","profiles"], command: "delete", body: requestBody, as: VoiceProfilesDeleteReturn.self)
   }
 
-  public func list() async throws -> VoiceProfilesListReturn {
-    let requestBody: [String: RaviJSON] = [:]
+  public func list(_ options: VoiceProfilesListOptions = .init()) async throws -> VoiceProfilesListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["voice","profiles"], command: "list", body: requestBody, as: VoiceProfilesListReturn.self)
   }
 
@@ -7882,8 +7884,9 @@ public struct VoiceTargetsNamespace: Sendable {
     self.transport = transport
   }
 
-  public func list() async throws -> VoiceTargetsListReturn {
-    let requestBody: [String: RaviJSON] = [:]
+  public func list(_ options: VoiceTargetsListOptions = .init()) async throws -> VoiceTargetsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["voice","targets"], command: "list", body: requestBody, as: VoiceTargetsListReturn.self)
   }
 }
