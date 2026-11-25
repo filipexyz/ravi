@@ -684,7 +684,7 @@ export function buildNoApproverInDirectChatReason(capability: {
   objectId: string;
 }): string {
   const asked = formatCanonicalCapability(capability);
-  return `Ninguém nesta conversa pode aprovar ${asked}: o pedido apareceria só para quem pediu, que não tem essa permissão. Nenhum pedido foi enviado. Quem administra o Ravi precisa conceder a permissão, por exemplo com ravi permissions request.`;
+  return `Ninguém nesta conversa pode aprovar ${asked}: o pedido apareceria só para quem pediu, que não tem essa permissão. Nenhum pedido foi enviado. Quem administra o Ravi pode ver o plano de menor privilégio para essa negativa com ravi permissions resolve <id-da-negativa>.`;
 }
 
 /**
