@@ -4,6 +4,7 @@ import {
   type DaemonStartCandidate,
   type DaemonStartReadyDeps,
   DEFAULT_DAEMON_START_READY_TIMEOUT_MS,
+  describeFirstStartNotReady,
   waitForDaemonStateReady,
 } from "../daemon-start-ready.js";
 
@@ -156,5 +157,28 @@ describe("waitForDaemonStateReady", () => {
   it("covers the state guard's PM2 bound plus boot by default", () => {
     // Shorter than a PM2 registry read that is allowed to be slow would report a booting daemon as failed.
     expect(DEFAULT_DAEMON_START_READY_TIMEOUT_MS).toBeGreaterThanOrEqual(45_000);
+  });
+});
+
+describe("describeFirstStartNotReady", () => {
+  it("names nats-server as the usual cause when the wait ran out, since ready comes after the NATS connection", () => {
+    const message = describeFirstStartNotReady({ ready: false, reason: "timeout", waitedMs: 20_100 });
+
+    expect(message).toContain("The daemon has not finished preparing its state after 21s.");
+    expect(message).toContain("nats-server");
+    expect(message).toContain("NATS_URL");
+    expect(message).toContain("nats://127.0.0.1:4222");
+    // The pointer to the log and the consequence stay: NATS is the usual cause, not the only one.
+    expect(message).toContain("Read 'ravi daemon logs' for the reason");
+    expect(message).toContain("STATE_SCHEMA_NOT_READY");
+  });
+
+  it("does not blame NATS for a daemon that PM2 reports stopped: that one crashed", () => {
+    const message = describeFirstStartNotReady({ ready: false, reason: "stopped", waitedMs: 3_000 });
+
+    expect(message).toContain("The daemon stopped before it finished preparing its state.");
+    expect(message).not.toContain("nats");
+    expect(message).not.toContain("NATS");
+    expect(message).toContain("Read 'ravi daemon logs' for the reason");
   });
 });

@@ -41,7 +41,7 @@ normative: true
 - Lock sidecars MUST remain at stable paths/inodes. Neither normal release nor crash recovery may unlink them. Descriptors MUST be close-on-exec.
 - PM2 `online` and a live PID MUST NOT mean service readiness. The restart supervisor MUST require a current phase receipt before stopping predecessors, and `ready` from the same process incarnation after cutover before reporting success.
 - The first start on a machine with no state database MUST NOT return before this incarnation's `ready` receipt, or before a bounded wait reports that it did not appear. The wait MUST NOT fail the start, and under `--json` it MUST NOT print on stdout.
-- A first-run flow (the setup wizard, an installer, the install guide) MUST start the daemon before it reads or writes state. The CLI never creates a store in real state, so a step that reads state first answers `STATE_SCHEMA_NOT_READY`.
+- A first-run flow (the setup wizard, an installer, the install guide) MUST start the daemon before it reads or writes state. The CLI never creates a store in real state, so a step that reads state first answers `STATE_SCHEMA_NOT_READY`. A flow that writes config after the daemon is up SHOULD emit `ravi.config.changed`, as `ravi agents` and `ravi settings` do, so the running daemon does not wait for its 30 s refresh.
 - No schema rollback MUST be inferred from restart failure. Destructive migrations require their own tested recovery plan.
 
 ## Boundary
@@ -58,4 +58,5 @@ Channel consumers remain subject to exact-release readiness and the state bounda
 - Foreign-key children survive the credential-style table rebuild, and explicit BEGIN/COMMIT migrations run unchanged.
 - A stalled, missing, or different-PID successor never produces a successful restart result.
 - `ravi daemon start` on a new installation returns after the daemon's `ready` receipt; with none it warns on stderr within the bound and still exits 0.
-- The setup wizard starts the daemon before its agent and settings steps, and skips them, saying `Configuração incompleta`, when the state is not ready.
+- The setup wizard starts the daemon before its agent and settings steps, and skips them, saying `Configuração incompleta`, when the state is not ready. After writing them it emits `ravi.config.changed`; a failed emit never fails the wizard.
+- When the first-start wait runs out, the stderr warning names `nats-server` as the usual cause.
