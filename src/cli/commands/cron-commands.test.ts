@@ -428,6 +428,19 @@ describe("CronCommands --json", () => {
     expect(cronJob).toBeNull();
   });
 
+  it("binds a job its owner rewrites from a lifted overlay to that chat", async () => {
+    cronJob = { ...cronJob, ownerPrincipal: "operator", creatorChat: undefined };
+    cronUpdatePatches = [];
+    mockCliContext = {
+      agentId: "dev",
+      context: {
+        metadata: { actorAuthorizationMode: "invoke-only", userOverlay: "lifted", userOverlayChat: "chat:chat-bob" },
+      },
+    };
+    await captureJson(() => new CronCommands().set("cron-1", "message", "new text", true));
+    expect(cronUpdatePatches[0]).toMatchObject({ creatorChat: "chat-bob" });
+  });
+
   it("does not make a trigger's own session the reply session of a job created during its turn", async () => {
     const addJob = () =>
       captureJson(() =>
