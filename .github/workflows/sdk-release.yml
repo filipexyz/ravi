@@ -137,7 +137,13 @@ jobs:
           fi
 
           git commit -m "chore(sdk-version): bump to ${VERSION} [skip ci]"
-          git push origin "HEAD:refs/heads/${BRANCH}"
+
+          # Best effort, as in version.yml. The ruleset of `dev` requires the Quality Gate check on every new
+          # commit, so a direct push of the bump is declined (GH013) after the pre-push suite already ran. The
+          # version is derived from npm, not from this file, so building and publishing do not need the push.
+          if ! git push origin "HEAD:refs/heads/${BRANCH}"; then
+            echo "::warning::Direct push to ${BRANCH} declined (branch protection). The bump stays for the next promote; the release goes on."
+          fi
 
       - name: Build SDK
         working-directory: ${{ env.SDK_DIR }}
