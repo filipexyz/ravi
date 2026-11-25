@@ -122,6 +122,10 @@ function harness(
     replyFor?: (prompt: string) => string;
     /** The session runs one prompt at a time, in arrival order, like the real queue. */
     sessionQueue?: boolean;
+    /** Like Claude: the provider emits no `turn.started`. */
+    noTurnStarted?: boolean;
+    /** Another prompt queues on the same session while this one waits (no correlation id of ours). */
+    otherPromptQueues?: boolean;
   } = {},
 ) {
   let sessionChain: Promise<void> = Promise.resolve();
@@ -140,12 +144,24 @@ function harness(
         // A turn was running when the prompt arrived: the prompt queues, that turn
         // stores its reply and completes, then this turn starts.
         if (options.inFlightReply) {
-          await hub.emit(`ravi.session.${sessionName}.runtime`, { type: "dispatch.queued" });
+          // The dispatcher echoes the prompt's correlation id on its own queue event.
+          await hub.emit(`ravi.session.${sessionName}.runtime`, {
+            type: "dispatch.queued",
+            reason: "response",
+            correlationId: payload._correlationId,
+          });
+          if (options.otherPromptQueues) {
+            await hub.emit(`ravi.session.${sessionName}.runtime`, {
+              type: "dispatch.queued",
+              reason: "response",
+              correlationId: null,
+            });
+          }
           history.push({ id: history.length + 1, role: "assistant", content: options.inFlightReply });
           await hub.emit(`ravi.session.${sessionName}.runtime`, { type: "turn.complete" });
           await tick();
         }
-        await hub.emit(`ravi.session.${sessionName}.runtime`, { type: "turn.started" });
+        if (!options.noTurnStarted) await hub.emit(`ravi.session.${sessionName}.runtime`, { type: "turn.started" });
         await hub.emit(`ravi.session.${sessionName}.runtime`, { type: "tool.started", toolName: "Bash" });
         if ((options.terminal ?? "turn.complete") === "turn.complete") {
           history.push({
@@ -243,6 +259,107 @@ describe("voice door", () => {
     expect(String(completed?.data.fullText)).not.toContain("outro turno");
   });
 
+  it("a provider without turn.started still ends a turn that queued behind another (Claude)", async () => {
+    const { door, prompts } = harness({
+      inFlightReply: "Resposta de outro turno.",
+      reply: "🔊 Oi, tô ouvindo.\nDetalhe.",
+      noTurnStarted: true,
+      otherPromptQueues: true,
+    });
+    const call = makeCall("mock");
+    await door.handleControl({
+      op: "utterance",
+      callId: call.id,
+      turnId: "vt_claude",
+      text: "oi",
+      speaker: { kind: "operator", id: "operator" },
+    });
+    await until(() => listVoiceTurns(call.id)[0]?.state === "done", "turn done");
+    expect(prompts[0]?.payload._correlationId).toBe("vt_claude");
+    const completed = listVoiceEvents(call.id).find((event) => event.type === "turn.completed");
+    expect(completed?.data.spokenText).toBe("Oi, tô ouvindo.");
+    expect(String(completed?.data.fullText)).not.toContain("outro turno");
+  });
+
+  it("another prompt queuing on the session never makes this turn skip its own terminal", async () => {
+    const hub = new Hub();
+    const history = [{ id: 1, role: "user", content: "old" }];
+    const door = new VoiceDoorService({
+      subscribe: hub.subscribe as VoiceDoorDeps["subscribe"],
+      emit: hub.emit,
+      publishPrompt: async (sessionName) => {
+        setTimeout(async () => {
+          // Idle session: this prompt starts at once (no queue event of its own).
+          // A Slack message then queues behind it.
+          await hub.emit(`ravi.session.${sessionName}.runtime`, {
+            type: "dispatch.queued",
+            reason: "response",
+            correlationId: null,
+          });
+          history.push({ id: 2, role: "assistant", content: "🔊 Minha.\nResto." });
+          await hub.emit(`ravi.session.${sessionName}.runtime`, { type: "turn.complete" });
+        }, 5);
+      },
+      readHistory: () => history,
+      transcriptWaitMs: 50,
+    });
+    const call = makeCall("mock");
+    await door.handleControl({
+      op: "utterance",
+      callId: call.id,
+      turnId: "vt_idle",
+      text: "oi",
+      speaker: { kind: "operator", id: "operator" },
+    });
+    await until(() => listVoiceTurns(call.id)[0]?.state === "done", "turn done");
+    const completed = listVoiceEvents(call.id).find((event) => event.type === "turn.completed");
+    expect(completed?.data.spokenText).toBe("Minha.");
+  });
+
+  it("ending the call frees a turn still waiting on the session, so the next call's turn runs", async () => {
+    const hub = new Hub();
+    const history = [{ id: 1, role: "user", content: "old" }];
+    let answerSecond = false;
+    const door = new VoiceDoorService({
+      subscribe: hub.subscribe as VoiceDoorDeps["subscribe"],
+      emit: hub.emit,
+      publishPrompt: async (sessionName, payload) => {
+        // The first turn never gets a terminal; the second one does.
+        if (payload._correlationId !== "vt_second") return;
+        answerSecond = true;
+        setTimeout(async () => {
+          history.push({ id: 2, role: "assistant", content: "🔊 Segunda.\nOk." });
+          await hub.emit(`ravi.session.${sessionName}.runtime`, { type: "turn.complete" });
+        }, 5);
+      },
+      readHistory: () => history,
+      transcriptWaitMs: 50,
+    });
+    const first = makeCall("mock");
+    await door.handleControl({
+      op: "utterance",
+      callId: first.id,
+      turnId: "vt_stuck",
+      text: "oi",
+      speaker: { kind: "operator", id: "operator" },
+    });
+    await until(() => listVoiceTurns(first.id)[0]?.state === "running", "first running");
+    await door.endCall(first.id, "ended");
+    await until(() => listVoiceTurns(first.id)[0]?.state === "cancelled", "first released");
+    expect(hub.published.some((message) => message.topic === "ravi.session.abort")).toBe(false);
+
+    const second = makeCall("mock");
+    await door.handleControl({
+      op: "utterance",
+      callId: second.id,
+      turnId: "vt_second",
+      text: "e essa, chegou?",
+      speaker: { kind: "operator", id: "operator" },
+    });
+    await until(() => listVoiceTurns(second.id)[0]?.state === "done", "second done");
+    expect(answerSecond).toBe(true);
+  });
+
   it("an ended call gets no more output, and a late write never revives it", async () => {
     const { door } = harness();
     const call = makeCall("push");
@@ -254,7 +371,8 @@ describe("voice door", () => {
       speaker: { kind: "operator", id: "operator" },
     });
     await door.handleControl({ op: "end", callId: call.id, reason: "user" });
-    await until(() => listVoiceTurns(call.id)[0]?.state === "done", "turn done in the session");
+    // The call stops waiting on the session at once; the session turn keeps its reply.
+    await until(() => listVoiceTurns(call.id)[0]?.state === "cancelled", "turn released by the end");
     await tick();
     const types = listVoiceEvents(call.id).map((event) => event.type);
     const endedAt = types.indexOf("call.ended");

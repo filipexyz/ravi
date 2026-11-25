@@ -306,6 +306,12 @@ export interface PromptMessage {
    * the reply destination via this turn's assistant transcript.
    */
   _cliDestination?: boolean;
+  /**
+   * Opaque id of the producer waiting on this prompt. The dispatcher echoes it
+   * on the `dispatch.queued` runtime event, so a waiter can tell its own queued
+   * prompt from any other prompt that queued on the same session.
+   */
+  _correlationId?: string;
   /** Provider-neutral identity for prompts accepted through a channel backend. */
   _channelBackend?: ChannelBackendPromptMetadata;
   /** Validated provenance asserted by a trusted internal producer; not a credential. */
