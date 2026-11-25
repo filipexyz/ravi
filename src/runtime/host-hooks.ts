@@ -7,6 +7,7 @@ import {
   type ApprovalTarget,
 } from "../approval/service.js";
 import { createBashPermissionHook, createToolPermissionHook } from "../bash/index.js";
+import { getToolNameEquivalents } from "../cli/tool-registry.js";
 import { createPreCompactHook } from "../hooks/index.js";
 import { createRtkRewriteHook } from "../hooks/rtk-rewrite.js";
 import { createJobPromotionHook } from "../hooks/jobs-promote.js";
@@ -272,7 +273,8 @@ function createSpecBlockHook(sessionName: string) {
 
     if (typeof toolName === "string" && toolName.startsWith("mcp__spec__")) return {};
 
-    if (blockedInSpec.includes(toolName)) {
+    // The subagent tool is `Task` here and `Agent` in the current Claude Code: block it under both names.
+    if (typeof toolName === "string" && getToolNameEquivalents(toolName).some((name) => blockedInSpec.includes(name))) {
       log.info("Spec mode blocked tool", { sessionName, toolName });
       return {
         hookSpecificOutput: {

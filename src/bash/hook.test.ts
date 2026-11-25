@@ -815,6 +815,162 @@ describe("createToolPermissionHook", () => {
   });
 });
 
+// Claude Code renamed its subagent tool from `Task` to `Agent`. The registry, the `execute` tool group and the grants stored
+// before the rename say `Task`; the current Claude Code reports `Agent`, and an older one still reports `Task`. A grant, or a
+// deny, under either name is one for the tool under both. The other task tools are not renamed.
+describe("the subagent tool under both of its names", () => {
+  const names = ["Task", "Agent"] as const;
+  const otherTaskTools = ["TaskOutput", "TaskStop", "TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "TodoWrite"];
+  const grant = (objectType: string, objectId: string): ContextCapability => ({
+    permission: "use",
+    objectType,
+    objectId,
+  });
+  const deny = (objectId: string): ContextCapability => ({ permission: "deny_use", objectType: "tool", objectId });
+  const callWith = (toolName: string, capabilities: ContextCapability[]) =>
+    callToolHook(toolName, "dev", makeToolContext("dev", capabilities));
+
+  for (const granted of names) {
+    for (const called of names) {
+      it(`allows a call of ${called} on a grant of ${granted}`, async () => {
+        expect(isDenied(await callWith(called, [grant("tool", granted)]))).toBe(false);
+      });
+    }
+  }
+
+  it("allows both names on a grant of the execute tool group, which lists Task", async () => {
+    for (const called of names) {
+      expect(isDenied(await callWith(called, [grant("toolgroup", "execute")]))).toBe(false);
+    }
+    // The group is not a wildcard.
+    expect(isDenied(await callWith("Read", [grant("toolgroup", "execute")]))).toBe(true);
+  });
+
+  it("denies both names without a grant, and names the tool that was called", async () => {
+    for (const called of names) {
+      const result = await callToolHook(called, "dev", {
+        ...makeToolContext("dev", [grant("tool", "Read")]),
+        sessionKey: "agent:dev:main",
+        sessionName: "dev-main",
+      });
+      expect(isDenied(result)).toBe(true);
+      expect(getDenyReason(result)).toContain(`tool:${called}`);
+      expect(listPermissionDenials({ subjectType: "agent", subjectId: "dev", resolved: false })).toContainEqual(
+        expect.objectContaining({ relation: "use", objectType: "tool", objectId: called }),
+      );
+    }
+  });
+
+  it("does not extend a grant of the subagent tool to the other task tools", async () => {
+    for (const granted of names) {
+      for (const other of otherTaskTools) {
+        expect(isDenied(await callWith(other, [grant("tool", granted)])), `${granted} → ${other}`).toBe(true);
+      }
+    }
+  });
+
+  it("withholds both names from a wildcard grant when either name is denied, and only those", async () => {
+    for (const denied of names) {
+      for (const called of names) {
+        expect(isDenied(await callWith(called, [grant("tool", "*"), deny(denied)])), `${denied} → ${called}`).toBe(
+          true,
+        );
+      }
+      expect(isDenied(await callWith("Read", [grant("tool", "*"), deny(denied)]))).toBe(false);
+    }
+  });
+
+  it("lets an explicit grant under either name run past a wildcard deny, for both names", async () => {
+    for (const granted of names) {
+      for (const called of names) {
+        expect(isDenied(await callWith(called, [grant("tool", granted), deny("*")])), `${granted} → ${called}`).toBe(
+          false,
+        );
+      }
+      // The explicit grant covers the tool, not the rest.
+      expect(isDenied(await callWith("Bash", [grant("tool", granted), deny("*")]))).toBe(true);
+    }
+  });
+
+  describe("on a live executor ceiling", () => {
+    // A resolved turn is checked against the agent's grants as they are now, not against the snapshot it was issued with.
+    const agentId = "leo";
+    const turnContext = (capabilities: ContextCapability[], metadata: Record<string, unknown> = {}): ToolContext => {
+      const base = makeToolContext(agentId, capabilities, "turn-runtime");
+      return {
+        ...base,
+        context: {
+          ...base.context!,
+          metadata: { authorityMode: "agent-identity", actorResolution: "resolved", ...metadata },
+        },
+      };
+    };
+    const holding = (...capabilities: string[]) =>
+      dbUpdateAgent(agentId, { defaults: { runtimePermissions: { profile: "explicit-only", capabilities } } });
+    const call = (toolName: string, context: ToolContext) => callToolHook(toolName, agentId, context);
+
+    beforeEach(() => {
+      dbCreateAgent({ id: agentId, cwd: "/tmp/leo" });
+    });
+
+    it("allows a call of either name when the agent holds the tool under either name", async () => {
+      for (const held of names) {
+        holding(`use:tool:${held}`);
+        for (const called of names) {
+          expect(isDenied(await call(called, turnContext([]))), `${held} → ${called}`).toBe(false);
+        }
+      }
+    });
+
+    it("allows both names when the agent holds the execute tool group", async () => {
+      holding("use:toolgroup:execute");
+      for (const called of names) expect(isDenied(await call(called, turnContext([])))).toBe(false);
+    });
+
+    it("denies both names when the agent holds neither", async () => {
+      holding("use:tool:Read");
+      for (const called of names) expect(isDenied(await call(called, turnContext([])))).toBe(true);
+      // Nor the other task tools, whatever the agent holds of the subagent tool.
+      holding("use:tool:Task", "use:tool:Agent");
+      for (const other of otherTaskTools) expect(isDenied(await call(other, turnContext([])))).toBe(true);
+    });
+
+    it("keeps the deny a person's turn carries for either name, whichever name the agent was granted", async () => {
+      // A person's turn in an ungoverned chat carries `deny_*` entries for the agent's break-glass; the live ceiling must
+      // not reopen them.
+      holding("use:tool:*");
+      for (const denied of names) {
+        for (const called of names) {
+          expect(isDenied(await call(called, turnContext([deny(denied)]))), `${denied} → ${called}`).toBe(true);
+        }
+        expect(isDenied(await call("Read", turnContext([deny(denied)])))).toBe(false);
+      }
+    });
+
+    it("needs the contact's chat grant and the agent's grant on a user-overlay turn, under either name", async () => {
+      const overlay = { actorAuthorizationMode: "user-overlay", userOverlay: "active" };
+      holding("use:tool:Task");
+      expect(isDenied(await call("Agent", turnContext([grant("tool", "Task")], overlay)))).toBe(false);
+      expect(isDenied(await call("Task", turnContext([grant("tool", "Agent")], overlay)))).toBe(false);
+      // The chat grant is for another tool: the agent's grant alone does not open it.
+      expect(isDenied(await call("Agent", turnContext([grant("tool", "Read")], overlay)))).toBe(true);
+      // The agent does not hold it: the chat grant alone does not open it.
+      holding("use:tool:Read");
+      expect(isDenied(await call("Agent", turnContext([grant("tool", "Agent")], overlay)))).toBe(true);
+    });
+
+    it("honours a grantor's approval under either name, past the agent's ceiling", async () => {
+      holding("use:tool:Read");
+      for (const approved of names) {
+        const context = turnContext([{ ...grant("tool", approved), source: "approval" }]);
+        for (const called of names) {
+          expect(isDenied(await call(called, context)), `${approved} → ${called}`).toBe(false);
+        }
+      }
+    });
+  });
+});
+
 describe("turn-runtime executor ceiling", () => {
   const agentId = "leo-vps";
   const bootstrapCaps: ContextCapability[] = [

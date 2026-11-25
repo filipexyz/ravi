@@ -1,4 +1,4 @@
-import { resolveToolGroup } from "../cli/tool-registry.js";
+import { getToolNameEquivalents, resolveToolGroup } from "../cli/tool-registry.js";
 import type { ContextCapability } from "../router/router-db.js";
 
 /**
@@ -19,10 +19,13 @@ export function canWithCapabilities(
     return true;
   }
 
+  const requested = requestedObjectIds(objectType, objectId);
   if (
     capabilities.some(
       (cap) =>
-        cap.permission === permission && cap.objectType === objectType && objectIdMatches(cap.objectId, objectId),
+        cap.permission === permission &&
+        cap.objectType === objectType &&
+        requested.some((id) => objectIdMatches(cap.objectId, id)),
     )
   ) {
     return true;
@@ -32,11 +35,20 @@ export function canWithCapabilities(
     for (const cap of capabilities) {
       if (cap.permission !== "use" || cap.objectType !== "toolgroup") continue;
       const members = resolveToolGroup(cap.objectId);
-      if (members?.includes(objectId)) return true;
+      if (members && requested.some((id) => members.includes(id))) return true;
     }
   }
 
   return false;
+}
+
+/**
+ * The object ids a request stands for. A tool that goes by two names (`Task` and `Agent`) is requested under both, so a
+ * grant, a tool group or a `deny_*` entry under either name applies. Only a tool object is renamed: an agent or a session
+ * that happens to be called `Agent` is not the subagent tool.
+ */
+function requestedObjectIds(objectType: string, objectId: string): readonly string[] {
+  return objectType === "tool" ? getToolNameEquivalents(objectId) : [objectId];
 }
 
 /**
@@ -83,12 +95,13 @@ export function isWithheldByDeny(
   objectType: string,
   objectId: string,
 ): boolean {
+  const requested = requestedObjectIds(objectType, objectId);
   const denied = capabilities.some(
     (cap) =>
       cap.permission.startsWith(DENY_PREFIX) &&
       cap.permission.slice(DENY_PREFIX.length) === permission &&
       (cap.objectType === objectType || cap.objectType === "*") &&
-      objectIdMatches(cap.objectId, objectId),
+      requested.some((id) => objectIdMatches(cap.objectId, id)),
   );
   if (!denied) return false;
   if (objectId === "*") return true;
@@ -97,6 +110,6 @@ export function isWithheldByDeny(
       cap.permission === permission &&
       cap.objectType === objectType &&
       cap.objectId !== "*" &&
-      cap.objectId === objectId,
+      requested.includes(cap.objectId),
   );
 }

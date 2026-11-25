@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { runWithContext, type ToolContext } from "../cli/context.js";
 import type { AgentConfig } from "../router/index.js";
 import type { ContextCapability, ContextRecord } from "../router/router-db.js";
+import { clearSpecState } from "../spec/server.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { createRuntimeHostHooks, type RuntimeHostHookApprovalServices } from "./host-hooks.js";
@@ -316,6 +319,7 @@ describe("runtime host hook crash recovery fences", () => {
 });
 
 const GATE_AGENT_ID = "gate-agent";
+const GATE_SESSION = "gate-session";
 const claudeLike = {
   supportsHostSessionHooks: true,
   supportsMcpServers: true,
@@ -338,7 +342,7 @@ function buildSession(agent: Partial<AgentConfig> = {}) {
   const attachments = buildRuntimeHostAttachments({
     runtimeCapabilities: claudeLike,
     agent: { id: GATE_AGENT_ID, cwd: `/tmp/${GATE_AGENT_ID}`, ...agent },
-    sessionName: "gate-session",
+    sessionName: GATE_SESSION,
     sessionCwd: `/tmp/${GATE_AGENT_ID}`,
     streamingSession: { currentCrashRecoveryAttemptId: "attempt-1", currentTurnToolStarted: false },
     crashRecovery: { markTurnAttemptSafety: () => undefined } as unknown as Pick<
@@ -375,6 +379,21 @@ async function runPreToolUse(
 
 const toolGrant = (objectId: string): ContextCapability => ({ permission: "use", objectType: "tool", objectId });
 
+/** Enters spec mode the way the agent does: by calling `enter_spec_mode` on the in-process server the session attached. */
+async function enterSpecMode(server: Record<string, unknown> | undefined): Promise<void> {
+  const instance = (server as { instance?: { connect(transport: unknown): Promise<void> } } | undefined)?.instance;
+  if (!instance) throw new Error("the session did not attach the spec server");
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await instance.connect(serverTransport);
+  const client = new Client({ name: "host-hooks-test", version: "1.0.0" });
+  await client.connect(clientTransport);
+  try {
+    await client.callTool({ name: "enter_spec_mode", arguments: {} });
+  } finally {
+    await client.close();
+  }
+}
+
 describe("tool gate on the registered PreToolUse chain", () => {
   let stateDir: string | null = null;
 
@@ -383,6 +402,7 @@ describe("tool gate on the registered PreToolUse chain", () => {
   });
 
   afterEach(async () => {
+    clearSpecState(GATE_SESSION);
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
   });
@@ -424,6 +444,27 @@ describe("tool gate on the registered PreToolUse chain", () => {
     const plainSession = buildSession();
     expect(plainSession.attachments.mcpServers).toBeUndefined();
     expect(await runPreToolUse(plainSession.preToolUse, [], hostCall)).toContain(`tool:mcp__${name}__enter_spec_mode`);
+  });
+
+  it("blocks the subagent tool under both of its names while spec mode is on, and only then", async () => {
+    const { attachments, preToolUse } = buildSession({ specMode: true });
+    // A grant of every tool: what denies below is the spec-mode block, not the tool gate.
+    const callTool = (toolName: string) => runPreToolUse(preToolUse, [toolGrant("*")], { tool_name: toolName });
+
+    for (const toolName of ["Task", "Agent"]) {
+      expect(await callTool(toolName)).toBeNull();
+    }
+
+    await enterSpecMode(attachments.mcpServers?.spec);
+
+    // The block lists `Task`; the current Claude Code reports the same tool as `Agent`.
+    for (const toolName of ["Task", "Agent"]) {
+      expect(await callTool(toolName)).toContain("Spec mode ativo");
+    }
+    // The rename is one tool: the other `Task*` tools and the read-only tools stay open.
+    for (const toolName of ["TaskOutput", "TaskStop", "Read", "Grep"]) {
+      expect(await callTool(toolName)).toBeNull();
+    }
   });
 
   it("checks a Monitor shell command through the Bash-matched permission hook", async () => {
