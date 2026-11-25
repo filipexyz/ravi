@@ -183,11 +183,11 @@ describe("probeOmniDatabaseAuth decisions", () => {
   });
 
   it("falls back to the system user and to the user as database, like libpq", async () => {
-    let seen: [string, string] | null = null;
+    const seen: string[] = [];
     const report = await probeOmniDatabaseAuth("postgresql://127.0.0.1", {
       defaultUser: () => "ravi",
       probe: async (_host, _port, user, database) => {
-        seen = [user, database];
+        seen.push(user, database);
         return { kind: "auth_required", method: 10 };
       },
     });
