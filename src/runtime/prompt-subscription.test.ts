@@ -585,18 +585,24 @@ describe("RuntimePromptSubscription", () => {
     // 2026-11-24: a 3-hourly cron whose reply surface is a WhatsApp group was refused for background capacity and
     // the runtime posted "Sem capacidade agora ... Recibo: inbox_item_..." into that group of outsiders.
     const group = { channel: "whatsapp-baileys", accountId: "main", chatId: "120363000000000000@g.us" };
+    // Each automation prompt carries exactly one background signal, so the test does not stay green when one
+    // recognition path breaks: `_cron` alone, and `source.suppressPresence` alone.
     const cron = makePromptMessage("ravi.session.main.prompt", {
       prompt: "[Cron: blog] check the blog",
-      source: { ...group, suppressPresence: true },
+      source: { ...group },
       _cron: true,
       _jobId: "job-1",
       _cronRunId: "run-1",
+    });
+    const silentSource = makePromptMessage("ravi.session.main.prompt", {
+      prompt: "[Quiet] status poll",
+      source: { ...group, suppressPresence: true },
     });
     const person = makePromptMessage("ravi.session.main.prompt", {
       prompt: "update do dia?",
       source: { ...group, actorType: "contact" },
     });
-    consumedMessages = [cron, person];
+    consumedMessages = [cron, silentSource, person];
     const subscription = new RuntimePromptSubscription({
       isRunning: () => running,
       canAcceptPrompt: () => true,
@@ -619,18 +625,24 @@ describe("RuntimePromptSubscription", () => {
       },
     });
     subscription.subscribe();
-    await waitUntil(() => cron.ack.mock.calls.length === 1 && person.ack.mock.calls.length === 1);
+    await waitUntil(
+      () =>
+        cron.ack.mock.calls.length === 1 &&
+        silentSource.ack.mock.calls.length === 1 &&
+        person.ack.mock.calls.length === 1,
+    );
 
-    // Both stay retained for the operator, with the operator-facing event and the rejection telemetry.
+    // All three stay retained for the operator, with the operator-facing event and the rejection telemetry.
     const items = listLocalInboxItems({ sourceDomain: "system" });
     expect(items.map((item) => (item.metadata.prompt as { prompt: string }).prompt).sort()).toEqual([
       "[Cron: blog] check the blog",
+      "[Quiet] status poll",
       "update do dia?",
     ]);
-    expect(emitCalls.filter((c) => c.topic === "ravi.inbox.system.runtime_start_rejected")).toHaveLength(2);
-    expect(emitCalls.filter((c) => c.payload.type === "dispatch.start_rejected")).toHaveLength(2);
+    expect(emitCalls.filter((c) => c.topic === "ravi.inbox.system.runtime_start_rejected")).toHaveLength(3);
+    expect(emitCalls.filter((c) => c.payload.type === "dispatch.start_rejected")).toHaveLength(3);
 
-    // Only the person who is waiting gets the text. The cron's chat never asked for it.
+    // Only the person who is waiting gets the text. The chat never asked for an automation's.
     const notices = emitCalls.filter((c) => c.topic === "ravi.session.main.response");
     expect(notices).toHaveLength(1);
     expect(notices[0]?.payload.target).toMatchObject({ actorType: "contact" });
