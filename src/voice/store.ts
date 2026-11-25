@@ -364,6 +364,26 @@ export function updateOpenVoiceCall(id: string, patch: VoiceCallOpenPatch, now =
   return applied ? getVoiceCall(id) : null;
 }
 
+/**
+ * End a call only if nothing has ended it yet: one UPDATE guarded by
+ * `state NOT IN ('ending','ended')`, so an end the daemon already wrote keeps
+ * its reason. Returns true when this call ended it.
+ */
+export function endOpenVoiceCall(id: string, endedReason: string, now = Date.now()): boolean {
+  const database = store();
+  return executeWrite(
+    database,
+    () =>
+      database
+        .prepare(
+          `UPDATE voice_calls SET state = 'ended', agent_state = 'idle', ended_reason = ?, ended_at = ?, updated_at = ?
+           WHERE id = ? AND state NOT IN ('ending', 'ended')`,
+        )
+        .run(endedReason, now, now, id).changes > 0,
+    { label: "voice:endOpenCall" },
+  );
+}
+
 /** Active call for one (session, speaker): the spec allows one. */
 export function findActiveVoiceCall(sessionKey: string, speakerId: string): VoiceCall | null {
   return listVoiceCalls({ activeOnly: true, sessionKey, speakerId, limit: 1 })[0] ?? null;

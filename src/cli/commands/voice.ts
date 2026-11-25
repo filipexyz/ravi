@@ -51,6 +51,7 @@ import { estimateSttCostUsd, pushEngine } from "../../voice/engines/push.js";
 import { emitVoiceEvent, sendVoiceControl } from "../../voice/events.js";
 import {
   deleteVoiceProfile,
+  endOpenVoiceCall,
   getVoiceAudio,
   getVoiceCall,
   getVoiceDailyUsage,
@@ -70,7 +71,6 @@ import {
   findActiveVoiceCall,
   saveVoiceProfile,
   updateOpenVoiceCall,
-  updateVoiceCall,
 } from "../../voice/store.js";
 import {
   DEFAULT_VOICE_PROFILE_ID,
@@ -574,8 +574,9 @@ export class VoiceCallsCommands {
       try {
         material = await openConnection(call, profile, offer, false);
       } catch (error) {
-        updateVoiceCall(call.id, { state: "ended", endedReason: "connect_failed", endedAt: Date.now() });
-        await emitVoiceEvent(call.id, "call.ended", { reason: "connect_failed", usage: call.usage });
+        if (endOpenVoiceCall(call.id, "connect_failed")) {
+          await emitVoiceEvent(call.id, "call.ended", { reason: "connect_failed", usage: call.usage });
+        }
         throw error;
       }
       const waitingForOffer = mode === "live" && !material.sdpAnswer;
@@ -590,12 +591,13 @@ export class VoiceCallsCommands {
         announced = Boolean(updated) && (await emitWhileOpen(call.id, "call.state", { state: updated?.state }));
       } catch (error) {
         // The call could not be announced: end it (unless the daemon already
-        // did) so it does not hold the slot, and release its media.
-        const current = getVoiceCall(call.id);
-        if (current && current.state !== "ended") {
-          updateVoiceCall(call.id, { state: "ended", endedReason: "connect_failed", endedAt: Date.now() });
+        // did, whose reason wins) so it does not hold the slot, and release
+        // its media even if that write fails.
+        try {
+          endOpenVoiceCall(call.id, "connect_failed");
+        } finally {
+          await releaseConnection(call, material);
         }
-        await releaseConnection(call, material);
         throw error;
       }
       if (!announced) await refuseEndedConnection(op, call, material, asJson);
