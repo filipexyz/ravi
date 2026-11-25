@@ -291,7 +291,7 @@ describe("pool reclaimer and finished sessions", () => {
     expect([...dispatcher.streamingSessions.keys()]).toEqual([]);
   });
 
-  it("does not count a still-closing session as free capacity", () => {
+  it("treats a finished session as releasable only once its event loop has exited", () => {
     expect(isReleasableDoneRuntimeSession({ done: true, eventLoopActive: true })).toBe(false);
     expect(isReleasableDoneRuntimeSession({ done: true, eventLoopActive: false })).toBe(true);
     expect(isReleasableDoneRuntimeSession({ done: true })).toBe(true);

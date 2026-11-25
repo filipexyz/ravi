@@ -326,7 +326,7 @@ export class RuntimeSessionDispatcher {
         ? this.getBackgroundStartLimit()
         : this.options.maxConcurrentSessions;
     const reclaimable = [...this.streamingSessions].filter(
-      ([name, session]) => isReleasableDoneRuntimeSession(session) || this.isReclaimableForStart(name, session),
+      ([name, session]) => session.done || this.isReclaimableForStart(name, session),
     ).length;
     return this.getRuntimeSessionPoolUsedSlots() - reclaimable < limit;
   }
@@ -2086,7 +2086,7 @@ export class RuntimeSessionDispatcher {
 
   private reclaimIdleSessionsForStart(sessionName: string, prompt: RuntimeLaunchPrompt): void {
     const candidates = [...this.streamingSessions.entries()]
-      .filter(([name, session]) => isReleasableDoneRuntimeSession(session) || this.isReclaimableForStart(name, session))
+      .filter(([name, session]) => session.done || this.isReclaimableForStart(name, session))
       .sort(([, a], [, b]) => a.lastActivity - b.lastActivity);
     const limit =
       this.resolveStartLane(sessionName, prompt) === "background" && this.options.interactiveReservedSessions > 0
