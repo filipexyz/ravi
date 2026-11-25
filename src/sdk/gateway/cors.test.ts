@@ -1,6 +1,13 @@
 import { describe, expect, it } from "bun:test";
 
-import { CORS_REQUIRED_HEADERS, corsHeaders, isAllowedOrigin, isDevLocalhostOrigin, withCorsHeaders } from "./cors.js";
+import {
+  CORS_REQUIRED_HEADERS,
+  corsHeaders,
+  isAllowedOrigin,
+  isDevLocalhostOrigin,
+  preflightHeaders,
+  withCorsHeaders,
+} from "./cors.js";
 
 const CHROME_EXTENSION = "chrome-extension://abcdefghijklmnopqrstuvwxyzabcdef";
 const LISTED_ORIGIN = "http://127.0.0.1:8088";
@@ -137,6 +144,36 @@ describe("corsHeaders", () => {
 
   it("includes the four required headers even when Access-Control-Request-Headers is absent", () => {
     expectRequiredAllowHeaders(corsHeaders(CHROME_EXTENSION, null, {}));
+  });
+});
+
+describe("preflightHeaders", () => {
+  const PAGE_ORIGIN = "https://pages.example.test";
+  const env = { RAVI_CORS_ORIGINS: PAGE_ORIGIN };
+
+  it("answers Allow-Private-Network for an allowed origin that asked for it", () => {
+    const headers = preflightHeaders(PAGE_ORIGIN, "authorization,content-type", "true", env);
+    expect(headers["Access-Control-Allow-Origin"]).toBe(PAGE_ORIGIN);
+    expect(headers["Access-Control-Allow-Private-Network"]).toBe("true");
+    expectRequiredAllowHeaders(headers);
+  });
+
+  it("accepts the request flag with any case and surrounding spaces", () => {
+    expect(preflightHeaders(PAGE_ORIGIN, null, " TRUE ", env)["Access-Control-Allow-Private-Network"]).toBe("true");
+  });
+
+  it("omits Allow-Private-Network when the browser did not ask for it", () => {
+    for (const flag of [null, "", "false"]) {
+      const headers = preflightHeaders(PAGE_ORIGIN, null, flag, env);
+      expect(headers["Access-Control-Allow-Origin"]).toBe(PAGE_ORIGIN);
+      expect(headers["Access-Control-Allow-Private-Network"]).toBeUndefined();
+    }
+  });
+
+  it("never grants private network access to an origin outside the allowlist", () => {
+    expect(preflightHeaders(UNKNOWN_ORIGIN, null, "true", env)).toEqual({});
+    expect(preflightHeaders(null, null, "true", env)).toEqual({});
+    expect(preflightHeaders(PAGE_ORIGIN, null, "true", {})).toEqual({});
   });
 });
 

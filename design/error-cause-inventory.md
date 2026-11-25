@@ -2227,13 +2227,13 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | gateway | src/sdk/gateway/console-context.ts | 35 | triaged-follow-up | catch-without-binding | src/sdk/gateway/console-context.ts:dae8cf06e1daf5672326509d |
 | gateway | src/sdk/gateway/console-handler.ts | 98 | triaged-follow-up | surface-bypasses-constructor | src/sdk/gateway/console-handler.ts:746efd4a3e79e4bd8bd93ea7 |
 | gateway | src/sdk/gateway/console-socket.ts | 77 | triaged-follow-up | catch-without-binding | src/sdk/gateway/console-socket.ts:643ab17c30b1d9c5168bf456 |
-| gateway | src/sdk/gateway/cors.ts | 52 | triaged-follow-up | catch-without-binding | src/sdk/gateway/cors.ts:0e58b8aa5e49ff699c166be3 |
+| gateway | src/sdk/gateway/cors.ts | 59 | triaged-follow-up | catch-without-binding | src/sdk/gateway/cors.ts:0e58b8aa5e49ff699c166be3 |
 | gateway | src/sdk/gateway/dispatcher.ts | 114 | fixed | binding retained / no recognized error surface | src/sdk/gateway/dispatcher.ts:43b648156dd92e80fbb32ece |
 | gateway | src/sdk/gateway/dispatcher.ts | 223 | fixed | binding retained / no recognized error surface | src/sdk/gateway/dispatcher.ts:dea691b37b72d27b9d44e8aa |
 | gateway | src/sdk/gateway/dispatcher.ts | 228 | fixed | binding retained / no recognized error surface | src/sdk/gateway/dispatcher.ts:4f815b9f1377bda6d8e76b93 |
-| gateway | src/sdk/gateway/server.ts | 123 | triaged-follow-up | cause-not-forwarded-at-surface | src/sdk/gateway/server.ts:1df34faab520c118eaf10317 |
-| gateway | src/sdk/gateway/server.ts | 242 | triaged-follow-up | catch-without-binding | src/sdk/gateway/server.ts:40b12c8b888522db78241907 |
-| gateway | src/sdk/gateway/server.ts | 254 | triaged-follow-up | catch-without-binding | src/sdk/gateway/server.ts:446b84ce0b533ce0a7758163 |
+| gateway | src/sdk/gateway/server.ts | 127 | triaged-follow-up | cause-not-forwarded-at-surface | src/sdk/gateway/server.ts:1df34faab520c118eaf10317 |
+| gateway | src/sdk/gateway/server.ts | 246 | triaged-follow-up | catch-without-binding | src/sdk/gateway/server.ts:40b12c8b888522db78241907 |
+| gateway | src/sdk/gateway/server.ts | 258 | triaged-follow-up | catch-without-binding | src/sdk/gateway/server.ts:446b84ce0b533ce0a7758163 |
 | gateway | src/sdk/gateway/streaming/channels.ts | 615 | triaged-follow-up | rejection-without-binding | src/sdk/gateway/streaming/channels.ts:bb2dd8d6b86b0f98f0cf08e4 |
 | gateway | src/sdk/gateway/streaming/handler.ts | 181 | triaged-follow-up | catch-without-binding | src/sdk/gateway/streaming/handler.ts:6cd17db5e69a5062a4113878 |
 | gateway | src/sdk/gateway/streaming/handler.ts | 225 | triaged-follow-up | rejection-without-binding | src/sdk/gateway/streaming/handler.ts:314d1e69b11f79b2f9bf69d8 |

@@ -408,6 +408,36 @@ describe("gateway server — CORS", () => {
     await stream.text();
   });
 
+  it("answers the Private Network Access preflight only for an allowed origin", async () => {
+    process.env.RAVI_CORS_ORIGINS = listedOrigin;
+    delete process.env.RAVI_CORS_LOCALHOST;
+
+    const allowed = await fetch(`${handle.url}/api/v1/demo/echo`, {
+      method: "OPTIONS",
+      headers: {
+        Origin: listedOrigin,
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "authorization,content-type",
+        "Access-Control-Request-Private-Network": "true",
+      },
+    });
+    expect(allowed.status).toBe(204);
+    expect(allowed.headers.get("Access-Control-Allow-Origin")).toBe(listedOrigin);
+    expect(allowed.headers.get("Access-Control-Allow-Private-Network")).toBe("true");
+
+    const unknown = await fetch(`${handle.url}/api/v1/demo/echo`, {
+      method: "OPTIONS",
+      headers: {
+        Origin: "https://evil.com",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Private-Network": "true",
+      },
+    });
+    expect(unknown.status).toBe(204);
+    expect(unknown.headers.get("Access-Control-Allow-Origin")).toBeNull();
+    expect(unknown.headers.get("Access-Control-Allow-Private-Network")).toBeNull();
+  });
+
   it("does not allow 127.0.0.1:8088 unless the localhost flag or allowlist is set", async () => {
     delete process.env.RAVI_CORS_ORIGINS;
     delete process.env.RAVI_CORS_LOCALHOST;
