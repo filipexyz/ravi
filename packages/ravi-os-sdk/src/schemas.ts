@@ -137136,7 +137136,11 @@ export const VoiceCallsApproveReturnSchema = {
       "type": "string"
     },
     "decision": {
-      "const": "approved",
+      "enum": [
+        "approved",
+        "rejected",
+        "pending"
+      ],
       "type": "string"
     }
   },
@@ -137356,7 +137360,11 @@ export const VoiceCallsDenyReturnSchema = {
       "type": "string"
     },
     "decision": {
-      "const": "rejected",
+      "enum": [
+        "approved",
+        "rejected",
+        "pending"
+      ],
       "type": "string"
     }
   },

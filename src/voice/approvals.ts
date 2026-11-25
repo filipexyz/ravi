@@ -36,6 +36,8 @@ export interface VoiceDirectSendInput {
   accountId?: string;
   to: string;
   text?: string;
+  /** The approval request this text belongs to, set by the approval service. */
+  approvalRequestId?: string;
 }
 
 export type VoiceDirectSendResult = { success: true; messageId: string } | { success: false; error: string };
@@ -53,10 +55,13 @@ export async function deliverVoiceApprovalRequest(
   const callId = input.to;
   const call = getVoiceCall(callId);
   if (!call || call.state === "ended") return { success: false, error: "VOICE_CALL_NOT_ACTIVE" };
-  const pending = listOpenApprovalRequestsForChannelChat(VOICE_CHANNEL, callId, now).filter(
-    (request) => !request.messageId,
+  // The text must belong to the request it names: an open, not yet shown
+  // request of this call. Without that id nothing is shown.
+  const requestId = input.approvalRequestId?.trim();
+  if (!requestId) return { success: false, error: "VOICE_NOT_AN_APPROVAL" };
+  const request = listOpenApprovalRequestsForChannelChat(VOICE_CHANNEL, callId, now).find(
+    (candidate) => candidate.id === requestId && !candidate.messageId,
   );
-  const request = pending[0];
   if (!request) return { success: false, error: "VOICE_NOT_AN_APPROVAL" };
   const text = (input.text ?? "").slice(0, APPROVAL_TEXT_LIMIT);
   const approvalId = request.id;

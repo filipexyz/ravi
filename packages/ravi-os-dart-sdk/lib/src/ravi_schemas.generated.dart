@@ -138798,7 +138798,11 @@ class RaviSchemas {
       "type": "string"
     },
     "decision": {
-      "const": "approved",
+      "enum": [
+        "approved",
+        "rejected",
+        "pending"
+      ],
       "type": "string"
     }
   },
@@ -139026,7 +139030,11 @@ class RaviSchemas {
       "type": "string"
     },
     "decision": {
-      "const": "rejected",
+      "enum": [
+        "approved",
+        "rejected",
+        "pending"
+      ],
       "type": "string"
     }
   },

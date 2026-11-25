@@ -367,6 +367,8 @@ type DirectSendRequest = {
    * their DM with the app when they are not in it) instead of posting it.
    */
   privateTo?: readonly string[];
+  /** Set by the approval service: the approval request this message shows. */
+  approvalRequestId?: string;
 };
 
 type MediaSendRequest = {

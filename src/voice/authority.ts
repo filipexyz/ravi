@@ -93,7 +93,7 @@ export function assertCallerMayCallSession(caller: VoiceCaller, session: { name?
   const name = session.name ?? session.sessionKey;
   if (caller.kind === "device") {
     const allowed = caller.device?.sessions ?? [];
-    if (allowed.includes("*") || allowed.includes(name) || allowed.includes(session.sessionKey)) return;
+    if (allowed.includes("*") || allowed.includes(session.sessionKey)) return;
     throw new VoiceAuthorityError("VOICE_SESSION_FORBIDDEN", `This device was not paired for session ${name}.`);
   }
   if (caller.kind === "worker") {
@@ -115,7 +115,9 @@ export function assertCallerControlsCall(
   action: "read" | "speak" | "control" | "approve",
 ): void {
   if (caller.kind === "operator" || caller.kind === "context") {
-    if (caller.kind === "context" && call.callerContextId && call.callerContextId !== caller.contextId) {
+    // A context reaches only the calls it opened; an operator call has no
+    // callerContextId and stays the operator's.
+    if (caller.kind === "context" && call.callerContextId !== caller.contextId) {
       throw new VoiceAuthorityError("VOICE_CALL_FORBIDDEN", "This call belongs to another caller.");
     }
     return;

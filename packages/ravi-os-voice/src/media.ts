@@ -46,23 +46,32 @@ export function pushToTalk(call: RaviVoiceCall, options: { mimeType?: string } =
  */
 export function autoplayReplies(call: RaviVoiceCall, element: HTMLAudioElement = new Audio()) {
   let current: string | null = null;
+  // Bumped on silence and cleanup so a clip still downloading never plays after.
+  let generation = 0;
   const off = call.on("agent.transcript", async (event) => {
     const audio = event.data.audio as { item?: string } | undefined;
     if (!audio?.item) return;
+    const mine = ++generation;
     const blob = await call.audio(audio.item);
+    if (mine !== generation) return;
     if (current) URL.revokeObjectURL(current);
     current = URL.createObjectURL(blob);
     element.src = current;
     await element.play().catch(() => undefined);
   });
   const offSilence = call.on("agent.state", (event) => {
-    if (event.data.state === "listening" && event.data.reason === "silenced") element.pause();
+    if (event.data.state === "listening" && event.data.reason === "silenced") {
+      generation++;
+      element.pause();
+    }
   });
   return () => {
+    generation++;
     off();
     offSilence();
     element.pause();
     if (current) URL.revokeObjectURL(current);
+    current = null;
   };
 }
 

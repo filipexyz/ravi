@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "cfc81541f05778e9"
+    "version": "b777fad89f689229"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -156940,7 +156940,11 @@
                       "type": "string"
                     },
                     "decision": {
-                      "const": "approved",
+                      "enum": [
+                        "approved",
+                        "rejected",
+                        "pending"
+                      ],
                       "type": "string"
                     }
                   },
@@ -157272,7 +157276,11 @@
                       "type": "string"
                     },
                     "decision": {
-                      "const": "rejected",
+                      "enum": [
+                        "approved",
+                        "rejected",
+                        "pending"
+                      ],
                       "type": "string"
                     }
                   },

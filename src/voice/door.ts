@@ -14,6 +14,7 @@ import {
   createSessionSendWaitState,
   isSessionSendWaitTerminal,
   noteSessionSendWaitRuntimeEvent,
+  SESSION_SEND_TERMINAL_TYPES,
   type SessionSendWaitState,
 } from "../cli/session-send-wait.js";
 import { logger } from "../utils/logger.js";
@@ -36,6 +37,7 @@ import {
   deleteVoiceAudioForCall,
   getVoiceCall,
   getVoiceDailyUsage,
+  getVoiceDevice,
   getVoiceProfile,
   getVoiceTurn,
   insertVoiceTurn,
@@ -291,7 +293,11 @@ export class VoiceDoorService {
     await this.setAgentState(call.id, "thinking");
 
     const sessionName = call.sessionName;
-    const cursor = snapshotTranscriptCursor(this.deps.readHistory(sessionName, 1));
+    // Replies after this cursor are this turn's. When the prompt queued behind a
+    // turn in flight, the cursor moves past that turn's reply as soon as its
+    // terminal event arrives (the reply is stored before that event, and this
+    // turn has not started yet), so that reply is never read as this one's.
+    let cursor = snapshotTranscriptCursor(this.deps.readHistory(sessionName, 1));
     const watch = new AbortController();
     const stopWatch = () => watch.abort();
     this.abort.signal.addEventListener("abort", stopWatch, { once: true });
@@ -313,10 +319,19 @@ export class VoiceDoorService {
             continue;
           }
           running.wait = noteSessionSendWaitRuntimeEvent(running.wait, type);
+          if (
+            running.wait.queuedBehindActiveTurn &&
+            !running.wait.seenOwnTurnStarted &&
+            typeof type === "string" &&
+            SESSION_SEND_TERMINAL_TYPES.has(type)
+          ) {
+            cursor = Math.max(cursor, snapshotTranscriptCursor(this.deps.readHistory(sessionName, 1)));
+          }
+          const open = this.isOpen(call.id);
           if (type === "turn.started" && running.wait.seenOwnTurnStarted) {
-            await emitVoiceEvent(call.id, "work.state", { turnId: turn.id, state: "running" }, this.sink);
+            if (open) await emitVoiceEvent(call.id, "work.state", { turnId: turn.id, state: "running" }, this.sink);
             if (running.cancelRequested) await this.sendAbort(call, running);
-          } else if (type === "tool.started" || type === "tool.completed") {
+          } else if (open && (type === "tool.started" || type === "tool.completed")) {
             const name = typeof event.data.toolName === "string" ? event.data.toolName : event.data.name;
             await emitVoiceEvent(
               call.id,
@@ -405,6 +420,8 @@ export class VoiceDoorService {
     updateVoiceTurnState(running.turn.id, state, this.now());
     const runtime = this.runtime(call.id);
     if (runtime.running === running) runtime.running = null;
+    // The reply stays in the session; an ended call gets no more output.
+    if (!this.isOpen(call.id)) return;
     await emitVoiceEvent(call.id, "work.state", { turnId: running.turn.id, state }, this.sink);
     if (state === "done") {
       // Stored and published before speech so the screen never waits for audio.
@@ -425,6 +442,7 @@ export class VoiceDoorService {
     fullText: string,
     profile: VoiceProfile,
   ): Promise<void> {
+    if (!this.isOpen(call.id)) return;
     const runtime = this.runtime(call.id);
     if (!spokenText || profile.delivery === "silent") {
       if (call.engine === "live" && fullText) runtime.sideband?.thinking(fullText, running.delegationId ?? null);
@@ -443,6 +461,8 @@ export class VoiceDoorService {
       try {
         await this.setAgentState(call.id, "speaking");
         const clip = await this.clip[call.engine].synthesize({ text: spokenText, profile });
+        // The call may have ended (and its clips been deleted) while synthesizing.
+        if (!this.isOpen(call.id)) return;
         if (clip) {
           const itemId = `va_${running.turn.id}`;
           saveVoiceAudio(call.id, itemId, clip.mime, clip.bytes, this.now());
@@ -458,6 +478,7 @@ export class VoiceDoorService {
         await emitVoiceEvent(call.id, "error", { code: "VOICE_TTS_FAILED", turnId: running.turn.id }, this.sink);
       }
     }
+    if (!this.isOpen(call.id)) return;
     await emitVoiceEvent(
       call.id,
       "agent.transcript",
@@ -499,7 +520,11 @@ export class VoiceDoorService {
         actor,
         correlationId: running.turn.id,
       })
-      .catch((error) => log.warn("Voice cancel abort failed", { callId: call.id, error }));
+      .catch((error) => {
+        // Let a later cancel try again.
+        running.abortSent = false;
+        log.warn("Voice cancel abort failed", { callId: call.id, error });
+      });
   }
 
   // -------------------------------------------------------------------------
@@ -556,6 +581,8 @@ export class VoiceDoorService {
     const sideband = this.deps.createSideband
       ? this.deps.createSideband({ apiKey, sessionId: providerSessionId, handlers })
       : new LiveSideband({ apiKey, sessionId: providerSessionId, handlers });
+    const latest = getVoiceCall(call.id);
+    if (!latest || latest.state === "ending" || latest.state === "ended") return;
     runtime.sideband = sideband;
     sideband.connect();
     updateVoiceCall(call.id, { state: "active", providerRef: providerSessionId }, this.now());
@@ -642,11 +669,23 @@ export class VoiceDoorService {
   private async sweepLimits(): Promise<void> {
     try {
       for (const call of listVoiceCalls({ activeOnly: true, limit: 200 })) {
+        // The revoked device record is the durable "end its calls" request:
+        // `devices revoke` asks right away, and this sweep retries if that ask
+        // was lost.
+        if (call.speaker.kind === "device" && getVoiceDevice(call.speaker.id)?.revokedAt) {
+          await this.endCall(call.id, "device_revoked");
+          continue;
+        }
         await this.enforceLimits(call.id);
       }
     } catch (error) {
       log.warn("Voice limit sweep failed", { error });
     }
+  }
+
+  private isOpen(callId: string): boolean {
+    const call = getVoiceCall(callId);
+    return Boolean(call && call.state !== "ending" && call.state !== "ended");
   }
 
   private async setAgentState(callId: string, state: VoiceAgentState): Promise<void> {

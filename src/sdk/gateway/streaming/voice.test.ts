@@ -110,6 +110,42 @@ describe("voice/{call} stream", () => {
     expect(out.map((e) => (e.data as VoiceEvent).seq)).toEqual([0, 2, 3, 4]);
   });
 
+  it("fills a gap from the store when a live event was missed", async () => {
+    call("vc_g");
+    appendVoiceEvent("vc_g", "user.transcript", { text: "um" });
+    const bus = fakeBus();
+    const channel = createVoiceCallChannel({ subscribe: bus.subscribe, gapCheckMs: 20 });
+    const abort = new AbortController();
+    const iter = channel.subscribe(ctx("voice/vc_g", abort.signal), {
+      channelPath: "voice/vc_g",
+      scope: { permission: "access", objectType: "voice-call", objectId: "vc_g" },
+    });
+    const out: StreamEvent[] = [];
+    for await (const event of iter) {
+      out.push(event);
+      if (out.length === 2) {
+        // Stored but never seen live (published before the subscription registered).
+        appendVoiceEvent("vc_g", "agent.transcript", { text: "dois" });
+        const ended = appendVoiceEvent("vc_g", "call.ended", { reason: "user" });
+        bus.push(ended);
+      }
+    }
+    expect(out.map((e) => (e.data as VoiceEvent).seq)).toEqual([0, 1, 2, 3]);
+
+    // A quiet spell re-reads the store too.
+    call("vc_q");
+    const quiet = channel.subscribe(ctx("voice/vc_q", new AbortController().signal), {
+      channelPath: "voice/vc_q",
+      scope: { permission: "access", objectType: "voice-call", objectId: "vc_q" },
+    });
+    const seen: StreamEvent[] = [];
+    for await (const event of quiet) {
+      seen.push(event);
+      if (seen.length === 1) appendVoiceEvent("vc_q", "call.ended", { reason: "user" });
+    }
+    expect(seen.map((e) => (e.data as VoiceEvent).type)).toEqual(["call.snapshot", "call.ended"]);
+  });
+
   it("hides another device's call", async () => {
     const now = Date.now();
     insertVoiceDevice({

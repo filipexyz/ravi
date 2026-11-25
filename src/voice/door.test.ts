@@ -10,6 +10,7 @@ import {
   listVoiceTurns,
   saveVoiceProfile,
   defaultVoiceProfile,
+  updateVoiceCall,
 } from "./store.js";
 import { emptyVoiceUsage, type VoiceCall, type VoiceMode } from "./types.js";
 
@@ -98,7 +99,7 @@ function makeCall(mode: VoiceMode = "mock", overrides: Partial<VoiceCall> = {}):
   });
 }
 
-function harness(options: { reply?: string; terminal?: string; clip?: ClipSpeechEngine } = {}) {
+function harness(options: { reply?: string; terminal?: string; clip?: ClipSpeechEngine; inFlightReply?: string } = {}) {
   const hub = new Hub();
   const history: Array<{ id: number; role: string; content: string }> = [{ id: 1, role: "user", content: "old" }];
   const prompts: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
@@ -108,6 +109,14 @@ function harness(options: { reply?: string; terminal?: string; clip?: ClipSpeech
     publishPrompt: async (sessionName, payload) => {
       prompts.push({ sessionName, payload });
       setTimeout(async () => {
+        // A turn was running when the prompt arrived: the prompt queues, that turn
+        // stores its reply and completes, then this turn starts.
+        if (options.inFlightReply) {
+          await hub.emit(`ravi.session.${sessionName}.runtime`, { type: "dispatch.queued" });
+          history.push({ id: history.length + 1, role: "assistant", content: options.inFlightReply });
+          await hub.emit(`ravi.session.${sessionName}.runtime`, { type: "turn.complete" });
+          await tick();
+        }
         await hub.emit(`ravi.session.${sessionName}.runtime`, { type: "turn.started" });
         await hub.emit(`ravi.session.${sessionName}.runtime`, { type: "tool.started", toolName: "Bash" });
         if ((options.terminal ?? "turn.complete") === "turn.complete") {
@@ -183,6 +192,43 @@ describe("voice door", () => {
     const spoken = listVoiceEvents(call.id).find((event) => event.type === "agent.transcript");
     expect((spoken?.data.audio as { item: string } | undefined)?.item).toBe("va_vt_1");
     expect(getVoiceCall(call.id)?.usage.charactersSpoken).toBe(6);
+  });
+
+  it("speaks only its own turn's reply, not the reply of the turn that was in flight", async () => {
+    const { door } = harness({ inFlightReply: "Resposta de outro turno.", reply: "🔊 Só a minha.\nDetalhe." });
+    const call = makeCall("mock");
+    await door.handleControl({
+      op: "utterance",
+      callId: call.id,
+      turnId: "vt_own",
+      text: "e a minha?",
+      speaker: { kind: "operator", id: "operator" },
+    });
+    await until(() => listVoiceTurns(call.id)[0]?.state === "done", "turn done");
+    const completed = listVoiceEvents(call.id).find((event) => event.type === "turn.completed");
+    expect(completed?.data.spokenText).toBe("Só a minha.");
+    expect(String(completed?.data.fullText)).not.toContain("outro turno");
+  });
+
+  it("an ended call gets no more output, and a late write never revives it", async () => {
+    const { door } = harness();
+    const call = makeCall("push");
+    await door.handleControl({
+      op: "utterance",
+      callId: call.id,
+      turnId: "vt_late",
+      text: "demora",
+      speaker: { kind: "operator", id: "operator" },
+    });
+    await door.handleControl({ op: "end", callId: call.id, reason: "user" });
+    await until(() => listVoiceTurns(call.id)[0]?.state === "done", "turn done in the session");
+    await tick();
+    const types = listVoiceEvents(call.id).map((event) => event.type);
+    const endedAt = types.indexOf("call.ended");
+    expect(endedAt).toBeGreaterThanOrEqual(0);
+    expect(types.slice(endedAt + 1)).toEqual([]);
+    updateVoiceCall(call.id, { state: "active", agentState: "listening" });
+    expect(getVoiceCall(call.id)?.state).toBe("ended");
   });
 
   it("runs one turn at a time per call, in order", async () => {

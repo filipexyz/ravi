@@ -15,7 +15,7 @@ Uma chamada fica em cima de uma sessão que já existe. O que a pessoa fala vira
 ## Regras
 
 - Agentes não abrem chamadas nem falam nelas (`VOICE_AGENT_TURN_REFUSED`, exit 3). Quem fala é o operador, um aparelho pareado ou um convidado.
-- Aprovação é só por toque: `ravi voice calls approve <call> <approval> --execute`. Por voz, só cancelar ou negar.
+- Aprovação é só por toque: `ravi voice calls approve <call> <approval> --version <n> --digest <d> --execute` (versão e digest vêm de `turn.approval_requested`). Por voz, só cancelar ou negar.
 - `cancel-turn` cancela só o turno desta chamada; `end` encerra a chamada e o trabalho em andamento continua na sessão.
 - Chaves de aparelho aparecem uma vez. Nunca cole chave em chat.
 
@@ -29,7 +29,7 @@ ravi voice calls send <call> "texto"             # digitar na chamada
 ravi voice calls push <call> --audio <arquivo>   # push-to-talk
 ravi voice calls transcript <call>
 ravi voice calls silence <call>
-ravi voice calls cancel-turn <call>
+ravi voice calls cancel-turn <call> --turn <id>   # o id vem de turn.accepted
 ravi voice calls end <call>
 ravi voice devices pair --contact <id> --label "iPhone" --session main --execute
 ravi voice devices revoke <device>

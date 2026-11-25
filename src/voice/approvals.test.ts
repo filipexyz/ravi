@@ -65,7 +65,26 @@ describe("voice approvals", () => {
       createdAt: now,
       expiresAt: now + 60_000,
     });
-    const result = await deliverVoiceApprovalRequest({ channel: "voice", to: c.id, text: "Rodar git push?" });
+    // Two open requests: the shown text is bound to the id the producer named.
+    createApprovalRequest({
+      id: "req_2",
+      type: "permission",
+      channel: "voice",
+      accountId: "voice",
+      chatId: c.id,
+      createdAt: now + 1,
+      expiresAt: now + 60_000,
+    });
+    expect(await deliverVoiceApprovalRequest({ channel: "voice", to: c.id, text: "sem id" })).toEqual({
+      success: false,
+      error: "VOICE_NOT_AN_APPROVAL",
+    });
+    const result = await deliverVoiceApprovalRequest({
+      channel: "voice",
+      to: c.id,
+      text: "Rodar git push?",
+      approvalRequestId: "req_1",
+    });
     expect(result).toEqual({ success: true, messageId: voiceApprovalMessageId(c.id, "req_1") });
     const open = listOpenVoiceApprovals(c.id);
     expect(open).toEqual([

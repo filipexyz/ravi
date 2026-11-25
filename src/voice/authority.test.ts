@@ -84,7 +84,7 @@ describe("voice authority", () => {
   });
 
   it("a paired device speaks as its contact, only on its sessions and its own calls", () => {
-    const context = pairedDevice(["main"]);
+    const context = pairedDevice(["agent:main:main"]);
     const caller = runWithContext({ context, contextId: context.contextId }, () =>
       resolveVoiceCaller("voice calls start"),
     );
@@ -98,8 +98,34 @@ describe("voice authority", () => {
     expect(code(() => assertCallerControlsCall(caller, callFor("vd_other"), "read"))).toBe("VOICE_CALL_FORBIDDEN");
   });
 
+  it("a device paired to a session key keeps it after a rename and never gets the released name", () => {
+    const context = pairedDevice(["agent:main:main"]);
+    const caller = runWithContext({ context, contextId: context.contextId }, () =>
+      resolveVoiceCaller("voice calls start"),
+    );
+    expect(
+      code(() => assertCallerMayCallSession(caller, { name: "renamed", sessionKey: "agent:main:main" })),
+    ).toBeNull();
+    expect(code(() => assertCallerMayCallSession(caller, { name: "main", sessionKey: "agent:other:main" }))).toBe(
+      "VOICE_SESSION_FORBIDDEN",
+    );
+  });
+
+  it("an issued context reaches only the calls it opened", () => {
+    const context = createRuntimeContext({ kind: "cli", capabilities: [], ttlMs: 60_000 });
+    const caller = runWithContext({ context, contextId: context.contextId }, () =>
+      resolveVoiceCaller("voice calls show"),
+    );
+    expect(caller.kind).toBe("context");
+    const operatorCall = { ...callFor("operator"), speaker: { kind: "operator" as const, id: "operator" } };
+    expect(code(() => assertCallerControlsCall(caller, operatorCall, "read"))).toBe("VOICE_CALL_FORBIDDEN");
+    expect(
+      code(() => assertCallerControlsCall(caller, { ...operatorCall, callerContextId: context.contextId }, "control")),
+    ).toBeNull();
+  });
+
   it("a revoked device key is refused", () => {
-    const context = pairedDevice(["main"]);
+    const context = pairedDevice(["agent:main:main"]);
     markVoiceDeviceRevoked("vd_1");
     const result = runWithContext({ context, contextId: context.contextId }, () =>
       code(() => resolveVoiceCaller("voice calls start")),

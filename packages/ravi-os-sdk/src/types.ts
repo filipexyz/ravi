@@ -26853,7 +26853,7 @@ export type VoiceCallsApproveInput = {
 export type VoiceCallsApproveReturn = {
   approvalId: string;
   callId: string;
-  decision: "approved";
+  decision: "approved" | "rejected" | "pending";
 };
 
 /** Input shape for `voice.calls.audio`. */
@@ -26912,7 +26912,7 @@ export type VoiceCallsDenyInput = {
 export type VoiceCallsDenyReturn = {
   approvalId: string;
   callId: string;
-  decision: "rejected";
+  decision: "approved" | "rejected" | "pending";
 };
 
 /** Input shape for `voice.calls.end`. */

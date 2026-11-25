@@ -25,7 +25,11 @@ const VOICE_EVENT_SCHEMA = {
 
 export interface VoiceStreamDeps {
   subscribe: (signal: AbortSignal, topic: string) => AsyncIterable<{ topic: string; data: Record<string, unknown> }>;
+  /** How long the live loop waits quietly before re-reading the store (default 5 s). */
+  gapCheckMs?: number;
 }
+
+const VOICE_STREAM_GAP_CHECK_MS = 5_000;
 
 const defaultDeps: VoiceStreamDeps = {
   subscribe: (signal, topic) => nats.subscribe(topic, { signal }),
@@ -141,17 +145,39 @@ async function* subscribeVoiceCall(
       if (event.type === "call.ended") return;
     }
     if (getVoiceCall(callId)?.state === "ended" && !buffered.length) return;
+    // The subscription may register after the replay read. Events are stored
+    // before they are published, so any gap (a live seq past cursor + 1, or a
+    // quiet spell) is filled from the store in order.
     while (!local.signal.aborted) {
       if (buffered.length === 0) {
         await new Promise<void>((resolve) => {
-          waker.wake = resolve;
-          local.signal.addEventListener("abort", () => resolve(), { once: true });
+          const timer = setTimeout(resolve, deps.gapCheckMs ?? VOICE_STREAM_GAP_CHECK_MS);
+          waker.wake = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+          local.signal.addEventListener("abort", () => waker.wake?.(), { once: true });
         });
         waker.wake = null;
+        if (buffered.length === 0 && !local.signal.aborted) {
+          for (const stored of listVoiceEvents(callId, { after: cursor, limit: 5000 })) {
+            cursor = stored.seq;
+            yield { id: String(stored.seq), event: "message", data: stored };
+            if (stored.type === "call.ended") return;
+          }
+        }
         continue;
       }
       const event = buffered.shift() as VoiceEvent;
       if (typeof event?.seq !== "number" || event.seq <= cursor) continue;
+      if (event.seq > cursor + 1) {
+        for (const stored of listVoiceEvents(callId, { after: cursor, limit: 5000 })) {
+          if (stored.seq >= event.seq) break;
+          cursor = stored.seq;
+          yield { id: String(stored.seq), event: "message", data: stored };
+          if (stored.type === "call.ended") return;
+        }
+      }
       cursor = event.seq;
       yield { id: String(event.seq), event: "message", data: event };
       if (event.type === "call.ended") return;

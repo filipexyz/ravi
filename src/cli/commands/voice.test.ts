@@ -35,11 +35,12 @@ mock.module("../../permissions/scope.js", () => ({
 
 const { cleanupIsolatedRaviState, createIsolatedRaviState } = await import("../../test/ravi-state.js");
 const { getOrCreateSession } = await import("../../router/sessions.js");
-const { createApprovalRequest } = await import("../../approval/store.js");
+const { claimApprovalDecision, createApprovalRequest } = await import("../../approval/store.js");
 const { deliverVoiceApprovalRequest, listOpenVoiceApprovals } = await import("../../voice/approvals.js");
 const { getVoiceCall, listVoiceEvents } = await import("../../voice/store.js");
 const { ContractError } = await import("../agent-contract.js");
-const { VoiceCallsCommands, VoiceDevicesCommands, VoiceEnginesCommands } = await import("./voice.js");
+const { VoiceCallsCommands, VoiceDevicesCommands, VoiceEnginesCommands, setVoiceApprovalDecisionWaitForTests } =
+  await import("./voice.js");
 
 let stateDir: string | null = null;
 
@@ -130,7 +131,12 @@ describe("ravi voice commands", () => {
       createdAt: now,
       expiresAt: now + 60_000,
     });
-    await deliverVoiceApprovalRequest({ channel: "voice", to: callId, text: "Apagar a pasta build?" });
+    await deliverVoiceApprovalRequest({
+      channel: "voice",
+      to: callId,
+      text: "Apagar a pasta build?",
+      approvalRequestId: "req_9",
+    });
     const open = listOpenVoiceApprovals(callId)[0];
     expect(open?.approvalId).toBe("req_9");
 
@@ -141,7 +147,25 @@ describe("ravi voice commands", () => {
     expect(dry.code).toBe("WRITE_REQUIRES_EXECUTE");
     expect(dry.exitCode).toBe(3);
 
-    await quiet(() => calls.approve(callId, "req_9", "1", open?.digest, true, true));
+    // Nothing decides the request: the call keeps it open and reports pending.
+    setVoiceApprovalDecisionWaitForTests(50);
+    const pending = (await quiet(() => calls.approve(callId, "req_9", "1", open?.digest, true, true))) as Record<
+      string,
+      unknown
+    >;
+    expect(pending.decision).toBe("pending");
+    expect(listOpenVoiceApprovals(callId)).toHaveLength(1);
+
+    // The approval service commits the decision: only then is it resolved in the call.
+    setTimeout(() => {
+      claimApprovalDecision({ id: "req_9", decision: "approved", decidedBy: "contact_owner", now: Date.now() });
+    }, 20);
+    setVoiceApprovalDecisionWaitForTests(2_000);
+    const decided = (await quiet(() => calls.approve(callId, "req_9", "1", open?.digest, true, true))) as Record<
+      string,
+      unknown
+    >;
+    expect(decided.decision).toBe("approved");
     const reaction = emitted.find((message) => message.topic === "ravi.inbound.reaction");
     expect(reaction?.data).toMatchObject({
       targetMessageId: `voice:${callId}:req_9`,

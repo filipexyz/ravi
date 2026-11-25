@@ -32,7 +32,7 @@ function raviClients() {
 
 export default defineAgent({
   entry: async (ctx: JobContext) => {
-    const meta = JSON.parse(ctx.job.metadata || "{}") as { callId?: string };
+    const meta = JSON.parse(ctx.job.metadata || "{}") as { callId?: string; language?: string; voice?: string | null };
     if (!meta.callId) throw new Error("job metadata has no callId");
     const callId = meta.callId;
     const { client, stream } = raviClients();
@@ -40,8 +40,12 @@ export default defineAgent({
     await ctx.connect();
     const session = new voice.AgentSession({
       vad: await silero.VAD.load(),
-      stt: new openai.STT({ model: "gpt-4o-transcribe" }),
-      tts: new elevenlabs.TTS({ model: "eleven_multilingual_v2" }),
+      // The profile's language and voice come with the dispatch; plugin defaults otherwise.
+      stt: new openai.STT({
+        model: "gpt-4o-transcribe",
+        ...(meta.language ? { language: meta.language.split("-")[0] } : {}),
+      }),
+      tts: new elevenlabs.TTS({ model: "eleven_multilingual_v2", ...(meta.voice ? { voiceId: meta.voice } : {}) }),
       // No LLM: the Ravi session is the brain.
     });
     await session.start({

@@ -7,8 +7,8 @@
  */
 import "reflect-metadata";
 import { readFileSync, statSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { z } from "zod";
+import { getApprovalRequest } from "../../approval/store.js";
 import { listElevenLabsVoices } from "../../audio/generator.js";
 import { findContactsByTag, getContactDetails } from "../../contacts.js";
 import { OWNER_CONTACT_TAG } from "../../knowledge/owner.js";
@@ -43,7 +43,7 @@ import {
 import { newTurnId } from "../../voice/door.js";
 import { HANDSFREE_AGENT_NAME, mintLiveKitRoomToken } from "../../voice/engines/handsfree.js";
 import { checkVoiceEngines, getVoiceEngine, listVoiceEngines } from "../../voice/engines/index.js";
-import { buildLiveInstructions, createLiveSession, liveApiKey } from "../../voice/engines/live.js";
+import { buildLiveInstructions, closeLiveSession, createLiveSession, liveApiKey } from "../../voice/engines/live.js";
 import { mockEngine } from "../../voice/engines/mock.js";
 import { estimateSttCostUsd, pushEngine } from "../../voice/engines/push.js";
 import { emitVoiceEvent, sendVoiceControl } from "../../voice/events.js";
@@ -91,6 +91,7 @@ import {
   contractDryRun,
   contractFail,
 } from "../agent-contract.js";
+import { resolveCallerPath } from "../caller-cwd.js";
 import { getContext } from "../context.js";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { declareCommandReturns } from "./operational-return-schemas.js";
@@ -317,6 +318,25 @@ async function openConnection(
   return { connectionKind: "none", sdpAnswer: null, roomUrl: null, roomToken: null };
 }
 
+/**
+ * The provider connect can take seconds; if the call ended meanwhile, close
+ * what was just opened and refuse, so an ended call never comes back.
+ */
+async function refuseLateConnection(
+  op: string,
+  callId: string,
+  material: ConnectionMaterial,
+  asJson?: boolean,
+): Promise<void> {
+  const current = getVoiceCall(callId);
+  if (current && current.state !== "ending" && current.state !== "ended") return;
+  if (current?.engine === "live" && material.providerRef) {
+    const apiKey = liveApiKey();
+    if (apiKey) await closeLiveSession({ apiKey, sessionId: material.providerRef });
+  }
+  fail(op, "VOICE_CALL_ENDED", `Call ${callId} ended while it was connecting.`, asJson);
+}
+
 function readClip(
   op: string,
   input: { audioPath?: string; audioBase64?: string; mime?: string },
@@ -326,7 +346,7 @@ function readClip(
     fail(op, "USAGE_ERROR", "Pass exactly one of --audio <file> or --audio-data <b64>.", asJson, CONTRACT_EXIT_USAGE);
   }
   if (input.audioPath) {
-    const path = resolve(getContext()?.cwd ?? process.cwd(), input.audioPath);
+    const path = resolveCallerPath(input.audioPath, "read");
     const size = statSync(path).size;
     if (size > MAX_CLIP_BYTES) fail(op, "VOICE_CLIP_TOO_LARGE", "Clips are limited to 25 MB.", asJson);
     const mime = input.mime ?? inferAudioMimeType(path);
@@ -356,6 +376,56 @@ async function emitApprovalReaction(input: {
   });
 }
 
+let approvalDecisionWaitMs = 10_000;
+/** Tests shorten the wait for the approval service's committed decision. */
+export function setVoiceApprovalDecisionWaitForTests(ms: number): void {
+  approvalDecisionWaitMs = ms;
+}
+
+type SubmittedDecision = "approved" | "rejected" | "pending";
+
+/**
+ * Answer through the regular approval path (a reaction the approval service
+ * checks against the grantor gate), then report only what the service
+ * committed. The call shows the request as resolved only after that; if the
+ * service has not decided yet, the answer is `pending` and the request stays
+ * open in the call.
+ */
+async function submitApprovalDecision(
+  op: string,
+  caller: VoiceCaller,
+  callId: string,
+  approvalId: string,
+  emoji: string,
+  asJson?: boolean,
+): Promise<SubmittedDecision> {
+  await emitApprovalReaction({ callId, approvalId, senderId: approvalSender(caller), emoji });
+  const deadline = Date.now() + approvalDecisionWaitMs;
+  for (;;) {
+    const record = getApprovalRequest(approvalId);
+    if (record && record.status === "decided" && record.decision) {
+      await emitVoiceEvent(callId, "turn.approval_resolved", {
+        approvalId,
+        decision: record.decision,
+        by: caller.speaker.id,
+      });
+      await sendVoiceControl({ op: "approval-resolved", callId, approvalId, decision: record.decision });
+      return record.decision;
+    }
+    if (!record || record.status !== "pending") {
+      fail(op, "VOICE_APPROVAL_NOT_OPEN", `Approval ${approvalId} expired or was withdrawn.`, asJson);
+    }
+    if (Date.now() >= deadline) return "pending";
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
+function decisionLine(decision: SubmittedDecision): string {
+  if (decision === "approved") return "✅ Approved.";
+  if (decision === "rejected") return "❌ Denied.";
+  return "⏳ Sent; the approval has not been decided yet. It stays open in the call.";
+}
+
 function approvalSender(caller: VoiceCaller): string {
   return caller.kind === "device" && caller.device ? caller.device.id : VOICE_OPERATOR_SENDER;
 }
@@ -380,10 +450,8 @@ export class VoiceTargetsCommands {
       let sessions: SessionEntry[];
       if (caller.kind === "device") {
         const allowed = caller.device?.sessions ?? [];
-        sessions = listSessions().filter(
-          (session) =>
-            allowed.includes("*") || allowed.includes(session.name ?? "") || allowed.includes(session.sessionKey),
-        );
+        // Devices are paired to session keys, which survive a rename.
+        sessions = listSessions().filter((session) => allowed.includes("*") || allowed.includes(session.sessionKey));
       } else if (caller.kind === "worker") {
         sessions = [];
       } else {
@@ -478,6 +546,7 @@ export class VoiceCallsCommands {
         await emitVoiceEvent(call.id, "call.ended", { reason: "connect_failed", usage: call.usage });
         throw error;
       }
+      await refuseLateConnection(op, call.id, material, asJson);
       const waitingForOffer = mode === "live" && !material.sdpAnswer;
       const updated = updateVoiceCall(call.id, {
         state: waitingForOffer ? "starting" : "active",
@@ -526,6 +595,7 @@ export class VoiceCallsCommands {
       }
       const profile = getVoiceProfile(call.profileId) ?? (getVoiceProfile(DEFAULT_VOICE_PROFILE_ID) as VoiceProfile);
       const material = await openConnection(call, profile, offer, true);
+      await refuseLateConnection(op, call.id, material, asJson);
       updateVoiceCall(call.id, {
         state: "active",
         agentState: "listening",
@@ -723,7 +793,7 @@ export class VoiceCallsCommands {
       const clip = getVoiceAudio(call.id, itemId);
       if (!clip) fail(op, "VOICE_AUDIO_NOT_FOUND", `No clip ${itemId} (clips are deleted when the call ends).`, asJson);
       if (out) {
-        const path = resolve(getContext()?.cwd ?? process.cwd(), out);
+        const path = resolveCallerPath(out, "write");
         writeFileSync(path, clip.bytes);
         return emit({ callId: call.id, item: itemId, mime: clip.mime, path, bytes: clip.bytes.length }, asJson, () =>
           console.log(`Saved ${path}`),
@@ -824,19 +894,8 @@ export class VoiceCallsCommands {
       if (execute !== true) {
         contractDryRun(op, { callId: call.id, approvalId, text: approval.text }, { asJson });
       }
-      await emitApprovalReaction({
-        callId: call.id,
-        approvalId,
-        senderId: approvalSender(caller),
-        emoji: VOICE_APPROVE_EMOJI,
-      });
-      await emitVoiceEvent(call.id, "turn.approval_resolved", {
-        approvalId,
-        decision: "approved",
-        by: caller.speaker.id,
-      });
-      await sendVoiceControl({ op: "approval-resolved", callId: call.id, approvalId, decision: "approved" });
-      return emit({ callId: call.id, approvalId, decision: "approved" }, asJson, () => console.log("✅ Approved."));
+      const decision = await submitApprovalDecision(op, caller, call.id, approvalId, VOICE_APPROVE_EMOJI, asJson);
+      return emit({ callId: call.id, approvalId, decision }, asJson, () => console.log(decisionLine(decision)));
     });
   }
 
@@ -854,19 +913,8 @@ export class VoiceCallsCommands {
       assertCallerControlsCall(caller, call, "approve");
       const approval = listOpenVoiceApprovals(call.id).find((item) => item.approvalId === approvalId);
       if (!approval) fail(op, "VOICE_APPROVAL_NOT_OPEN", `Approval ${approvalId} is not open in this call.`, asJson);
-      await emitApprovalReaction({
-        callId: call.id,
-        approvalId,
-        senderId: approvalSender(caller),
-        emoji: VOICE_REJECT_EMOJI,
-      });
-      await emitVoiceEvent(call.id, "turn.approval_resolved", {
-        approvalId,
-        decision: "rejected",
-        by: caller.speaker.id,
-      });
-      await sendVoiceControl({ op: "approval-resolved", callId: call.id, approvalId, decision: "rejected" });
-      return emit({ callId: call.id, approvalId, decision: "rejected" }, asJson, () => console.log("❌ Denied."));
+      const decision = await submitApprovalDecision(op, caller, call.id, approvalId, VOICE_REJECT_EMOJI, asJson);
+      return emit({ callId: call.id, approvalId, decision }, asJson, () => console.log(decisionLine(decision)));
     });
   }
 
@@ -1214,14 +1262,18 @@ export class VoiceDevicesCommands {
           CONTRACT_EXIT_POLICY,
         );
       }
-      for (const name of sessions) {
-        if (name !== "*" && !resolveSession(name))
-          fail(op, "VOICE_SESSION_NOT_FOUND", `Session ${name} not found.`, asJson);
-      }
+      // Store the session key, not the typed name: a rename (or a new session
+      // taking a released name) must not change what the device may call.
+      const sessionKeys = sessions.map((name) => {
+        if (name === "*") return name;
+        const session = resolveSession(name);
+        if (!session) fail(op, "VOICE_SESSION_NOT_FOUND", `Session ${name} not found.`, asJson);
+        return session.sessionKey;
+      });
       const plan = {
         contactId,
         label: label ?? (worker ? "voice worker" : "device"),
-        sessions,
+        sessions: sessionKeys,
         kind: worker ? VOICE_WORKER_CONTEXT_KIND : VOICE_DEVICE_CONTEXT_KIND,
         ttlDays: DEVICE_TTL_MS / 86_400_000,
       };
@@ -1239,7 +1291,7 @@ export class VoiceDevicesCommands {
         id: deviceId,
         label: plan.label,
         contactId,
-        sessions,
+        sessions: sessionKeys,
         contextId: context.contextId,
         createdAt: context.createdAt,
         expiresAt: context.expiresAt ?? Date.now() + DEVICE_TTL_MS,
@@ -1289,10 +1341,17 @@ export class VoiceDevicesCommands {
       if (!device) fail(op, "VOICE_DEVICE_NOT_FOUND", `Device ${deviceId} not found.`, asJson);
       revokeRuntimeContext(device.contextId, { reason: "voice_device_revoked" });
       const revoked = markVoiceDeviceRevoked(device.id);
+      // The revoked record is durable: the door's sweep ends any call this
+      // loop could not reach. Ask now so they end at once.
       const ended: string[] = [];
       for (const call of listVoiceCalls({ activeOnly: true, limit: 500 })) {
         if (call.speaker.kind === "device" && call.speaker.id === device.id) {
-          await sendVoiceControl({ op: "end", callId: call.id, reason: "device_revoked" });
+          try {
+            await sendVoiceControl({ op: "end", callId: call.id, reason: "device_revoked" });
+          } catch (error) {
+            // no-cause: the door's sweep ends this call from the revoked record.
+            console.warn(`Call ${call.id} will end on the door's next sweep: ${errorDiagnostic(error).cause}`);
+          }
           ended.push(call.id);
         }
       }
@@ -1486,8 +1545,12 @@ declareCommandReturns(VoiceCallsCommands, {
   }),
   silence: z.object({ callId: z.string(), silenced: z.literal(true) }),
   cancelTurn: z.object({ callId: z.string(), turnId: z.string(), cancelRequested: z.literal(true) }),
-  approve: z.object({ callId: z.string(), approvalId: z.string(), decision: z.literal("approved") }),
-  deny: z.object({ callId: z.string(), approvalId: z.string(), decision: z.literal("rejected") }),
+  approve: z.object({
+    callId: z.string(),
+    approvalId: z.string(),
+    decision: z.enum(["approved", "rejected", "pending"]),
+  }),
+  deny: z.object({ callId: z.string(), approvalId: z.string(), decision: z.enum(["approved", "rejected", "pending"]) }),
   end: z.object({ callId: z.string(), ended: z.literal(true) }),
 });
 

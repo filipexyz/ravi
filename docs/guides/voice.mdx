@@ -57,8 +57,8 @@ The stream opens with `call.snapshot` and then sends every event with a per-call
 
 ## Approvals and control
 
-- A request that needs approval shows in the call as `turn.approval_requested`. It is approved only with a tap (`ravi voice calls approve <call> <approval> --execute`, or `call.approve()` in the kit), never by voice. Saying "cancela" or "não" cancels or denies.
-- `silence` stops speech at once. `cancel-turn` cancels this call's running turn and nothing else. `end` ends the call; work already running keeps going in the session.
+- A request that needs approval shows in the call as `turn.approval_requested`. It is approved only with a tap (`ravi voice calls approve <call> <approval> --version <n> --digest <d> --execute`, with both values from `turn.approval_requested`, or `call.approve()` in the kit), never by voice. Saying "cancela" or "não" cancels or denies.
+- `silence` stops speech at once. `cancel-turn --turn <id>` (the id from `turn.accepted`) cancels this call's turn and nothing else. `end` ends the call; work already running keeps going in the session.
 - Agents cannot open calls or speak in them.
 
 ## Profiles and limits

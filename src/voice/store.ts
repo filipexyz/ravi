@@ -282,7 +282,20 @@ export type VoiceCallPatch = Partial<
 export function updateVoiceCall(id: string, patch: VoiceCallPatch, now = Date.now()): VoiceCall | null {
   const current = getVoiceCall(id);
   if (!current) return null;
-  const next: VoiceCall = { ...current, ...patch, updatedAt: now };
+  // A call that is ending or ended stays that way: a late write (a provider
+  // connect that finished after `end`) never brings it back.
+  const terminal = current.state === "ending" || current.state === "ended";
+  const effective: VoiceCallPatch = { ...patch };
+  if (
+    terminal &&
+    patch.state !== undefined &&
+    patch.state !== "ended" &&
+    !(patch.state === "ending" && current.state === "ending")
+  ) {
+    effective.state = current.state;
+    effective.agentState = current.agentState;
+  }
+  const next: VoiceCall = { ...current, ...effective, updatedAt: now };
   const database = store();
   executeWrite(
     database,

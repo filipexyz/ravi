@@ -21,7 +21,7 @@ export interface OpenApproval {
   text: string;
 }
 
-type Listener = (event: VoiceEvent) => void;
+type Listener = (event: VoiceEvent) => void | Promise<void>;
 
 /** The two SDK clients a voice app needs, built from one key. */
 export function createRaviVoice(config: RaviVoiceConfig) {
@@ -182,13 +182,27 @@ export class RaviVoiceCall {
     }
   }
 
+  private reportListenerError(event: VoiceEvent, error: unknown): void {
+    if (event.type === "error") return;
+    this.dispatch({
+      callId: this.id,
+      seq: this.lastSeq,
+      type: "error",
+      data: { code: "LISTENER_FAILED", for: event.type, error: String(error) },
+    });
+  }
+
   private dispatch(event: VoiceEvent): void {
     for (const key of [event.type, "*"]) {
       for (const listener of this.listeners.get(key) ?? []) {
+        // A listener error, sync or async, must not stop the stream.
         try {
-          listener(event);
-        } catch {
-          // A listener error must not stop the stream.
+          const result = listener(event);
+          if (result && typeof (result as Promise<void>).catch === "function") {
+            (result as Promise<void>).catch((error) => this.reportListenerError(event, error));
+          }
+        } catch (error) {
+          this.reportListenerError(event, error);
         }
       }
     }

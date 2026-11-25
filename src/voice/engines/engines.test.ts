@@ -144,6 +144,50 @@ describe("voice engines", () => {
     expect(JSON.stringify(sentFrames)).not.toContain("AAAA");
   });
 
+  it("a delegation keeps the utterance whose transcript completed before the timer fired", () => {
+    const listeners: Record<string, (value?: any) => void> = {};
+    const socket: LiveSocket = {
+      send: () => {},
+      close: () => {},
+      on: ((event: string, listener: (value?: any) => void) => {
+        listeners[event] = listener;
+      }) as LiveSocket["on"],
+    };
+    const timers: Array<() => void> = [];
+    const delegations: Array<{ delegationId: string; text: string }> = [];
+    const users: string[] = [];
+    const sideband = new LiveSideband({
+      apiKey: "k",
+      sessionId: "ls_2",
+      socketFactory: () => socket,
+      setTimer: (fn) => timers.push(fn),
+      handlers: {
+        onDelegation: (input) => delegations.push(input),
+        onUserTranscript: (text) => users.push(text),
+        onAgentTranscript: () => {},
+        onUsage: () => {},
+        onClosed: () => {},
+        onError: () => {},
+      },
+    });
+    sideband.connect();
+    const send = (event: Record<string, unknown>) => listeners.message?.(JSON.stringify(event));
+    send({ type: "session.input_transcript.delta", delta: "agenda amanhã" });
+    send({ type: "session.delegation.created", delegation: { id: "d1" } });
+    send({ type: "session.input_transcript.completed" });
+    timers[0]?.();
+    // Transcript completed before the delegation was created, too.
+    send({ type: "session.input_transcript.delta", delta: "e o tempo" });
+    send({ type: "session.input_transcript.completed" });
+    send({ type: "session.delegation.created", delegation: { id: "d2" } });
+    timers[1]?.();
+    expect(delegations).toEqual([
+      { delegationId: "d1", text: "agenda amanhã" },
+      { delegationId: "d2", text: "e o tempo" },
+    ]);
+    expect(users).toEqual(["agenda amanhã", "e o tempo"]);
+  });
+
   it("chunks long appends", () => {
     const chunks = chunkText("Uma frase. ".repeat(400), 1500);
     expect(chunks.length).toBeGreaterThan(1);

@@ -176,6 +176,8 @@ export interface LiveSidebandOptions {
 export class LiveSideband {
   private socket: LiveSocket | null = null;
   private userBuffer = "";
+  /** The last finished utterance, kept until a delegation takes it. */
+  private completedUtterance = "";
   private agentBuffer = "";
   private readonly seenDelegations = new Set<string>();
   private closed = false;
@@ -289,18 +291,23 @@ export class LiveSideband {
   }
 
   private takeUserText(): string {
-    const text = this.userBuffer.trim();
+    // Words still streaming win; otherwise the utterance that finished before
+    // (or while) the delegation settled. Either is consumed once.
+    const open = this.userBuffer.trim();
     this.userBuffer = "";
-    if (text) this.options.handlers.onUserTranscript(text);
+    if (open) this.options.handlers.onUserTranscript(open);
+    const text = open || this.completedUtterance;
+    this.completedUtterance = "";
     return text;
   }
 
   private flushUser(): void {
-    // A finished user utterance without a delegation is conversation the voice
-    // model handled on its own; record it, it does not become a session turn.
+    // A finished user utterance is recorded now. If no delegation takes it, it
+    // was conversation the voice model handled on its own.
     const text = this.userBuffer.trim();
     if (!text) return;
     this.userBuffer = "";
+    this.completedUtterance = text;
     this.options.handlers.onUserTranscript(text);
   }
 
