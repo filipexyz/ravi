@@ -1382,7 +1382,7 @@ function buildOmniDbAuthCheck(report: OmniDbAuthReport | null): LegacyDoctorChec
       data,
     };
   }
-  if (report.status === "password_required" || report.status === "rejected") {
+  if (report.status === "password_required") {
     return { ...base, status: "ok", summary: report.message, details, data };
   }
   return { ...base, status: "skip", summary: report.message, details, data };

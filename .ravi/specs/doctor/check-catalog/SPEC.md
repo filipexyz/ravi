@@ -61,8 +61,12 @@ Checks MUST NOT mutate state.
 - The probe MUST send only a StartupMessage, never a password or a query, and
   MUST answer an AuthenticationOk with Terminate. It MUST probe only loopback
   hosts; a remote database is reported as `remote`, not probed.
-- A refused connection, a timeout or an unparseable URL MUST stay `unknown`
-  (skipped), never `pass`. The URL MUST be printed with its password redacted.
+- Only a password request on every answering address is `pass`. A timeout, a
+  non-PostgreSQL answer, a pre-authentication rejection, a TLS-only URL
+  (`sslmode=require|verify-ca|verify-full`) or an unparseable URL MUST stay a
+  skipped check, never `pass`; an actively refused connection only means nothing
+  listens on that address. The URL MUST be printed with its password and any
+  secret-looking query parameter redacted.
 - Ravi does not install that database, so the check reports and never rewrites
   pg_hba.conf.
 

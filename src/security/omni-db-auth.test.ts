@@ -80,11 +80,21 @@ describe("omni database URL", () => {
     expect(redacted).toContain("omni:***@");
   });
 
+  it("redacts secret-looking query parameters, keeping the others", () => {
+    const redacted = redactDatabaseUrl("postgresql://omni@127.0.0.1/omni?password=s3cret&sslmode=disable&api_key=k9");
+    expect(redacted).not.toContain("s3cret");
+    expect(redacted).not.toContain("k9");
+    expect(redacted).toContain("sslmode=disable");
+  });
+
   it("probes only loopback hosts", () => {
     expect(loopbackAddressesFor("localhost")).toEqual(["127.0.0.1", "::1"]);
     expect(loopbackAddressesFor("127.0.0.1")).toEqual(["127.0.0.1"]);
     expect(loopbackAddressesFor("[::1]")).toEqual(["::1"]);
+    expect(loopbackAddressesFor("[::ffff:7f00:1]")).toEqual(["::ffff:7f00:1"]);
+    expect(loopbackAddressesFor(new URL("postgresql://root@[::ffff:127.0.0.1]/omni").hostname)).not.toBeNull();
     expect(loopbackAddressesFor("db.example.com")).toBeNull();
+    expect(loopbackAddressesFor("[::ffff:10.0.0.5]")).toBeNull();
     expect(loopbackAddressesFor("10.0.0.5")).toBeNull();
   });
 });
@@ -101,6 +111,9 @@ describe("startup message and reply", () => {
     expect(classifyStartupReply(authReply(0))).toEqual({ kind: "auth_ok" });
     expect(classifyStartupReply(authReply(10))).toEqual({ kind: "auth_required", method: 10 });
     expect(classifyStartupReply(errorReply())).toEqual({ kind: "error" });
+    expect(classifyStartupReply(Buffer.from("HTTP/1.1 400 Bad Request\r\n\r\n"))).toEqual({ kind: "not_postgres" });
+    expect(classifyStartupReply(Buffer.from("Ready\n"))).toEqual({ kind: "not_postgres" });
+    expect(classifyStartupReply(authReply(99))).toEqual({ kind: "not_postgres" });
     expect(classifyStartupReply(authReply(0).subarray(0, 4))).toBeNull();
   });
 });
@@ -139,6 +152,12 @@ describe("probeOmniDatabaseAuth against a fake server", () => {
     expect(report.status).toBe("rejected");
   });
 
+  it("reports an HTTP answer on the port as unknown, not as safe", async () => {
+    const server = await fakePostgres(Buffer.from("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n"));
+    const report = await probeOmniDatabaseAuth(`postgresql://root@127.0.0.1:${server.port}/omni`);
+    expect(report.status).toBe("unknown");
+  });
+
   it("reports nothing listening as unknown, not as safe", async () => {
     const server = await fakePostgres(authReply(0));
     const port = server.port;
@@ -162,6 +181,42 @@ describe("probeOmniDatabaseAuth decisions", () => {
     expect(report.status).toBe("no_password_login");
     expect(report.passwordlessAddresses).toEqual(["::1"]);
     expect(report.port).toBe(5432);
+  });
+
+  it("stays unknown when one localhost address times out, even if the other asks for a password", async () => {
+    const report = await probeOmniDatabaseAuth("postgresql://root@localhost/omni", {
+      probe: replying({ "127.0.0.1": { kind: "auth_required", method: 10 }, "::1": { kind: "unreachable" } }),
+    });
+    expect(report.status).toBe("unknown");
+  });
+
+  it("passes localhost when one address refuses (nothing listens) and the other asks for a password", async () => {
+    const report = await probeOmniDatabaseAuth("postgresql://root@localhost/omni", {
+      probe: replying({ "127.0.0.1": { kind: "auth_required", method: 10 }, "::1": { kind: "refused" } }),
+    });
+    expect(report.status).toBe("password_required");
+  });
+
+  it("does not probe a TLS-only URL in plaintext", async () => {
+    let probed = false;
+    for (const mode of ["require", "verify-ca", "verify-full"]) {
+      const report = await probeOmniDatabaseAuth(`postgresql://root@127.0.0.1/omni?sslmode=${mode}`, {
+        probe: async () => {
+          probed = true;
+          return { kind: "error" };
+        },
+      });
+      expect(report.status).toBe("unknown");
+    }
+    expect(probed).toBe(false);
+  });
+
+  it("reports a malformed percent escape as unknown with its reason", async () => {
+    const report = await probeOmniDatabaseAuth("postgresql://ro%E0%A4%A@127.0.0.1/omni", {
+      probe: async () => ({ kind: "auth_ok" }),
+    });
+    expect(report.status).toBe("unknown");
+    expect(report.message).toContain("percent escape");
   });
 
   it("does not probe a remote host", async () => {

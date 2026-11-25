@@ -953,7 +953,7 @@ describe("doctor Omni database authentication check", () => {
     expect(inspectDoctor(makeHealthyDeps()).checks.find((item) => item.id === "runtime.omni_db_auth")?.status).toBe(
       "skip",
     );
-    for (const status of ["not_configured", "remote", "unknown"] as const) {
+    for (const status of ["not_configured", "remote", "unknown", "rejected"] as const) {
       const report = inspectDoctor(makeHealthyDeps(), { omniDbAuth: omniDbReport({ status }) });
       expect(report.checks.find((item) => item.id === "runtime.omni_db_auth")?.status).toBe("skip");
       expect(report.summary.warnings).toBe(0);

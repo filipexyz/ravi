@@ -24,13 +24,17 @@ const DEFAULT_PORT = 5432;
 const DEFAULT_TIMEOUT_MS = 1_000;
 const PROTOCOL_VERSION_3 = 196_608;
 const AUTH_OK = 0;
+/** Authentication request codes a server may send in reply to a StartupMessage (password, MD5, GSS, SSPI, SASL, ...). */
+const AUTH_METHODS = new Set([2, 3, 5, 6, 7, 8, 9, 10]);
+const MAX_AUTH_LENGTH = 1024;
+const MAX_ERROR_LENGTH = 64 * 1024;
 
 export type OmniDbAuthStatus =
   /** The server asked for a password (or another credential). */
   | "password_required"
   /** The server let Omni's user in with no credential: a `trust` rule. */
   | "no_password_login"
-  /** The server refused the startup before any authentication (no pg_hba entry, unknown role). */
+  /** The server refused the plaintext startup before authentication; how the configured path authenticates is unproven. */
   | "rejected"
   /** Omni has no database URL in its config. */
   | "not_configured"
@@ -43,7 +47,13 @@ export type OmniDbAuthStatus =
 export type PgStartupReply =
   | { kind: "auth_ok" }
   | { kind: "auth_required"; method: number }
+  /** A PostgreSQL ErrorResponse before authentication (no pg_hba entry, unknown role, TLS required). */
   | { kind: "error" }
+  /** Nothing listens: the connection was actively refused. */
+  | { kind: "refused" }
+  /** Something answered, but not with a PostgreSQL authentication reply. */
+  | { kind: "not_postgres" }
+  /** Timeout or another network failure: nothing was established. */
   | { kind: "unreachable" };
 
 export type PgStartupProbe = (
@@ -90,11 +100,16 @@ export function omniDatabaseUrlFromConfig(config: unknown): string | null {
   return typeof url === "string" && url.trim() ? url.trim() : null;
 }
 
-/** The URL with its password replaced, safe to print. */
+const SECRET_PARAM = /pass|secret|token|key|cred/i;
+
+/** The URL with its password and any secret-looking query parameter replaced, safe to print. */
 export function redactDatabaseUrl(raw: string): string {
   try {
     const url = new URL(raw);
     if (url.password) url.password = "***";
+    for (const name of [...url.searchParams.keys()]) {
+      if (SECRET_PARAM.test(name)) url.searchParams.set(name, "***");
+    }
     return url.toString();
   } catch {
     // no-cause: an unparseable URL is printed as a fixed placeholder, never echoed, because it may hold a password.
@@ -112,6 +127,8 @@ export function loopbackAddressesFor(host: string): string[] | null {
   if (bare === "localhost" || bare === "") return ["127.0.0.1", "::1"];
   if (bare === "::1") return ["::1"];
   if (/^127(\.\d{1,3}){3}$/.test(bare)) return [bare];
+  // IPv4-mapped loopback; Node's URL rewrites `[::ffff:127.0.0.1]` to `[::ffff:7f00:1]`.
+  if (/^::ffff:(127(\.\d{1,3}){3}|7f[0-9a-f]{2}:[0-9a-f]{1,4})$/.test(bare)) return [bare];
   return null;
 }
 
@@ -145,8 +162,19 @@ export async function probeOmniDatabaseAuth(
 
   const host = url.hostname;
   const port = url.port ? Number(url.port) : DEFAULT_PORT;
-  const user = decodeURIComponent(url.username) || (deps.defaultUser ?? (() => userInfo().username))();
-  const database = decodeURIComponent(url.pathname.replace(/^\//, "")) || user;
+  let user: string;
+  let database: string;
+  try {
+    user = decodeURIComponent(url.username) || (deps.defaultUser ?? (() => userInfo().username))();
+    database = decodeURIComponent(url.pathname.replace(/^\//, "")) || user;
+  } catch {
+    // no-cause: a malformed percent escape is a report status (unknown) with its reason; the URL may hold a password.
+    return {
+      ...empty,
+      status: "unknown",
+      message: "Omni's database URL has a malformed percent escape in its user or database",
+    };
+  }
   const located = { ...empty, host: stripBrackets(host), port, user, database };
 
   const addresses = loopbackAddressesFor(host);
@@ -155,6 +183,15 @@ export async function probeOmniDatabaseAuth(
       ...located,
       status: "remote",
       message: `Omni's database is on another host (${stripBrackets(host)}); not probed`,
+    };
+  }
+
+  const sslmode = url.searchParams.get("sslmode")?.toLowerCase();
+  if (sslmode === "require" || sslmode === "verify-ca" || sslmode === "verify-full") {
+    return {
+      ...located,
+      status: "unknown",
+      message: `Omni's database URL requires TLS (sslmode=${sslmode}); the plaintext probe cannot tell how that path authenticates`,
     };
   }
 
@@ -181,17 +218,25 @@ export async function probeOmniDatabaseAuth(
       remediation: REMEDIATION,
     };
   }
+  const inconclusive = replies.filter((r) => r.reply.kind === "unreachable" || r.reply.kind === "not_postgres");
+  if (inconclusive.length > 0) {
+    return {
+      ...located,
+      status: "unknown",
+      message: `Omni's database gave no PostgreSQL answer on ${inconclusive.map((r) => r.address).join(", ")}:${port}`,
+    };
+  }
   if (replies.some((r) => r.reply.kind === "auth_required")) {
     return { ...located, status: "password_required", message: `Omni's database asks user "${user}" for a password` };
   }
   if (replies.some((r) => r.reply.kind === "error")) {
-    return { ...located, status: "rejected", message: `Omni's database refused user "${user}" before authentication` };
+    return {
+      ...located,
+      status: "rejected",
+      message: `Omni's database refused the plaintext startup for user "${user}"; how Omni's own connection authenticates is not proven`,
+    };
   }
-  return {
-    ...located,
-    status: "unknown",
-    message: `Omni's database did not answer on ${addresses.join(", ")}:${port}`,
-  };
+  return { ...located, status: "unknown", message: `Nothing listens on ${addresses.join(", ")}:${port}` };
 }
 
 /** Bytes of a PostgreSQL v3 StartupMessage for this user and database. */
@@ -208,11 +253,17 @@ export function buildStartupMessage(user: string, database: string): Buffer {
 export function classifyStartupReply(data: Buffer): PgStartupReply | null {
   if (data.length < 1) return null;
   const type = String.fromCharCode(data[0]);
-  if (type === "E") return { kind: "error" };
-  if (type !== "R") return { kind: "error" };
+  if (type !== "E" && type !== "R") return { kind: "not_postgres" };
+  if (data.length < 5) return null;
+  const length = data.readInt32BE(1);
+  if (type === "E") {
+    return length >= 4 && length <= MAX_ERROR_LENGTH ? { kind: "error" } : { kind: "not_postgres" };
+  }
+  if (length < 8 || length > MAX_AUTH_LENGTH) return { kind: "not_postgres" };
   if (data.length < 9) return null;
   const method = data.readInt32BE(5);
-  return method === AUTH_OK ? { kind: "auth_ok" } : { kind: "auth_required", method };
+  if (method === AUTH_OK) return length === 8 ? { kind: "auth_ok" } : { kind: "not_postgres" };
+  return AUTH_METHODS.has(method) ? { kind: "auth_required", method } : { kind: "not_postgres" };
 }
 
 const TERMINATE = Buffer.from([0x58, 0, 0, 0, 4]);
@@ -237,7 +288,9 @@ const startupProbe: PgStartupProbe = (host, port, user, database, timeoutMs) =>
       const reply = classifyStartupReply(buffer);
       if (reply) finish(reply);
     });
-    socket.on("error", () => finish({ kind: "unreachable" }));
+    socket.on("error", (error: NodeJS.ErrnoException) =>
+      finish({ kind: error.code === "ECONNREFUSED" ? "refused" : "unreachable" }),
+    );
     socket.on("close", () => finish({ kind: "unreachable" }));
   });
 
