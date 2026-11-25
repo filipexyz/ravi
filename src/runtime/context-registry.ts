@@ -194,7 +194,11 @@ export function revokeLiveRuntimeContextsForContactGrant(
   const actorPrincipal = `contact:${contactId}`;
   const contexts = dbListContexts({ includeInactive: false }).filter((context) => {
     const grants = context.metadata?.userOverlayGrants;
-    return context.metadata?.actorPrincipal === actorPrincipal && Array.isArray(grants) && grants.includes(grantRef);
+    // The grants' owner is the actor of a chat turn, and `userOverlayContact` of a cron run, whose
+    // actor is the job (`automation:cron:<id>`) while it runs under its owner's overlay.
+    const owner =
+      context.metadata?.actorPrincipal === actorPrincipal || context.metadata?.userOverlayContact === actorPrincipal;
+    return owner && Array.isArray(grants) && grants.includes(grantRef);
   });
   const matchingIds = new Set(contexts.map((context) => context.contextId));
   const roots = contexts.filter((context) => {

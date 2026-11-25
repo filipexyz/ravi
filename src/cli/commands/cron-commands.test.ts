@@ -363,6 +363,51 @@ describe("CronCommands --json", () => {
     ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
   });
 
+  it("binds a job from an overlay turn to its chat, and leaves one from a lifted overlay unbound like the operator's", async () => {
+    const addJob = (name: string) =>
+      captureJson(() =>
+        new CronCommands().add(
+          name,
+          undefined,
+          "30m",
+          undefined,
+          undefined,
+          "hello",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        ),
+      );
+
+    // A contact narrowed to a governed chat's grants: the job keeps running under those grants.
+    mockCliContext = {
+      agentId: "dev",
+      context: {
+        metadata: { actorAuthorizationMode: "user-overlay", userOverlay: "active", userOverlayChat: "chat:chat-bob" },
+      },
+    };
+    await addJob("Overlay");
+    expect(cronJob?.creatorChat).toBe("chat-bob");
+
+    // The same chat, a contact whose own power covers the agent (overlay lifted): written as from an ungoverned chat.
+    mockCliContext = {
+      agentId: "dev",
+      context: {
+        metadata: { actorAuthorizationMode: "invoke-only", userOverlay: "lifted", userOverlayChat: "chat:chat-bob" },
+      },
+    };
+    await addJob("Lifted");
+    expect(cronJob?.creatorChat).toBeUndefined();
+  });
+
   it("does not make a trigger's own session the reply session of a job created during its turn", async () => {
     const addJob = () =>
       captureJson(() =>
