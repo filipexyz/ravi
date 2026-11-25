@@ -700,7 +700,10 @@ describe("daemon restart verify-and-continue for turns interrupted mid-action", 
       deps,
     );
 
-    expect(published[0]?.payload.prompt).toContain("são retomados automaticamente");
+    expect(published[0]?.payload.prompt).toContain("tenta retomar sozinho");
+    // A turn without recorded authority is not resumed: the notice must not promise it.
+    expect(published[0]?.payload.prompt).toContain("não é retomado e recebe só um aviso");
+    expect(published[0]?.payload.prompt).not.toContain("Não mande retomar essas de novo");
     expect(published[0]?.payload.prompt).toContain("main-t-1, main-t-2");
   });
 

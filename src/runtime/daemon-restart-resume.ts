@@ -280,7 +280,7 @@ export function buildDaemonRestartNoticePrompt(input: {
       "Não continue nem repita trabalho interrompido por conta própria: avise o operador sobre o restart e o que ficou pendente, e aguarde instrução.",
       ...(resumedSessionNames.length > 0
         ? [
-            `Turnos interrompidos destas sessões são retomados automaticamente (agora ou em até ~2 min, quando o lease do boot anterior expirar), com nota para conferir o estado antes de repetir: ${resumedSessionNames.join(", ")}. Não mande retomar essas de novo.`,
+            `O daemon tenta retomar sozinho o turno interrompido destas sessões (agora ou em até ~2 min, quando o lease do boot anterior expirar), com nota para conferir o estado antes de repetir: ${resumedSessionNames.join(", ")}. Só volta a rodar o turno que tem a autoridade gravada; turno sem ela (por exemplo, gravado antes desta versão) não é retomado e recebe só um aviso. Antes de mandar retomar alguma, confira se ela já voltou.`,
           ]
         : []),
     ].join(" "),

@@ -88,7 +88,9 @@ normative: false
 - The sweep resolves an attempt's session by its key only, with the same agent. When another session takes the deleted session's name, from the same agent or another one, the attempt is not resumed there.
 - The sweep returns what it did, including a deferred retry, even when the recovery run cannot be closed.
 - A `skip` decision MUST still publish one notice-only restart input (`_daemonRestartResume.noticeOnly`) with the restart reason and the fence reason; it never contains "Continue de onde parou" and the dispatcher never hydrates persisted pending work into it.
-- The restart delivery ledger records `notice` for a fenced restart and `resume` only for a published `continue`, `pending_only` or `verify_continue` resume. On the snapshot path a failed publish or a terminal task session skip leaves no delivery record. The boot sweep records the delivery before it publishes (its attempt is already claimed), so a record it could not write means no event, and a failed publish still holds the session for the epoch.
+- The restart delivery ledger records `notice` for a notice and `resume` for a `continue`, `pending_only` or `verify_continue` resume.
+  - On the snapshot path the record is written only after a successful publish; a failed publish or a terminal task session skip leaves no record.
+  - The boot sweep writes the record before it publishes, because its attempt is already claimed. A record it could not write means no event, and a record followed by a failed publish still holds the session for the epoch.
 - Persisted pending successors remain separate atoms with their original pending id, source, actor metadata, task barrier, and delivery barrier when hydrated into an existing or starting runtime.
 - Bot startup does not invoke the legacy task-status/recency resume producer; task continuation waits for a durable classifier decision.
 - A durable-preparation failure stashes the still-unconsumed prompt before the failed runtime session releases its slot.
