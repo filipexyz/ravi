@@ -372,6 +372,17 @@ export async function* subscribe(
  * Drain and close the NATS connection.
  */
 export async function closeNats(options: { drainTimeoutMs?: number } = {}): Promise<void> {
+  // A lazy connection still being established has no `nc` yet. Closing now would do nothing, the handshake would
+  // finish afterwards and the open socket would keep the process alive. Wait for the attempt, then close what it
+  // opened. A failed attempt leaves nothing to close. The daemon connects explicitly and never lands here mid-attempt.
+  if (!nc && connecting) {
+    try {
+      await connecting.promise;
+    } catch (error) {
+      // The caller that started the attempt reports its own failure; here it only means there is nothing to close.
+      log.debug("Pending NATS connect failed before close", { error: error instanceof Error ? error.message : error });
+    }
+  }
   if (nc) {
     const current = nc;
     if (options.drainTimeoutMs && options.drainTimeoutMs > 0) {
