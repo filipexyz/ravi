@@ -32,7 +32,7 @@ jobs:
     permissions:
       contents: write
       id-token: write
-    timeout-minutes: 15
+    timeout-minutes: 45
 
     env:
       SDK_PACKAGE_PATH: packages/ravi-os-sdk/package.json
