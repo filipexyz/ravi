@@ -72,6 +72,7 @@ import {
   getCrashRecoveryReplayablePendingRuntimeMessages,
   getPendingRuntimeTurnSuccessors,
   getRuntimeTurnReplaySafety,
+  isReleasableDoneRuntimeSession,
   runtimeTurnAttemptTerminalEventType,
   shutdownRuntimeStreamingSession,
   stashPendingRuntimeMessages,
@@ -325,7 +326,7 @@ export class RuntimeSessionDispatcher {
         ? this.getBackgroundStartLimit()
         : this.options.maxConcurrentSessions;
     const reclaimable = [...this.streamingSessions].filter(
-      ([name, session]) => session.done || this.isReclaimableForStart(name, session),
+      ([name, session]) => isReleasableDoneRuntimeSession(session) || this.isReclaimableForStart(name, session),
     ).length;
     return this.getRuntimeSessionPoolUsedSlots() - reclaimable < limit;
   }
@@ -2085,7 +2086,7 @@ export class RuntimeSessionDispatcher {
 
   private reclaimIdleSessionsForStart(sessionName: string, prompt: RuntimeLaunchPrompt): void {
     const candidates = [...this.streamingSessions.entries()]
-      .filter(([name, session]) => session.done || this.isReclaimableForStart(name, session))
+      .filter(([name, session]) => isReleasableDoneRuntimeSession(session) || this.isReclaimableForStart(name, session))
       .sort(([, a], [, b]) => a.lastActivity - b.lastActivity);
     const limit =
       this.resolveStartLane(sessionName, prompt) === "background" && this.options.interactiveReservedSessions > 0
@@ -2544,11 +2545,24 @@ export class RuntimeSessionDispatcher {
     const stuckAfterMs = this.turnInactivityMs();
 
     for (const [sessionName, session] of this.streamingSessions) {
+      const idleMs = session.lastActivity ? now - session.lastActivity : now;
       if (session.done) {
+        if (!isReleasableDoneRuntimeSession(session)) {
+          // Its event loop is still closing the provider and will release the
+          // slot itself, restarting any stashed recovery. Taking the slot now
+          // makes that loop skip the restart and strands the queue (25/11).
+          // Only a loop that stopped making progress is released from here.
+          if (idleMs < stuckAfterMs) continue;
+          log.warn("Releasing a finished runtime session whose event loop never settled its slot", {
+            sessionName,
+            idleMs,
+            timeoutMs: stuckAfterMs,
+            stashedQueueSize: this.stashedMessages.get(sessionName)?.length ?? 0,
+          });
+        }
         this.releaseRuntimeSessionSlot(sessionName);
         continue;
       }
-      const idleMs = session.lastActivity ? now - session.lastActivity : now;
       const servingWork =
         session.starting ||
         session.turnActive ||
