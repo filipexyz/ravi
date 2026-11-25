@@ -1901,12 +1901,12 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/background-work.ts | 368 | fixed | binding retained / no recognized error surface | src/runtime/background-work.ts:0e66697ade2f32c90b14db9d |
 | runtime-chat | src/runtime/claude-provider.ts | 78 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:5496eef9c9b7fa7f8d6b6156 |
 | runtime-chat | src/runtime/claude-provider.ts | 213 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:9d4e5964b65ef32089434597 |
-| runtime-chat | src/runtime/claude-provider.ts | 323 | triaged-follow-up | surface-bypasses-constructor | src/runtime/claude-provider.ts:c87f1bef17e8b8a309a993be |
-| runtime-chat | src/runtime/claude-provider.ts | 540 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:6d18d7ebccabe9139b6a2ee5 |
-| runtime-chat | src/runtime/claude-provider.ts | 556 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:b5e9e796752073002dc5b599 |
-| runtime-chat | src/runtime/claude-provider.ts | 565 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:69932255b8c315b086374bbe |
-| runtime-chat | src/runtime/claude-provider.ts | 594 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:c8db2d688d57db26d5cf0203 |
-| runtime-chat | src/runtime/claude-provider.ts | 638 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:c052a49e78bea02b1938b8c1 |
+| runtime-chat | src/runtime/claude-provider.ts | 333 | triaged-follow-up | surface-bypasses-constructor | src/runtime/claude-provider.ts:c87f1bef17e8b8a309a993be |
+| runtime-chat | src/runtime/claude-provider.ts | 550 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:6d18d7ebccabe9139b6a2ee5 |
+| runtime-chat | src/runtime/claude-provider.ts | 566 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:b5e9e796752073002dc5b599 |
+| runtime-chat | src/runtime/claude-provider.ts | 575 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:69932255b8c315b086374bbe |
+| runtime-chat | src/runtime/claude-provider.ts | 604 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:c8db2d688d57db26d5cf0203 |
+| runtime-chat | src/runtime/claude-provider.ts | 648 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:c052a49e78bea02b1938b8c1 |
 | runtime-chat | src/runtime/codex-hook-guard.ts | 65 | fixed | binding retained / no recognized error surface | src/runtime/codex-hook-guard.ts:5de697b70cf9e4ea973f164c |
 | runtime-chat | src/runtime/codex-hook-guard.ts | 115 | fixed | binding retained / no recognized error surface | src/runtime/codex-hook-guard.ts:23fa84b6be4bc4180c7748d4 |
 | runtime-chat | src/runtime/codex-hook-guard.ts | 126 | no-cause | an unreadable path only means "not the generated gate file", which the caller refuses. | src/runtime/codex-hook-guard.ts:2ead593fad02c9f1690be72e |
