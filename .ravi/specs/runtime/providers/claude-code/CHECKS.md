@@ -5,6 +5,23 @@
 - SSH and NATS spawn factories strip both SDK encodings of local plugin paths
   and setting sources, preserving following model/effort/output arguments;
   verify with `bun test src/remote-spawn.test.ts src/remote-spawn-nats.test.ts`.
+- The PreToolUse chain is the tool gate under `bypassPermissions`: every tool
+  name is checked, `mcp__*` tools of configured servers included, and only the
+  in-process servers the session registers are exempt. The regressions are
+  listed in `permissions/provider-runtime` CHECKS (Runtime tool call
+  regressions); verify with
+  `bun test src/bash/hook.test.ts src/runtime/host-hooks.test.ts`.
+- The spec server is registered under `SPEC_MCP_SERVER_NAME`, the same key the
+  tool gate exempts; `src/runtime/host-hooks.test.ts` builds a session and
+  compares the two.
+- Every Claude Code process starts with `CLAUDE_CODE_DISABLE_FILE_MENTIONS=1`,
+  over a caller value of `0`: session turns on every path of
+  `buildClaudeCodeEnvironment`, the memory agent (the value the spawned
+  process received, not only the name), and SSH and NATS remote spawns. The
+  regressions are listed in `permissions/provider-runtime` CHECKS (Prompt text
+  regressions); verify with
+  `bun test src/runtime/claude-provider.test.ts src/remote-spawn.test.ts src/remote-spawn-nats.test.ts`
+  and `bun test src/hooks/pre-compact-spawn-env.test.ts`.
 - Stream delta maps to `text.delta`.
 - Assistant text maps to `assistant.message`.
 - Assistant tool-use maps to `tool.started`.

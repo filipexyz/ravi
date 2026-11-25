@@ -104,6 +104,49 @@ Quoting regressions (`bun test src/bash/`):
   arguments, do not permit a later shell, and still permit interpreter file
   scripts: this last case documents the explicitly open capability boundary.
 
+Runtime tool call regressions (`src/bash/hook.test.ts`,
+`src/runtime/host-hooks.test.ts`):
+
+- An MCP tool is denied without a matching capability and allowed by its exact
+  name, by `mcp__<server>__*` and by `*`. The pattern is a name prefix: it
+  does not cover `mcp__github_enterprise__*`, and it does cover a server
+  named `github__admin`.
+- The MCP resource readers and names outside the built-in registry (`Monitor`,
+  `CronCreate`, `RemoteTrigger`, `Workflow`, `ScheduleWakeup`, an invented name)
+  are denied without a matching capability.
+- A call without a tool name, and an MCP call without agent identity, are
+  denied.
+- A tool or Bash permission hook whose check throws denies the call.
+- A `spec` tool runs without the tool capability only when the runtime reports
+  `source: "sdk"` and the session declared `spec`. The same name from any other
+  source, a missing or malformed server report, and an undeclared in-process
+  server are checked. A host name denied without a server report says so.
+- The registered PreToolUse chain attaches `spec` as a host server only for a
+  spec-mode agent.
+- Live check, when the Claude Agent SDK is upgraded: in a session with a
+  project `.mcp.json` server and an in-process server of the same name, the
+  PreToolUse input for each `mcp__*` call carries `mcp_server` with the right
+  source, a `Monitor` shell command reaches the `Bash`-matched hook, and a
+  PreToolUse hook that throws still lets the tool run (the reason the hooks
+  catch their own failures). When a configured server exposes the same full
+  tool name as a host tool, the call runs the host tool and reports
+  `source: "sdk"`. With every tool denied, a prompt holding `@/abs/path` does
+  not put the file in the model's context, `@AGENTS.md` in `CLAUDE.md` still
+  loads, and `@server:uri` does not make the runtime read the MCP resource
+  (the server sees no read). Last run on Claude Code 2.1.323 (2026-11-24).
+
+Prompt text regressions (`src/runtime/claude-provider.test.ts`,
+`src/remote-spawn.test.ts`, `src/remote-spawn-nats.test.ts`,
+`src/hooks/pre-compact-spawn-env.test.ts`):
+
+- `buildClaudeCodeEnvironment` returns `CLAUDE_CODE_DISABLE_FILE_MENTIONS=1` on
+  every path (plain, managed auth, model broker, no input) and over a caller
+  value of `0` or empty.
+- The SSH remote command exports the switch whatever the caller's env says;
+  the NATS spawn payload carries it with and without the credential opt-in.
+- The memory agent is spawned with the switch set to `1` while the daemon env
+  holds `0`: the fake Claude Code records the value it received.
+
 Provider settings regressions (`src/bash/provider-config-writes.test.ts`):
 
 - A symlink `nested/innocent -> .codex` cannot be written through
@@ -120,6 +163,9 @@ Provider settings regressions (`src/bash/provider-config-writes.test.ts`):
 ```bash
 bun test src/permissions/provider-runtime.test.ts
 bun test src/bash/provider-config-writes.test.ts src/bash/parser.test.ts src/bash/hook.test.ts
+bun test src/runtime/host-hooks.test.ts
+bun test src/runtime/claude-provider.test.ts src/remote-spawn.test.ts src/remote-spawn-nats.test.ts
+bun test src/hooks/pre-compact-spawn-env.test.ts
 bun test src/cli/commands/permissions.test.ts
 bun test src/runtime/runtime-request-context.test.ts
 bun test src/cli/commands/agents.test.ts

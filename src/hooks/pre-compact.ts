@@ -13,6 +13,7 @@ import { basename, join, dirname, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { query, type HookInput } from "@anthropic-ai/claude-agent-sdk";
 import { filterAgentRuntimeBaseEnv } from "../runtime/agent-env-policy.js";
+import { applyClaudeRequiredPromptEnv } from "../runtime/claude-prompt-env.js";
 import { logger } from "../utils/logger.js";
 import { parseTranscript, formatTranscript } from "./transcript-parser.js";
 
@@ -258,7 +259,7 @@ Preste atenção especial a:
             cwd: agentCwd,
             // Without `env` the SDK spawns Claude Code with the whole daemon env.
             // Same boundary as a Claude turn (see runtime/agent-env-policy.ts).
-            env: filterAgentRuntimeBaseEnv(process.env, { runtimeProviderId: "claude" }),
+            env: applyClaudeRequiredPromptEnv(filterAgentRuntimeBaseEnv(process.env, { runtimeProviderId: "claude" })),
             ...(options.pathToClaudeCodeExecutable
               ? { pathToClaudeCodeExecutable: options.pathToClaudeCodeExecutable }
               : {}),

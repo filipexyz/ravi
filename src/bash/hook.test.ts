@@ -40,10 +40,30 @@ async function callBashHook(command: string, agentId?: string, context?: ToolCon
   return context ? runWithContext(context, run) : run();
 }
 
-async function callToolHook(toolName: string, agentId?: string, context?: ToolContext) {
-  const hook = createToolPermissionHook({ getAgentId: () => agentId });
+interface ToolHookCallOptions {
+  mcpServer?: { name?: unknown; source?: unknown };
+  hostMcpServers?: readonly string[];
+}
+
+async function callToolHook(
+  toolName: string,
+  agentId?: string,
+  context?: ToolContext,
+  { mcpServer, hostMcpServers }: ToolHookCallOptions = {},
+) {
+  const hook = createToolPermissionHook({ getAgentId: () => agentId, hostMcpServers });
   const hookFn = hook.hooks[0];
-  const run = () => hookFn({ hook_event_name: "PreToolUse", tool_name: toolName, tool_input: {} }, null, dummyContext);
+  const run = () =>
+    hookFn(
+      {
+        hook_event_name: "PreToolUse",
+        tool_name: toolName,
+        tool_input: {},
+        ...(mcpServer ? { mcp_server: mcpServer } : {}),
+      },
+      null,
+      dummyContext,
+    );
   return context ? runWithContext(context, run) : run();
 }
 
@@ -591,10 +611,182 @@ describe("createToolPermissionHook", () => {
     expect(isDenied(result)).toBe(false);
   });
 
-  it("skips non-SDK tools (MCP tools)", async () => {
-    // "mcp_custom_tool" is not in SDK_TOOLS, should be skipped
-    const result = await callToolHook("mcp_custom_tool", "dev");
-    expect(isDenied(result)).toBe(false);
+  it("denies the tool call when the check itself fails", async () => {
+    const failing = () => {
+      throw new Error("state unavailable");
+    };
+    const input = { hook_event_name: "PreToolUse", tool_name: "Read", tool_input: {} };
+
+    const toolResult = await createToolPermissionHook({ getAgentId: failing }).hooks[0]!(input, null, dummyContext);
+    expect(isDenied(toolResult)).toBe(true);
+    expect(getDenyReason(toolResult)).toContain("permission check failed");
+
+    const bashResult = await createBashPermissionHook({ getAgentId: failing }).hooks[0]!(
+      { ...input, tool_name: "Bash", tool_input: { command: "ls" } },
+      null,
+      dummyContext,
+    );
+    expect(isDenied(bashResult)).toBe(true);
+    expect(getDenyReason(bashResult)).toContain("permission check failed");
+  });
+
+  it("denies a tool call that carries no tool name", async () => {
+    const everyTool = makeToolContext("dev", [{ permission: "use", objectType: "tool", objectId: "*" }]);
+    const hook = createToolPermissionHook({ getAgentId: () => "dev" }).hooks[0]!;
+    const base = { hook_event_name: "PreToolUse", tool_input: {} };
+    // Absent, empty and non-string names: none of them is a name the ceiling can check.
+    const inputs = [base, ...["", undefined, null, 123, ["Read"]].map((tool_name) => ({ ...base, tool_name }))];
+
+    for (const input of inputs) {
+      const result = await runWithContext(everyTool, () => hook(input as never, null, dummyContext));
+      expect(isDenied(result)).toBe(true);
+      expect(getDenyReason(result)).toContain("without a tool name");
+    }
+  });
+
+  describe("tools outside the built-in list", () => {
+    const readOnly = () => makeToolContext("dev", [{ permission: "use", objectType: "tool", objectId: "Read" }]);
+    const projectServer = { name: "github", source: "project" };
+
+    it("denies an MCP tool the context does not hold, and records the server", async () => {
+      const result = await callToolHook(
+        "mcp__github__create_issue",
+        "dev",
+        { ...readOnly(), sessionKey: "agent:dev:main", sessionName: "dev-main" },
+        { mcpServer: projectServer },
+      );
+      expect(isDenied(result)).toBe(true);
+      expect(getDenyReason(result)).toContain("tool:mcp__github__create_issue");
+      expect(listPermissionDenials({ subjectType: "agent", subjectId: "dev", resolved: false })).toContainEqual(
+        expect.objectContaining({
+          relation: "use",
+          objectType: "tool",
+          objectId: "mcp__github__create_issue",
+          detail: expect.objectContaining({ mcpServer: projectServer }),
+        }),
+      );
+    });
+
+    it("denies an MCP tool when no agentId is available", async () => {
+      expect(isDenied(await callToolHook("mcp__github__create_issue", undefined))).toBe(true);
+    });
+
+    it("records the server of a denial cut to a bounded length", async () => {
+      // The server's name and source are text the runtime's configuration chose.
+      const result = await callToolHook("mcp__longname__call", "dev", makeToolContext("dev", []), {
+        mcpServer: { name: "n".repeat(300), source: "s".repeat(300) },
+      });
+      expect(isDenied(result)).toBe(true);
+      expect(listPermissionDenials({ subjectType: "agent", subjectId: "dev", resolved: false })).toContainEqual(
+        expect.objectContaining({
+          objectId: "mcp__longname__call",
+          detail: expect.objectContaining({ mcpServer: { name: "n".repeat(128), source: "s".repeat(32) } }),
+        }),
+      );
+    });
+
+    it("allows an MCP tool by exact name, by server pattern and by wildcard", async () => {
+      for (const objectId of ["mcp__github__create_issue", "mcp__github__*", "*"]) {
+        const context = makeToolContext("dev", [{ permission: "use", objectType: "tool", objectId }]);
+        expect(isDenied(await callToolHook("mcp__github__create_issue", "dev", context))).toBe(false);
+      }
+    });
+
+    it("matches a server pattern as a prefix of the tool name", async () => {
+      const context = makeToolContext("dev", [{ permission: "use", objectType: "tool", objectId: "mcp__github__*" }]);
+      expect(isDenied(await callToolHook("mcp__linear__create_issue", "dev", context))).toBe(true);
+      expect(isDenied(await callToolHook("mcp__github_enterprise__create_issue", "dev", context))).toBe(true);
+      // The grant is a name prefix, not a server identity: a server named
+      // `github__admin` answers under the same prefix and is covered.
+      expect(isDenied(await callToolHook("mcp__github__admin__delete_repo", "dev", context))).toBe(false);
+    });
+
+    for (const toolName of ["ListMcpResourcesTool", "ReadMcpResourceTool", "ReadMcpResourceDirTool"]) {
+      it(`checks the MCP resource reader ${toolName}`, async () => {
+        expect(isDenied(await callToolHook(toolName, "dev", readOnly()))).toBe(true);
+        const granted = makeToolContext("dev", [{ permission: "use", objectType: "tool", objectId: toolName }]);
+        expect(isDenied(await callToolHook(toolName, "dev", granted))).toBe(false);
+      });
+    }
+
+    for (const toolName of ["Monitor", "CronCreate", "RemoteTrigger", "Workflow", "ScheduleWakeup", "FutureTool"]) {
+      it(`checks ${toolName}, a tool the registry does not list`, async () => {
+        expect(isDenied(await callToolHook(toolName, "dev", readOnly()))).toBe(true);
+        expect(getDenyReason(await callToolHook(toolName, "dev", readOnly()))).toContain(`tool:${toolName}`);
+        const all = makeToolContext("dev", [{ permission: "use", objectType: "tool", objectId: "*" }]);
+        expect(isDenied(await callToolHook(toolName, "dev", all))).toBe(false);
+      });
+    }
+  });
+
+  describe("host MCP servers", () => {
+    const noTools = () => makeToolContext("dev", []);
+
+    it("lets a tool of a host in-process server run without the tool capability", async () => {
+      const result = await callToolHook("mcp__spec__enter_spec_mode", "dev", noTools(), {
+        mcpServer: { name: "spec", source: "sdk" },
+        hostMcpServers: ["spec"],
+      });
+      expect(isDenied(result)).toBe(false);
+    });
+
+    it("lets a host tool run when the session has no agent identity", async () => {
+      // Host tools are part of the runtime and were never tied to the agent's
+      // ceiling; every other tool is denied without an identity.
+      const options = { mcpServer: { name: "spec", source: "sdk" }, hostMcpServers: ["spec"] };
+      expect(isDenied(await callToolHook("mcp__spec__enter_spec_mode", undefined, undefined, options))).toBe(false);
+      expect(isDenied(await callToolHook("Read", undefined, undefined, options))).toBe(true);
+    });
+
+    it("never exempts a built-in tool name, whatever server arrives beside it", async () => {
+      const options = { mcpServer: { name: "spec", source: "sdk" }, hostMcpServers: ["spec"] };
+      for (const toolName of ["Read", "Bash", "Monitor", "ReadMcpResourceTool", "mcp_spec_tool"]) {
+        expect(isDenied(await callToolHook(toolName, "dev", noTools(), options))).toBe(true);
+      }
+    });
+
+    it("checks a configured server that reuses the host server's name", async () => {
+      for (const source of ["project", "user", "local", "plugin", "dynamic", "claudeai", "SDK", ""]) {
+        const result = await callToolHook("mcp__spec__enter_spec_mode", "dev", noTools(), {
+          mcpServer: { name: "spec", source },
+          hostMcpServers: ["spec"],
+        });
+        expect(isDenied(result)).toBe(true);
+      }
+    });
+
+    it("checks the host prefix when the runtime reports no server, and says so", async () => {
+      const result = await callToolHook("mcp__spec__enter_spec_mode", "dev", noTools(), { hostMcpServers: ["spec"] });
+      expect(isDenied(result)).toBe(true);
+      expect(getDenyReason(result)).toContain("did not report which MCP server owns this tool");
+
+      // Only a host prefix gets the note: any other denial keeps the plain reason.
+      const other = await callToolHook("mcp__github__create_issue", "dev", noTools(), { hostMcpServers: ["spec"] });
+      expect(getDenyReason(other)).toBe("Permission denied: agent:dev cannot use tool:mcp__github__create_issue");
+    });
+
+    it("checks an in-process server the session did not declare as its own", async () => {
+      const sdkServer = { name: "gateway", source: "sdk" };
+      expect(
+        isDenied(
+          await callToolHook("mcp__gateway__call", "dev", noTools(), {
+            mcpServer: sdkServer,
+            hostMcpServers: ["spec"],
+          }),
+        ),
+      ).toBe(true);
+      expect(isDenied(await callToolHook("mcp__gateway__call", "dev", noTools(), { mcpServer: sdkServer }))).toBe(true);
+    });
+
+    it("ignores a malformed server report", async () => {
+      for (const mcpServer of [{ source: "sdk" }, { name: ["spec"], source: "sdk" }, { name: "spec" }]) {
+        const result = await callToolHook("mcp__spec__enter_spec_mode", "dev", noTools(), {
+          mcpServer,
+          hostMcpServers: ["spec"],
+        });
+        expect(isDenied(result)).toBe(true);
+      }
+    });
   });
 
   it("blocks multiple different SDK tools independently", async () => {
