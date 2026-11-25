@@ -195,10 +195,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | bases | src/bases/input.ts | 30 | triaged-follow-up | catch-without-binding | src/bases/input.ts:ebe3ebed142463865ba4146c |
 | bases | src/bases/input.ts | 39 | triaged-follow-up | catch-without-binding | src/bases/input.ts:033da42fca0ad3d22e6b3d2b |
 | bases | src/bases/input.ts | 64 | triaged-follow-up | catch-without-binding | src/bases/input.ts:ac97b60d3f31aed28e6da10b |
-| bash | src/bash/executable-path.ts | 117 | no-cause | a path that cannot be resolved is untrusted; every caller refuses or skips it | src/bash/executable-path.ts:db6cd95ee33e5424f22d1d9d |
-| bash | src/bash/executable-path.ts | 127 | no-cause | a missing or unreadable file is not an executable candidate, as the shell sees it | src/bash/executable-path.ts:34faa47b34a7f7f9785257be |
-| bash | src/bash/executable-path.ts | 223 | no-cause | EACCES/EROFS is the answer (not writable); any other failure also means no planted copy can land there | src/bash/executable-path.ts:6ec2d5993edf9e63925b43a8 |
-| bash | src/bash/executable-path.ts | 238 | no-cause | an unreadable file cannot be compared; the caller treats it as unidentified, not as trusted | src/bash/executable-path.ts:307506ff22dc226e7a23ea4a |
+| bash | src/bash/executable-path.ts | 122 | no-cause | a path that cannot be resolved is untrusted; every caller refuses or skips it | src/bash/executable-path.ts:db6cd95ee33e5424f22d1d9d |
+| bash | src/bash/executable-path.ts | 132 | no-cause | a missing or unreadable file is not an executable candidate, as the shell sees it | src/bash/executable-path.ts:34faa47b34a7f7f9785257be |
+| bash | src/bash/executable-path.ts | 238 | no-cause | EACCES/EROFS is the answer (not writable); any other failure also means no planted copy can land there | src/bash/executable-path.ts:6ec2d5993edf9e63925b43a8 |
+| bash | src/bash/executable-path.ts | 253 | no-cause | an unreadable file cannot be compared; the caller treats it as unidentified, not as trusted | src/bash/executable-path.ts:307506ff22dc226e7a23ea4a |
 | bash | src/bash/hook.ts | 295 | no-cause | unanalyzable text is checked whole, here-doc data included, which only refuses more | src/bash/hook.ts:b654ee92365f4c706a1fd69b |
 | bash | src/bash/hook.ts | 342 | fixed | binding retained / no recognized error surface | src/bash/hook.ts:b1f79d33fcd6e588c463f16a |
 | bash | src/bash/hook.ts | 824 | fixed | binding retained / no recognized error surface | src/bash/hook.ts:b21c9ce8dfe00bd7169b9c1a |
