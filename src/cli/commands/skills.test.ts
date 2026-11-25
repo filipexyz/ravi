@@ -789,6 +789,38 @@ describe("skills agent-first contract", () => {
     expect(Object.keys(payload.items[0] ?? {}).sort()).toEqual(["name", "source"]);
   });
 
+  it("lists the whole catalog on the default page of skills list", () => {
+    const commands = new SkillsCommands();
+    const catalog = skillManager.listCatalogSkills();
+    expect(catalog.length).toBeGreaterThan(50);
+    const logs = captureLogs(() =>
+      runWithContext({}, () => commands.list(undefined, undefined, undefined, true, undefined, undefined, undefined)),
+    );
+    const payload = JSON.parse(logs) as {
+      total: number;
+      pagination: { nextCommand?: string | null };
+      items: Array<{ name: string }>;
+    };
+    expect(payload.total).toBe(catalog.length);
+    expect(payload.items.map((item) => item.name)).toEqual(catalog.map((skill) => skill.name));
+    expect(payload.pagination.nextCommand ?? null).toBeNull();
+  });
+
+  it("still pages skills list when --limit is passed", () => {
+    const commands = new SkillsCommands();
+    const logs = captureLogs(() =>
+      runWithContext({}, () => commands.list(undefined, undefined, undefined, true, undefined, "10", undefined)),
+    );
+    const payload = JSON.parse(logs) as {
+      total: number;
+      pagination: { nextCommand?: string | null };
+      items: unknown[];
+    };
+    expect(payload.items).toHaveLength(10);
+    expect(payload.total).toBeGreaterThan(10);
+    expect(payload.pagination.nextCommand).toContain("--offset 10");
+  });
+
   it("supports --fields compact mode on skills who", () => {
     const commands = new SkillsCommands();
     withoutLogs(() => runWithContext({}, () => commands.grant("main", KNOWN_CATALOG_SKILL, undefined, true)));
