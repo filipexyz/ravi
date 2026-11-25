@@ -93,7 +93,10 @@ Quoting regressions (`bun test src/bash/`):
   override), `heredoc_quoted_body_is_not_commands`,
   `substitution_and_redirect_allowed_when_command_authorized` (`printf
   "$(date)"`, `echo $(git ...)`, `ls | sort > out` with Write, `diff <(...)`),
-  `unknown_parse_fails_closed_with_named_error`, and regressions for keywords
+  `unknown_parse_fails_closed_with_named_error`,
+  `uutils_coreutils_root_is_trusted_and_nothing_beside_it` (the uutils
+  multicall layout resolves under `/usr/lib/cargo/bin/coreutils`; `sudo`, `su`,
+  `coreutilsx` and copies elsewhere stay untrusted), and regressions for keywords
   (#813), disguised substitutions (#767/#776), quoted assignment values and env
   spoofing inside substitutions.
 - Quoted/escaped executable names, inline flags and piped interpreter receivers
