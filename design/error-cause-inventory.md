@@ -945,9 +945,9 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/voice.ts | 140 | fixed | binding retained / no recognized error surface | src/cli/commands/voice.ts:675f59d919cb8dc01396cb68 |
 | cli | src/cli/commands/voice.ts | 435 | no-cause | the decision is committed; the daemon publishes the outcome from the store. | src/cli/commands/voice.ts:67840fac7a2ba6f9f2129960 |
 | cli | src/cli/commands/voice.ts | 443 | no-cause | the decision is committed; the daemon's reconciliation updates the call state. | src/cli/commands/voice.ts:68b7995ec069d7a260671534 |
-| cli | src/cli/commands/voice.ts | 578 | fixed | binding retained / no recognized error surface | src/cli/commands/voice.ts:890091ec01b3a72d26f14364 |
-| cli | src/cli/commands/voice.ts | 593 | fixed | binding retained / no recognized error surface | src/cli/commands/voice.ts:604caf290d2803859bf7306e |
-| cli | src/cli/commands/voice.ts | 1411 | no-cause | the door's sweep ends this call from the revoked record; reported in endDeferred. | src/cli/commands/voice.ts:3cefc5f5fb7792cf59109802 |
+| cli | src/cli/commands/voice.ts | 578 | fixed | binding retained / no recognized error surface | src/cli/commands/voice.ts:3bc3b124db6a4e3c8f754d98 |
+| cli | src/cli/commands/voice.ts | 594 | fixed | binding retained / no recognized error surface | src/cli/commands/voice.ts:3fc7c9afd444856d4a067a52 |
+| cli | src/cli/commands/voice.ts | 1413 | no-cause | the door's sweep ends this call from the revoked record; reported in endDeferred. | src/cli/commands/voice.ts:3cefc5f5fb7792cf59109802 |
 | cli | src/cli/commands/watch.ts | 561 | fixed | binding retained / no recognized error surface | src/cli/commands/watch.ts:fbff794a5bddadc3ca9ea59f |
 | cli | src/cli/commands/widgets.ts | 68 | triaged-follow-up | catch-without-binding | src/cli/commands/widgets.ts:8c447b55c38f008aa381b929 |
 | cli | src/cli/commands/widgets.ts | 80 | triaged-follow-up | catch-without-binding | src/cli/commands/widgets.ts:13d9ce0b17bf6fda14a722e3 |

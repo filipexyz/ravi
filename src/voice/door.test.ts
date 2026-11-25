@@ -17,6 +17,7 @@ import {
   saveVoiceProfile,
   defaultVoiceProfile,
   updateOpenVoiceCall,
+  endOpenVoiceCall,
   updateVoiceCall,
   findActiveVoiceCall,
   listVoiceCalls,
@@ -708,5 +709,19 @@ describe("voice door", () => {
       agentState: "idle",
       providerRef: "sess_ok",
     });
+  });
+
+  it("a failed start never overwrites an end the daemon already wrote", () => {
+    const call = makeCall("live", { state: "active", agentState: "listening" });
+    updateVoiceCall(call.id, { state: "ended", endedReason: "hangup", endedAt: 1 });
+    expect(endOpenVoiceCall(call.id, "connect_failed")).toBe(false);
+    expect(getVoiceCall(call.id)).toMatchObject({ state: "ended", endedReason: "hangup", endedAt: 1 });
+    const ending = makeCall("live", { state: "ending", agentState: "idle" });
+    expect(endOpenVoiceCall(ending.id, "connect_failed")).toBe(false);
+    expect(getVoiceCall(ending.id)?.state).toBe("ending");
+    // An open call is ended with the start's reason.
+    const open = makeCall("live", { state: "starting", agentState: "idle" });
+    expect(endOpenVoiceCall(open.id, "connect_failed", 42)).toBe(true);
+    expect(getVoiceCall(open.id)).toMatchObject({ state: "ended", endedReason: "connect_failed", endedAt: 42 });
   });
 });
