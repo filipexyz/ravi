@@ -85,6 +85,13 @@ export interface ContactChatOverlay {
   eligible: boolean;
   grants: ContactProfileGrant[];
   capabilities: ContextCapability[];
+  /**
+   * The part of `capabilities` the contact holds wherever it acts: its global
+   * permission tags, never the grants bound to this chat. The runtime reads it
+   * to decide whether the overlay would reduce the executor agent at all
+   * (`permissions/user-overlay`, "Lifted overlay").
+   */
+  globalCapabilities: ContextCapability[];
 }
 
 export function resolvePermissionChatScope(
@@ -134,7 +141,7 @@ export function resolveContactChatOverlay(input: {
   const policy = details?.policy ?? null;
   const eligible = Boolean(details) && policy?.status !== "blocked" && policy?.optOut !== true;
   if (!eligible) {
-    return { active, contactId, scope, eligible, grants: [], capabilities: [] };
+    return { active, contactId, scope, eligible, grants: [], capabilities: [], globalCapabilities: [] };
   }
 
   const scopedGrants = dbListContactChatGrantsCoveringChat({
@@ -145,13 +152,25 @@ export function resolveContactChatOverlay(input: {
   // Global permission tags keep the legacy tag-policy gate; explicit chat grants only need eligibility.
   const globalGrants = policy?.status === "allowed" ? globalProfileGrantsFromTags(contactId, policy.tags) : [];
   const grants = [...scopedGrants, ...globalGrants];
-  const capabilities = grants.flatMap((grant) =>
+  return {
+    active,
+    contactId,
+    scope,
+    eligible,
+    grants,
+    capabilities: dedupeCapabilities(grantCapabilities(grants)),
+    globalCapabilities: dedupeCapabilities(grantCapabilities(globalGrants)),
+  };
+}
+
+/** The capabilities a set of grants carries, each with the provenance of its grant. */
+function grantCapabilities(grants: readonly ContactProfileGrant[]): ContextCapability[] {
+  return grants.flatMap((grant) =>
     grant.capabilities.flatMap((value) => {
       const capability = normalizeCapabilityInput(value);
       return capability ? [{ ...capability, source: grantCapabilitySource(grant) }] : [];
     }),
   );
-  return { active, contactId, scope, eligible, grants, capabilities: dedupeCapabilities(capabilities) };
 }
 
 /** Every chat-scoped and tag-scoped grant, optionally filtered. */
@@ -258,12 +277,7 @@ function grantCapabilitySource(grant: ContactProfileGrant): string {
 }
 
 function materializeGlobalTagCapabilities(contactId: string, rawTags: readonly string[]): ContextCapability[] {
-  return globalProfileGrantsFromTags(contactId, rawTags).flatMap((grant) =>
-    grant.capabilities.flatMap((value) => {
-      const capability = normalizeCapabilityInput(value);
-      return capability ? [{ ...capability, source: grantCapabilitySource(grant) }] : [];
-    }),
-  );
+  return grantCapabilities(globalProfileGrantsFromTags(contactId, rawTags));
 }
 
 /** Provider-owned permission tags a contact carries, in normalized form. */
