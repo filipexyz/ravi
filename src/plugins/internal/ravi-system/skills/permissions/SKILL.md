@@ -146,6 +146,12 @@ Regras:
   tem `use:tool:*`. No Codex, ferramentas MCP da configuração do operador não
   passam pelo teto, e qualquer `use:tool:` tira um agent `explicit-only` do
   sandbox somente leitura.
+- A ferramenta de subagente tem dois nomes: o Claude Code a chama de `Agent`; o
+  registro, os grupos de ferramentas e as concessões antigas dizem `Task`. Os
+  dois são uma ferramenta só: `use:tool:Task` e `use:tool:Agent` liberam as duas
+  chamadas, um grupo que lista `Task` cobre `Agent`, e negar um dos nomes retém
+  os dois. `TaskOutput`, `TaskStop` e as ferramentas de lista de tarefas são
+  outras ferramentas: conceder `Task` não as cobre.
 - No Claude, `@caminho` escrito numa mensagem fica como texto: o runtime não
   lê o arquivo sozinho. O agent só chega ao arquivo por uma chamada de
   ferramenta, que passa pelo teto.
