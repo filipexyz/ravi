@@ -1,0 +1,34 @@
+# TEMPORARY: proves the Bash guard on the uutils coreutils layout (Ubuntu 26.04)
+# and on GNU coreutils (24.04). Removed by the next commit of this pull request.
+name: TMP bash guard uutils
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/tmp-bash-guard-uutils.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-26.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
+      - run: bun install --frozen-lockfile
+      - name: Layout of this runner
+        run: |
+          . /etc/os-release; echo "$PRETTY_NAME"
+          for b in /bin/ls /usr/bin/env /usr/bin/sort /usr/bin/sudo; do echo "$b -> $(realpath "$b")"; done
+      - name: Bash guard realpath tests
+        env:
+          NATS_URL: nats://127.0.0.1:1
+        run: bun test src/bash/launcher-realpath-policy.test.ts
