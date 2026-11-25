@@ -622,14 +622,14 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/crm.ts | 2754 | fixed | binding retained / no recognized error surface | src/cli/commands/crm.ts:407e90df9c7a840dd0de89eb |
 | cli | src/cli/commands/cron.ts | 80 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:02e8ddab66adf503f54297f1 |
 | cli | src/cli/commands/cron.ts | 120 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:d006d9f3a12597bf174620eb |
-| cli | src/cli/commands/cron.ts | 881 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:b529774125801ecee3a7cfad |
-| cli | src/cli/commands/cron.ts | 1006 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:24888fc922bd2f71e6b1c336 |
-| cli | src/cli/commands/cron.ts | 1049 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:e0db278d36dfc386af0f7691 |
-| cli | src/cli/commands/cron.ts | 1081 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:912597df63282d8eee95b7b3 |
-| cli | src/cli/commands/cron.ts | 1243 | triaged-follow-up | catch-without-binding | src/cli/commands/cron.ts:497034230d0a93cb39f7ca5c |
-| cli | src/cli/commands/cron.ts | 1377 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:10725bbda2d8d00ddfc406e9 |
-| cli | src/cli/commands/cron.ts | 1451 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:c60fd754bccf5a1a48321971 |
-| cli | src/cli/commands/cron.ts | 1503 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:004cb83b0ddf423fe9af5476 |
+| cli | src/cli/commands/cron.ts | 891 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:b529774125801ecee3a7cfad |
+| cli | src/cli/commands/cron.ts | 1016 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:24888fc922bd2f71e6b1c336 |
+| cli | src/cli/commands/cron.ts | 1060 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:e0db278d36dfc386af0f7691 |
+| cli | src/cli/commands/cron.ts | 1092 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:912597df63282d8eee95b7b3 |
+| cli | src/cli/commands/cron.ts | 1255 | triaged-follow-up | catch-without-binding | src/cli/commands/cron.ts:497034230d0a93cb39f7ca5c |
+| cli | src/cli/commands/cron.ts | 1389 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:10725bbda2d8d00ddfc406e9 |
+| cli | src/cli/commands/cron.ts | 1463 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:c60fd754bccf5a1a48321971 |
+| cli | src/cli/commands/cron.ts | 1515 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:004cb83b0ddf423fe9af5476 |
 | cli | src/cli/commands/daemon.ts | 116 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:83e88e29b98541a715ba95c9 |
 | cli | src/cli/commands/daemon.ts | 119 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:5c67dde5c37f215d912cdf0d |
 | cli | src/cli/commands/daemon.ts | 154 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:3252e4a28013452b12c3c4af |

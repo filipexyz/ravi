@@ -64,7 +64,7 @@ import {
   resolveCronOwnerPrincipalForCurrentTurn,
 } from "../../link/connector-turn.js";
 import { assertShellAutomationAuthorized } from "../../permissions/shell-automation.js";
-import { assertNoUserOverlayAutomationWrite } from "../../permissions/user-overlay-automation.js";
+import { assertNoUserOverlayAutomationWrite, automationHoldCause } from "../../permissions/user-overlay-automation.js";
 
 /** Why a shell timeout value is invalid, or null when it parses (same rules as parseCronShellTimeout). */
 function cronShellTimeoutError(value: string): string | null {
@@ -519,6 +519,16 @@ function assertCronCreatorBindable(op: string): void {
   if ((isRelayHeldBelowAgent(metadata) && !currentUserOverlayChat()) || withheldBreakGlass) {
     assertNoUserOverlayAutomationWrite(op);
   }
+}
+
+/**
+ * A turn held below the agent (a contact's chat grants, a held relay) may enable or reschedule only a job it
+ * owns: a bound job of another owner can run as the agent (a lifted owner), so the chat binding does not bound it.
+ */
+function assertHeldTurnOwnsJob(op: string, job: CronJob): void {
+  if (automationHoldCause() === null) return;
+  if (resolveCronOwnerPrincipalForCurrentTurn() === cronJobRunsAs(job)) return;
+  assertNoUserOverlayAutomationWrite(op);
 }
 
 function serializeCronJob(job: CronJob) {
@@ -1018,6 +1028,7 @@ export class CronCommands {
     const job = dbGetCronJob(id);
     if (!job) failCronJobNotFound("cron enable", id, asJson);
     assertCronJobMutable("cron enable", id, job, asJson);
+    assertHeldTurnOwnsJob("cron enable", job);
 
     try {
       // Recalculate nextRunAt in case job was disabled for a while
@@ -1105,6 +1116,7 @@ export class CronCommands {
     }
     if (key === "shell" || key === "exec" || key === "env-file") assertShellAutomationAuthorized("cron set");
     if (!CRON_OWNER_KEEP_KEYS.has(key)) assertCronCreatorBindable("cron set");
+    else assertHeldTurnOwnsJob("cron set", job);
     if (key === "reply-session" && value !== "null" && value !== "-") {
       assertCronTargetAuthorized("cron set", { agentId: cronJobOwnerId(job), replySession: value }, asJson);
     }

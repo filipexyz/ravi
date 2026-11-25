@@ -408,6 +408,16 @@ describe("CronCommands --json", () => {
     await addJob("Lifted");
     expect(cronJob?.creatorChat).toBe("chat-bob");
 
+    // An ungoverned chat records its overlay as inactive, with the chat: no binding, as before (review of #991, N1).
+    mockCliContext = {
+      agentId: "dev",
+      context: {
+        metadata: { actorAuthorizationMode: "invoke-only", userOverlay: "inactive", userOverlayChat: "chat:chat-bob" },
+      },
+    };
+    await addJob("Ungoverned");
+    expect(cronJob?.creatorChat).toBeUndefined();
+
     // A held relay whose own overlay is lifted (a thread to an agent stronger than its caller) still writes no job:
     // the held-relay guard reads the overlay mode, not the lift.
     cronJob = null;

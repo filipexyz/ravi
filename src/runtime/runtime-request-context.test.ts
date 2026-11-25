@@ -19,7 +19,8 @@ import { accessActorFromTurn } from "../access/actor.js";
 import { resolveConnectorExecRoute, resolveConnectorTurn, resolveOperatorTurn } from "../link/connector-turn.js";
 import { upsertPermissionProfileDefinition } from "../permissions/apply-grant.js";
 import { dbDeleteContactChatGrant, dbEnsureContactChatGrant } from "../permissions/contact-chat-grants.js";
-import { dbCreateCronJob, dbUpdateCronJob } from "../cron/cron-db.js";
+import { dbCreateCronJob, dbListCronJobs, dbUpdateCronJob } from "../cron/cron-db.js";
+import { CronCommands } from "../cli/commands/cron.js";
 import { canWithCapabilities } from "../permissions/provider-runtime.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
@@ -3559,6 +3560,131 @@ describe("verified human work handoffs", () => {
       expect(next.metadata).toMatchObject({ actorAuthorizationMode: "user-overlay", userOverlay: "active" });
       expect(next.capabilities).toEqual([]);
       expect(automationHoldCause(next)).toBe("contact-chat-grants");
+    });
+
+    describe("cron jobs a turn held below the agent may touch", () => {
+      // Review of #991 (B1, probes C6 to C8): binding a lifted turn's job to the chat made the store read it as
+      // limited to the chat's grants, so a narrowed member's turn or held relay could enable or reschedule the
+      // admin's job, which runs as the whole agent. A held turn may enable or reschedule only a job it owns.
+      const toolCtx = (turn: Turn) => ({
+        ...asTool(turn),
+        transport: "tool" as const,
+        sessionKey: turn.sessionKey,
+        sessionName: turn.sessionName,
+      });
+      async function runAs(turn: Turn, fn: () => unknown): Promise<string> {
+        const original = console.log;
+        console.log = () => {};
+        try {
+          await runWithContext(toolCtx(turn) as never, fn as never);
+          return "ok";
+        } catch (error) {
+          return String((error as { code?: string })?.code);
+        } finally {
+          console.log = original;
+        }
+      }
+      const addArgs = (name: string): Parameters<CronCommands["add"]> => [
+        name,
+        undefined,
+        "30m",
+        undefined,
+        undefined,
+        "hello",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        originAgent.id,
+        undefined,
+        undefined,
+        true,
+      ];
+      const job = (name: string) => dbListCronJobs().find((candidate) => candidate.name === name);
+
+      it("a narrowed member's turn and held relay cannot enable or reschedule an admin's lifted-turn job", async () => {
+        const member = person("Member C7", { status: "allowed" });
+        grantHere(member.id, "permission-reader");
+        const admin = person("Cron admin C7", { tags: ["permission-owner"], status: "allowed" });
+        const adminTurn = speak(admin, "c7-admin");
+        expect(await runAs(adminTurn, () => new CronCommands().add(...addArgs("c7-job")))).toBe("ok");
+        const written = job("c7-job")!;
+        expect(written).toMatchObject({ ownerPrincipal: `contact:${admin.id}`, creatorChat: governedChat });
+        expect(await runAs(adminTurn, () => new CronCommands().disable(written.id, true))).toBe("ok");
+
+        const memberTurn = speak(member, "c7-member");
+        expect(memberTurn.metadata?.actorAuthorizationMode).toBe("user-overlay");
+        const relay = handoff(memberTurn, "execute", {}, originAgent);
+        expect(isRelayHeldBelowAgent(relay.metadata)).toBe(true);
+        const attempts = {
+          "member enable": await runAs(memberTurn, () => new CronCommands().enable(written.id, true)),
+          "relay enable": await runAs(relay, () => new CronCommands().enable(written.id, true)),
+          "relay every 1m": await runAs(relay, () => new CronCommands().set(written.id, "every", "1m", true)),
+          "relay delete-after": await runAs(relay, () =>
+            new CronCommands().set(written.id, "delete-after", "true", true),
+          ),
+        };
+        for (const [label, result] of Object.entries(attempts)) {
+          expect(`${label}:${result}`).toBe(`${label}:PERMISSION_DENIED`);
+        }
+        expect(job("c7-job")).toMatchObject({
+          enabled: false,
+          schedule: written.schedule,
+          deleteAfterRun: written.deleteAfterRun,
+          message: "hello",
+          ownerPrincipal: `contact:${admin.id}`,
+        });
+      });
+
+      it("a held relay acting for the job's own owner still may: ownership decides, not the hold", async () => {
+        const admin = person("Cron admin C6", { tags: ["permission-owner"], status: "allowed" });
+        const turn = speak(admin, "c6");
+        expect(await runAs(turn, () => new CronCommands().add(...addArgs("c6-job")))).toBe("ok");
+        const written = job("c6-job")!;
+        expect(await runAs(turn, () => new CronCommands().disable(written.id, true))).toBe("ok");
+        const held = createRuntimeContext({
+          kind: "turn-runtime",
+          agentId: turn.agentId,
+          sessionKey: turn.sessionKey,
+          sessionName: turn.sessionName,
+          capabilities: turn.capabilities,
+          metadata: { ...turn.metadata, relayNarrowing: true },
+        });
+        expect(isRelayHeldBelowAgent(held.metadata)).toBe(true);
+        expect(await runAs(held, () => new CronCommands().enable(written.id, true))).toBe("ok");
+        expect(await runAs(held, () => new CronCommands().set(written.id, "every", "1m", true))).toBe("ok");
+      });
+
+      it("a member's own bound job and an admin's own lifted job stay editable by their owners", async () => {
+        const member = person("Member C8", { status: "allowed" });
+        grantHere(member.id, "permission-reader");
+        const memberTurn = speak(member, "c8-member");
+        expect(await runAs(memberTurn, () => new CronCommands().add(...addArgs("c8-job")))).toBe("ok");
+        const own = job("c8-job")!;
+        expect(own).toMatchObject({ ownerPrincipal: `contact:${member.id}`, creatorChat: governedChat });
+        const relay = handoff(memberTurn, "execute", {}, originAgent);
+        const admin = person("Admin C8", { tags: ["permission-owner"], status: "allowed" });
+        const adminTurn = speak(admin, "c8-admin");
+        expect(await runAs(adminTurn, () => new CronCommands().add(...addArgs("c8-admin-job")))).toBe("ok");
+        const adminJob = job("c8-admin-job")!;
+        const thread = handoff(adminTurn, "session.bootstrap", {}, originAgent);
+        const attempts = {
+          "member every": await runAs(memberTurn, () => new CronCommands().set(own.id, "every", "10m", true)),
+          "member disable": await runAs(memberTurn, () => new CronCommands().disable(own.id, true)),
+          "member enable": await runAs(memberTurn, () => new CronCommands().enable(own.id, true)),
+          "member relay every": await runAs(relay, () => new CronCommands().set(own.id, "every", "20m", true)),
+          "member relay enable": await runAs(relay, () => new CronCommands().enable(own.id, true)),
+          "admin disable": await runAs(adminTurn, () => new CronCommands().disable(adminJob.id, true)),
+          "admin enable": await runAs(adminTurn, () => new CronCommands().enable(adminJob.id, true)),
+          "admin every": await runAs(adminTurn, () => new CronCommands().set(adminJob.id, "every", "5m", true)),
+          "admin thread enable": await runAs(thread, () => new CronCommands().enable(adminJob.id, true)),
+          "admin thread every": await runAs(thread, () => new CronCommands().set(adminJob.id, "every", "6m", true)),
+        };
+        for (const [label, result] of Object.entries(attempts)) expect(`${label}:${result}`).toBe(`${label}:ok`);
+      });
     });
   });
 });

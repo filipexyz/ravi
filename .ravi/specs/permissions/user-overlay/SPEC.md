@@ -162,7 +162,11 @@ speaking in a chat where another person had a grant.
   (`creatorChat`), as an overlay turn's job is, so it never outlives the full
   access it was written under (review of #990, N3). The held-relay guard of
   `cron add|set` still reads the overlay mode alone: a held relay whose own
-  overlay is lifted binds nothing and writes no job.
+  overlay is lifted binds nothing and writes no job. Since a bound job may now
+  run as the agent (a lifted owner), the binding no longer proves the job is
+  limited: a turn held below the agent (`automationHoldCause` not null) MAY
+  enable it or change a key that keeps its owner (schedule, timeout,
+  delete-after, description) only when it owns the job (review of #991, B1).
 - The lift is decided on every turn, from the grants and tags as they are at
   that turn, also for a cron job bound to the chat (`creatorChat`): the job of
   an owner with full access runs as the agent, and is narrowed to the owner's
