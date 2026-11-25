@@ -102,7 +102,18 @@ A restart MAY instead hand an interrupted unsafe turn back to its session as `ve
 - its origin is conversational: `human`, `agent`, `task` or `unknown`. Scheduled origins defer to their next run, and other origins are only reconciled;
 - the attempt is not itself a restart resume (origin `daemon-restart`, or attempt metadata `restartResume=true`, which the request builder writes for every turn started from a `_daemonRestartResume` input). Such a turn resolves to a `resume_loop` notice instead, so a turn that brings the daemon down cannot loop.
 
-A `verify_continue` input of a still-active task carries that task id, so the resumed turn keeps the task binding. It is delivered at most once per restart epoch and session by the restart delivery ledger.
+A `verify_continue` input of a still-active task carries that task id, so the resumed turn keeps the task binding.
+
+Delivery guarantees differ by path:
+- The boot sweep acts on an attempt only under that attempt's recovery claim, so each attempt is handled at most once.
+- The graceful snapshot path is bounded by the restart delivery ledger: one event per restart epoch and session.
+
+Every restart input MUST carry the authority envelope of the turn it resumes, and never more:
+- **What is recorded.** The envelope is `context`, `_turnOrigin` (relay narrowing and break-glass denies through its caller context) and `_approvalSource`.
+- **Where.** The attempt records it at turn start (`restartTurnAuthority`), and the restart snapshot records it at shutdown.
+- **How it is restored.** The envelope is restored before the recorded chat `source`, like a host-made continuation of the same turn.
+- **Failing closed.** A `continue` or `verify_continue` whose recorded envelope is missing (an attempt or snapshot written before this rule), unreadable, or carries automation authority does not resume. It resolves to a notice: `authority_missing`, `authority_unreadable` or `authority_automation`.
+- **Notices.** A notice carries the recorded envelope when one is readable.
 
 An explicit capacity retry authorized by the host after its replay-safety and
 broker checks is a separate pending attempt, not generic terminal replay. While
@@ -112,7 +123,7 @@ attempt stays terminal. Historical retry state alone MUST NOT grant this
 exception; the live scheduling checkpoint must match the failed input cohort
 and remain free of abort, supersession, tool, output, or input-mutation fences.
 
-Suppressing continuation MUST NOT suppress the restart notice. A `skip` decision (`unsafe_snapshot`, `missing_snapshot`, `ineligible_snapshot`, or `resume_loop`) MUST still deliver one notice-only session input, marked `_daemonRestartResume.noticeOnly`, that carries the restart reason, says why the interrupted work was not resumed, and tells the agent not to continue or repeat that work on its own. The dispatcher MUST NOT hydrate a snapshot's persisted pending work into a notice-only input. A dedicated task session whose task is no longer active receives neither a resume nor a notice. A caller whose own interrupted attempt is still waiting for the previous boot's lease to expire gets its notice only after the orphaned-turn pass, and only if that pass delivered nothing to it. The notice also lists the sessions that resume on their own.
+Suppressing continuation MUST NOT suppress the restart notice. A `skip` decision (`unsafe_snapshot`, `missing_snapshot`, `ineligible_snapshot`, `resume_loop`, or an `authority_*` fence) MUST still deliver one notice-only session input, marked `_daemonRestartResume.noticeOnly`, that carries the restart reason, says why the interrupted work was not resumed, and tells the agent not to continue or repeat that work on its own. The dispatcher MUST NOT hydrate a snapshot's persisted pending work into a notice-only input. A dedicated task session whose task is no longer active receives neither a resume nor a notice. A caller whose own interrupted attempt is still waiting for the previous boot's lease to expire gets its notice only after the orphaned-turn pass, and only if that pass delivered nothing to it. The notice also lists the sessions that resume on their own.
 
 Provider-owned ambiguous-turn reconciliation is distinct from generic replay. The host MAY retain an unsafe current turn solely for a live provider handle that advertises `reconcile_by_client_message_id`; the adapter MUST reattach or hydrate the matching native turn and MUST NOT issue another provider start after a failed/interrupted match without separate terminal replay authority. A provider without that advertised strategy MUST receive only replay-safe current input or independent successors.
 
@@ -153,7 +164,7 @@ Acquiring a recovery claim fences the underlying attempt or queue row immediatel
 The classifier and sweeper are later phases, but their contract is fixed here:
 
 - candidates MUST come from expired non-terminal attempts owned by an abandoned boot or durable queued work without a live owner;
-- ambiguous ownership or missing checkpoint/request data MUST fail closed. An attempt with unsafe tool execution or materialized output MUST NOT be replayed; it MAY only be resumed as `verify_continue` (no input replay, verify-first note), through a claimed candidate;
+- ambiguous ownership or missing checkpoint/request data MUST fail closed. An attempt with unsafe tool execution or materialized output MUST NOT be replayed. It MAY only be resumed as `verify_continue` (no input replay, verify-first note, its own recorded authority envelope). In the sweep this happens through a claimed candidate, and on the graceful path through the per-epoch delivery ledger;
 - recurring cron, heartbeat, follow-up, and sweep work SHOULD defer to the next schedule unless the producer explicitly opts into crash resume;
 - stable decisions are `resume`, `requeue`, `reconcile_interrupted`, `defer_next_schedule`, `ignore_stale`, and `manual_review`;
 - recovery MUST NOT promise exactly-once external effects without a producer-owned durable idempotency key;

@@ -4,6 +4,9 @@ import {
   CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY,
   buildDaemonRestartNoticePrompt,
   buildDaemonRestartResumePrompt,
+  captureRestartTurnAuthority,
+  resolveRestartSnapshotInterruptedAttemptId,
+  restoreRestartTurnAuthority,
   deliverDaemonRestartSessionEvent,
   resolveCrashRecoveryRestartResumeDecision,
   resolveCrashRecoveryRestartResumeMode,
@@ -323,7 +326,9 @@ describe("daemon restart session event delivery", () => {
       {
         ...RESTART_EVENT_BASE,
         kind: "active",
-        snapshot: snapshotRecord({ metadata: { [CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY]: "continue" } }),
+        snapshot: snapshotRecord({
+          metadata: { [CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY]: "continue", restartTurnAuthority: { v: 1 } },
+        }),
       },
       deps,
     );
@@ -341,7 +346,11 @@ describe("daemon restart session event delivery", () => {
         kind: "active",
         snapshot: snapshotRecord({
           runtimeProvider: "codex",
-          metadata: { live: true, [CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY]: "continue" },
+          metadata: {
+            live: true,
+            [CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY]: "continue",
+            restartTurnAuthority: { v: 1 },
+          },
         }),
       },
       deps,
@@ -460,6 +469,104 @@ describe("daemon restart session event delivery", () => {
   });
 });
 
+describe("daemon restart inputs carry the interrupted turn's authority", () => {
+  const relayOrigin = {
+    protocol: "ravi.runtime.turn-origin",
+    schemaVersion: 1,
+    producer: "session-relay",
+    action: "execute",
+    principal: { type: "agent", id: "main" },
+    callerContextId: "ctx_caller",
+  };
+
+  it("restores the recorded relay envelope on a continuation, before the recorded source", async () => {
+    const source: MessageTarget = { channel: "slack", accountId: "ravi-slack", chatId: "D1", actorType: "agent" };
+    const { deps, published } = restartEventHarness({ source });
+
+    await deliverDaemonRestartSessionEvent(
+      {
+        ...RESTART_EVENT_BASE,
+        kind: "active",
+        snapshot: snapshotRecord({
+          metadata: {
+            live: true,
+            [CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY]: "continue",
+            restartTurnAuthority: { v: 1, _turnOrigin: relayOrigin, context: { actorType: "agent" } },
+          },
+        }),
+      },
+      deps,
+    );
+
+    expect(published[0]?.payload._turnOrigin).toEqual(relayOrigin);
+    expect(published[0]?.payload.context).toEqual({ actorType: "agent" });
+    expect(published[0]?.payload.source).toEqual(source);
+  });
+
+  it.each([
+    { label: "missing", authority: undefined, reason: "authority_missing" },
+    { label: "unreadable", authority: { v: 2 }, reason: "authority_unreadable" },
+    { label: "automation", authority: { v: 1, automation: true }, reason: "authority_automation" },
+  ])("only notifies when a continuation's recorded authority is $label", async ({ authority, reason }) => {
+    const { deps, published, marked } = restartEventHarness();
+
+    const outcome = await deliverDaemonRestartSessionEvent(
+      {
+        ...RESTART_EVENT_BASE,
+        kind: "active",
+        snapshot: snapshotRecord({
+          metadata: {
+            live: true,
+            [CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY]: "continue",
+            ...(authority ? { restartTurnAuthority: authority } : {}),
+          },
+        }),
+      },
+      deps,
+    );
+
+    expect(outcome).toMatchObject({ deliveryKind: "notice", decision: { reason } });
+    expect(published[0]?.payload.prompt).not.toContain("Continue de onde parou");
+    expect(published[0]?.payload._daemonRestartResume).toMatchObject({ noticeOnly: true });
+    expect(marked[0]?.decisionReason).toBe(reason);
+  });
+
+  it("restores the attempt's recorded envelope on a verify resume", async () => {
+    const { deps, published } = restartEventHarness();
+    deps.judgeInterruptedAttempt = () => ({
+      kind: "resume",
+      attempt: { attemptId: "attempt-relay" } as never,
+      authority: { _turnOrigin: relayOrigin } as never,
+    });
+
+    await deliverDaemonRestartSessionEvent(
+      {
+        ...RESTART_EVENT_BASE,
+        kind: "active",
+        snapshot: snapshotRecord({
+          metadata: { ...UNSAFE_SNAPSHOT_METADATA, turnActive: true, crashRecoveryAttemptId: "attempt-relay" },
+        }),
+      },
+      deps,
+    );
+
+    expect(published[0]?.payload._turnOrigin).toEqual(relayOrigin);
+    expect(published[0]?.payload.prompt).toContain("confira o estado real");
+  });
+
+  it("records a JSON-safe envelope and refuses automation authority", () => {
+    expect(captureRestartTurnAuthority(undefined)).toEqual({ v: 1 });
+    expect(
+      captureRestartTurnAuthority({ _turnOrigin: relayOrigin as never, context: { senderId: undefined } as never }),
+    ).toEqual({ v: 1, _turnOrigin: relayOrigin, context: {} } as never);
+    expect(captureRestartTurnAuthority({ _cron: true } as never)).toEqual({ v: 1, automation: true });
+    expect(restoreRestartTurnAuthority({ v: 1, _turnOrigin: { protocol: "other" } })).toEqual({
+      ok: false,
+      reason: "authority_unreadable",
+    });
+  });
+});
+
 describe("daemon restart verify-and-continue for turns interrupted mid-action", () => {
   const INTERRUPTED_SNAPSHOT_METADATA = {
     ...UNSAFE_SNAPSHOT_METADATA,
@@ -467,13 +574,14 @@ describe("daemon restart verify-and-continue for turns interrupted mid-action", 
     crashRecoveryAttemptId: "attempt-interrupted",
   };
   const interruptedAttempt = { attemptId: "attempt-interrupted" } as never;
+  const recordedAuthority = { context: { actorType: "agent" } } as never;
 
-  it("resumes an unsafe live snapshot with a verify note once its attempt is claimed", async () => {
+  it("resumes an unsafe live snapshot with a verify note when its attempt is judged resumable", async () => {
     const { deps, published, marked } = restartEventHarness();
     const claims: string[] = [];
     deps.judgeInterruptedAttempt = ({ attemptId }) => {
       claims.push(attemptId);
-      return { kind: "resume", attempt: interruptedAttempt };
+      return { kind: "resume", attempt: interruptedAttempt, authority: recordedAuthority };
     };
 
     const outcome = await deliverDaemonRestartSessionEvent(
@@ -510,7 +618,11 @@ describe("daemon restart verify-and-continue for turns interrupted mid-action", 
 
   it("carries durable successors along with the verify note instead of a pending-only resume", async () => {
     const { deps, published } = restartEventHarness();
-    deps.judgeInterruptedAttempt = () => ({ kind: "resume", attempt: interruptedAttempt });
+    deps.judgeInterruptedAttempt = () => ({
+      kind: "resume",
+      attempt: interruptedAttempt,
+      authority: recordedAuthority,
+    });
 
     const outcome = await deliverDaemonRestartSessionEvent(
       {
@@ -533,7 +645,7 @@ describe("daemon restart verify-and-continue for turns interrupted mid-action", 
 
   it("only notifies when the interrupted turn was itself a restart resume", async () => {
     const { deps, published, marked } = restartEventHarness();
-    deps.judgeInterruptedAttempt = () => ({ kind: "loop", attempt: interruptedAttempt });
+    deps.judgeInterruptedAttempt = () => ({ kind: "notice", attempt: interruptedAttempt, fenceReason: "resume_loop" });
 
     const outcome = await deliverDaemonRestartSessionEvent(
       { ...RESTART_EVENT_BASE, kind: "active", snapshot: snapshotRecord({ metadata: INTERRUPTED_SNAPSHOT_METADATA }) },
@@ -563,7 +675,7 @@ describe("daemon restart verify-and-continue for turns interrupted mid-action", 
     let claimed = false;
     deps.judgeInterruptedAttempt = () => {
       claimed = true;
-      return { kind: "resume", attempt: interruptedAttempt };
+      return { kind: "resume", attempt: interruptedAttempt, authority: recordedAuthority };
     };
 
     const outcome = await deliverDaemonRestartSessionEvent(
@@ -589,7 +701,11 @@ describe("daemon restart verify-and-continue for turns interrupted mid-action", 
 
   it("keeps the still-active task binding of an interrupted task turn on its verify resume", async () => {
     const { deps, published } = restartEventHarness();
-    deps.judgeInterruptedAttempt = () => ({ kind: "resume", attempt: interruptedAttempt });
+    deps.judgeInterruptedAttempt = () => ({
+      kind: "resume",
+      attempt: interruptedAttempt,
+      authority: recordedAuthority,
+    });
 
     await deliverDaemonRestartSessionEvent(
       {
@@ -603,5 +719,29 @@ describe("daemon restart verify-and-continue for turns interrupted mid-action", 
     );
 
     expect(published[0]?.payload.taskBarrierTaskId).toBe("task-42");
+  });
+});
+
+describe("which interrupted attempt a restart snapshot records", () => {
+  const base = {
+    turnActive: true,
+    replayable: false,
+    terminalTurnConsumed: false,
+    hasScheduledCapacityRetry: false,
+    attemptId: "attempt-1",
+  };
+
+  it("records an active, non-replayable, unfinished turn's attempt", () => {
+    expect(resolveRestartSnapshotInterruptedAttemptId(base)).toBe("attempt-1");
+  });
+
+  it.each([
+    { label: "an idle session", change: { turnActive: false } },
+    { label: "a replayable turn (it continues instead)", change: { replayable: true } },
+    { label: "a turn the provider already finished", change: { terminalTurnConsumed: true } },
+    { label: "a scheduled capacity retry", change: { hasScheduledCapacityRetry: true } },
+    { label: "a turn without a durable attempt", change: { attemptId: undefined } },
+  ])("records nothing for $label", ({ change }) => {
+    expect(resolveRestartSnapshotInterruptedAttemptId({ ...base, ...change })).toBeNull();
   });
 });

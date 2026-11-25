@@ -1,5 +1,6 @@
 import type { DaemonRestartDeliveryKind, DaemonRestartSessionSnapshotRecord } from "../router/router-db.js";
 import { logger } from "../utils/logger.js";
+import type { RuntimeTurnAuthorityEnvelope } from "./delivery-queue.js";
 import type { MessageTarget, RuntimeLaunchPrompt } from "./message-types.js";
 import type { RestartAttemptVerdict } from "./restart-turn-recovery.js";
 import type { RuntimeProviderId } from "./types.js";
@@ -7,6 +8,132 @@ import type { RuntimeProviderId } from "./types.js";
 const log = logger.child("daemon");
 
 export const CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY = "crashRecoveryRestartResumeMode";
+
+/**
+ * Where the attempt (at turn start) and the restart snapshot (at shutdown)
+ * record the authority envelope of the turn: who it acts for beyond its chat
+ * `source` (a relay's `_turnOrigin` narrowing, the message `context`, the
+ * approval source). A restart input carries it back, so it never holds more
+ * than the turn it resumes.
+ */
+export const RESTART_TURN_AUTHORITY_METADATA_KEY = "restartTurnAuthority";
+
+type RestartTurnAuthorityFields = Pick<RuntimeLaunchPrompt, "context" | "_turnOrigin" | "_approvalSource">;
+
+export interface RecordedRestartTurnAuthority extends RestartTurnAuthorityFields {
+  v: 1;
+  /** The turn ran under automation authority (cron, trigger, heartbeat, follow-up): never resumed. */
+  automation?: true;
+}
+
+export type RestoredRestartTurnAuthority =
+  | { ok: true; authority: RestartTurnAuthorityFields }
+  | { ok: false; reason: "authority_missing" | "authority_unreadable" | "authority_automation" };
+
+/** JSON-safe record of a turn's authority envelope (no secrets: ids and actor metadata only). */
+export function captureRestartTurnAuthority(
+  envelope: RuntimeTurnAuthorityEnvelope | null | undefined,
+): RecordedRestartTurnAuthority {
+  const automation = Boolean(
+    envelope?._cron ||
+      envelope?._cronAuthority ||
+      envelope?._trigger ||
+      envelope?._triggerAuthority ||
+      envelope?._heartbeat ||
+      envelope?._sessionFollowup,
+  );
+  const recorded = {
+    v: 1 as const,
+    ...(envelope?.context ? { context: envelope.context } : {}),
+    ...(envelope?._turnOrigin ? { _turnOrigin: envelope._turnOrigin } : {}),
+    ...(envelope?._approvalSource ? { _approvalSource: envelope._approvalSource } : {}),
+    ...(automation ? { automation: true as const } : {}),
+  };
+  return JSON.parse(JSON.stringify(recorded)) as RecordedRestartTurnAuthority;
+}
+
+/** Read a recorded authority envelope back; anything absent or malformed fails closed. */
+export function restoreRestartTurnAuthority(value: unknown): RestoredRestartTurnAuthority {
+  if (value === undefined || value === null) return { ok: false, reason: "authority_missing" };
+  const record = asRecord(value);
+  if (!record || record.v !== 1) return { ok: false, reason: "authority_unreadable" };
+  if (record.automation === true) return { ok: false, reason: "authority_automation" };
+  const context = record.context;
+  const turnOrigin = record._turnOrigin;
+  const approvalSource = record._approvalSource;
+  if (context !== undefined && !asRecord(context)) return { ok: false, reason: "authority_unreadable" };
+  if (approvalSource !== undefined && !asRecord(approvalSource)) return { ok: false, reason: "authority_unreadable" };
+  if (turnOrigin !== undefined) {
+    const origin = asRecord(turnOrigin);
+    if (!origin || origin.protocol !== "ravi.runtime.turn-origin" || origin.schemaVersion !== 1) {
+      return { ok: false, reason: "authority_unreadable" };
+    }
+  }
+  return {
+    ok: true,
+    authority: {
+      ...(context !== undefined ? { context: context as RuntimeLaunchPrompt["context"] } : {}),
+      ...(turnOrigin !== undefined ? { _turnOrigin: turnOrigin as RuntimeLaunchPrompt["_turnOrigin"] } : {}),
+      ...(approvalSource !== undefined
+        ? { _approvalSource: approvalSource as RuntimeLaunchPrompt["_approvalSource"] }
+        : {}),
+    },
+  };
+}
+
+/**
+ * Put the interrupted turn's authority and its recorded chat source on a
+ * restart input. The envelope goes first and the source last, like a host-made
+ * continuation of the same turn (`host-event-loop`), so the input acts for the
+ * same actor and narrowing as the turn it resumes and never more.
+ */
+export function withRestartTurnAuthority(
+  payload: DaemonRestartPrompt,
+  authority: RestartTurnAuthorityFields | undefined,
+  source: MessageTarget | undefined,
+): DaemonRestartPrompt {
+  const restored: DaemonRestartPrompt = { ...(authority ?? {}), ...payload };
+  if (source) restored.source = source;
+  return restored;
+}
+
+/** Copy only the reply/actor fields of a recorded chat source. */
+export function normalizeRestartResumeSource(source: Record<string, unknown>): MessageTarget | undefined {
+  const channel = cleanString(source.channel);
+  const accountId = cleanString(source.accountId);
+  const chatId = cleanString(source.chatId);
+  if (!channel || !accountId || !chatId) {
+    return undefined;
+  }
+
+  const target: MessageTarget = { channel, accountId, chatId };
+  for (const key of [
+    "instanceId",
+    "threadId",
+    "sourceMessageId",
+    "canonicalChatId",
+    "actorType",
+    "contactId",
+    "actorAgentId",
+    "automationId",
+    "platformIdentityId",
+    "rawSenderId",
+    "normalizedSenderId",
+  ] as const) {
+    const normalized = cleanString(source[key]);
+    if (normalized) {
+      (target as unknown as Record<string, unknown>)[key] = normalized;
+    }
+  }
+  if (typeof source.identityConfidence === "number") {
+    target.identityConfidence = source.identityConfidence;
+  }
+  const identityProvenance = asRecord(source.identityProvenance);
+  if (identityProvenance) {
+    target.identityProvenance = identityProvenance;
+  }
+  return target;
+}
 
 export type CrashRecoveryRestartResumeMode = "continue" | "pending_only" | "skip";
 
@@ -21,7 +148,10 @@ export type DaemonRestartResumeFenceReason =
   | "unsafe_snapshot"
   | "missing_snapshot"
   | "ineligible_snapshot"
-  | "resume_loop";
+  | "resume_loop"
+  | "authority_missing"
+  | "authority_unreadable"
+  | "authority_automation";
 
 export type CrashRecoveryRestartResumeDecision =
   | { mode: "continue"; publish: true; reason: "continue" }
@@ -29,7 +159,7 @@ export type CrashRecoveryRestartResumeDecision =
   | { mode: "verify_continue"; publish: true; reason: "verify_continue" }
   | { mode: "skip"; publish: false; reason: DaemonRestartResumeFenceReason };
 
-type DaemonRestartPrompt = RuntimeLaunchPrompt & Record<string, unknown>;
+export type DaemonRestartPrompt = RuntimeLaunchPrompt & Record<string, unknown>;
 
 export function resolveCrashRecoveryRestartResumeMode(
   metadata?: Record<string, unknown>,
@@ -182,6 +312,10 @@ function describeRestartResumeFence(
       return "O snapshot de restart desta sessão está fora da janela de retomada, então nenhum trabalho interrompido foi retomado automaticamente.";
     case "resume_loop":
       return "O turn interrompido já era uma retomada automática de um restart anterior, então não foi retomado de novo, para não entrar em laço.";
+    case "authority_missing":
+    case "authority_unreadable":
+    case "authority_automation":
+      return "Não foi possível reconstituir a autoridade do turn interrompido, então ele não foi retomado automaticamente.";
   }
 }
 
@@ -240,6 +374,25 @@ export interface DaemonRestartSessionEventDeps {
 export const DAEMON_RESTART_INTERRUPTED_ATTEMPT_METADATA_KEY = "crashRecoveryAttemptId";
 
 /**
+ * The attempt a restart snapshot records as interrupted mid-action, or null.
+ * Only an active turn that is not replayable, that the provider had not
+ * finished (a terminal turn is consumed and never resurrected) and that is not
+ * a scheduled capacity retry (pending-only work) qualifies.
+ */
+export function resolveRestartSnapshotInterruptedAttemptId(input: {
+  turnActive: boolean;
+  replayable: boolean;
+  terminalTurnConsumed: boolean;
+  hasScheduledCapacityRetry: boolean;
+  attemptId: string | undefined;
+}): string | null {
+  if (!input.turnActive || input.replayable || input.terminalTurnConsumed || input.hasScheduledCapacityRetry) {
+    return null;
+  }
+  return input.attemptId ?? null;
+}
+
+/**
  * The durable attempt a live snapshot recorded as interrupted after it started
  * acting. The dispatcher only records it for an active, non-replayable turn
  * that the provider had not finished and that is not a scheduled capacity
@@ -292,6 +445,8 @@ export async function deliverDaemonRestartSessionEvent(
     pendingMessageCount: snapshot?.pendingMessageCount,
   });
   let evidence: string[] = [];
+  const snapshotAuthority = restoreRestartTurnAuthority(snapshot?.metadata?.[RESTART_TURN_AUTHORITY_METADATA_KEY]);
+  let authority: RestartTurnAuthorityFields | undefined;
   const interruptedAttemptId =
     decision.reason === "unsafe_snapshot" || decision.reason === "pending_only"
       ? snapshotInterruptedAttemptId(snapshot)
@@ -306,9 +461,22 @@ export async function deliverDaemonRestartSessionEvent(
     if (verdict.kind === "resume") {
       decision = { mode: "verify_continue", publish: true, reason: "verify_continue" };
       evidence = describeUnsafeSnapshotEvidence(snapshot?.metadata);
-    } else if (verdict.kind === "loop" && !decision.publish) {
-      decision = { mode: "skip", publish: false, reason: "resume_loop" };
+      authority = verdict.authority;
+    } else if (verdict.kind === "notice" && !decision.publish) {
+      decision = { mode: "skip", publish: false, reason: verdict.fenceReason };
     }
+  }
+  if (decision.mode === "continue") {
+    // A continuation carries the interrupted turn's own authority envelope; a
+    // snapshot without one (written before this release, or malformed) can
+    // only produce a notice.
+    if (snapshotAuthority.ok) {
+      authority = snapshotAuthority.authority;
+    } else {
+      decision = { mode: "skip", publish: false, reason: snapshotAuthority.reason };
+    }
+  } else if (decision.mode !== "verify_continue" && snapshotAuthority.ok) {
+    authority = snapshotAuthority.authority;
   }
   const runtimeProvider = snapshot?.runtimeProvider as RuntimeProviderId | undefined;
   let deliveryKind: DaemonRestartDeliveryKind;
@@ -342,9 +510,7 @@ export async function deliverDaemonRestartSessionEvent(
   }
 
   const source = deps.resolveSource(snapshot);
-  if (source) {
-    payload.source = source;
-  }
+  payload = withRestartTurnAuthority(payload, authority, source);
 
   const eventContext = { ...logContext, deliveryKind, decisionReason: decision.reason };
   try {

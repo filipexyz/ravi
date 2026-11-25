@@ -76,6 +76,11 @@ normative: false
 - The boot sweep fences a recent dead boot only after its lease expired, records an `apply` recovery run owned by the current boot, and claims every candidate before acting. A second pass, or a racing pass that listed the attempt before the claim, publishes nothing. Unclaimed attempts of an already `abandoned` boot are still recovered. A failed publish is completed as `failed` and not retried.
 - A boot still inside its lease is left alone, and its waiting sessions are reported. The caller notice for a caller in that list is held until the deferred pass, and is sent only if that pass delivered nothing to the caller.
 - PM2 registers the daemon and the channels runner with `--kill-timeout 20000`, above the daemon's 15 s shutdown guard.
+- Every attempt records `restartTurnAuthority`, the turn's `context`, `_turnOrigin` and `_approvalSource`, JSON-safe and marked when the turn ran under automation authority. Every restart snapshot records the same for a live session.
+- A restart input restores that envelope before the recorded `source`, on both the sweep and the graceful path. For a relay narrowed to a contact's capabilities, a relay held below break-glass, and a Slack thread-child relay, the resumed runtime context has exactly the capabilities and break-glass withholding of the original turn (`restart-resume-authority.test.ts`).
+- A `continue` or `verify_continue` whose recorded envelope is missing, unreadable, or automation resolves to a notice (`authority_*`) and never to a continuation.
+- The snapshot records an interrupted attempt only for an active, non-replayable, unfinished turn that is not a scheduled capacity retry (`resolveRestartSnapshotInterruptedAttemptId`).
+- The sweep never touches its own boot, leaves a boot whose fence compare-and-set fails, and claims, without resuming, the turn of a task that is no longer active.
 - A `skip` decision MUST still publish one notice-only restart input (`_daemonRestartResume.noticeOnly`) with the restart reason and the fence reason; it never contains "Continue de onde parou" and the dispatcher never hydrates persisted pending work into it.
 - The restart delivery ledger records `notice` for a fenced restart and `resume` only for a published `continue`/`pending_only` resume; a failed publish or a terminal task session skip leaves no delivery record.
 - Persisted pending successors remain separate atoms with their original pending id, source, actor metadata, task barrier, and delivery barrier when hydrated into an existing or starting runtime.
@@ -109,6 +114,7 @@ bun test src/runtime/crash-recovery-store.test.ts
 bun test src/runtime/crash-recovery.test.ts src/runtime/prompt-subscription.test.ts src/runtime/delivery-queue.test.ts src/runtime/control-host.test.ts
 bun test src/approval/service.test.ts src/runtime/control-host.test.ts src/runtime/session-trace.test.ts src/runtime/session-dispatcher.test.ts src/runtime/daemon-restart-resume.test.ts src/bot.runtime-guards.test.ts
 bun test src/runtime/restart-turn-recovery.test.ts
+bun test src/runtime/restart-resume-authority.test.ts
 bun test src/runtime/runtime-request-builder.crash-recovery.test.ts
 bun test src/daemon-stdin.test.ts
 bun run typecheck

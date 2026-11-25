@@ -11,6 +11,7 @@ import {
   markRuntimeBootEpochAbandoned,
   markRuntimeTurnAttemptSafety,
 } from "./crash-recovery-store.js";
+import { RESTART_TURN_AUTHORITY_METADATA_KEY } from "./daemon-restart-resume.js";
 import type { TurnOrigin } from "./turn-provenance.js";
 import {
   createLedgerOrphanedRestartTurnDeps,
@@ -61,6 +62,8 @@ function createAttempt(input: {
   originKind?: TurnOrigin;
   taskBarrierTaskId?: string;
   metadata?: Record<string, unknown>;
+  /** Leave out the recorded authority envelope, like an attempt written before this release. */
+  legacy?: boolean;
 }) {
   const startedAt = input.startedAt ?? NOW - 135_000;
   createRuntimeTurnAttempt({
@@ -82,7 +85,10 @@ function createAttempt(input: {
     taskBarrierTaskId: input.taskBarrierTaskId ?? null,
     deliveryBarrier: "after_response",
     pendingIds: [],
-    metadata: input.metadata ?? null,
+    metadata: {
+      ...(input.legacy ? {} : { [RESTART_TURN_AUTHORITY_METADATA_KEY]: { v: 1 } }),
+      ...(input.metadata ?? {}),
+    },
   });
   markRuntimeTurnAttemptSafety({ attemptId: input.attemptId, startedTool: true, markedAt: startedAt + 1 });
 }
@@ -172,7 +178,7 @@ describe("orphaned turn recovery after an unclean restart", () => {
 
     expect(outcome.resumed).toEqual([]);
     expect(outcome.noticed).toEqual(["main-t-1"]);
-    expect(deliveries).toEqual([{ kind: "loop", sessionName: "main-t-1", attemptId: "attempt-resumed" }]);
+    expect(deliveries).toEqual([{ kind: "notice", sessionName: "main-t-1", attemptId: "attempt-resumed" }]);
     expect(getRuntimeTurnAttempt("attempt-resumed")?.recoveryStatus).toBe("reconcile_interrupted");
   });
 
@@ -190,7 +196,7 @@ describe("orphaned turn recovery after an unclean restart", () => {
 
     await recover(deps);
 
-    expect(deliveries).toEqual([{ kind: "loop", sessionName: "main-t-1", attemptId: "attempt-task-resume" }]);
+    expect(deliveries).toEqual([{ kind: "notice", sessionName: "main-t-1", attemptId: "attempt-task-resume" }]);
   });
 
   it("resumes only the newest interrupted turn of a session", async () => {
@@ -304,6 +310,66 @@ describe("orphaned turn recovery after an unclean restart", () => {
     expect(failed.skipped).toEqual([expect.objectContaining({ attemptId: "attempt-1", reason: "publish_failed" })]);
     expect(getRuntimeTurnAttempt("attempt-1")?.recoveryStatus).toBe("action_failed");
     expect(retry.deliveries).toEqual([]);
+  });
+
+  it("only notifies an attempt recorded without its authority envelope (fails closed)", async () => {
+    createLiveBoot();
+    createBoot("boot-dead");
+    createAttempt({ attemptId: "attempt-legacy", bootEpoch: "boot-dead", legacy: true });
+    const { deps, deliveries } = harness();
+
+    const outcome = await recover(deps);
+
+    expect(outcome.resumed).toEqual([]);
+    expect(deliveries).toEqual([{ kind: "notice", sessionName: "main-t-1", attemptId: "attempt-legacy" }]);
+    const [run] = listRuntimeRecoveryRuns();
+    expect(listRuntimeRecoveryCandidates(run!.recoveryRunId)).toEqual([
+      expect.objectContaining({ decision: "reconcile_interrupted", reasonCode: "authority_missing" }),
+    ]);
+  });
+
+  it("never sweeps its own boot, even when that boot's lease ran out", async () => {
+    createBoot("boot-live", { lastHeartbeatAt: NOW - 130_000 });
+    createAttempt({ attemptId: "attempt-own", bootEpoch: "boot-live" });
+    const { deps, deliveries } = harness();
+
+    await recover(deps);
+
+    expect(deliveries).toEqual([]);
+    expect(getRuntimeBootEpoch("boot-live")?.status).toBe("active");
+    expect(getRuntimeTurnAttempt("attempt-own")?.recoveryClaimId).toBeNull();
+  });
+
+  it("leaves a boot alone when fencing it fails (its owner renewed after the listing)", async () => {
+    createLiveBoot();
+    createBoot("boot-dead");
+    createAttempt({ attemptId: "attempt-1", bootEpoch: "boot-dead" });
+    const { deps, deliveries } = harness();
+    deps.abandonBootEpoch = () => false;
+
+    const outcome = await recover(deps);
+
+    expect(deliveries).toEqual([]);
+    expect(outcome.recoveryRunId).toBeNull();
+    expect(getRuntimeTurnAttempt("attempt-1")?.recoveryClaimId).toBeNull();
+  });
+
+  it("claims without resuming the turn of a task that is no longer active", async () => {
+    createLiveBoot();
+    createBoot("boot-dead");
+    createAttempt({
+      attemptId: "attempt-task",
+      bootEpoch: "boot-dead",
+      originKind: "task",
+      taskBarrierTaskId: "task-done",
+    });
+    const { deps, deliveries } = harness();
+    deps.isTerminalTaskSession = (_sessionName, taskId) => taskId === "task-done";
+
+    const outcome = await recover(deps);
+
+    expect(deliveries).toEqual([]);
+    expect(outcome.skipped).toEqual([expect.objectContaining({ attemptId: "attempt-task", reason: "terminal_task" })]);
   });
 
   it("does nothing without its own boot epoch", async () => {

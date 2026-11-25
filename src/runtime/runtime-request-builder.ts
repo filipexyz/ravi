@@ -1,4 +1,5 @@
 import { getRecentHistory } from "../db.js";
+import { captureRestartTurnAuthority, RESTART_TURN_AUTHORITY_METADATA_KEY } from "./daemon-restart-resume.js";
 import { RESTART_RESUME_ATTEMPT_METADATA_KEY } from "./restart-turn-recovery.js";
 import { reopenThreadsForDeliveredInstructions } from "../channels/slack/thread-instruction-delivery.js";
 import { DEFAULT_DELIVERY_BARRIER } from "../delivery-barriers.js";
@@ -968,6 +969,9 @@ async function buildRuntimeStartRequestInternal(
             ...(input.deliverableMessages.some((message) => message.launchPrompt?._daemonRestartResume)
               ? { [RESTART_RESUME_ATTEMPT_METADATA_KEY]: true }
               : {}),
+            // The authority this turn acts with beyond its source (relay narrowing,
+            // message context): a restart resume restores it and never more.
+            [RESTART_TURN_AUTHORITY_METADATA_KEY]: captureRestartTurnAuthority(streamingSession.currentTurnAuthority),
           },
         },
         {

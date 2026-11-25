@@ -91,16 +91,11 @@ import { ensureRaviEventsStream } from "./events/audit-stream.js";
 import { startWebhookHttpServerFromEnv, type WebhookHttpServerHandle } from "./webhooks/http-server.js";
 import { startHostCliGateway, type HostCliGatewayHandle } from "./cli/host-cli-gateway.js";
 import type { MessageTarget } from "./runtime/message-types.js";
-import {
-  buildDaemonRestartNoticePrompt,
-  buildDaemonRestartResumePrompt,
-  deliverDaemonRestartSessionEvent,
-} from "./runtime/daemon-restart-resume.js";
+import { deliverDaemonRestartSessionEvent, normalizeRestartResumeSource } from "./runtime/daemon-restart-resume.js";
 import { getRuntimeTurnAttempt, hasLaterRuntimeTurnAttempt } from "./runtime/crash-recovery-store.js";
-import type { RuntimeProviderId } from "./runtime/types.js";
 import {
+  buildOrphanedRestartTurnInput,
   createLedgerOrphanedRestartTurnDeps,
-  describeInterruptedAttemptEvidence,
   hasOrphanedRestartTurns,
   judgeRestartInterruptedAttempt,
   type OrphanedRestartTurnDeps,
@@ -979,32 +974,13 @@ async function deliverOrphanedRestartTurn(
 ): Promise<boolean> {
   const { verdict, sessionName } = input;
   const attempt = verdict.attempt;
-  const runtimeProvider = attempt.provider as RuntimeProviderId;
-  const payload =
-    verdict.kind === "resume"
-      ? buildDaemonRestartResumePrompt({
-          restartEpoch: restartInfo.restartEpoch,
-          reason: restartInfo.reason,
-          sessionKey: attempt.sessionKey,
-          mode: "verify_continue",
-          runtimeProvider,
-          evidence: describeInterruptedAttemptEvidence(attempt),
-          taskBarrierTaskId: attempt.taskBarrierTaskId ?? undefined,
-        })
-      : buildDaemonRestartNoticePrompt({
-          restartEpoch: restartInfo.restartEpoch,
-          reason: restartInfo.reason,
-          sessionKey: attempt.sessionKey,
-          fenceReason: "resume_loop",
-          runtimeProvider,
-        });
-  const sourceRecord = asRecord(attempt.source);
-  const source = sourceRecord ? normalizeRestartResumeSource(sourceRecord) : undefined;
-  if (source) {
-    payload.source = source;
-  }
+  const payload = buildOrphanedRestartTurnInput({
+    restartEpoch: restartInfo.restartEpoch,
+    reason: restartInfo.reason,
+    verdict,
+  });
   const deliveryKind = verdict.kind === "resume" ? "resume" : "notice";
-  const decisionReason = verdict.kind === "resume" ? "verify_continue" : "resume_loop";
+  const decisionReason = verdict.kind === "resume" ? "verify_continue" : verdict.fenceReason;
   const context = {
     restartEpoch: restartInfo.restartEpoch,
     sessionName,
@@ -1095,47 +1071,6 @@ function resolveRestartResumeSource(snapshot?: DaemonRestartSessionSnapshotRecor
     return undefined;
   }
   return normalizeRestartResumeSource(currentSource);
-}
-
-function normalizeRestartResumeSource(source: Record<string, unknown>): MessageTarget | undefined {
-  const channel = cleanString(source.channel);
-  const accountId = cleanString(source.accountId);
-  const chatId = cleanString(source.chatId);
-  if (!channel || !accountId || !chatId) {
-    return undefined;
-  }
-
-  const target: MessageTarget = { channel, accountId, chatId };
-  copyStringField(target, "instanceId", source.instanceId);
-  copyStringField(target, "threadId", source.threadId);
-  copyStringField(target, "sourceMessageId", source.sourceMessageId);
-  copyStringField(target, "canonicalChatId", source.canonicalChatId);
-  copyStringField(target, "actorType", source.actorType);
-  copyStringField(target, "contactId", source.contactId);
-  copyStringField(target, "actorAgentId", source.actorAgentId);
-  copyStringField(target, "automationId", source.automationId);
-  copyStringField(target, "platformIdentityId", source.platformIdentityId);
-  copyStringField(target, "rawSenderId", source.rawSenderId);
-  copyStringField(target, "normalizedSenderId", source.normalizedSenderId);
-  if (typeof source.identityConfidence === "number") {
-    target.identityConfidence = source.identityConfidence;
-  }
-  const identityProvenance = asRecord(source.identityProvenance);
-  if (identityProvenance) {
-    target.identityProvenance = identityProvenance;
-  }
-  return target;
-}
-
-function copyStringField(target: object, key: string, value: unknown): void {
-  const normalized = cleanString(value);
-  if (normalized) {
-    (target as Record<string, unknown>)[key] = normalized;
-  }
-}
-
-function cleanString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

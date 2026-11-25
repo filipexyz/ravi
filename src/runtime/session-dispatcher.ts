@@ -62,8 +62,11 @@ import { triggerAuthorityLendsOwner, triggerOwnSessionAdmitsPrompt } from "../tr
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import {
   CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY,
+  captureRestartTurnAuthority,
   DAEMON_RESTART_INTERRUPTED_ATTEMPT_METADATA_KEY,
+  RESTART_TURN_AUTHORITY_METADATA_KEY,
   resolveCrashRecoveryRestartResumeMode,
+  resolveRestartSnapshotInterruptedAttemptId,
 } from "./daemon-restart-resume.js";
 import {
   getCrashRecoveryReplayablePendingRuntimeMessages,
@@ -420,10 +423,13 @@ export class RuntimeSessionDispatcher {
       const nonIdle = !replaySafety.replayable || isDaemonRestartNonIdleSession(session) || pendingMessages.length > 0;
       // A turn cut off after it started acting is resumed at boot with a note
       // to verify state first (never a replay), once per durable attempt.
-      const interruptedAttemptId =
-        session.turnActive && !replaySafety.replayable && !terminalTurnConsumed && !hasScheduledCapacityRetry
-          ? (session.currentCrashRecoveryAttemptId ?? null)
-          : null;
+      const interruptedAttemptId = resolveRestartSnapshotInterruptedAttemptId({
+        turnActive: session.turnActive,
+        replayable: replaySafety.replayable,
+        terminalTurnConsumed,
+        hasScheduledCapacityRetry,
+        attemptId: session.currentCrashRecoveryAttemptId,
+      });
       const snapshot = getAccumulator(sessionName, {
         agentId: session.agentId,
         runtimeProvider: session.queryHandle.provider,
@@ -445,6 +451,7 @@ export class RuntimeSessionDispatcher {
           currentTurnSuperseded: Boolean(session.currentTurnSuperseded),
           [CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY]: restartResumeMode,
           [DAEMON_RESTART_INTERRUPTED_ATTEMPT_METADATA_KEY]: interruptedAttemptId,
+          [RESTART_TURN_AUTHORITY_METADATA_KEY]: captureRestartTurnAuthority(session.currentTurnAuthority),
           crashRecoveryReplaySafety: replaySafety,
           crashRecoveryTerminalStatus: session.currentCrashRecoveryTerminal?.status ?? null,
         },

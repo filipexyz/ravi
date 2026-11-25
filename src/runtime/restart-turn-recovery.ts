@@ -25,6 +25,18 @@
  */
 import { logger } from "../utils/logger.js";
 import {
+  buildDaemonRestartNoticePrompt,
+  buildDaemonRestartResumePrompt,
+  type DaemonRestartPrompt,
+  type DaemonRestartResumeFenceReason,
+  normalizeRestartResumeSource,
+  RESTART_TURN_AUTHORITY_METADATA_KEY,
+  type RestoredRestartTurnAuthority,
+  restoreRestartTurnAuthority,
+  withRestartTurnAuthority,
+} from "./daemon-restart-resume.js";
+import type { RuntimeProviderId } from "./types.js";
+import {
   acquireRuntimeRecoveryClaim,
   buildRuntimeRecoveryCandidateKey,
   completeRuntimeRecoveryClaim,
@@ -68,9 +80,21 @@ export type RestartAttemptSkipReason =
   | "origin_scheduled"
   | "origin_not_resumable";
 
+type RestoredAuthority = Extract<RestoredRestartTurnAuthority, { ok: true }>["authority"];
+
+export type RestartAttemptNoticeReason = Extract<
+  DaemonRestartResumeFenceReason,
+  "resume_loop" | "authority_missing" | "authority_unreadable" | "authority_automation"
+>;
+
 export type RestartAttemptVerdict =
-  | { kind: "resume"; attempt: RuntimeTurnAttemptRecord }
-  | { kind: "loop"; attempt: RuntimeTurnAttemptRecord }
+  | { kind: "resume"; attempt: RuntimeTurnAttemptRecord; authority: RestoredAuthority }
+  | {
+      kind: "notice";
+      attempt: RuntimeTurnAttemptRecord;
+      fenceReason: RestartAttemptNoticeReason;
+      authority?: RestoredAuthority;
+    }
   | { kind: "skip"; reason: RestartAttemptSkipReason; attempt?: RuntimeTurnAttemptRecord };
 
 /**
@@ -93,10 +117,16 @@ export function judgeRestartInterruptedAttempt(
   if (reader.hasLaterAttempt(attempt)) {
     return { kind: "skip", reason: "superseded", attempt };
   }
+  const restored = restoreRestartTurnAuthority(attempt.metadata?.[RESTART_TURN_AUTHORITY_METADATA_KEY]);
   if (isRestartResumeAttempt(attempt)) {
     // This turn was itself a restart resume and the daemon went down again:
     // resuming once more could loop on whatever brought the daemon down.
-    return { kind: "loop", attempt };
+    return {
+      kind: "notice",
+      attempt,
+      fenceReason: "resume_loop",
+      ...(restored.ok ? { authority: restored.authority } : {}),
+    };
   }
   if (SCHEDULED_TURN_ORIGINS.has(attempt.originKind)) {
     return { kind: "skip", reason: "origin_scheduled", attempt };
@@ -104,14 +134,61 @@ export function judgeRestartInterruptedAttempt(
   if (!RESUMABLE_TURN_ORIGINS.has(attempt.originKind)) {
     return { kind: "skip", reason: "origin_not_resumable", attempt };
   }
-  return { kind: "resume", attempt };
+  if (!restored.ok) {
+    // Without the turn's own authority envelope (an attempt recorded before
+    // this release, or a malformed one) a resume could act with more than the
+    // turn had: fail closed to a notice.
+    return { kind: "notice", attempt, fenceReason: restored.reason };
+  }
+  return { kind: "resume", attempt, authority: restored.authority };
+}
+
+/**
+ * The restart input for one claimed orphaned attempt: the verify note (or the
+ * notice) with the turn's recorded authority envelope and its recorded source.
+ */
+export function buildOrphanedRestartTurnInput(input: {
+  restartEpoch: string;
+  reason: string;
+  verdict: RestartAttemptVerdict & { kind: "resume" | "notice" };
+}): DaemonRestartPrompt {
+  const { verdict } = input;
+  const attempt = verdict.attempt;
+  const runtimeProvider = attempt.provider as RuntimeProviderId;
+  const payload =
+    verdict.kind === "resume"
+      ? buildDaemonRestartResumePrompt({
+          restartEpoch: input.restartEpoch,
+          reason: input.reason,
+          sessionKey: attempt.sessionKey,
+          mode: "verify_continue",
+          runtimeProvider,
+          evidence: describeInterruptedAttemptEvidence(attempt),
+          taskBarrierTaskId: attempt.taskBarrierTaskId ?? undefined,
+        })
+      : buildDaemonRestartNoticePrompt({
+          restartEpoch: input.restartEpoch,
+          reason: input.reason,
+          sessionKey: attempt.sessionKey,
+          fenceReason: verdict.fenceReason,
+          runtimeProvider,
+        });
+  const sourceRecord =
+    attempt.source && typeof attempt.source === "object" && !Array.isArray(attempt.source)
+      ? (attempt.source as Record<string, unknown>)
+      : undefined;
+  return withRestartTurnAuthority(
+    payload,
+    verdict.authority,
+    sourceRecord ? normalizeRestartResumeSource(sourceRecord) : undefined,
+  );
 }
 
 interface RecoveryPlan {
   decision: RuntimeRecoveryDecision;
   reasonCode: string;
   action: "publish_verify_continue" | "publish_restart_notice" | "none";
-  verdict?: RestartAttemptVerdict & { kind: "resume" | "loop" };
+  verdict?: RestartAttemptVerdict & { kind: "resume" | "notice" };
 }
 
 export interface OrphanedRestartTurnDeps {
@@ -141,7 +218,7 @@ export interface OrphanedRestartTurnDeps {
   completeRecoveryRun(input: { recoveryRunId: string; summary: Record<string, unknown> }): void;
   /** Publish the resume or the loop notice for one claimed attempt. */
   deliver(input: {
-    verdict: RestartAttemptVerdict & { kind: "resume" | "loop" };
+    verdict: RestartAttemptVerdict & { kind: "resume" | "notice" };
     sessionName: string;
   }): Promise<boolean>;
 }
@@ -371,10 +448,10 @@ function planRecovery(
   switch (verdict.kind) {
     case "resume":
       return { decision: "resume", reasonCode: "verify_continue", action: "publish_verify_continue", verdict };
-    case "loop":
+    case "notice":
       return {
         decision: "reconcile_interrupted",
-        reasonCode: "resume_loop",
+        reasonCode: verdict.fenceReason,
         action: "publish_restart_notice",
         verdict,
       };

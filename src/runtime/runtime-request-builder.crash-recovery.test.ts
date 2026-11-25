@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { RESTART_TURN_AUTHORITY_METADATA_KEY } from "./daemon-restart-resume.js";
 import { RESTART_RESUME_ATTEMPT_METADATA_KEY } from "./restart-turn-recovery.js";
 import { getOrCreateSession, type AgentConfig, type SessionEntry } from "../router/index.js";
 import { getSessionTurn } from "../session-trace/session-trace-db.js";
@@ -726,6 +727,14 @@ describe("runtime request durable attempt preparation", () => {
         prompt: "persist me",
         source: traceSource,
         ...(restartResume ? { _daemonRestartResume: { restartEpoch: "epoch-1", sessionKey: TRACE_SESSION_KEY } } : {}),
+        _turnOrigin: {
+          protocol: "ravi.runtime.turn-origin",
+          schemaVersion: 1,
+          producer: "session-relay",
+          action: "execute",
+          principal: { type: "agent", id: "main" },
+          callerContextId: "ctx_caller",
+        },
       }),
     ];
     let attemptInput: { metadata?: Record<string, unknown> } | undefined;
@@ -769,6 +778,11 @@ describe("runtime request durable attempt preparation", () => {
 
     await expect(runtimeRequest.prompt.next()).resolves.toMatchObject({ done: false });
 
+    // The turn's authority envelope (here a relay origin) is recorded for a later restart resume.
+    expect(attemptInput?.metadata?.[RESTART_TURN_AUTHORITY_METADATA_KEY]).toMatchObject({
+      v: 1,
+      _turnOrigin: { producer: "session-relay", callerContextId: "ctx_caller" },
+    });
     if (restartResume) {
       expect(attemptInput?.metadata?.[RESTART_RESUME_ATTEMPT_METADATA_KEY]).toBe(true);
     } else {
