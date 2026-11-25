@@ -384,9 +384,17 @@ export function resolveRestartSnapshotInterruptedAttemptId(input: {
   replayable: boolean;
   terminalTurnConsumed: boolean;
   hasScheduledCapacityRetry: boolean;
+  /** A newer message already replaced this turn: its work continues there, not here. */
+  superseded?: boolean;
   attemptId: string | undefined;
 }): string | null {
-  if (!input.turnActive || input.replayable || input.terminalTurnConsumed || input.hasScheduledCapacityRetry) {
+  if (
+    !input.turnActive ||
+    input.replayable ||
+    input.terminalTurnConsumed ||
+    input.hasScheduledCapacityRetry ||
+    input.superseded
+  ) {
     return null;
   }
   return input.attemptId ?? null;

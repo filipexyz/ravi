@@ -432,6 +432,7 @@ export class RuntimeSessionDispatcher {
         replayable: replaySafety.replayable,
         terminalTurnConsumed,
         hasScheduledCapacityRetry,
+        superseded: Boolean(session.currentTurnSuperseded),
         attemptId: session.currentCrashRecoveryAttemptId,
       });
       const snapshot = getAccumulator(sessionName, {

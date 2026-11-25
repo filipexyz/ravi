@@ -97,6 +97,7 @@ import {
   buildOrphanedRestartTurnInput,
   createLedgerOrphanedRestartTurnDeps,
   hasOrphanedRestartTurns,
+  resolveOrphanedTurnSessionNameFromStore,
   judgeRestartInterruptedAttempt,
   type OrphanedRestartTurnDeps,
   type OrphanedRestartTurnOutcome,
@@ -922,11 +923,7 @@ function orphanedTurnDeps(restartInfo: RestartReasonInfo | undefined): OrphanedR
       runMetadata: { restartEpoch: restartInfo?.restartEpoch ?? null },
     }),
     hasDelivery: dbHasDaemonRestartResumeDelivery,
-    resolveSessionName(attempt) {
-      const session =
-        getSession(attempt.sessionKey) ?? (attempt.sessionName ? getSessionByName(attempt.sessionName) : null);
-      return session?.name ?? null;
-    },
+    resolveSessionName: resolveOrphanedTurnSessionNameFromStore,
     isTerminalTaskSession: (sessionName, taskId) =>
       shouldSkipRestartResumeForTerminalTaskSession(
         sessionName,
@@ -989,13 +986,10 @@ async function deliverOrphanedRestartTurn(
     deliveryKind,
     decisionReason,
   };
-  try {
-    log.info("Publishing orphaned turn restart event", context);
-    await publishSessionPrompt(sessionName, payload);
-  } catch (error) {
-    log.error("Failed to publish orphaned turn restart event", { ...context, error });
-    return false;
-  }
+  // Record the delivery before publishing: the attempt is already claimed, so
+  // this event is at most once; marking first also keeps the snapshot path from
+  // publishing a second event for the session when the record could not be
+  // written after a publish.
   try {
     dbMarkDaemonRestartResumeDelivered({
       restartEpoch: restartInfo.restartEpoch,
@@ -1005,7 +999,15 @@ async function deliverOrphanedRestartTurn(
       decisionReason,
     });
   } catch (error) {
-    log.error("Orphaned turn restart event published but its delivery record failed", { ...context, error });
+    log.error("Could not record the orphaned turn restart event; not publishing it", { ...context, error });
+    return false;
+  }
+  try {
+    log.info("Publishing orphaned turn restart event", context);
+    await publishSessionPrompt(sessionName, payload);
+  } catch (error) {
+    log.error("Failed to publish orphaned turn restart event", { ...context, error });
+    return false;
   }
   return true;
 }

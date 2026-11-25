@@ -23,6 +23,7 @@
  * - a turn that was itself a restart resume gets a notice instead, so a turn
  *   that brings the daemon down cannot loop.
  */
+import { getSession } from "../router/sessions.js";
 import { logger } from "../utils/logger.js";
 import {
   buildDaemonRestartNoticePrompt,
@@ -144,6 +145,35 @@ export function judgeRestartInterruptedAttempt(
     return { kind: "notice", attempt, fenceReason: restored.reason };
   }
   return { kind: "resume", attempt, authority: restored.authority };
+}
+
+/**
+ * The live session an orphaned attempt belongs to, by its session key only.
+ * A name can be reused by another session (another agent) after the original
+ * was deleted; resolving by name would hand the recorded turn to a session it
+ * never ran in. A missing key, or a key now owned by another agent, is
+ * `session_missing`.
+ */
+export function resolveOrphanedTurnSessionName(
+  attempt: Pick<RuntimeTurnAttemptRecord, "sessionKey" | "agentId">,
+  lookup: { getSessionByKey(sessionKey: string): { name?: string | null; agentId?: string | null } | null },
+): string | null {
+  const session = lookup.getSessionByKey(attempt.sessionKey);
+  if (!session?.name) return null;
+  if (session.agentId && session.agentId !== attempt.agentId) return null;
+  return session.name;
+}
+
+/** The production resolver: the sessions table, by key only. */
+export function resolveOrphanedTurnSessionNameFromStore(
+  attempt: Pick<RuntimeTurnAttemptRecord, "sessionKey" | "agentId" | "sessionName">,
+): string | null {
+  return resolveOrphanedTurnSessionName(attempt, { getSessionByKey: (sessionKey) => getSession(sessionKey) });
+}
+
+/** Whether the deferred pass would resume this waiting attempt (what the caller notice may list). */
+function wouldResumeWaitingAttempt(attempt: RuntimeTurnAttemptRecord): boolean {
+  return RESUMABLE_TURN_ORIGINS.has(attempt.originKind) && !isRestartResumeAttempt(attempt);
 }
 
 /**
@@ -350,6 +380,7 @@ export async function recoverOrphanedRestartTurns(
     outcome.retryAt = Math.max(outcome.retryAt ?? 0, boot.leaseExpiresAt);
   }
   for (const attempt of scan.waitingAttempts) {
+    if (!wouldResumeWaitingAttempt(attempt)) continue;
     if (!outcome.pendingSessionKeys.includes(attempt.sessionKey)) {
       outcome.pendingSessionKeys.push(attempt.sessionKey);
       outcome.pending.push(attempt.sessionName ?? attempt.sessionKey);
@@ -435,15 +466,25 @@ export async function recoverOrphanedRestartTurns(
     }
   }
 
-  deps.completeRecoveryRun({
-    recoveryRunId,
-    summary: {
-      restartEpoch: input.restartEpoch,
-      resumed: outcome.resumed.length,
-      noticed: outcome.noticed.length,
-      skipped: outcome.skipped.length,
-    },
-  });
+  try {
+    deps.completeRecoveryRun({
+      recoveryRunId,
+      summary: {
+        restartEpoch: input.restartEpoch,
+        resumed: outcome.resumed.length,
+        noticed: outcome.noticed.length,
+        skipped: outcome.skipped.length,
+      },
+    });
+  } catch (error) {
+    // A candidate whose claim could not be completed keeps the run open (the
+    // ledger refuses to close it); the run stays auditable, and what this pass
+    // did, including a deferred retry, must still reach the caller.
+    log.warn("Orphaned turn recovery run left open", {
+      recoveryRunId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   return outcome;
 }
 

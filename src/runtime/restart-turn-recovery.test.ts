@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { deleteSession, getOrCreateSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   createRuntimeBootEpoch,
@@ -20,6 +21,8 @@ import {
   type OrphanedRestartTurnDeps,
   RESTART_RESUME_ATTEMPT_METADATA_KEY,
   recoverOrphanedRestartTurns,
+  resolveOrphanedTurnSessionName,
+  resolveOrphanedTurnSessionNameFromStore,
 } from "./restart-turn-recovery.js";
 
 const NOW = 10_000_000;
@@ -349,6 +352,77 @@ describe("orphaned turn recovery after an unclean restart", () => {
     ]);
   });
 
+  it("resumes a relay turn whose envelope recorded its relay origin", async () => {
+    createLiveBoot();
+    createBoot("boot-dead");
+    createAttempt({
+      attemptId: "attempt-relay",
+      bootEpoch: "boot-dead",
+      turnProvenance: { origin: "agent", reason: "prompt._turnOrigin:session-relay:execute" },
+      metadata: {
+        [RESTART_TURN_AUTHORITY_METADATA_KEY]: {
+          v: 1,
+          _turnOrigin: {
+            protocol: "ravi.runtime.turn-origin",
+            schemaVersion: 1,
+            producer: "session-relay",
+            action: "execute",
+            principal: { type: "agent", id: "main" },
+            callerContextId: "ctx_caller",
+          },
+        },
+      },
+    });
+    const { deps, deliveries } = harness();
+
+    await recover(deps);
+
+    expect(deliveries).toEqual([{ kind: "resume", sessionName: "main-t-1", attemptId: "attempt-relay" }]);
+  });
+
+  it("lists as pending only the waiting turns the deferred pass would resume", async () => {
+    createLiveBoot();
+    createBoot("boot-leased", { lastHeartbeatAt: NOW - 5_000 });
+    createAttempt({ attemptId: "attempt-thread", bootEpoch: "boot-leased", startedAt: NOW - 10_000 });
+    createAttempt({
+      attemptId: "attempt-cron",
+      bootEpoch: "boot-leased",
+      sessionKey: "agent:main:cron",
+      sessionName: "cron-session",
+      originKind: "cron",
+      startedAt: NOW - 10_000,
+    });
+    const { deps } = harness();
+
+    const outcome = await recover(deps);
+
+    expect(outcome.pendingSessionKeys).toEqual(["agent:main:main:thread:1"]);
+    expect(outcome.pending).toEqual(["main-t-1"]);
+  });
+
+  it("still reports what it did when the recovery run cannot be closed", async () => {
+    createLiveBoot();
+    createBoot("boot-dead");
+    createBoot("boot-leased", { lastHeartbeatAt: NOW - 5_000 });
+    createAttempt({ attemptId: "attempt-1", bootEpoch: "boot-dead" });
+    createAttempt({
+      attemptId: "attempt-2",
+      bootEpoch: "boot-leased",
+      sessionKey: "agent:main:main:thread:2",
+      sessionName: "main-t-2",
+      startedAt: NOW - 10_000,
+    });
+    const { deps } = harness();
+    deps.completeRecoveryRun = () => {
+      throw new Error("run cannot close");
+    };
+
+    const outcome = await recover(deps);
+
+    expect(outcome.resumed).toEqual(["main-t-1"]);
+    expect(outcome.retryAt).not.toBeNull();
+  });
+
   it("never sweeps its own boot, even when that boot's lease ran out", async () => {
     createBoot("boot-live", { lastHeartbeatAt: NOW - 130_000 });
     createAttempt({ attemptId: "attempt-own", bootEpoch: "boot-live" });
@@ -420,5 +494,52 @@ describe("judging an attempt a graceful restart interrupted", () => {
       reason: "turn_completed",
     });
     expect(judgeRestartInterruptedAttempt(null, reader)).toMatchObject({ kind: "skip", reason: "attempt_missing" });
+  });
+});
+
+describe("which session an orphaned attempt resumes in", () => {
+  const attempt = { sessionKey: "agent:x:main", agentId: "x" };
+
+  it("resolves the session by its key", () => {
+    const lookup = {
+      getSessionByKey: (key: string) => (key === "agent:x:main" ? { name: "x-main", agentId: "x" } : null),
+    };
+    expect(resolveOrphanedTurnSessionName(attempt, lookup)).toBe("x-main");
+  });
+
+  it("never falls back to a session that reuses the name after the original was deleted", () => {
+    const sessionsByName = new Map([["x-main", { name: "x-main", agentId: "y" }]]);
+    const lookup = {
+      getSessionByKey: () => null,
+      getSessionByName: (name: string) => sessionsByName.get(name) ?? null,
+    };
+    expect(resolveOrphanedTurnSessionName(attempt, lookup)).toBeNull();
+  });
+
+  it("refuses a key now owned by another agent", () => {
+    const lookup = { getSessionByKey: () => ({ name: "x-main", agentId: "y" }) };
+    expect(resolveOrphanedTurnSessionName(attempt, lookup)).toBeNull();
+  });
+});
+
+describe("the sessions table decides where an orphaned attempt resumes", () => {
+  it("does not resume in a new session of the same agent that took the deleted session's name", () => {
+    const attempt = { sessionKey: "agent:x:main:thread:1", agentId: "x", sessionName: "reused-name" };
+    getOrCreateSession("agent:x:main:thread:1", "x", stateDir!, { name: "reused-name" });
+    deleteSession("agent:x:main:thread:1");
+    getOrCreateSession("agent:x:main:thread:2", "x", stateDir!, { name: "reused-name" });
+
+    expect(resolveOrphanedTurnSessionNameFromStore(attempt)).toBeNull();
+  });
+
+  it("does not resume in another agent's session that took the deleted session's name", () => {
+    getOrCreateSession("agent:x:main:thread:1", "x", stateDir!, { name: "reused-name" });
+    const attempt = { sessionKey: "agent:x:main:thread:1", agentId: "x", sessionName: "reused-name" };
+    expect(resolveOrphanedTurnSessionNameFromStore(attempt)).toBe("reused-name");
+
+    deleteSession("agent:x:main:thread:1");
+    getOrCreateSession("agent:y:main:thread:9", "y", stateDir!, { name: "reused-name" });
+
+    expect(resolveOrphanedTurnSessionNameFromStore(attempt)).toBeNull();
   });
 });

@@ -187,7 +187,10 @@ The daemon-restart sweep is implemented for turn attempts (`src/runtime/restart-
   - scheduled origins get `defer_next_schedule`;
   - other origins get `reconcile_interrupted` without publishing;
   - a superseded attempt, a missing session, a finished task, or a session that already received a restart event in this restart epoch gets `ignore_stale`.
-- A failed publish completes the claim as `failed` and is not retried.
+- A failed publish completes the claim as `failed` and is not retried. The sweep records the delivery in the restart ledger before it publishes.
+- An attempt resumes only in the session that owns its session key, with the same agent. A deleted session whose name another session took is `session_missing`; it is never resolved by name.
+- A waiting boot's attempts are listed for the caller notice only when the deferred pass would resume them (conversational origin, not itself a restart resume).
+- A turn that a newer message superseded is never recorded as interrupted.
 
 ## First Delivery Cut: Contract And Ledger
 

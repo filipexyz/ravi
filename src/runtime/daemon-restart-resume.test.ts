@@ -746,6 +746,7 @@ describe("which interrupted attempt a restart snapshot records", () => {
     { label: "a turn the provider already finished", change: { terminalTurnConsumed: true } },
     { label: "a scheduled capacity retry", change: { hasScheduledCapacityRetry: true } },
     { label: "a turn without a durable attempt", change: { attemptId: undefined } },
+    { label: "a turn a newer message superseded", change: { superseded: true } },
   ])("records nothing for $label", ({ change }) => {
     expect(resolveRestartSnapshotInterruptedAttemptId({ ...base, ...change })).toBeNull();
   });
