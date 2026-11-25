@@ -74,6 +74,13 @@ If `RAVI_HTTP_HOST` is not a loopback address and `RAVI_GATEWAY_NETWORK_AUTHORIZ
 
 CORS is closed by default and never answers with `Access-Control-Allow-Origin: *`. `chrome-extension://` origins are always allowed.
 
+A page served over HTTPS that calls the gateway on `127.0.0.1` (for example a Ravi Page that uses `@ravi-os/voice`) needs two things: its exact origin in `RAVI_CORS_ORIGINS`, and the Private Network Access preflight, which Chrome sends as `Access-Control-Request-Private-Network: true`. The gateway answers `Access-Control-Allow-Private-Network: true` only for an origin that is already allowed. Each call still needs a context key.
+
+```bash
+echo 'RAVI_CORS_ORIGINS=https://your-site.example' >> ~/.ravi/.env
+ravi daemon restart -m "allow browser origin"
+```
+
 ## Get a context key
 
 Most routes need a runtime context key (`rctx_*`) as a bearer token. Create the first admin key on the daemon host:
