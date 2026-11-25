@@ -301,6 +301,24 @@ describe("pool reclaimer and finished sessions", () => {
     expect([...dispatcher.streamingSessions.keys()]).toEqual(["silent-then-closing"]);
   });
 
+  it("applies the same rule to observer sessions in the same tick", () => {
+    const dispatcher = newDispatcher({ turnInactivityMs: 60_000 });
+    const now = Date.now();
+    dispatcher.streamingSessions.set("obs:closing", finishedSession({ eventLoopActive: true }));
+    dispatcher.streamingSessions.set(
+      "obs:wedged",
+      finishedSession({ eventLoopActive: true, closingObservedAt: now - 61_000 }),
+    );
+    // A live idle observer keeps its loop running for its whole life and stays reclaimable.
+    const idle = finishedSession({ eventLoopActive: true });
+    idle.done = false;
+    dispatcher.streamingSessions.set("obs:idle", idle);
+
+    dispatcher.reclaimNonServingRuntimeSessions(now);
+
+    expect([...dispatcher.streamingSessions.keys()]).toEqual(["obs:closing"]);
+  });
+
   it("treats a finished session as releasable only once its event loop has exited", () => {
     expect(isReleasableDoneRuntimeSession({ done: true, eventLoopActive: true })).toBe(false);
     expect(isReleasableDoneRuntimeSession({ done: true, eventLoopActive: false })).toBe(true);
