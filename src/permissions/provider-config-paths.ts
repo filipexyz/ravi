@@ -10,10 +10,10 @@ import { canWithCapabilityContext } from "./provider-runtime.js";
 /**
  * Runtime providers load their own settings from these places (Claude Code's
  * `<cwd>/.claude/settings.json` with `settingSources: ["project"]`, `.mcp.json`,
- * Codex and Pi config dirs), and those settings can run host commands as hooks
- * or MCP servers on later turns, outside the turn's executable ceiling.
+ * Codex, Pi and Grok config dirs), and those settings can run host commands as
+ * hooks or MCP servers on later turns, outside the turn's executable ceiling.
  */
-const PROVIDER_CONFIG_DIRS = new Set([".claude", ".codex", ".pi"]);
+const PROVIDER_CONFIG_DIRS = new Set([".claude", ".codex", ".pi", ".grok"]);
 const PROVIDER_CONFIG_FILES = new Set([".mcp.json"]);
 const FILE_WRITE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 const PATCH_PATH_LINE = /^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+)$/gm;

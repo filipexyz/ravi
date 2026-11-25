@@ -2,7 +2,12 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
-import type { RuntimeEvent, RuntimeStartRequest } from "./types.js";
+import type {
+  RuntimeEvent,
+  RuntimeGatewayMcpServers,
+  RuntimeReportedMcpServers,
+  RuntimeStartRequest,
+} from "./types.js";
 
 let nextMessages: any[] = [];
 let queryCalls: Array<{ prompt: unknown; options: Record<string, unknown> }> = [];
@@ -54,6 +59,7 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
 const {
   buildClaudeCodeEnvironment,
   buildClaudeQueryOptions,
+  checkClaudeInitMcpServers,
   CLAUDE_STREAM_ACTIVITY_INTERVAL_MS,
   createClaudeRuntimeProvider,
   normalizeClaudeEvents,
@@ -1181,3 +1187,228 @@ describe("claude profile credential env", () => {
   });
 });
 afterAll(() => mock.restore());
+
+describe("registered-only MCP loading", () => {
+  afterEach(() => {
+    nextMessages = [];
+    queryCalls = [];
+    queryCloseCalls = 0;
+    queryGate = null;
+    releaseQueryGate = null;
+  });
+
+  const oneTurn = () =>
+    (async function* () {
+      yield {
+        type: "user" as const,
+        message: { role: "user" as const, content: "hello" },
+        session_id: "",
+        parent_tool_use_id: null,
+      };
+    })();
+  const hostSpec = { spec: { type: "sdk", name: "spec", instance: {} } };
+  const init = (servers: unknown) => ({ type: "system", subtype: "init", session_id: "s-init", mcp_servers: servers });
+  const result = { type: "result", subtype: "success", session_id: "s-init", result: "done" };
+
+  async function runTurn(messages: unknown[], overrides: Partial<RuntimeStartRequest> = {}) {
+    nextMessages = messages;
+    const session = createClaudeRuntimeProvider().startSession(makeStartRequest(oneTurn(), overrides));
+    return collectEvents(session.events);
+  }
+
+  it("sets the strict MCP config, plugin MCP discovery off and claude.ai connectors off", () => {
+    const options = buildClaudeQueryOptions(
+      makeStartRequest(oneTurn(), {
+        plugins: [
+          { type: "local", path: "/plugins/one" },
+          { type: "local", path: "/plugins/two" },
+        ],
+      }),
+      {},
+      {},
+    );
+    expect(options.strictMcpConfig).toBe(true);
+    expect(options.plugins).toEqual([
+      { type: "local", path: "/plugins/one", skipMcpDiscovery: true },
+      { type: "local", path: "/plugins/two", skipMcpDiscovery: true },
+    ]);
+    expect(options.settings).toEqual({ disableClaudeAiConnectors: true });
+  });
+
+  it("keeps the three settings when the caller's options try to turn them off", () => {
+    const options = buildClaudeQueryOptions(
+      makeStartRequest(oneTurn(), {
+        permissionOptions: {
+          permissionMode: "bypassPermissions",
+          strictMcpConfig: false,
+          settings: { disableClaudeAiConnectors: false, model: "keep-me" },
+        },
+      }),
+      {},
+      {},
+    );
+    expect(options.permissionMode).toBe("bypassPermissions");
+    expect(options.strictMcpConfig).toBe(true);
+    expect(options.settings).toEqual({ disableClaudeAiConnectors: true, model: "keep-me" });
+  });
+
+  it("passes the three settings on every query of a session", async () => {
+    await runTurn([result]);
+    const options = queryCalls[0]?.options as Record<string, any>;
+    expect(options.strictMcpConfig).toBe(true);
+    expect(options.settings).toEqual({ disableClaudeAiConnectors: true });
+  });
+
+  it("completes a turn whose init lists exactly the declared in-process servers", async () => {
+    const events = await runTurn([init([{ name: "spec", status: "connected", source: "sdk" }]), result], {
+      mcpServers: hostSpec,
+    });
+    expect(findEventsByType(events, "turn.failed")).toEqual([]);
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(1);
+    expect(queryCloseCalls).toBe(0);
+  });
+
+  it("fails the turn and closes the query when init lists a server Ravi did not declare", async () => {
+    const events = await runTurn(
+      [
+        init([
+          { name: "spec", status: "connected", source: "sdk" },
+          { name: "projfoo", status: "pending", source: "project" },
+        ]),
+        result,
+      ],
+      { mcpServers: hostSpec },
+    );
+    const failed = findEventsByType(events, "turn.failed");
+    expect(failed).toHaveLength(1);
+    expect(failed[0]?.recoverable).toBe(false);
+    expect(failed[0]?.error).toContain('"projfoo" (source "project")');
+    expect(failed[0]?.error).toContain("did not declare");
+    expect(failed[0]?.rawEvent).toMatchObject({
+      mcpInitCheck: { outcome: "undeclared_server", servers: [{ name: "projfoo", source: "project" }] },
+    });
+    // The result that followed never completes the turn.
+    expect(findEventsByType(events, "turn.complete")).toEqual([]);
+    expect(queryCloseCalls).toBe(1);
+  });
+
+  it("fails the turn for a declared name reported from a configured source", async () => {
+    const events = await runTurn(
+      [
+        init([
+          { name: "spec", status: "connected", source: "sdk" },
+          { name: "spec", status: "pending", source: "user" },
+        ]),
+        result,
+      ],
+      { mcpServers: hostSpec },
+    );
+    expect(findEventsByType(events, "turn.failed")[0]?.error).toContain('"spec" (source "user")');
+  });
+
+  it("fails the turn for an in-process server when the session declared none", async () => {
+    const events = await runTurn([init([{ name: "spec", status: "connected", source: "sdk" }]), result]);
+    expect(findEventsByType(events, "turn.failed")[0]?.error).toContain('"spec" (source "sdk")');
+  });
+
+  it("registers the turn's gateway facades beside the host servers and reports what init listed", async () => {
+    const reports: RuntimeReportedMcpServers[] = [];
+    let prepared = 0;
+    const gatewayMcpServers: RuntimeGatewayMcpServers = {
+      prepareTurn: () => {
+        prepared++;
+        return [];
+      },
+      current: () => ({ open: { type: "sdk", name: "open", instance: {} } }),
+      names: () => ["open"],
+      reportRuntimeServers: (report) => reports.push(report),
+    };
+    const events = await runTurn(
+      [
+        init([
+          { name: "spec", status: "connected", source: "sdk" },
+          { name: "open", status: "connected", source: "sdk" },
+        ]),
+        result,
+      ],
+      { mcpServers: hostSpec, gatewayMcpServers },
+    );
+    expect(findEventsByType(events, "turn.failed")).toEqual([]);
+    expect(Object.keys((queryCalls[0]!.options as Record<string, any>).mcpServers)).toEqual(["spec", "open"]);
+    // The host prepares the facades; the provider only reads them.
+    expect(prepared).toBe(0);
+    expect(reports).toEqual([
+      {
+        declared: ["spec", "open"],
+        reported: true,
+        servers: [
+          { name: "spec", status: "connected", source: "sdk" },
+          { name: "open", status: "connected", source: "sdk" },
+        ],
+        extra: [],
+        missing: [],
+      },
+    ]);
+  });
+
+  it("drops a gateway server whose name a host server holds, reports it and runs the turn", async () => {
+    const overlaps: string[][] = [];
+    const hostFacade = hostSpec.spec;
+    const events = await runTurn([init([{ name: "spec", status: "connected", source: "sdk" }]), result], {
+      mcpServers: hostSpec,
+      gatewayMcpServers: {
+        prepareTurn: () => [],
+        current: () => ({ spec: { type: "sdk", name: "spec", instance: { gateway: true } } }),
+        names: () => ["spec"],
+        reportNameOverlap: (names) => overlaps.push(names),
+      },
+    });
+    expect(findEventsByType(events, "turn.failed")).toEqual([]);
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(1);
+    expect((queryCalls[0]!.options as Record<string, any>).mcpServers).toEqual({ spec: hostFacade });
+    expect(overlaps).toEqual([["spec"]]);
+  });
+
+  it("fails the turn when init lists a gateway server the turn did not declare", async () => {
+    const reports: RuntimeReportedMcpServers[] = [];
+    const events = await runTurn([init([{ name: "open", status: "connected", source: "sdk" }]), result], {
+      gatewayMcpServers: {
+        prepareTurn: () => [],
+        current: () => ({}),
+        names: () => [],
+        reportRuntimeServers: (report) => reports.push(report),
+      },
+    });
+    expect(findEventsByType(events, "turn.failed")[0]?.error).toContain('"open" (source "sdk")');
+    expect(reports[0]?.extra).toEqual([{ name: "open", status: "connected", source: "sdk" }]);
+  });
+
+  it("does not fail for a declared server the init leaves out, or an init without a server list", async () => {
+    const missing = await runTurn([init([]), result], { mcpServers: hostSpec });
+    expect(findEventsByType(missing, "turn.failed")).toEqual([]);
+    expect(findEventsByType(missing, "turn.complete")).toHaveLength(1);
+
+    const unlisted = await runTurn([{ type: "system", subtype: "init", session_id: "s-init" }, result]);
+    expect(findEventsByType(unlisted, "turn.failed")).toEqual([]);
+  });
+
+  it("compares the init list with the declared names", () => {
+    expect(checkClaudeInitMcpServers({ mcp_servers: [{ name: "spec", source: "sdk" }] }, ["spec"])).toEqual({
+      extra: [],
+      missing: [],
+      reported: true,
+    });
+    // A Claude Code older than the `source` field reports names only.
+    expect(checkClaudeInitMcpServers({ mcp_servers: [{ name: "spec", status: "connected" }] }, ["spec"]).extra).toEqual(
+      [],
+    );
+    expect(checkClaudeInitMcpServers({ mcp_servers: [] }, ["spec", "github"]).missing).toEqual(["spec", "github"]);
+    expect(checkClaudeInitMcpServers({}, ["spec"])).toEqual({ extra: [], missing: [], reported: false });
+    expect(
+      checkClaudeInitMcpServers(
+        { mcp_servers: [null, { name: 42 }, { name: "x".repeat(300), source: "y".repeat(80) }] },
+        [],
+      ).extra,
+    ).toEqual([{ name: "" }, { name: "" }, { name: "x".repeat(128), source: "y".repeat(32) }]);
+  });
+});

@@ -6,7 +6,7 @@ import {
   requestPollAnswer,
   type ApprovalTarget,
 } from "../approval/service.js";
-import { createBashPermissionHook, createToolPermissionHook } from "../bash/index.js";
+import { buildPreToolUseDenyResult, createBashPermissionHook, createToolPermissionHook } from "../bash/index.js";
 import { getToolNameEquivalents } from "../cli/tool-registry.js";
 import { createPreCompactHook } from "../hooks/index.js";
 import { createRtkRewriteHook } from "../hooks/rtk-rewrite.js";
@@ -60,6 +60,12 @@ export interface RuntimeHostHooksOptions {
   approvalServices?: RuntimeHostHookApprovalServices;
   /** In-process MCP servers this session attaches itself; see `createToolPermissionHook`. */
   hostMcpServers?: readonly string[];
+  /**
+   * Gateway facades this session attaches (spec mcp): forwarding servers, never
+   * host servers. Their tools are checked by name; see `createToolPermissionHook`.
+   * A function is read on every call (the Claude facades are rebuilt per turn).
+   */
+  gatewayMcpServers?: readonly string[] | (() => readonly string[]);
 }
 
 export function createRuntimeHostHooks({
@@ -77,6 +83,7 @@ export function createRuntimeHostHooks({
     emitApprovalEvent: (topic, payload) => nats.emit(topic, payload),
   },
   hostMcpServers,
+  gatewayMcpServers,
 }: RuntimeHostHooksOptions): Record<string, RuntimeHookMatcher[]> {
   if (!runtimeCapabilities.supportsHostSessionHooks) {
     return {};
@@ -88,7 +95,7 @@ export function createRuntimeHostHooks({
     PreToolUse: [
       // Ravi Page links go to `ravi pages read`, not a browser or fetch.
       createPagesLinkGuardHook(),
-      createToolPermissionHook({ ...hookOpts, hostMcpServers }),
+      createToolPermissionHook({ ...hookOpts, hostMcpServers, gatewayMcpServers }),
       createBashPermissionHook(hookOpts),
       // No secret-stripping hook here: rewriting the command cannot remove
       // secrets (hooks' updatedInput does not compose, and the parent env stays
@@ -141,41 +148,50 @@ export function createRuntimeHostHooks({
     {
       matcher: "mcp__spec__exit_spec_mode",
       hooks: [
-        createExitSpecHook({
-          sessionName,
-          agent,
-          resolvedSource,
-          approvalSource,
-          attemptSafety,
-          approvalServices,
-        }),
+        failClosedApproval(
+          "spec",
+          createExitSpecHook({
+            sessionName,
+            agent,
+            resolvedSource,
+            approvalSource,
+            attemptSafety,
+            approvalServices,
+          }),
+        ),
       ],
     },
     {
       matcher: "ExitPlanMode",
       hooks: [
-        createExitPlanHook({
-          sessionName,
-          sessionCwd,
-          agent,
-          resolvedSource,
-          approvalSource,
-          attemptSafety,
-          approvalServices,
-        }),
+        failClosedApproval(
+          "plan",
+          createExitPlanHook({
+            sessionName,
+            sessionCwd,
+            agent,
+            resolvedSource,
+            approvalSource,
+            attemptSafety,
+            approvalServices,
+          }),
+        ),
       ],
     },
     {
       matcher: "AskUserQuestion",
       hooks: [
-        createAskUserQuestionHook({
-          sessionName,
-          agent,
-          resolvedSource,
-          approvalSource,
-          attemptSafety,
-          approvalServices,
-        }),
+        failClosedApproval(
+          "question",
+          createAskUserQuestionHook({
+            sessionName,
+            agent,
+            resolvedSource,
+            approvalSource,
+            attemptSafety,
+            approvalServices,
+          }),
+        ),
       ],
     },
     // This catch-all is the final synchronous boundary before Claude may
@@ -264,6 +280,42 @@ function isRuntimeCrashRecoveryHookOwnershipChanged(error: unknown): boolean {
   return error instanceof RuntimeCrashRecoveryHookOwnershipChangedError;
 }
 
+type ApprovalHookKind = "spec" | "plan" | "question";
+
+const APPROVAL_HOOK_FAILURE_REASONS: Record<ApprovalHookKind, string> = {
+  spec: "Permission denied: Ravi could not ask for approval of this spec because the approval request failed.",
+  plan: "Permission denied: Ravi could not ask for approval of this plan because the approval request failed.",
+  question: "Permission denied: Ravi could not ask this question because the approval request failed.",
+};
+
+/**
+ * The Claude runtime ignores a PreToolUse hook that throws and runs the tool.
+ * A hook that asks a person for approval therefore turns its own failure
+ * (the approval request, a fence marker, reading the plan) into a denial,
+ * like `failClosed` in src/bash/hook.ts. A lost attempt keeps its own denial.
+ * The error is logged, never put in the reason the model reads.
+ */
+function failClosedApproval<Input>(
+  kind: ApprovalHookKind,
+  hook: (input: Input) => Promise<Record<string, unknown>>,
+): (input: Input) => Promise<Record<string, unknown>> {
+  return async (input) => {
+    try {
+      return await hook(input);
+    } catch (error) {
+      if (isRuntimeCrashRecoveryHookOwnershipChanged(error)) {
+        return denyPreToolUseForOwnershipChange();
+      }
+      log.error("Approval hook failed; denying the tool call", {
+        hook: kind,
+        tool: (input as { tool_name?: unknown } | undefined)?.tool_name,
+        error,
+      });
+      return buildPreToolUseDenyResult(APPROVAL_HOOK_FAILURE_REASONS[kind]);
+    }
+  };
+}
+
 function createSpecBlockHook(sessionName: string) {
   return async (input: any) => {
     if (!isSpecModeActive(sessionName)) return {};
@@ -341,23 +393,16 @@ function createExitPlanHook(options: {
     }
     if (!planText) planText = "(plano vazio)";
 
-    let result: Awaited<ReturnType<typeof requestCascadingApproval>>;
-    try {
-      result = await options.approvalServices.requestCascadingApproval({
-        resolvedSource: options.resolvedSource,
-        approvalSource: options.approvalSource,
-        type: "plan",
-        sessionName: options.sessionName,
-        agentId: options.agent.id,
-        text: planText,
-        beforeExternalApproval: fence.beforeExternalApproval,
-      });
-    } catch (error) {
-      if (isRuntimeCrashRecoveryHookOwnershipChanged(error)) {
-        return denyPreToolUseForOwnershipChange();
-      }
-      throw error;
-    }
+    // A throw here (ownership change included) is answered by failClosedApproval.
+    const result = await options.approvalServices.requestCascadingApproval({
+      resolvedSource: options.resolvedSource,
+      approvalSource: options.approvalSource,
+      type: "plan",
+      sessionName: options.sessionName,
+      agentId: options.agent.id,
+      text: planText,
+      beforeExternalApproval: fence.beforeExternalApproval,
+    });
 
     if (!fence.ownsAttempt()) return denyPreToolUseForOwnershipChange();
 
@@ -442,18 +487,11 @@ function createAskUserQuestionHook(options: {
       }
       pollName += "\n(responda a mensagem para outro)";
 
-      let result: Awaited<ReturnType<typeof requestPollAnswer>>;
-      try {
-        fence.beforeExternalApproval();
-        result = await options.approvalServices.requestPollAnswer(targetSource, pollName, optionLabels, {
-          selectableCount: q.multiSelect ? optionLabels.length : 1,
-        });
-      } catch (error) {
-        if (isRuntimeCrashRecoveryHookOwnershipChanged(error)) {
-          return denyPreToolUseForOwnershipChange();
-        }
-        throw error;
-      }
+      // A throw here (ownership change included) is answered by failClosedApproval.
+      fence.beforeExternalApproval();
+      const result = await options.approvalServices.requestPollAnswer(targetSource, pollName, optionLabels, {
+        selectableCount: q.multiSelect ? optionLabels.length : 1,
+      });
       if (!fence.ownsAttempt()) return denyPreToolUseForOwnershipChange();
 
       answers[q.question] = "selectedLabels" in result ? result.selectedLabels.join(", ") : result.freeText;
@@ -496,23 +534,16 @@ function createExitSpecHook(options: {
       return {};
     }
 
-    let result: Awaited<ReturnType<typeof requestCascadingApproval>>;
-    try {
-      result = await options.approvalServices.requestCascadingApproval({
-        resolvedSource: options.resolvedSource,
-        approvalSource: options.approvalSource,
-        type: "spec",
-        sessionName: options.sessionName,
-        agentId: options.agent.id,
-        text: spec,
-        beforeExternalApproval: fence.beforeExternalApproval,
-      });
-    } catch (error) {
-      if (isRuntimeCrashRecoveryHookOwnershipChanged(error)) {
-        return denyPreToolUseForOwnershipChange();
-      }
-      throw error;
-    }
+    // A throw here (ownership change included) is answered by failClosedApproval.
+    const result = await options.approvalServices.requestCascadingApproval({
+      resolvedSource: options.resolvedSource,
+      approvalSource: options.approvalSource,
+      type: "spec",
+      sessionName: options.sessionName,
+      agentId: options.agent.id,
+      text: spec,
+      beforeExternalApproval: fence.beforeExternalApproval,
+    });
 
     if (!fence.ownsAttempt()) return denyPreToolUseForOwnershipChange();
 

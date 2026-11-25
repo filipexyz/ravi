@@ -5,6 +5,7 @@ import {
   type PermissionResult,
   type Query,
   type SDKAssistantMessageError,
+  type Settings,
 } from "@anthropic-ai/claude-agent-sdk";
 import { accessSync, chmodSync, constants, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -15,6 +16,7 @@ import type {
   RuntimeExecutionMetadata,
   RuntimePrepareSessionRequest,
   RuntimePrepareSessionResult,
+  RuntimeReportedMcpServers,
   RuntimeSessionState,
   RuntimeSessionHandle,
   RuntimeSkillVisibilitySnapshot,
@@ -246,35 +248,47 @@ async function* runClaudeTurns(
     // The host rotates `input.env` before yielding each turn. Snapshot it here
     // so authority changes apply between queries, never during an active one.
     const env = buildClaudeCodeEnvironment(input.env);
-    const queryResult = query({
-      prompt,
-      options: buildClaudeQueryOptions(
-        {
-          ...input,
-          model: runtime.getModel(),
-          // Model, effort and thinking are per turn; a new query applies them without a relaunch.
-          ...(message.runtimeOptions
-            ? {
-                ...(message.runtimeOptions.model && !input.modelBroker ? { model: message.runtimeOptions.model } : {}),
-                effort: message.runtimeOptions.effort,
-                thinking: message.runtimeOptions.thinking,
-              }
-            : {}),
-        },
-        env,
-        {
-          resumeSessionId,
-          forkSession: useForkSession,
-          pathToClaudeCodeExecutable: resolveClaudeCodeExecutable(env),
-        },
-      ),
-    });
+    const queryOptions = buildClaudeQueryOptions(
+      {
+        ...input,
+        // The facades the host built for this turn, beside the host servers.
+        mcpServers: mergeClaudeMcpServers(input.mcpServers, input.gatewayMcpServers?.current(), (names) => {
+          claudeLog.warn("MCP gateway servers left out of this turn: a host server holds their names", { names });
+          input.gatewayMcpServers?.reportNameOverlap?.(names);
+        }),
+        model: runtime.getModel(),
+        // Model, effort and thinking are per turn; a new query applies them without a relaunch.
+        ...(message.runtimeOptions
+          ? {
+              ...(message.runtimeOptions.model && !input.modelBroker ? { model: message.runtimeOptions.model } : {}),
+              effort: message.runtimeOptions.effort,
+              thinking: message.runtimeOptions.thinking,
+            }
+          : {}),
+      },
+      env,
+      {
+        resumeSessionId,
+        forkSession: useForkSession,
+        pathToClaudeCodeExecutable: resolveClaudeCodeExecutable(env),
+      },
+    );
+    const queryResult = query({ prompt, options: queryOptions });
     runtime.setActiveQuery(queryResult);
 
     const terminalTracker = createRuntimeTerminalEventTracker();
     let droppedSelfStartedTurn = false;
     try {
-      for await (const event of normalizeClaudeEvents(queryResult)) {
+      for await (const event of normalizeClaudeEvents(queryResult, Date.now, {
+        declaredMcpServers: Object.keys(queryOptions.mcpServers ?? {}),
+        onMcpServersReported: (report) => {
+          try {
+            input.gatewayMcpServers?.reportRuntimeServers?.(report);
+          } catch (error) {
+            claudeLog.warn("Recording the MCP servers Claude Code reported failed", { error });
+          }
+        },
+      })) {
         if (terminalTracker.terminalEmitted) {
           // Claude Code keeps the query open while its own background tasks run
           // and starts a turn by itself when one finishes. Ravi handed that turn
@@ -361,6 +375,12 @@ export function buildClaudeQueryOptions(
     ...(runtime.forkSession ? { forkSession: true } : {}),
     abortController: input.abortController,
     ...(input.permissionOptions as Partial<Options> | undefined),
+    // Registered-only loading (spec mcp): Claude Code starts only the servers in
+    // `mcpServers`, never those of `.mcp.json`, user or local configuration,
+    // plugins or claude.ai connectors. Set after the caller's options so
+    // nothing above can turn it off.
+    strictMcpConfig: true,
+    settings: buildClaudeFlagSettings(input.permissionOptions?.settings),
     ...(input.canUseTool
       ? {
           canUseTool: async (toolName: string, toolInput: Record<string, unknown>): Promise<PermissionResult> => {
@@ -392,10 +412,130 @@ export function buildClaudeQueryOptions(
     // repository cannot override the forwarder, auth helper, or sandbox.
     settingSources: input.modelBroker ? ["user"] : (input.settingSources ?? ["project"]),
     ...(input.hooks ? { hooks: input.hooks } : {}),
-    ...(input.plugins && input.plugins.length > 0 ? { plugins: input.plugins } : {}),
+    ...(input.plugins && input.plugins.length > 0
+      ? { plugins: input.plugins.map((plugin) => ({ ...plugin, skipMcpDiscovery: true })) }
+      : {}),
     ...(input.allowedSkills && input.allowedSkills.length > 0 ? { skills: input.allowedSkills } : {}),
     ...(input.remoteSpawn ? { spawnClaudeCodeProcess: input.remoteSpawn as Options["spawnClaudeCodeProcess"] } : {}),
   };
+}
+
+/**
+ * The servers of one query: the host servers plus the gateway facades of the
+ * turn (spec mcp, Claude Facade). The names must be disjoint: a facade under
+ * a host name would make a forwarding server's tools exempt from the name
+ * check. Host names are authoritative, so a facade whose name a host server
+ * holds is left out of this query (`onOverlap` hears which, for a warning and
+ * a trace event) and the turn goes on with the host server alone.
+ */
+export function mergeClaudeMcpServers(
+  hostMcpServers: Record<string, unknown> | undefined,
+  gatewayMcpServers: Record<string, unknown> | undefined,
+  onOverlap?: (names: string[]) => void,
+): Record<string, unknown> | undefined {
+  const gateway: Record<string, unknown> = { ...(gatewayMcpServers ?? {}) };
+  const shared = Object.keys(gateway)
+    .filter((name) => hostMcpServers && Object.hasOwn(hostMcpServers, name))
+    .sort();
+  for (const name of shared) delete gateway[name];
+  if (shared.length > 0) {
+    try {
+      onOverlap?.(shared);
+    } catch {
+      // no-cause: the report is best effort; the facades are already left out either way.
+    }
+  }
+  if (!hostMcpServers && Object.keys(gateway).length === 0) return undefined;
+  return { ...(hostMcpServers ?? {}), ...gateway };
+}
+
+/**
+ * Flag-layer settings for every query. `disableClaudeAiConnectors` keeps
+ * claude.ai cloud connectors out of the session; a caller's inline settings
+ * object is kept, but cannot turn it back on.
+ */
+function buildClaudeFlagSettings(callerSettings: unknown): Settings {
+  const base =
+    callerSettings && typeof callerSettings === "object" && !Array.isArray(callerSettings)
+      ? (callerSettings as Settings)
+      : {};
+  return { ...base, disableClaudeAiConnectors: true };
+}
+
+/** An MCP server Claude Code reported in `system/init`. Name and source are untrusted text. */
+export interface ClaudeReportedMcpServer {
+  name: string;
+  source?: string;
+  status?: string;
+}
+
+export interface ClaudeInitMcpCheck {
+  /** Reported servers Ravi did not declare, or declared names reported from a source other than `sdk`. */
+  extra: ClaudeReportedMcpServer[];
+  /** Declared names Claude Code did not report. */
+  missing: string[];
+  /** False when the init message carried no server list (an older Claude Code). */
+  reported: boolean;
+}
+
+/**
+ * Compares the `mcp_servers` list of a `system/init` message with the servers
+ * Ravi declared for the query (host servers plus gateway facades, all
+ * in-process). Every declared server is an `sdk` server, so a declared name
+ * reported from another source is extra too: a configured server reusing the
+ * name.
+ */
+export function checkClaudeInitMcpServers(message: unknown, declared: readonly string[]): ClaudeInitMcpCheck {
+  const list = (message as { mcp_servers?: unknown } | null | undefined)?.mcp_servers;
+  if (!Array.isArray(list)) return { extra: [], missing: [], reported: false };
+  const extra: ClaudeReportedMcpServer[] = [];
+  const seen = new Set<string>();
+  for (const entry of list) {
+    const record = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {};
+    const name = typeof record.name === "string" ? record.name : "";
+    const source = typeof record.source === "string" ? record.source : undefined;
+    const status = typeof record.status === "string" ? record.status : undefined;
+    // A missing source comes from a Claude Code older than the field; the name
+    // is then all there is to compare.
+    if (name && declared.includes(name) && (source === undefined || source === "sdk")) {
+      seen.add(name);
+      continue;
+    }
+    extra.push({
+      name: name.slice(0, 128),
+      ...(source !== undefined ? { source: source.slice(0, 32) } : {}),
+      ...(status !== undefined ? { status: status.slice(0, 32) } : {}),
+    });
+  }
+  return { extra, missing: declared.filter((name) => !seen.has(name)), reported: true };
+}
+
+/** The `mcp_servers` list of a `system/init` message: names, sources and statuses, bounded. */
+function readClaudeReportedMcpServers(message: unknown): ClaudeReportedMcpServer[] {
+  const list = (message as { mcp_servers?: unknown } | null | undefined)?.mcp_servers;
+  if (!Array.isArray(list)) return [];
+  return list.slice(0, 64).map((entry) => {
+    const record = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {};
+    return {
+      name: typeof record.name === "string" ? record.name.slice(0, 128) : "",
+      ...(typeof record.source === "string" ? { source: record.source.slice(0, 32) } : {}),
+      ...(typeof record.status === "string" ? { status: record.status.slice(0, 32) } : {}),
+    };
+  });
+}
+
+function formatUndeclaredClaudeMcpServers(extra: readonly ClaudeReportedMcpServer[]): string {
+  const quote = (value: string) => JSON.stringify(value.replace(/[\u0000-\u001f\u007f]/g, " "));
+  const listed = extra
+    .slice(0, 5)
+    .map((server) => `${quote(server.name || "(no name)")} (source ${quote(server.source ?? "unknown")})`)
+    .join(", ");
+  const more = extra.length > 5 ? ` and ${extra.length - 5} more` : "";
+  return (
+    `Claude Code loaded MCP server ${listed}${more}, which Ravi did not declare for this session, so the turn was stopped. ` +
+    "Remove it from Claude Code's configuration (managed settings, user or project configuration, plugins), " +
+    "or register it with ravi mcp add or ravi mcp import."
+  );
 }
 
 function resolveClaudeThinkingConfig(thinking?: RuntimeThinking, model?: string): Options["thinking"] | undefined {
@@ -728,9 +868,21 @@ function isRecoverableClaudeApiStatus(status: number): boolean {
  */
 export const CLAUDE_STREAM_ACTIVITY_INTERVAL_MS = 5_000;
 
+export interface ClaudeEventNormalizationOptions {
+  /**
+   * Names of the MCP servers Ravi declared for this query (host servers plus
+   * gateway facades). When set, a `system/init` message that lists any other
+   * server fails the turn and closes the query (spec mcp, fail closed).
+   */
+  declaredMcpServers?: readonly string[];
+  /** Called once per `system/init` with what Claude Code reported, compared with the declared names. */
+  onMcpServersReported?: (report: RuntimeReportedMcpServers) => void;
+}
+
 export async function* normalizeClaudeEvents(
   queryResult: Query,
   now: () => number = Date.now,
+  options: ClaudeEventNormalizationOptions = {},
 ): AsyncGenerator<RuntimeEvent> {
   let lastYieldAt = Number.NEGATIVE_INFINITY;
   for await (const message of queryResult as AsyncIterable<any>) {
@@ -754,6 +906,44 @@ export async function* normalizeClaudeEvents(
 
     const rawEvent = message as Record<string, unknown>;
     yield { type: "provider.raw", rawEvent };
+
+    if (message.type === "system" && message.subtype === "init" && options.declaredMcpServers) {
+      const check = checkClaudeInitMcpServers(message, options.declaredMcpServers);
+      options.onMcpServersReported?.({
+        declared: [...options.declaredMcpServers],
+        reported: check.reported,
+        servers: check.reported ? readClaudeReportedMcpServers(message) : [],
+        extra: check.extra,
+        missing: check.missing,
+      });
+      if (check.extra.length > 0) {
+        claudeLog.error("Claude Code loaded an MCP server Ravi did not declare; failing the turn", {
+          servers: check.extra,
+          declared: options.declaredMcpServers,
+        });
+        yield {
+          type: "turn.failed",
+          error: formatUndeclaredClaudeMcpServers(check.extra),
+          // Retrying starts the same configuration again.
+          recoverable: false,
+          rawEvent: {
+            type: "system",
+            subtype: "init",
+            mcpInitCheck: { outcome: "undeclared_server", servers: check.extra },
+          },
+        };
+        // The query would go on to run the turn with that server attached.
+        try {
+          (queryResult as { close?: () => void }).close?.();
+        } catch (error) {
+          claudeLog.warn("Closing the query after the MCP init check failed", { error });
+        }
+        return;
+      }
+      if (check.missing.length > 0) {
+        claudeLog.warn("Claude Code did not report a declared MCP server", { missing: check.missing });
+      }
+    }
 
     if (message.type === "system" && message.subtype === "status") {
       yield {

@@ -270,6 +270,12 @@ export interface PromptMessage {
   _sessionFollowupCadenceId?: string;
   /** Session followup run id when `_sessionFollowup` is true. */
   _sessionFollowupRunId?: string;
+  /**
+   * Delivery of a background MCP call's outcome (spec mcp, Background Calls
+   * And Tasks). The turn runs as the automation principal
+   * `automation:mcp-call:<id>`, never as the person who started the call.
+   */
+  _mcpCall?: { id: string; server: string; tool: string; status: string };
   /** Ravi thread metadata. Distinct from provider-native thread/topic IDs. */
   _thread?: ThreadHandoffPromptMetadata;
   /** Durable decision-answer admission; validated against the stored envelope. */

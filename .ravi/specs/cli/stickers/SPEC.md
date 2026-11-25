@@ -90,7 +90,7 @@ suggestions and compact `--fields` on `list`.
 ## Known gaps
 
 - Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope because
-  `stickers` is registered in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`).
+  `stickers` is registered in `AGENT_CONTRACT_DOMAINS` (`src/cli/agent-contract-domains.ts`).
 
 ## Validation
 

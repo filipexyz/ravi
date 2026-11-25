@@ -16,7 +16,7 @@ omni-nats       NATS with JetStream on :4222, installed by `ravi setup` through 
 omni-api        Omni API on :8882 (WhatsApp, Telegram, Discord)
 ```
 
-- The daemon spawns no child processes. It connects to NATS at `NATS_URL` (default `nats://127.0.0.1:4222`) and to Omni via `OMNI_API_URL`/`OMNI_API_KEY` or `~/.omni/config.json`; without Omni only native channels deliver. `ravi daemon start` does not start `ravi-channels`, and `ravi daemon status` reports both processes, their boot versions and file freshness.
+- The daemon spawns no child processes, except the stdio MCP servers registered with `ravi mcp add` (superadmin, `--execute`): its MCP gateway (src/mcp/gateway.ts) starts each one on first use, with PATH plus that server's declared env keys only, and stops it when idle or on shutdown. It connects to NATS at `NATS_URL` (default `nats://127.0.0.1:4222`) and to Omni via `OMNI_API_URL`/`OMNI_API_KEY` or `~/.omni/config.json`; without Omni only native channels deliver. `ravi daemon start` does not start `ravi-channels`, and `ravi daemon status` reports both processes, their boot versions and file freshness.
 - Inbound messages (Omni and Slack) become prompts on `ravi.session.<name>.prompt` (stream `SESSION_PROMPTS`). Slack replies go out on `ravi.channel.outbound.*` (stream `CHANNEL_OUTBOUND`), consumed by `ravi-channels`. Omni's subjects (`message.received.{channelType}.{instanceId}`, `reaction.received.*`, `instance.*`) never carry Slack.
 - State is SQLite under `RAVI_STATE_DIR` (default `~/.ravi`); `ravi.db` holds agents, instances, routes, sessions, contacts, triggers and settings. The daemon loads `~/.ravi/.env` over the process environment; the CLI loads it without overriding. Logs are PM2's (`ravi daemon logs --path`). Each agent's `cwd` holds its `AGENTS.md` and optional `HEARTBEAT.md`.
 
@@ -269,6 +269,7 @@ Operating Ravi is documented in the system skills (`ravi skills show <skill>`) a
 | Bases and data pages | `solucoes`, `bases` | `console/bases` |
 | Cloud agents: Library agents on Anthropic managed agents, runs, approvals, schedules | `cloud-agents` | `console/cloud-agents` |
 | Media, artifacts, skills | `audio`, `image`, `video`, `artifacts`, `skills` | `reference/media`, `reference/artifacts`, `reference/skills` |
+| MCP servers: register, attach, call, background calls, remote skills, file uploads | `mcp`, `permissions` | `guides/mcp`, `console/mcp` |
 | Tasks, CLI conventions, SDK and HTTP gateway | `tasks` | `cli/overview`, `guides/sdk` |
 
 The docs describe the `dev` branch, published as `ravi.bot@next`. `ravi.bot@latest` (branch `main`) lacks `ravi bases`, `ravi sandbox`, the `explicit-only` profile and the one-command `pages ship`.

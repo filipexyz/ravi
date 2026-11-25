@@ -205,6 +205,76 @@ const executeConsumers: readonly ExecuteConsumer[] = [
     expected: "--execute",
     matches: 1,
   },
+  {
+    name: "mcp add help and refusal hints",
+    path: "src/cli/commands/mcp.ts",
+    marker: "ravi mcp add ",
+    expected: "--execute",
+    matches: 5,
+  },
+  {
+    name: "mcp set help: widening the audience",
+    path: "src/cli/commands/mcp.ts",
+    marker: "ravi mcp set docs --audience any",
+    expected: "--execute",
+    matches: 1,
+  },
+  {
+    name: "mcp set help: turning uploads on",
+    path: "src/cli/commands/mcp.ts",
+    marker: "ravi mcp set docs --uploads on",
+    expected: "--execute",
+    matches: 1,
+  },
+  {
+    name: "mcp set protocol pin in help and the legacy refusal",
+    path: "src/cli/commands/mcp.ts",
+    marker: "--protocol 2026-07-28",
+    expected: "--execute",
+    matches: 2,
+  },
+  {
+    name: "mcp set refusal: attach before widening",
+    path: "src/cli/commands/mcp.ts",
+    marker: "ravi mcp attach ",
+    expected: "--execute",
+    matches: 1,
+  },
+  {
+    name: "mcp remove hint: the leftover secret",
+    path: "src/cli/commands/mcp.ts",
+    marker: "ravi credentials connections remove",
+    expected: "--execute",
+    matches: 1,
+  },
+  {
+    name: "mcp import help: registering the plan",
+    path: "src/cli/commands/mcp.ts",
+    marker: "ravi mcp import --as",
+    expected: "--execute",
+    matches: 2,
+  },
+  {
+    name: "mcp login help, the bearer flag hint and the needs-login hint of the CLI pair",
+    path: "src/cli/commands/mcp.ts",
+    marker: "ravi mcp login ",
+    expected: "--execute",
+    matches: 5,
+  },
+  {
+    name: "mcp call help and the tools listing hint",
+    path: "src/cli/commands/mcp.ts",
+    marker: "ravi mcp call ",
+    expected: "--execute",
+    matches: 3,
+  },
+  {
+    name: "doctor native MCP hint: the import plan, then --execute",
+    path: "src/cli/commands/doctor.ts",
+    marker: "review the plan with `ravi mcp import`",
+    expected: "--execute",
+    matches: 1,
+  },
 ];
 
 const executeInstructions = [
@@ -218,6 +288,26 @@ const executeInstructions = [
     name: "thread decision answer in the sessions skill",
     path: "src/plugins/internal/ravi-system/skills/sessions/SKILL.md",
     instruction: 'ravi decisions answer <decision-id> --text "Após 18h" --execute --json',
+  },
+  {
+    name: "mcp call in the mcp skill",
+    path: "src/plugins/internal/ravi-system/skills/mcp/SKILL.md",
+    instruction: `ravi mcp call <servidor> <ferramenta> --input '{"q":"..."}' --execute --json`,
+  },
+  {
+    name: "mcp call in the MCP guide",
+    path: "docs/guides/mcp.mdx",
+    instruction: `ravi mcp call docs search --input '{"query":"pricing"}' --execute --json`,
+  },
+  {
+    name: "mcp uploads in the MCP guide",
+    path: "docs/guides/mcp.mdx",
+    instruction: "ravi mcp set docs --uploads on --agent main --execute",
+  },
+  {
+    name: "mcp protocol pin on the Console MCP page",
+    path: "docs/console/mcp.mdx",
+    instruction: "ravi mcp set ravi-console --protocol 2026-07-28 --execute",
   },
   {
     name: "session reset documentation",
@@ -997,6 +1087,18 @@ const executeInstructions = [
 
 const obsoleteExecuteConsumers = [
   {
+    name: "mcp set help: narrowing the audience applies at once",
+    path: "src/cli/commands/mcp.ts",
+    obsolete: "ravi mcp set docs --audience operator --execute",
+    current: "ravi mcp set docs --audience operator",
+  },
+  {
+    name: "mcp set help: turning uploads off applies at once",
+    path: "src/cli/commands/mcp.ts",
+    obsolete: "ravi mcp set docs --uploads off --execute",
+    current: "ravi mcp set docs --uploads off",
+  },
+  {
     name: "Knowledge forget skill: archiving applies at once",
     path: "src/plugins/internal/ravi-system/skills/knowledge/SKILL.md",
     obsolete: "ravi knowledge forget <item-id> --execute",
@@ -1308,6 +1410,68 @@ const obsoleteExecuteConsumers = [
     current: "ravi themes check ./tema-acme",
   },
 ] as const;
+
+/**
+ * Every braked `ravi mcp` command shown in these files carries `--execute`: one rule per file, so a line
+ * added later is covered without a new entry. A command with nothing after it is a name in prose, not an
+ * invocation. `set` is braked only when it widens (`--audience any`, `--uploads on`) or pins the protocol.
+ * `dryRunExamples` are invocations shown on purpose without the flag (the plan a dry run prints).
+ */
+const MCP_BRAKED_INVOCATION = /ravi mcp (add|attach|enable|login|import|call|set|skills pin)(?=[ \t])([^`\n]*)/g;
+const mcpBrakeRules: ReadonlyArray<{ path: string; dryRunExamples: readonly string[]; minimum: number }> = [
+  { path: "docs/guides/mcp.mdx", dryRunExamples: ["ravi mcp skills pin docs <id> --agent main --json"], minimum: 12 },
+  { path: "docs/console/mcp.mdx", dryRunExamples: [], minimum: 5 },
+  { path: "src/plugins/internal/ravi-system/skills/mcp/SKILL.md", dryRunExamples: [], minimum: 2 },
+  {
+    path: "src/cli/commands/mcp.ts",
+    dryRunExamples: ["ravi mcp skills pin ravi-console mcp:ravi-console:project/prs/weekly-report --agent main --json"],
+    minimum: 20,
+  },
+  // The login hints Ravi prints or hands to a model come from one helper (`mcpLoginCommand`).
+  { path: "src/mcp/login-options.ts", dryRunExamples: [], minimum: 2 },
+  ...["authorize", "call-follower", "connections", "gateway", "login", "raw-dispatch", "skills"].map((name) => ({
+    path: `src/mcp/${name}.ts`,
+    dryRunExamples: [],
+    minimum: 0,
+  })),
+];
+
+function mcpBrakedInvocations(path: string): string[] {
+  const found: string[] = [];
+  for (const line of readFileSync(join(repoRoot, path), "utf8").split(/\r?\n/)) {
+    for (const match of line.matchAll(MCP_BRAKED_INVOCATION)) {
+      const rest = match[2] ?? "";
+      if (!rest.trim()) continue;
+      if (match[1] === "set" && !/--audience any|--uploads on|--protocol /.test(rest)) continue;
+      found.push(match[0].trim());
+    }
+  }
+  return found;
+}
+
+describe("ravi mcp braked command lines", () => {
+  it("carry --execute in the MCP guide, the Console MCP page, the mcp skill, the command help and the login hints", () => {
+    for (const rule of mcpBrakeRules) {
+      const invocations = mcpBrakedInvocations(rule.path);
+      expect(invocations.length, rule.path).toBeGreaterThanOrEqual(rule.minimum);
+      const missing = invocations.filter(
+        (line) => !line.includes("--execute") && !rule.dryRunExamples.some((example) => line.startsWith(example)),
+      );
+      expect(missing, rule.path).toEqual([]);
+      for (const example of rule.dryRunExamples) {
+        expect(readFileSync(join(repoRoot, rule.path), "utf8"), rule.path).toContain(example);
+      }
+    }
+  });
+
+  it("builds every runtime login hint with mcpLoginCommand, never a hand-written `run ravi mcp login`", () => {
+    for (const name of ["authorize", "call-follower", "connections", "gateway", "login", "raw-dispatch"]) {
+      const source = readFileSync(join(repoRoot, `src/mcp/${name}.ts`), "utf8");
+      expect(source, name).not.toMatch(/run ravi mcp login /);
+      expect(source, name).toContain("mcpLoginCommand(");
+    }
+  });
+});
 
 describe("command consumer contracts", () => {
   it("keeps every consumer of a braked command executable", () => {

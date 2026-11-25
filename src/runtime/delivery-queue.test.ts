@@ -913,6 +913,9 @@ describe("runtime delivery queue", () => {
     expect(envelope._triggerAuthority).not.toBe(authority);
     // A prompt that is not a trigger's never carries one.
     expect(pickRuntimeTurnAuthorityEnvelope({ prompt: "x", _triggerAuthority: authority })).toEqual({});
+    // A background MCP call's delivery keeps its automation marker on a continuation.
+    const mcpCall = { id: "mc_01jd8x00000000000000000000", server: "console", tool: "publish", status: "ok" };
+    expect(pickRuntimeTurnAuthorityEnvelope({ prompt: "result", _mcpCall: mcpCall })).toEqual({ _mcpCall: mcpCall });
   });
 
   it("distinguishes host write-ahead from Codex and Pi asynchronous tool observation", () => {

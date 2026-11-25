@@ -4,11 +4,18 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { runWithContext, type ToolContext } from "../cli/context.js";
 import type { AgentConfig } from "../router/index.js";
 import type { ContextCapability, ContextRecord } from "../router/router-db.js";
+import { startMcpGateway, stopMcpGateway } from "../mcp/gateway.js";
+import { attachMcpServer, createMcpServer, setMcpConfigChangedEmitterForTests } from "../mcp/registry-db.js";
+import { writeMcpServerSecret } from "../mcp/secrets.js";
+import { startHttpFixture } from "../mcp/test-fixtures/servers.js";
+import { setMcpTraceSinksForTests } from "../mcp/trace.js";
+import { setPermissionAuditPublisherForTest } from "../permissions/denials.js";
 import { clearSpecState } from "../spec/server.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { ADMIN_BOOTSTRAP_KIND } from "./context-registry.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { createRuntimeHostHooks, type RuntimeHostHookApprovalServices } from "./host-hooks.js";
-import { buildRuntimeHostAttachments } from "./runtime-host-attachments.js";
+import { buildRuntimeHostAttachments, HOST_MCP_SERVER_NAMES } from "./runtime-host-attachments.js";
 import type { RuntimeCapabilities, RuntimeHookMatcher } from "./types.js";
 
 const capabilities = { supportsHostSessionHooks: true } as RuntimeCapabilities;
@@ -76,6 +83,23 @@ function expectPreToolDenied(result: any): void {
       permissionDecision: "deny",
       permissionDecisionReason:
         "Runtime host hook denied because durable turn ownership changed before authorization completed.",
+    },
+  });
+}
+
+const SPEC_FAILURE_REASON =
+  "Permission denied: Ravi could not ask for approval of this spec because the approval request failed.";
+const PLAN_FAILURE_REASON =
+  "Permission denied: Ravi could not ask for approval of this plan because the approval request failed.";
+const QUESTION_FAILURE_REASON =
+  "Permission denied: Ravi could not ask this question because the approval request failed.";
+
+function expectApprovalFailureDenied(result: any, reason: string): void {
+  expect(result).toEqual({
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "deny",
+      permissionDecisionReason: reason,
     },
   });
 }
@@ -270,23 +294,23 @@ describe("runtime host hook crash recovery fences", () => {
       },
     });
 
-    await expect(
-      harness.hook(
-        "PreToolUse",
-        "AskUserQuestion",
-      )({
-        tool_input: {
-          questions: [
-            {
-              question: "First?",
-              header: "First",
-              options: [{ label: "A", description: "" }],
-              multiSelect: false,
-            },
-          ],
-        },
-      }),
-    ).rejects.toThrow("output marker unavailable");
+    const result = await harness.hook(
+      "PreToolUse",
+      "AskUserQuestion",
+    )({
+      tool_input: {
+        questions: [
+          {
+            question: "First?",
+            header: "First",
+            options: [{ label: "A", description: "" }],
+            multiSelect: false,
+          },
+        ],
+      },
+    });
+
+    expectApprovalFailureDenied(result, QUESTION_FAILURE_REASON);
     expect(polls).toBe(0);
     expect(harness.streamingSession.currentTurnToolStarted).toBe(false);
   });
@@ -315,6 +339,133 @@ describe("runtime host hook crash recovery fences", () => {
     expect(result).toEqual({});
     expect(order).toEqual(["marker:output", "external:spec", "marker:started"]);
     expect(harness.streamingSession.currentTurnToolStarted).toBe(true);
+  });
+});
+
+describe("approval hooks fail closed", () => {
+  const oneQuestion = {
+    questions: [{ question: "Pick?", header: "Pick", options: [{ label: "A", description: "" }], multiSelect: false }],
+  };
+
+  it("denies exit_spec_mode when the approval request throws", async () => {
+    const harness = createHarness({
+      attemptId: "attempt-spec-throw",
+      services: {
+        requestCascadingApproval: mock(async () => {
+          throw new Error("approval transport down: secret-token-123");
+        }),
+      },
+    });
+
+    const result = await harness.hook(
+      "PreToolUse",
+      "mcp__spec__exit_spec_mode",
+    )({ tool_name: "mcp__spec__exit_spec_mode", tool_input: { spec: "# Spec" } });
+
+    expectApprovalFailureDenied(result, SPEC_FAILURE_REASON);
+    expect(JSON.stringify(result)).not.toContain("secret-token-123");
+    expect(harness.streamingSession.currentTurnToolStarted).toBe(false);
+  });
+
+  it("denies ExitPlanMode when the approval request throws", async () => {
+    const harness = createHarness({
+      attemptId: "attempt-plan-throw",
+      services: {
+        requestCascadingApproval: mock(async () => {
+          throw new Error("approval transport down");
+        }),
+      },
+    });
+
+    const result = await harness.hook(
+      "PreToolUse",
+      "ExitPlanMode",
+    )({ tool_name: "ExitPlanMode", tool_input: { plan: "ship it" } });
+
+    expectApprovalFailureDenied(result, PLAN_FAILURE_REASON);
+    expect(harness.streamingSession.currentTurnToolStarted).toBe(false);
+  });
+
+  it("denies AskUserQuestion when the poll request throws", async () => {
+    const harness = createHarness({
+      attemptId: "attempt-question-throw",
+      services: {
+        requestPollAnswer: mock(async () => {
+          throw new Error("poll transport down");
+        }),
+      },
+    });
+
+    const result = await harness.hook(
+      "PreToolUse",
+      "AskUserQuestion",
+    )({ tool_name: "AskUserQuestion", tool_input: oneQuestion });
+
+    expectApprovalFailureDenied(result, QUESTION_FAILURE_REASON);
+    expect(harness.streamingSession.currentTurnToolStarted).toBe(false);
+  });
+
+  it("denies AskUserQuestion when the approval event throws synchronously", async () => {
+    const harness = createHarness({
+      attemptId: "attempt-question-event-throw",
+      services: {
+        emitApprovalEvent: () => {
+          throw new Error("event bus unavailable");
+        },
+      },
+    });
+
+    const result = await harness.hook(
+      "PreToolUse",
+      "AskUserQuestion",
+    )({ tool_name: "AskUserQuestion", tool_input: oneQuestion });
+
+    expectApprovalFailureDenied(result, QUESTION_FAILURE_REASON);
+  });
+
+  it("denies an approved plan when its final startedTool marker throws", async () => {
+    const harness = createHarness({
+      attemptId: "attempt-plan-final-marker",
+      marker: (input) => {
+        if (input.startedTool) throw new Error("tool marker unavailable");
+      },
+    });
+
+    const result = await harness.hook("PreToolUse", "ExitPlanMode")({ tool_input: { plan: "ship it" } });
+
+    expectApprovalFailureDenied(result, PLAN_FAILURE_REASON);
+    expect(harness.streamingSession.currentTurnToolStarted).toBe(false);
+  });
+
+  it("keeps the ownership-change denial when the attempt is lost before the approval is sent", async () => {
+    const harness = createHarness({ attemptId: "attempt-spec-lost" });
+    harness.approvalServices.requestCascadingApproval = mock(async (request) => {
+      harness.streamingSession.currentCrashRecoveryAttemptId = "another-attempt";
+      request.beforeExternalApproval?.();
+      return { approved: true, isDelegated: false };
+    });
+
+    const result = await harness.hook("PreToolUse", "mcp__spec__exit_spec_mode")({ tool_input: { spec: "# Spec" } });
+
+    expectPreToolDenied(result);
+  });
+
+  it("keeps declined and timed-out answers as they were", async () => {
+    const declined = createHarness({
+      attemptId: "attempt-plan-declined",
+      services: {
+        requestCascadingApproval: mock(async () => ({ approved: false, reason: "nope", isDelegated: false })),
+      },
+    });
+    const declinedResult = await declined.hook("PreToolUse", "ExitPlanMode")({ tool_input: { plan: "ship it" } });
+    expectApprovalFailureDenied(declinedResult, "Plano rejeitado: nope");
+
+    const timedOut = createHarness({
+      attemptId: "attempt-question-timeout",
+      services: { requestPollAnswer: mock(async () => ({ freeText: "Timeout — nenhuma resposta." })) },
+    });
+    const timedOutResult = await timedOut.hook("PreToolUse", "AskUserQuestion")({ tool_input: oneQuestion });
+    expect(timedOutResult.hookSpecificOutput.updatedInput.answers).toEqual({ "Pick?": "Timeout — nenhuma resposta." });
   });
 });
 
@@ -407,13 +558,19 @@ describe("tool gate on the registered PreToolUse chain", () => {
     stateDir = null;
   });
 
-  it("denies a tool of a server the runtime loaded from its own configuration", async () => {
+  it("denies a tool of a server the runtime loaded from its own configuration, whatever the grants", async () => {
     const { preToolUse } = buildSession();
     const call = { tool_name: "mcp__github__create_issue", mcp_server: { name: "github", source: "project" } };
 
-    expect(await runPreToolUse(preToolUse, [toolGrant("Read")], call)).toContain("tool:mcp__github__create_issue");
-    expect(await runPreToolUse(preToolUse, [toolGrant("mcp__github__*")], call)).toBeNull();
-    expect(await runPreToolUse(preToolUse, [toolGrant("*")], call)).toBeNull();
+    for (const grant of ["Read", "mcp__github__*", "*"]) {
+      const denial = await runPreToolUse(preToolUse, [toolGrant(grant)], call);
+      expect(denial).toContain("tool:mcp__github__create_issue");
+      expect(denial).toContain('MCP server "github" (source "project") is not registered in Ravi');
+    }
+    // Without a server report, a prefix the session never declared is denied too.
+    expect(await runPreToolUse(preToolUse, [toolGrant("*")], { tool_name: "mcp__github__create_issue" })).toContain(
+      "belongs to no MCP server Ravi declared",
+    );
   });
 
   it("denies a tool the built-in registry does not list", async () => {
@@ -432,6 +589,8 @@ describe("tool gate on the registered PreToolUse chain", () => {
     // The provider registers this record as built, so its keys are the names Claude Code reports.
     const registered = Object.keys(specSession.attachments.mcpServers ?? {});
     expect(registered).toEqual(["spec"]);
+    // The MCP registry reserves exactly this export, so every attached host name is in it.
+    for (const hostName of registered) expect(HOST_MCP_SERVER_NAMES).toContain(hostName);
     const [name] = registered;
     const hostCall = { tool_name: `mcp__${name}__enter_spec_mode`, mcp_server: { name: name!, source: "sdk" } };
     const lookalike = { tool_name: `mcp__${name}__ping`, mcp_server: { name: name!, source: "project" } };
@@ -478,5 +637,89 @@ describe("tool gate on the registered PreToolUse chain", () => {
     });
 
     expect(denial).toContain("cannot execute: curl");
+  });
+});
+
+describe("gateway facades and the session's approval wait", () => {
+  let stateDir: string | null = null;
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-host-attachments-approval-wait-");
+    setMcpConfigChangedEmitterForTests(() => {});
+    setPermissionAuditPublisherForTest(() => {});
+    setMcpTraceSinksForTests({ call: () => {}, catalog: () => {}, elicitation: () => {} });
+  });
+
+  afterEach(async () => {
+    await stopMcpGateway();
+    setMcpTraceSinksForTests({ call: null, catalog: null, elicitation: null });
+    setPermissionAuditPublisherForTest();
+    setMcpConfigChangedEmitterForTests(null);
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("holds the streaming session's approval wait while a server's question is answered", async () => {
+    const fixture = startHttpFixture();
+    try {
+      createMcpServer({ name: "fixture", transport: "http", url: fixture.url, authKind: "none" });
+      await writeMcpServerSecret("fixture", { url: fixture.url });
+      attachMcpServer({ agentId: GATE_AGENT_ID, server: "fixture", audience: "any" });
+      const events: string[] = [];
+      const daemon = await startMcpGateway({
+        subscribe: false,
+        refreshTickMs: 0,
+        closeGraceMs: 200,
+        elicit: async (request) => {
+          request.scope.approvalWait?.begin();
+          events.push(`asked ${request.server}/${request.tool}`);
+          request.scope.approvalWait?.end();
+          return { action: "accept", content: { confirm: true } };
+        },
+      });
+      expect((await daemon.refresh("fixture"))?.status).toBe("ok");
+      // The operator's own turn (the terminal's admin bootstrap root).
+      const turn: ContextRecord = {
+        contextId: "ctx_operator",
+        contextKey: "rctx_operator",
+        kind: ADMIN_BOOTSTRAP_KIND,
+        agentId: GATE_AGENT_ID,
+        capabilities: [{ permission: "admin", objectType: "system", objectId: "*" }],
+        createdAt: Date.now(),
+      };
+      const attachments = buildRuntimeHostAttachments({
+        runtimeCapabilities: claudeLike,
+        agent: { id: GATE_AGENT_ID, cwd: `/tmp/${GATE_AGENT_ID}` },
+        sessionName: "gate-session",
+        sessionCwd: `/tmp/${GATE_AGENT_ID}`,
+        streamingSession: {
+          currentCrashRecoveryAttemptId: "attempt-1",
+          currentTurnToolStarted: false,
+          externalApprovalWait: { begin: () => events.push("begin"), end: () => events.push("end") },
+        },
+        crashRecovery: { markTurnAttemptSafety: () => undefined } as unknown as Pick<
+          RuntimeCrashRecoveryCoordinator,
+          "markTurnAttemptSafety"
+        >,
+        getTurnContext: () => turn,
+      });
+      attachments.gatewayMcpServers!.prepareTurn();
+      const facade = attachments.gatewayMcpServers!.current().fixture as {
+        instance: { connect(transport: unknown): Promise<void> };
+      };
+      const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+      await facade.instance.connect(serverSide);
+      const client = new Client({ name: "claude-code-test", version: "1.0.0" });
+      await client.connect(clientSide);
+      try {
+        const result = await client.callTool({ name: "deploy", arguments: { env: "prod" } });
+        expect(result.content).toEqual([{ type: "text", text: "deployed to prod" }]);
+        expect(events).toEqual(["begin", "asked fixture/deploy", "end"]);
+      } finally {
+        await client.close();
+      }
+    } finally {
+      await fixture.close();
+    }
   });
 });

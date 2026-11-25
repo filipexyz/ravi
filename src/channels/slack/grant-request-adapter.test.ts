@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { answerSlackApprovalClick } from "../../approval/slack-click-feedback.js";
-import { setApprovalGrantorRouterConfigForTest } from "./grantors.js";
+import { listSlackInstanceScopeAliases, setApprovalGrantorRouterConfigForTest } from "./grantors.js";
+import type { RouterConfig } from "../../router/types.js";
 import {
   SLACK_PERMISSION_GRANT_ACTION_EXACT,
   SLACK_PERMISSION_GRANT_ACTION_FULL_ACCESS,
@@ -290,6 +291,26 @@ describe("slack grant request adapter", () => {
         },
       });
       expect(answered).toBeNull();
+    });
+  });
+
+  describe("workspace scope", () => {
+    it("lists a Slack instance's slug, UUID and received id, and only the received id without config", () => {
+      setApprovalGrantorRouterConfigForTest(
+        () =>
+          ({
+            instances: { main: { instanceId: "uuid-main" } },
+            instanceToAccount: { "uuid-main": "main" },
+          }) as unknown as RouterConfig,
+      );
+      expect(listSlackInstanceScopeAliases("main").sort()).toEqual(["main", "uuid-main"]);
+      expect(listSlackInstanceScopeAliases("uuid-main").sort()).toEqual(["main", "uuid-main"]);
+      expect(listSlackInstanceScopeAliases("other")).toEqual(["other"]);
+
+      setApprovalGrantorRouterConfigForTest(() => {
+        throw new Error("config unreadable");
+      });
+      expect(listSlackInstanceScopeAliases("main")).toEqual(["main"]);
     });
   });
 });

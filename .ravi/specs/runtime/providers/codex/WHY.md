@@ -19,3 +19,7 @@ Native thread ids are not enough. Resuming a thread in the wrong cwd can apply c
 ## Why Fork Is Not A Capability Yet
 
 The transport exposes native fork as a control operation, but the provider does not yet support Ravi session continuity fork semantics. Fork should become a capability only when parent/child session mapping and persistence are defined end-to-end.
+
+## MCP isolation
+
+Codex loads MCP servers from its own configuration and calls them without any Ravi decision. Registered servers reach a Codex agent through `ravi mcp tools` and `ravi mcp call` instead, so Codex's own servers are turned off at launch. The overrides follow what Codex 0.172.0 actually does: `-c mcp_servers={}` merges and clears nothing, a `-c` path cannot quote a key, and an override for a key Codex did not load stops Codex from starting, which is why untrusted project layers are left out and why unaddressable keys are refused before launch. The overrides alone are not trusted: Codex still lists a disabled server, so the status check after every thread start accepts only entries reported disabled, and an MCP tool call item fails the turn. Every uncertain case (a file Ravi cannot read, a trust rule Ravi predicts wrongly, a plugin server the overrides do not name) ends in a refused session, never in a server that runs unseen.

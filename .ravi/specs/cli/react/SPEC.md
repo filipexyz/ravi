@@ -83,7 +83,7 @@ missing context and unknown messages.
   `src/plugins/internal/ravi-system/skills/`; the surface is taught through
   the sessions hints, the stickers skill (response-surface list) and AGENTS.md.
 - Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope because
-  `react` is registered in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`).
+  `react` is registered in `AGENT_CONTRACT_DOMAINS` (`src/cli/agent-contract-domains.ts`).
 
 ## Validation
 

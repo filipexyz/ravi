@@ -4,6 +4,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { withoutRaviRuntimeContextEnv } from "../../test/ravi-state.js";
+import { Command as CommanderCommand } from "commander";
+import { AGENT_CONTRACT_DOMAINS, AGENT_CONTRACT_UNMIGRATED_ROOTS } from "../agent-contract-domains.js";
 
 setDefaultTimeout(90_000);
 
@@ -219,5 +221,42 @@ describe("usage exit taxonomy smoke", () => {
         suggestedAction: "Inspect the command input and retry 'audio generate'",
       },
     });
+  });
+
+  it("gives every ravi mcp usage error the envelope and exit 2 (root, calls and skills subgroups)", () => {
+    for (const testCase of [
+      { args: ["mcp", "call", "docs", "--json"], op: "mcp call" },
+      { args: ["mcp", "list", "--bogus", "--json"], op: "mcp list" },
+      { args: ["mcp", "nosuchcmd", "--json"], op: "mcp" },
+      { args: ["mcp", "calls", "--json"], op: "mcp calls" },
+      { args: ["mcp", "calls", "cancel", "--json"], op: "mcp calls cancel" },
+      { args: ["mcp", "skills", "pin", "docs", "--json"], op: "mcp skills pin" },
+    ]) {
+      const result = runCli(testCase.args, { RAVI_AGENT_ID: undefined });
+      expect(result.status, testCase.args.join(" ")).toBe(2);
+      expect(JSON.parse(result.stdout), testCase.args.join(" ")).toMatchObject({
+        success: false,
+        op: testCase.op,
+        error: { code: "USAGE_ERROR" },
+      });
+    }
+  });
+});
+
+describe("agent contract domains", () => {
+  it("lists every registered command root as migrated or, explicitly, not yet migrated", async () => {
+    const allCommands = await import("./index.js");
+    const { registerCommands } = await import("../registry.js");
+    const program = new CommanderCommand();
+    registerCommands(program, Object.values(allCommands) as Array<new () => object>);
+    const roots = program.commands.map((command) => command.name()).sort();
+    const migrated = new Set<string>(AGENT_CONTRACT_DOMAINS);
+    const unmigrated = new Set<string>(AGENT_CONTRACT_UNMIGRATED_ROOTS);
+    // A new root belongs in AGENT_CONTRACT_DOMAINS (src/cli/agent-contract-domains.ts).
+    expect(roots.filter((root) => !migrated.has(root) && !unmigrated.has(root))).toEqual([]);
+    expect([...migrated].filter((root) => unmigrated.has(root))).toEqual([]);
+    // Both lists name registered roots only, so a renamed root cannot hide in either.
+    expect([...migrated, ...unmigrated].filter((root) => !roots.includes(root))).toEqual([]);
+    expect(migrated.has("mcp")).toBe(true);
   });
 });

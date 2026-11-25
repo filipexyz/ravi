@@ -184,6 +184,17 @@ const GROK_TOOL_ALIASES: Record<GrokHostedTool, readonly string[]> = Object.from
   GROK_HOSTED_TOOLS.map((tool) => [tool, GROK_TOOL_CATALOG[tool].aliases]),
 ) as Record<GrokHostedTool, readonly string[]>;
 
+/**
+ * Grok's own MCP tools are always off (`mcp` spec): registered servers reach
+ * Grok only through `ravi mcp tools` / `ravi mcp call` in its shell tool. The
+ * class is denied at spawn and refused at every permission request, whatever
+ * the grants say (a `use:tool:MCPTool` or `use:tool:*` grant included).
+ */
+export const GROK_ALWAYS_DENIED_TOOL: GrokHostedTool = "MCPTool";
+
+/** Grok internal ids of the always-denied MCPTool class. */
+export const GROK_MCP_TOOL_IDS: readonly string[] = GROK_TOOL_CATALOG.MCPTool.internalIds;
+
 /** Extra documented IDs to strip on empty/deny so Grok cannot auto-exec them. */
 export const GROK_FAIL_CLOSED_TOOL_IDS = [
   ...new Set([
@@ -692,16 +703,22 @@ export function buildGrokAcpProcessArgs(
     "model" | "effort" | "systemPromptAppend" | "allowTools" | "denyTools" | "allowRules" | "allowSubagents"
   >,
 ): string[] {
-  const granted = new Set((input.allowTools ?? []).filter(isGrokHostedTool));
-  const denied = uniqueStrings(
-    (input.denyTools?.length ? input.denyTools : GROK_HOSTED_TOOLS.filter((tool) => !granted.has(tool))).filter(
+  const granted = new Set(
+    (input.allowTools ?? []).filter(isGrokHostedTool).filter((tool) => tool !== GROK_ALWAYS_DENIED_TOOL),
+  );
+  const denied = uniqueStrings([
+    ...(input.denyTools?.length ? input.denyTools : GROK_HOSTED_TOOLS.filter((tool) => !granted.has(tool))).filter(
       isGrokHostedTool,
     ),
-  ).filter(isGrokHostedTool);
-  const allowToolIds = uniqueStrings(input.allowTools ? toolIdsForHostedClasses([...granted]) : []);
+    GROK_ALWAYS_DENIED_TOOL,
+  ]).filter(isGrokHostedTool);
+  const allowToolIds = uniqueStrings(input.allowTools ? toolIdsForHostedClasses([...granted]) : []).filter(
+    (id) => !GROK_MCP_TOOL_IDS.includes(id),
+  );
   const denyToolIds = uniqueStrings([
     ...denied.flatMap((tool) => [...GROK_TOOL_CATALOG[tool].internalIds]),
     ...GROK_FAIL_CLOSED_TOOL_IDS.filter((id) => !allowToolIds.includes(id)),
+    ...GROK_MCP_TOOL_IDS,
   ]);
   const allowSubagents = input.allowSubagents === true || granted.has("Agent");
 
@@ -725,7 +742,7 @@ export function buildGrokAcpProcessArgs(
   } else {
     // Empty `--tools` is ignored by Grok 1.0.5. A full documented denylist plus
     // `--no-subagents` is the fail-closed equivalent that strips auto-exec tools.
-    args.push("--disallowed-tools", GROK_FAIL_CLOSED_TOOL_IDS.join(","));
+    args.push("--disallowed-tools", uniqueStrings([...GROK_FAIL_CLOSED_TOOL_IDS, ...GROK_MCP_TOOL_IDS]).join(","));
   }
   if (!allowSubagents) {
     args.push("--no-subagents");
@@ -747,7 +764,8 @@ export function buildGrokAcpProcessArgs(
 }
 
 export function isGrokScopedPermissionRule(rule: string): boolean {
-  return /^(Bash|Edit|Write|Read|Grep|WebFetch|MCPTool)\(.+\)$/.test(rule.trim());
+  // MCPTool is never a grant (`GROK_ALWAYS_DENIED_TOOL`), so no scoped rule names it.
+  return /^(Bash|Edit|Write|Read|Grep|WebFetch)\(.+\)$/.test(rule.trim());
 }
 
 function toolIdsForHostedClasses(classes: GrokHostedTool[]): string[] {
@@ -818,7 +836,7 @@ export async function resolveGrokToolAccessRules(
   const allow: string[] = [];
   const deny: string[] = [];
   for (const tool of GROK_HOSTED_TOOLS) {
-    if (await isGrokHostedToolAllowed(tool, canUseTool)) {
+    if (tool !== GROK_ALWAYS_DENIED_TOOL && (await isGrokHostedToolAllowed(tool, canUseTool))) {
       allow.push(tool);
     } else {
       deny.push(tool);
@@ -828,6 +846,7 @@ export async function resolveGrokToolAccessRules(
   const denyToolIds = uniqueStrings([
     ...deny.filter(isGrokHostedTool).flatMap((tool) => [...GROK_TOOL_CATALOG[tool].internalIds]),
     ...GROK_FAIL_CLOSED_TOOL_IDS.filter((id) => !allowToolIds.includes(id)),
+    ...GROK_MCP_TOOL_IDS,
   ]);
   return {
     allow,
@@ -1527,6 +1546,9 @@ async function decideGrokToolAuthorization(
   handlers: GrokPermissionAuthorizationHandlers,
 ): Promise<boolean> {
   const mapped = mapGrokToolNameToRavi(toolName);
+  if (isGrokMcpPermissionRequest(mapped, rawRequest)) {
+    return false;
+  }
   if (!isKnownGrokAuthorizationTool(mapped) && !isKnownGrokAuthorizationTool(toolName)) {
     return false;
   }
@@ -1567,6 +1589,37 @@ async function decideGrokToolAuthorization(
   }
 
   return false;
+}
+
+/**
+ * A permission request is for an MCP tool when its mapped class is MCPTool, or
+ * when any tool-name field of the raw request names MCP (`kind: "mcp"`, an
+ * `mcp__<server>__<tool>` name, `search_tool` / `use_tool`). The raw fields
+ * are checked too because the class mapping matches shell and web substrings
+ * first: `mcp__a__bash` would otherwise map to Bash and ride a Bash grant.
+ */
+export function isGrokMcpPermissionRequest(mappedToolName: string, rawRequest: Record<string, unknown>): boolean {
+  if (mappedToolName === GROK_ALWAYS_DENIED_TOOL) {
+    return true;
+  }
+  const toolCall = isRecord(rawRequest.toolCall)
+    ? rawRequest.toolCall
+    : isRecord(rawRequest.tool_call)
+      ? rawRequest.tool_call
+      : rawRequest;
+  const names = [toolCall.toolName, toolCall.tool_name, toolCall.name, toolCall.kind];
+  for (const value of names) {
+    if (typeof value !== "string") continue;
+    const normalized = value
+      .trim()
+      .toLowerCase()
+      .replace(/[\s_-]+/g, "");
+    if (normalized.includes("mcp") || normalized === "searchtool" || normalized === "usetool") {
+      return true;
+    }
+  }
+  // A title is free text; it counts only when it is shaped like an MCP tool name.
+  return typeof toolCall.title === "string" && /^\s*mcp[_:.-]/i.test(toolCall.title);
 }
 
 async function isGrokToolAllowedByHost(

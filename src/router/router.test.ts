@@ -634,6 +634,93 @@ describe("router context queries", () => {
   });
 });
 
+describe("mcp registry schema", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-router-mcp-schema-test-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("creates the MCP tables, refuses rows outside their grammar and cascades attachments", () => {
+    const db = getDb();
+    const now = Date.now();
+    const insert = db.prepare(
+      "INSERT INTO mcp_servers (name, transport, url_display, command, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+    );
+    insert.run("github", "http", "https://mcp.example.com/mcp", null, now, now);
+    // A transport row must carry exactly its own target, and enums are checked.
+    expect(() => insert.run("both", "http", "https://h.example", "cmd", now, now)).toThrow();
+    expect(() => insert.run("none", "stdio", null, null, now, now)).toThrow();
+    expect(() => insert.run("odd", "websocket", "wss://h.example", null, now, now)).toThrow();
+    // url_secret defaults to 0 and holds only 0 or 1.
+    expect(db.prepare("SELECT url_secret FROM mcp_servers WHERE name = 'github'").get()).toEqual({ url_secret: 0 });
+    expect(() => db.prepare("UPDATE mcp_servers SET url_secret = 2 WHERE name = 'github'").run()).toThrow();
+
+    db.prepare("INSERT INTO mcp_agent_servers (agent_id, server, created_at) VALUES ('main', 'github', ?)").run(now);
+    const attachment = db.prepare("SELECT audience, uploads FROM mcp_agent_servers").get() as {
+      audience: string;
+      uploads: number;
+    };
+    expect(attachment).toEqual({ audience: "operator", uploads: 0 });
+    expect(() =>
+      db.prepare("INSERT INTO mcp_agent_servers (agent_id, server, created_at) VALUES ('main', 'missing', ?)").run(now),
+    ).toThrow();
+
+    db.prepare("DELETE FROM mcp_servers WHERE name = 'github'").run();
+    expect(db.prepare("SELECT COUNT(*) AS n FROM mcp_agent_servers").get()).toEqual({ n: 0 });
+  });
+
+  it("creates the background MCP call table with its state and outcome grammar, outliving its server", () => {
+    const db = getDb();
+    const now = Date.now();
+    const insert = db.prepare(
+      `INSERT INTO mcp_calls
+        (id, server, tool, agent_id, session_name, surface, detach_reason, state, expires_at, created_at, updated_at)
+        VALUES (?, 'console', 'publish', 'main', 'main-session', 'cli', 'task', ?, ?, ?, ?)`,
+    );
+    insert.run("mc_1", "task", now + 1_000, now, now);
+    expect(
+      db.prepare("SELECT state, outcome, origin_json, input_rounds, delivery_attempts FROM mcp_calls").get(),
+    ).toEqual({ state: "task", outcome: null, origin_json: "{}", input_rounds: 0, delivery_attempts: 0 });
+    // No foreign key: a call of an unregistered server keeps its row (its result is discarded, not lost).
+    expect(db.prepare("SELECT COUNT(*) AS n FROM mcp_servers WHERE name = 'console'").get()).toEqual({ n: 0 });
+    expect(() => insert.run("mc_2", "maybe", now + 1_000, now, now)).toThrow();
+    expect(() => db.prepare("UPDATE mcp_calls SET outcome = 'unknown'").run()).toThrow();
+    expect(() => db.prepare("UPDATE mcp_calls SET detach_reason = 'other'").run()).toThrow();
+    db.prepare("UPDATE mcp_calls SET state = 'delivered', outcome = 'lost'").run();
+    expect(db.prepare("SELECT state, outcome FROM mcp_calls").get()).toEqual({ state: "delivered", outcome: "lost" });
+
+    db.prepare(
+      "INSERT INTO mcp_server_rate_limits (server, limited_at, limited_until, method) VALUES ('console', ?, ?, 'tasks')",
+    ).run(now, now + 30_000);
+    expect(db.prepare("SELECT method FROM mcp_server_rate_limits").get()).toEqual({ method: "tasks" });
+  });
+
+  it("creates the elicitation request table with its own status and mode grammar", () => {
+    const db = getDb();
+    const now = Date.now();
+    const insert = db.prepare(
+      `INSERT INTO mcp_elicitation_requests
+        (id, account_id, chat_id, user_id, contact_id, server, tool, mode, request_json, created_at, expires_at)
+        VALUES (?, 'ws', 'C0ABC123', 'U0OWNER1', 'c_owner', 'console', 'write_row', ?, '{"fields":[]}', ?, ?)`,
+    );
+    insert.run("sme_1", "form", now, now + 1_000);
+    expect(db.prepare("SELECT status, view_id, settled_at FROM mcp_elicitation_requests").get()).toEqual({
+      status: "open",
+      view_id: null,
+      settled_at: null,
+    });
+    // Only the two modes and the six states this flow uses.
+    expect(() => insert.run("sme_2", "sampling", now, now + 1_000)).toThrow();
+    expect(() => db.prepare("UPDATE mcp_elicitation_requests SET status = 'maybe'").run()).toThrow();
+    db.prepare("UPDATE mcp_elicitation_requests SET status = 'answered', settled_at = ?").run(now + 1);
+    expect(db.prepare("SELECT status FROM mcp_elicitation_requests").get()).toEqual({ status: "answered" });
+  });
+});
+
 describe("agent model preset persistence", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-router-agent-preset-test-");

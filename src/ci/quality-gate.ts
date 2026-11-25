@@ -61,6 +61,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/slack/client.test.ts",
     // Private credential modals: exact destination, replay receipts and payload isolation.
     "src/channels/slack/credential-intake.test.ts",
+    // Private MCP elicitation modals: the bound user, one view, one published answer, block mapping.
+    "src/channels/slack/mcp-elicitation.test.ts",
     // Broker-backed Slack credentials: action, authority and destructive mark reach the broker.
     "src/channels/slack/credentials.test.ts",
     // Slack `/ravi`: parser and event shape, the daemon handler and its authority, response handle limits.
@@ -117,6 +119,35 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/db/daemon-schema-owner.ts": ["src/db/schema-lock.test.ts", "src/cli/commands/daemon-schema-cutover.test.ts"],
   "src/db/runtime-state.ts": ["src/db/schema-owner.test.ts"],
   "src/db/state-boundary.ts": ["src/router/state-boundary.test.ts"],
+  // MCP registry, names, server secrets, the one authorization function and the gateway (spec mcp).
+  "src/mcp/": [
+    "src/mcp/names.test.ts",
+    "src/mcp/registry-db.test.ts",
+    "src/mcp/authorize.test.ts",
+    "src/mcp/secrets.test.ts",
+    "src/mcp/import.test.ts",
+    // Gateway core: connections, era verdicts, catalog, result caps, trace (fixtures on SDK 2.4.0).
+    "src/mcp/gateway.test.ts",
+    // Login, logout, stored OAuth/bearer credentials and the locked refresh (fake authorization server).
+    "src/mcp/oauth-provider.test.ts",
+    // Claude facade servers: per-turn build, listing, forwarding, hook wiring, watchdog rule and trace.
+    "src/mcp/claude-facade.test.ts",
+    // Elicitation: who is asked, where, field by field with a review, URL consent, legacy attribution.
+    "src/mcp/elicitation.test.ts",
+    // Raw dispatch (tasks, uploads, SSE, 401/429) and the one input_required loop both call paths share.
+    "src/mcp/raw-dispatch.test.ts",
+    "src/mcp/input-loop.test.ts",
+    // Background calls: detach, the follower (polls, 429, cancel, late input, restart) and delivery.
+    "src/mcp/call-follower.test.ts",
+    // The CLI pair (ravi mcp tools / call): the authorization matrix through the host gateway socket, Pi's dynamic tools.
+    "src/cli/commands/mcp-call.test.ts",
+    // Remote skills: pin without a file fetch, read with digest checks and the cache, the Library plugin and turn gate.
+    "src/mcp/skills.test.ts",
+    // File uploads: the files catalog, gate A and gate B, upload targets and the one retry (draft-shaped fixture).
+    "src/mcp/files.test.ts",
+    // The management commands (add, attach, set, show warnings and status) over the registry.
+    "src/cli/commands/mcp.test.ts",
+  ],
   "src/router/": [
     // Daemon/consumer initialization exercises the router's journal/schema boundary.
     "src/db/schema-owner.test.ts",
@@ -207,6 +238,10 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/skill-gate.test.ts",
     "src/runtime/claude-local-skills.test.ts",
     "src/runtime/claude-provider.test.ts",
+    // Codex's own MCP servers stay off: registered-only loading per runtime (spec mcp).
+    "src/runtime/codex-mcp-isolation.test.ts",
+    // Chat presentation of runtime tools, MCP tools as server and tool.
+    "src/runtime/tool-presentation.test.ts",
     "src/runtime/codex-provider.test.ts",
     "src/runtime/grok-provider.test.ts",
     "src/runtime/pi-provider.test.ts",

@@ -223,6 +223,9 @@ mock.module("./heartbeat/index.js", () => ({
 }));
 
 mock.module("./bash/index.js", () => ({
+  buildPreToolUseDenyResult: (reason: string) => ({
+    hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason },
+  }),
   canExecuteArbitraryShell: () => false,
   checkDangerousPatterns: () => ({ safe: true }),
   createBashPermissionHook: () => ({

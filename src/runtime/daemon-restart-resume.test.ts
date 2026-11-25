@@ -560,6 +560,14 @@ describe("daemon restart inputs carry the interrupted turn's authority", () => {
       captureRestartTurnAuthority({ _turnOrigin: relayOrigin as never, context: { senderId: undefined } as never }),
     ).toEqual({ v: 1, _turnOrigin: relayOrigin, context: {} } as never);
     expect(captureRestartTurnAuthority({ _cron: true } as never)).toEqual({ v: 1, automation: true });
+    expect(
+      captureRestartTurnAuthority({
+        _mcpCall: { id: "mc_01jd8x00000000000000000000", server: "console", tool: "publish", status: "ok" },
+      }),
+    ).toEqual({
+      v: 1,
+      automation: true,
+    });
     expect(restoreRestartTurnAuthority({ v: 1, _turnOrigin: { protocol: "other" } })).toEqual({
       ok: false,
       reason: "authority_unreadable",

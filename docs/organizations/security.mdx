@@ -157,13 +157,14 @@ Connector writes, such as `ravi gmail send --execute`, follow a separate path. T
 
 ## Credentials
 
-The credential broker keeps provider secrets out of Ravi's database. Ravi stores the connection and a reference, and the secret stays in macOS Keychain or in Vault.
+The credential broker keeps provider secrets out of Ravi's database. Ravi stores the connection and a reference, and the secret stays in macOS Keychain or in Vault, or, for MCP servers, in a local file.
 
 | Part | Where it lives |
 |---|---|
 | Connections, scopes and secret references | `~/.ravi/credentials.db` (`RAVI_CREDENTIALS_DB_PATH` moves it) |
 | Secret values, `keychain` backend | macOS Keychain, through the `security` tool |
 | Secret values, `vault` backend | Vault KV v2. Needs `VAULT_ADDR` and `VAULT_TOKEN`. |
+| Secret values, `file` backend (the MCP servers registered with `ravi mcp`) | A file per server under `credential-secrets/` in Ravi's state directory, readable by the user the daemon runs as and by agents with file or shell tools |
 | Each secret read | A row in the `credential_audit_events` table of the same database |
 
 ```bash
@@ -181,7 +182,7 @@ ravi credentials broker exec --provider slack --connection main --action auth.ch
 `policies explain` prints the policy the broker declares for an action. Using a connection needs `use:credential:<provider>:<connection>` and `execute:<provider>:<action>`. Every action except a short list of reads, such as `auth.check` and `users.list`, is marked as needing approval.
 
 <Warning>
-Today the broker declares this policy but does not enforce it when it resolves a secret. The audit row records the approval as `not_requested`. Treat the command capabilities and the CLI-only rule as the real boundary. They do not stop an agent that can run any code, such as a `bootstrap` agent through `bun -e`.
+Today the broker declares this policy but does not enforce it when it resolves a secret. The audit row records the approval as `not_requested`. Treat the command capabilities and the CLI-only rule as the real boundary. They do not stop an agent that can run any code, such as a `bootstrap` agent through `bun <file>` on a file its file tools wrote.
 </Warning>
 
 ## Keys for apps
@@ -330,8 +331,10 @@ These limits exist today. Plan around them.
 
 | Limit | What to do |
 |---|---|
-| On Codex, Ravi does not check tools from MCP servers in the operator's Codex configuration: they run without approval, from any chat. On Grok, one capability (`use:tool:MCPTool`) covers every MCP server and tool. | On those runtimes, add only MCP servers you would let everyone who reaches the agent use. |
-| On Claude Code, Ravi checks each MCP tool call by name, but Claude Code still starts every MCP server its configuration lists when a session starts. An agent on the `bootstrap` floor holds `use:tool:*`, which covers all of them. | Add only servers you trust to run on the machine, and use `explicit-only` with `use:tool:mcp__<server>__*` to choose which ones an agent may call. |
+| No runtime loads MCP servers from its own configuration any more. An agent reaches only the servers registered in Ravi and attached to it, and every call is checked: the turn needs `use:tool:mcp__<server>__<tool>`, the server's audience must admit the turn (by default only your own turns), and a change the server asks to confirm goes to the person of the turn. But an agent on the `bootstrap` floor holds `use:tool:*`: attaching a server gives it every tool of that server at once, writes included. | Attach only servers whose every tool the agent may call, or use `explicit-only` with `use:tool:mcp__<server>__*` (or one grant per tool) to choose. After an upgrade, `ravi doctor` lists servers a runtime's own files still declare, and `ravi mcp import` registers them. |
+| A registered MCP server's credential (its login, a URL that carries a token, its environment values) is kept in a file under Ravi's state directory. An agent with file or shell tools on that host can read it, as it can the Console login. An agent that can run any program or any code, including one on the `bootstrap` floor through `bun <file>` on a file its file tools wrote, can also start `ravi mcp` without the session's markers, which Ravi then takes for your own terminal: it uses your login and reaches servers whose audience is you alone, in anyone's turn. | Give agents that serve people you do not fully trust `chat-only`, or `explicit-only` without file or shell tools. |
+| A tool's description is text the MCP server wrote, and it reaches the model as it is. | Register only servers you trust. |
+| On an agent with spec mode on, Ravi's own spec-mode tools (`mcp__spec__*`) are not checked against the ceiling. | Turn spec mode on only for agents whose turns you trust. |
 | On Codex, Ravi checks shell commands per turn. Codex's other built-in tools, such as file edits, follow the agent's profile instead. | Use `chat-only`, or `explicit-only` without tool or exec capabilities. Those run Codex in a read-only sandbox with web search and image viewing off. |
 | Chat approvals for capabilities exist only on Pi and Grok. On Claude Code and Codex, a missing capability is refused. | Raise the ceiling, or grant per chat, ahead of time. |
 | Outside governed chats, any sender who resolves to a contact gets the full ceiling, whatever the contact's status. | Use `pairing` and `allowlist`, and govern group chats that include other people. |

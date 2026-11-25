@@ -135,17 +135,27 @@ Regras:
   Use diretamente apenas para correção agent-only; para fluxos iniciados por
   humanos, prefira `ravi permissions allow/resolve`.
 - No Claude, toda chamada de ferramenta passa pelo teto pelo nome, inclusive
-  ferramentas de servidores MCP que o runtime carrega da própria configuração
-  (`.mcp.json`, plugins): `mcp__<servidor>__<ferramenta>`.
+  as ferramentas dos servidores MCP registrados no Ravi e anexados ao agent
+  (`ravi mcp`; o runtime não carrega mais MCP da própria configuração):
+  `mcp__<servidor>__<ferramenta>`. Codex, Grok e Pi chegam às mesmas
+  ferramentas por `ravi mcp tools` e `ravi mcp call`, com o mesmo teste.
   `use:tool:mcp__<servidor>__*` libera toda ferramenta cujo nome começa com
-  esse prefixo: vale para o servidor que o runtime carregar com esse nome. Um
-  agent `explicit-only` precisa também de `use:tool:ToolSearch` para carregar
-  a definição da ferramenta. Os leitores de recursos (`ListMcpResourcesTool`,
-  `ReadMcpResourceTool`, `ReadMcpResourceDirTool`) não são por servidor: um
-  deles lê os recursos de todos os servidores da sessão. O piso bootstrap já
-  tem `use:tool:*`. No Codex, ferramentas MCP da configuração do operador não
-  passam pelo teto, e qualquer `use:tool:` tira um agent `explicit-only` do
-  sandbox somente leitura.
+  esse prefixo: vale para o servidor registrado com esse nome. Cuidado:
+  `use:tool:mcp_*` também cobre todo `mcp__<servidor>__*` de todo servidor
+  registrado; prefira `use:tool:mcp__<servidor>__*` por servidor. Um agent no
+  Claude precisa também de `use:tool:ToolSearch` para carregar a definição da
+  ferramenta (`ravi mcp show` e `ravi mcp attach` avisam quando falta). Os leitores de recursos (`ListMcpResourcesTool`,
+  `ReadMcpResourceTool`, `ReadMcpResourceDirTool`) não são por servidor, e
+  um servidor registrado chega ao Claude só com ferramentas, sem recursos.
+  O piso bootstrap já tem `use:tool:*` (anexar um servidor dá todas as
+  ferramentas dele, escritas inclusive) e os comandos `ravi mcp tools`,
+  `call`, `calls list|cancel` e `skills read`. Um agent `explicit-only` não
+  tem piso: no Codex e no Grok ele precisa de
+  `use:tool:Bash,execute:executable:ravi,read:mcp.tools:list,mutate:mcp.tools:call,read:mcp.calls:list,mutate:mcp.calls:cancel`
+  além de `use:tool:mcp__<servidor>__*`; no Pi, de
+  `use:tool:mcp_tools,use:tool:mcp_call,use:tool:mcp_calls_list,use:tool:mcp_calls_cancel`
+  e das mesmas quatro ações de comando (`read:mcp.tools:list` e as outras). No Codex, qualquer
+  `use:tool:` tira um agent `explicit-only` do sandbox somente leitura.
 - A ferramenta de subagente tem dois nomes: o Claude Code a chama de `Agent`; o
   registro, os grupos de ferramentas e as concessões antigas dizem `Task`. Os
   dois são uma ferramenta só: `use:tool:Task` e `use:tool:Agent` liberam as duas

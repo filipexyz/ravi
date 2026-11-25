@@ -7,9 +7,10 @@
 
 import { existsSync } from "node:fs";
 
+import { loadableMcpSkillPluginPins } from "../mcp/skill-plugin.js";
 import type { RuntimePlugin } from "../runtime/types.js";
 import { logger } from "../utils/logger.js";
-import { dbGetLibraryPinState, dbListLibraryPins, dbListLibraryPinsForAgent } from "./pins-db.js";
+import { dbGetLibraryPinState, dbListLibraryPins } from "./pins-db.js";
 import {
   codexLibrarySkillName,
   LIBRARY_PLUGIN_NAME,
@@ -48,7 +49,7 @@ export function resolveLibrarySessionPlugins(input: LibrarySessionPluginsInput):
     const state = dbGetLibraryPinState();
     const generationDir = state?.pluginDir;
     if (!generationDir || !existsSync(generationDir)) return EMPTY;
-    const pins = dbListLibraryPins();
+    const pins = pluginPins();
     if (pins.length === 0) return EMPTY;
 
     const own = pins.filter((pin) => pin.agentId === input.agentId);
@@ -78,6 +79,28 @@ export function resolveLibrarySessionPlugins(input: LibrarySessionPluginsInput):
   }
 }
 
+interface PluginPin {
+  agentId: string;
+  skillName: string;
+  externalAllowed: boolean;
+}
+
+/**
+ * Every pin the generated plugin serves: the Library pins of the last sync,
+ * and the remote MCP skill pins that may load now (spec mcp, Remote Skills:
+ * active, server enabled and attached, no name a Library pin uses). Throws
+ * when either table cannot be read.
+ */
+function pluginPins(agentId?: string): PluginPin[] {
+  const library = dbListLibraryPins();
+  const names = new Set(library.map((pin) => pin.skillName.toLowerCase()));
+  const own = agentId === undefined ? library : library.filter((pin) => pin.agentId === agentId);
+  return [
+    ...own.map((pin) => ({ agentId: pin.agentId, skillName: pin.skillName, externalAllowed: pin.externalAllowed })),
+    ...loadableMcpSkillPluginPins(names, agentId),
+  ];
+}
+
 /**
  * The pinned skill a plugin skill name stands for: `ravi-library:<name>` (Claude,
  * Pi) or `ravi-library-<name>` (Codex). Null for any other skill.
@@ -97,8 +120,10 @@ export function libraryPluginSkillName(skill: string): string | null {
  * loaded (and, for Codex, the skills it hid) was chosen for that first turn.
  * So every load is checked again against the turn that asks for it: a skill
  * pinned to another agent never loads, and one not marked `externalAllowed`
- * loads only in the operator's own turn. Skills that are not Library plugin
- * skills pass. Fails closed when the pins cannot be read.
+ * loads only in the operator's own turn. A remote MCP skill stub counts only
+ * while its pin is active and its server enabled and attached to the agent.
+ * Skills that are not Library plugin skills pass. Fails closed when the pins
+ * cannot be read.
  */
 export function isLibraryPluginSkillAllowedForTurn(input: {
   agentId: string;
@@ -107,9 +132,9 @@ export function isLibraryPluginSkillAllowedForTurn(input: {
 }): boolean {
   const name = libraryPluginSkillName(input.skill);
   if (!name) return true;
-  let own: ReturnType<typeof dbListLibraryPinsForAgent>;
+  let own: PluginPin[];
   try {
-    own = dbListLibraryPinsForAgent(input.agentId).filter((pin) => pin.skillName.toLowerCase() === name);
+    own = pluginPins(input.agentId).filter((pin) => pin.skillName.toLowerCase() === name);
   } catch {
     return false;
   }

@@ -87,6 +87,8 @@ mock.module("../../omni/session-stream.js", () => ({
 
 const { TriggerRunner } = await import("../runner.js");
 const { dbCreateTrigger, dbDeleteTrigger, dbGetTrigger, dbUpdateTrigger } = await import("../triggers-db.js");
+const { resolveTriggerActivation } = await import("../activation.js");
+const { isInternalEventTopic } = await import("../topic-policy.js");
 
 const TOPIC = "ravi.test.owner";
 
@@ -676,6 +678,37 @@ describe("a trigger on a wildcard topic", () => {
     await waitFor(() => publishCalls.length === before + 1);
     expect(String(publishCalls[before]!.payload.prompt)).toContain("Event: ravi.test.payroll");
     expect(await publishedAfter(before + 1)).toBe(0);
+  });
+
+  it("never fires on a person's MCP elicitation answer, under ravi.mcp.> or ravi.>", async () => {
+    const MCP = "ravi.mcp.>";
+    createTrigger("operator", { topic: MCP, name: "mcp-listener" });
+    createTrigger("operator", { topic: WILDCARD, name: "listener" });
+    runner = new TriggerRunner();
+    await runner.start();
+    await waitFor(() => channels.has(MCP) && channels.has(WILDCARD));
+    const before = publishCalls.length;
+
+    const answer = {
+      topic: "ravi.mcp.elicitation.answer",
+      data: { requestId: "sme_1", userId: "U1", action: "accept", content: { salary: 9100 } },
+    };
+    channels.get(MCP)!.push(answer);
+    channels.get(WILDCARD)!.push(answer);
+    expect(await publishedAfter(before)).toBe(0);
+
+    // Other MCP notices still reach a ravi.mcp.> trigger.
+    channels.get(MCP)!.push({ topic: "ravi.mcp.catalog.changed", data: { server: "docs" } });
+    await waitFor(() => publishCalls.length === before + 1);
+    expect(String(publishCalls[before]!.payload.prompt)).toContain("Event: ravi.mcp.catalog.changed");
+    expect(String(publishCalls[before]!.payload.prompt)).not.toContain("9100");
+
+    // A trigger on the answer subject itself is a blocked topic.
+    expect(resolveTriggerActivation({ enabled: true, topic: "ravi.mcp.elicitation.answer" })).toMatchObject({
+      state: "blocked_topic",
+    });
+    expect(isInternalEventTopic("ravi.mcp.elicitation.answer")).toBe(true);
+    expect(isInternalEventTopic("ravi.mcp.catalog.changed")).toBe(false);
   });
 });
 

@@ -48,11 +48,14 @@ import {
   recordApprovalDeliveries,
   recordApprovalGrantOutcome,
   setApprovalCardScope,
+  type ApprovalCardRequestType,
   type ApprovalDeliveryKind,
   type ApprovalRequestRecord,
-  type ApprovalRequestType,
 } from "./store.js";
 import { DEFAULT_APPROVAL_DELIVERY_TIMEOUT_MS, DEFAULT_APPROVAL_TIMEOUT_MS } from "./timeouts.js";
+import { resolveVerifiedSenderOwner } from "./grantor.js";
+import { targetIsPersonDirectChat } from "./direct-chat-target.js";
+import { getContactById } from "../contacts.js";
 
 const log = logger.child("approval:service");
 export { DEFAULT_APPROVAL_TIMEOUT_MS };
@@ -78,6 +81,14 @@ export interface ApprovalServiceDependencies {
   finalizeSlackApproval: (input: ApprovalFinalizeSlackInput) => Promise<void>;
   /** Answers one Slack click privately through its `response_url`. */
   respondSlackInteraction: (input: ApprovalRespondSlackInput) => Promise<void>;
+  /**
+   * Channels whose `ravi.inbound.pollVote` events name each voter, so a poll
+   * vote can be tied to one person. Only there does `requestPersonAnswer`
+   * send a native poll; elsewhere the options go as text and are answered by
+   * quote-reply. No inbound source in Ravi publishes poll votes today, so the
+   * default lists none.
+   */
+  attributedPollVoteChannels: ReadonlySet<string>;
 }
 
 const defaultApprovalServiceDependencies: ApprovalServiceDependencies = {
@@ -96,6 +107,7 @@ const defaultApprovalServiceDependencies: ApprovalServiceDependencies = {
   respondSlackInteraction: async (input) => {
     await respondToSlackInteraction(input);
   },
+  attributedPollVoteChannels: new Set<string>(),
 };
 
 let approvalServiceDependencies = defaultApprovalServiceDependencies;
@@ -145,7 +157,7 @@ export interface ApprovalTarget {
 export interface CascadingApprovalOptions {
   resolvedSource?: ApprovalTarget;
   approvalSource?: ApprovalTarget;
-  type: ApprovalRequestType;
+  type: ApprovalCardRequestType;
   sessionName: string;
   agentId: string;
   text: string;
@@ -179,7 +191,7 @@ export interface ContextAuthorizationResult {
 
 export interface RequestApprovalOptions {
   timeoutMs?: number;
-  type?: ApprovalRequestType;
+  type?: ApprovalCardRequestType;
   sessionName?: string;
   agentId?: string;
   permission?: string;
@@ -435,13 +447,13 @@ const FIXED_APPROVAL_REFUSAL_REASONS: ReadonlySet<string> = new Set(Object.value
 /** True when `reason` is fixed text this service wrote for this request. */
 export function isFixedApprovalRefusalReason(
   reason: string,
-  type: ApprovalRequestType,
+  type: ApprovalCardRequestType,
   options?: RequestApprovalOptions,
 ): boolean {
   return FIXED_APPROVAL_REFUSAL_REASONS.has(reason) || reason === buildNoSlackGrantorReason(type, options);
 }
 
-function buildNoSlackGrantorReason(type: ApprovalRequestType, options: RequestApprovalOptions | undefined): string {
+function buildNoSlackGrantorReason(type: ApprovalCardRequestType, options: RequestApprovalOptions | undefined): string {
   const asked =
     options?.permission && options.objectType && options.objectId
       ? formatCanonicalCapability({
@@ -490,6 +502,312 @@ export async function requestPollAnswer(
 
   log.info("Poll sent, waiting for vote or reply", { messageId: sendResult.messageId, optionLabels });
   return waitForPollAnswer(sendResult.messageId, timeoutMs);
+}
+
+/**
+ * Channels whose quote-replies reach the daemon as `ravi.inbound.reply` with
+ * the quoted message id and the platform's sender id (the Omni channels).
+ * Slack is not one: its person-bound questions use a private modal.
+ */
+export const PERSON_ANSWER_REPLY_CHANNELS: ReadonlySet<string> = new Set(["whatsapp", "telegram", "discord"]);
+
+const MAX_PERSON_ANSWER_OPTIONS = 12;
+/** The longest choice label `requestPersonAnswer` sends; a longer one is `invalid_request`. */
+export const MAX_PERSON_ANSWER_OPTION_LENGTH = 100;
+/** The longest question `requestPersonAnswer` sends; a longer one is `invalid_request`. */
+export const MAX_PERSON_ANSWER_QUESTION_LENGTH = 4_000;
+
+export type PersonAnswerKind = "poll" | "reply";
+
+export interface PersonAnswerRequest {
+  /** The person's own direct chat (see `resolvePersonDirectChatTarget`). */
+  readonly target: ApprovalTarget;
+  /** The only person whose answer counts. */
+  readonly expectedActor: { readonly contactId: string };
+  /** `poll`: pick one of `options`. `reply`: free text by quote-reply. */
+  readonly kind: PersonAnswerKind;
+  /** The question, as the person reads it. */
+  readonly text: string;
+  /** The choices of a `poll`: 2 to 12 distinct labels. */
+  readonly options?: readonly string[];
+  readonly timeoutMs?: number;
+}
+
+export type PersonAnswerValue =
+  | { readonly kind: "choice"; readonly label: string }
+  | { readonly kind: "text"; readonly text: string };
+
+export type PersonAnswerSendFailure = "invalid_request" | "unsupported_channel" | "delivery_failed" | "no_message_id";
+export type PersonAnswerWrongActor = "actor_not_found" | "actor_not_allowed" | "target_not_actor_dm";
+
+export type PersonAnswerResult =
+  | {
+      readonly status: "answered";
+      readonly messageId: string;
+      readonly contactId: string;
+      readonly answer: PersonAnswerValue;
+      /** Answers from anyone else, ignored before this one. */
+      readonly ignoredAnswers: number;
+    }
+  | {
+      readonly status: "timeout";
+      readonly messageId: string;
+      /** `listener_failed`: the inbound stream ended in an error, so no answer could arrive. */
+      readonly reason: "expired" | "listener_failed";
+      readonly ignoredAnswers: number;
+    }
+  | { readonly status: "send_failed"; readonly reason: PersonAnswerSendFailure }
+  | { readonly status: "wrong_actor"; readonly reason: PersonAnswerWrongActor };
+
+/**
+ * Ask one person one question in their direct chat and wait for their answer.
+ *
+ * Person-bound: only a quote-reply (or, on a channel listed in
+ * `attributedPollVoteChannels`, a poll vote) whose platform sender resolves to
+ * `expectedActor` answers it; anyone else's answer is ignored and counted. The
+ * target must be that person's own direct chat, checked before anything is
+ * sent (`wrong_actor` otherwise). A failure to send is `send_failed`, never an
+ * answer. Nothing here logs the question or the answer.
+ */
+export async function requestPersonAnswer(request: PersonAnswerRequest): Promise<PersonAnswerResult> {
+  const timeoutMs = request.timeoutMs ?? DEFAULT_APPROVAL_TIMEOUT_MS;
+  const target = request.target;
+  const channel = target?.channel?.trim().toLowerCase() ?? "";
+  const contactId = request.expectedActor?.contactId?.trim() ?? "";
+  const question = typeof request.text === "string" ? request.text.trim() : "";
+  const options = normalizePersonAnswerOptions(request);
+  if (
+    !question ||
+    question.length > MAX_PERSON_ANSWER_QUESTION_LENGTH ||
+    !target?.accountId?.trim() ||
+    !target.chatId?.trim() ||
+    !contactId ||
+    !Number.isFinite(timeoutMs) ||
+    timeoutMs <= 0 ||
+    options === null
+  ) {
+    return { status: "send_failed", reason: "invalid_request" };
+  }
+
+  const contact = getContactById(contactId);
+  if (!contact?.id) return { status: "wrong_actor", reason: "actor_not_found" };
+  if (contact.id !== contactId) return { status: "wrong_actor", reason: "actor_not_found" };
+  if (contact.status === "blocked") return { status: "wrong_actor", reason: "actor_not_allowed" };
+  if (!PERSON_ANSWER_REPLY_CHANNELS.has(channel)) return { status: "send_failed", reason: "unsupported_channel" };
+  if (target.threadId || !targetIsPersonDirectChat({ ...target, channel }, contactId)) {
+    return { status: "wrong_actor", reason: "target_not_actor_dm" };
+  }
+
+  const nativePoll =
+    request.kind === "poll" &&
+    approvalServiceDependencies.attributedPollVoteChannels.has(channel) &&
+    options.length > 0;
+  const payload: Record<string, unknown> = {
+    channel,
+    accountId: target.accountId,
+    to: target.chatId,
+    ...(nativePoll
+      ? { poll: { name: question, values: [...options], selectableCount: 1 } }
+      : { text: buildPersonQuestionText(question, request.kind === "poll" ? options : []) }),
+  };
+
+  let sendResult: { messageId?: unknown };
+  try {
+    sendResult = await approvalServiceDependencies.requestReply<{ messageId?: unknown }>(
+      "ravi.outbound.deliver",
+      payload,
+      Math.min(timeoutMs, DEFAULT_APPROVAL_DELIVERY_TIMEOUT_MS),
+    );
+  } catch (error) {
+    log.warn("Failed to send a person-bound question", {
+      channel,
+      errorName: error instanceof Error ? error.name : typeof error,
+    });
+    return { status: "send_failed", reason: "delivery_failed" };
+  }
+  const messageId = typeof sendResult?.messageId === "string" ? sendResult.messageId.trim() : "";
+  if (!messageId) {
+    log.warn("Person-bound question returned without messageId", { channel });
+    return { status: "send_failed", reason: "no_message_id" };
+  }
+
+  log.info("Person-bound question sent, waiting for that person", {
+    messageId,
+    channel,
+    kind: request.kind,
+    nativePoll,
+  });
+  return waitForPersonAnswer({
+    messageId,
+    target: { ...target, channel },
+    contactId,
+    options: request.kind === "poll" ? options : [],
+    nativePoll,
+    timeoutMs,
+  });
+}
+
+function normalizePersonAnswerOptions(request: PersonAnswerRequest): string[] | null {
+  if (request.kind === "reply") return request.options === undefined || request.options.length === 0 ? [] : null;
+  if (request.kind !== "poll" || !Array.isArray(request.options)) return null;
+  const labels: string[] = [];
+  for (const option of request.options) {
+    const label = typeof option === "string" ? option.replace(/\s+/g, " ").trim() : "";
+    if (!label || label.length > MAX_PERSON_ANSWER_OPTION_LENGTH) return null;
+    if (labels.some((existing) => existing.toLowerCase() === label.toLowerCase())) return null;
+    labels.push(label);
+  }
+  return labels.length >= 2 && labels.length <= MAX_PERSON_ANSWER_OPTIONS ? labels : null;
+}
+
+function buildPersonQuestionText(question: string, options: readonly string[]): string {
+  if (options.length === 0) {
+    return `${question}\n\n_Responda citando esta mensagem._`;
+  }
+  const lines = options.map((label, index) => `${index + 1}. ${label}`);
+  return `${question}\n\n${lines.join("\n")}\n\n_Responda citando esta mensagem, com o número ou o texto da opção._`;
+}
+
+/**
+ * The option a quoted reply names: its exact label (any case), or else its
+ * number. A label is read first, so with options "5", "10" and "1" the reply
+ * "1" names the option "1", never the first one.
+ */
+function matchPersonAnswerOption(text: string, options: readonly string[]): string | null {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  const lowered = normalized.toLowerCase();
+  const exact = options.find((label) => label.toLowerCase() === lowered);
+  if (exact !== undefined) return exact;
+  if (/^\d{1,2}$/.test(normalized)) {
+    const index = Number.parseInt(normalized, 10) - 1;
+    return options[index] ?? null;
+  }
+  return null;
+}
+
+/** A platform sender as the inbound consumer gives it: bare id, plus the namespaced LID form. */
+function senderForms(senderId: unknown, rawJid: unknown): { senderId: string; senderAliases: string[] } | null {
+  const raw = typeof rawJid === "string" ? rawJid.trim() : "";
+  const lid = /^(\d+)@lid$/i.exec(raw);
+  const bare = typeof senderId === "string" && senderId.trim() ? senderId.trim() : raw.replace(/@.*$/, "");
+  if (!bare) return null;
+  return { senderId: bare, senderAliases: lid ? [`lid:${lid[1]}`] : [] };
+}
+
+function senderIsPerson(
+  target: ApprovalTarget,
+  contactId: string,
+  forms: { senderId: string; senderAliases: string[] } | null,
+  eventInstanceId: string | undefined,
+): boolean {
+  if (!forms) return false;
+  const owner = resolveVerifiedSenderOwner({
+    channel: target.channel,
+    senderId: forms.senderId,
+    ...(forms.senderAliases.length ? { senderAliases: forms.senderAliases } : {}),
+    instanceId: eventInstanceId ?? target.instanceId ?? target.accountId,
+    accountId: target.accountId,
+  });
+  return owner?.ownerType === "contact" && owner.ownerId === contactId;
+}
+
+async function waitForPersonAnswer(input: {
+  messageId: string;
+  target: ApprovalTarget;
+  contactId: string;
+  options: readonly string[];
+  nativePoll: boolean;
+  timeoutMs: number;
+}): Promise<PersonAnswerResult> {
+  const { messageId, target, contactId, options, nativePoll, timeoutMs } = input;
+  const stream = nativePoll
+    ? approvalServiceDependencies.nats.subscribe("ravi.inbound.reply", "ravi.inbound.pollVote")
+    : approvalServiceDependencies.nats.subscribe("ravi.inbound.reply");
+  let ignoredAnswers = 0;
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (result: PersonAnswerResult) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      stream.return?.(undefined);
+      resolve(result);
+    };
+    const timer = setTimeout(() => {
+      log.warn("Person-bound question timed out", { messageId, ignoredAnswers });
+      finish({ status: "timeout", messageId, reason: "expired", ignoredAnswers });
+    }, timeoutMs);
+
+    const answered = (answer: PersonAnswerValue) =>
+      finish({ status: "answered", messageId, contactId, answer, ignoredAnswers });
+
+    (async () => {
+      try {
+        for await (const event of stream) {
+          if (settled) return;
+          const data = (event.data ?? {}) as Record<string, unknown>;
+          if (event.topic === "ravi.inbound.reply") {
+            if (stringField(data, "targetMessageId") !== messageId) continue;
+            const eventAccountId = stringField(data, "accountId");
+            const fromPerson =
+              (!eventAccountId || eventAccountId === target.accountId) &&
+              senderIsPerson(
+                target,
+                contactId,
+                senderForms(data.senderId, data.senderJid),
+                stringField(data, "instanceId"),
+              );
+            if (!fromPerson) {
+              ignoredAnswers += 1;
+              log.info("Ignoring an answer from someone else", { messageId });
+              continue;
+            }
+            const text = typeof data.text === "string" ? data.text.trim() : "";
+            if (!text) continue;
+            const label = options.length > 0 ? matchPersonAnswerOption(text, options) : null;
+            answered(label ? { kind: "choice", label } : { kind: "text", text });
+            return;
+          }
+
+          if (!nativePoll || event.topic !== "ravi.inbound.pollVote") continue;
+          if (stringField(data, "pollMessageId") !== messageId) continue;
+          const votes = Array.isArray(data.votes) ? data.votes : [];
+          const chosen = new Set<string>();
+          let othersVoted = false;
+          for (const vote of votes) {
+            if (!vote || typeof vote !== "object") continue;
+            const name = typeof (vote as { name?: unknown }).name === "string" ? (vote as { name: string }).name : "";
+            const voters = (vote as { voters?: unknown }).voters;
+            if (!Array.isArray(voters)) continue;
+            for (const voter of voters) {
+              const forms = senderForms(undefined, voter);
+              if (senderIsPerson(target, contactId, forms, undefined)) {
+                const label = options.find((option) => option === name.trim());
+                if (label) chosen.add(label);
+              } else if (forms) {
+                othersVoted = true;
+              }
+            }
+          }
+          if (chosen.size === 1) {
+            answered({ kind: "choice", label: [...chosen][0] as string });
+            return;
+          }
+          if (othersVoted && chosen.size === 0) {
+            ignoredAnswers += 1;
+            log.info("Ignoring a poll vote from someone else", { messageId });
+          }
+        }
+      } catch (error) {
+        log.warn("Person-bound answer listener failed", {
+          messageId,
+          errorName: error instanceof Error ? error.name : typeof error,
+        });
+        finish({ status: "timeout", messageId, reason: "listener_failed", ignoredAnswers });
+      }
+    })();
+  });
 }
 
 export async function requestCascadingApproval(
@@ -807,7 +1125,7 @@ function permissionDeniedAuditType(objectType: string): string {
 }
 
 function buildReactionApprovalText(
-  type: ApprovalRequestType,
+  type: ApprovalCardRequestType,
   text: string,
   agentId: string | undefined,
   delegated: boolean,
@@ -1178,7 +1496,7 @@ export async function finalizeStoredSlackApprovalDelivery(input: {
   messageId: string;
 }): Promise<void> {
   const request = getApprovalRequest(input.requestId);
-  if (!request || !isSlackChannel(request.channel) || request.status === "pending") {
+  if (!request || request.type === "elicitation" || !isSlackChannel(request.channel) || request.status === "pending") {
     throw new Error("Slack approval is not ready for finalization.");
   }
   const outcome = request.status === "expired" ? "expired" : request.decision;

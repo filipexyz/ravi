@@ -280,6 +280,19 @@ const EVENT_TOPIC_REGISTRY: readonly EventTopicRegistryEntry[] = [
     triggerCatalog: false,
   },
   {
+    id: "mcp",
+    pattern: "ravi.mcp.>",
+    classification: "internal-control",
+    owner: "mcp",
+    description: "MCP gateway notices, such as a registered server's catalog fingerprint change.",
+    replay: false,
+    triggerCatalog: false,
+    notes: [
+      "Carries server names, fingerprints and counts only; never tool descriptions, schemas or URLs.",
+      "The one exception is ravi.mcp.elicitation.answer, which carries one person's answer to one elicitation from the Slack modal in ravi-channels to the waiting daemon. It is not replayed and never enters the trigger catalog; the trigger runner treats ravi.mcp.elicitation.* as internal, so no trigger is created on it and a wildcard such as ravi.mcp.> or ravi.> never fires on it. Secret-looking fields are refused before anyone is asked.",
+    ],
+  },
+  {
     id: "triggers",
     pattern: "ravi.triggers.>",
     classification: "internal-control",

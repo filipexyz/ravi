@@ -102,6 +102,11 @@ import {
   isCredentialIntakeEnvelope,
   type CredentialIntakeDependencies,
 } from "./credential-intake.js";
+import {
+  handleMcpElicitationEnvelope,
+  isMcpElicitationEnvelope,
+  type SlackMcpElicitationHandlerDependencies,
+} from "./mcp-elicitation.js";
 import { extractSlackMessageText } from "./message-content.js";
 import { slackInboundReactionFromEnvelope } from "./reactions.js";
 import {
@@ -251,6 +256,8 @@ export interface SlackSocketModeServiceOptions {
   /** Secret-bearing modals are supported only over direct Socket Mode. */
   readonly credentialIntakeEnabled?: boolean;
   readonly credentialIntakeDependencies?: Partial<CredentialIntakeDependencies>;
+  /** The MCP elicitation modal's store, claim and publish (tests). */
+  readonly mcpElicitationDependencies?: Partial<SlackMcpElicitationHandlerDependencies>;
   readonly openWebSocket?: WebSocketFactory;
   readonly reconnectDelayMs?: number;
   /** Interval between successful heartbeat round-trips. */
@@ -927,6 +934,17 @@ export class SlackSocketModeService {
         client: this.webClient,
         ack,
         dependencies: this.options.credentialIntakeDependencies,
+      });
+      return "processed";
+    }
+    if (isMcpElicitationEnvelope(envelope)) {
+      await handleMcpElicitationEnvelope({
+        envelope,
+        accountId: this.options.accountId,
+        instanceId: this.options.instanceId ?? this.options.accountId,
+        client: this.webClient,
+        ack,
+        ...(this.options.mcpElicitationDependencies ? { dependencies: this.options.mcpElicitationDependencies } : {}),
       });
       return "processed";
     }

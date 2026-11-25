@@ -63,6 +63,7 @@ import { readTriggerRunAuthority } from "../triggers/authority.js";
 import { TURN_REPLY_TARGET_METADATA_KEY, type TurnReplyTarget } from "./turn-reply-target.js";
 import { isRuntimeContextLive } from "./context-liveness.js";
 import { isWorkHandoff, resolveHumanRequestCaller } from "./human-request.js";
+import { MCP_CALL_ID_PATTERN } from "../mcp/calls-db.js";
 
 export interface RuntimeRequestContextOptions {
   dbSessionKey: string;
@@ -1169,6 +1170,15 @@ function resolveAutomationPromptPrincipal(
       subjectId: "session-followup",
     };
   }
+  if (prompt._mcpCall) {
+    // A background MCP call's outcome: its own automation principal, never the
+    // operator or the person who started the call. A malformed id fails closed.
+    const callId = typeof prompt._mcpCall.id === "string" ? prompt._mcpCall.id : "";
+    return {
+      subjectType: "automation",
+      subjectId: MCP_CALL_ID_PATTERN.test(callId) ? `mcp-call:${callId}` : "mcp-call:invalid",
+    };
+  }
   if (prompt._heartbeat) {
     return { subjectType: "automation", subjectId: "heartbeat" };
   }
@@ -1245,6 +1255,14 @@ function buildAutomationIdentityProvenance(prompt: RuntimeLaunchPrompt): Record<
       source: "session-followup",
       ...(prompt._sessionFollowupCadenceId ? { cadenceId: prompt._sessionFollowupCadenceId } : {}),
       ...(prompt._sessionFollowupRunId ? { runId: prompt._sessionFollowupRunId } : {}),
+    };
+  }
+  if (prompt._mcpCall) {
+    return {
+      source: "mcp-call",
+      ...(typeof prompt._mcpCall.id === "string" && MCP_CALL_ID_PATTERN.test(prompt._mcpCall.id)
+        ? { callId: prompt._mcpCall.id }
+        : {}),
     };
   }
   if (prompt._heartbeat) return { source: "heartbeat" };

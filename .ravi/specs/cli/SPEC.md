@@ -403,8 +403,11 @@ runtime history; an emergency interrupt remains immediate.
 - Consumer checks MUST also reject obsolete `--execute` flags on operations
   that now execute immediately; safety and low friction are both contract
   properties.
-- Every migrated Commander root is registered in `AGENT_CONTRACT_DOMAINS` in
-  `src/cli/index.ts`.
+- Every migrated Commander root is registered in `AGENT_CONTRACT_DOMAINS`
+  (`src/cli/agent-contract-domains.ts`, installed by `src/cli/index.ts`). A
+  registered root that is not migrated yet is named in
+  `AGENT_CONTRACT_UNMIGRATED_ROOTS`, a list that only shrinks; a test fails
+  for a root in neither list, so a new root is migrated from the start.
 
 ## SDK return contracts
 

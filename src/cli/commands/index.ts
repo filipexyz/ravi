@@ -64,6 +64,7 @@ export * from "./invites.js";
 export * from "./jobs.js";
 export * from "./knowledge.js";
 export * from "./mail.js";
+export * from "./mcp.js";
 export * from "./media.js";
 export * from "./meetings.js";
 export * from "./metrics.js";

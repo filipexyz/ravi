@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { CloudAuthError } from "../cloud-auth/errors.js";
@@ -20,6 +20,7 @@ import {
   executeLibraryUnpin,
   listLocalLibraryPins,
   prepareLibraryPin,
+  rebuildLibraryPluginGeneration,
   syncLibraryPins,
   type LibraryPinDeps,
 } from "./pins.js";
@@ -29,6 +30,10 @@ import {
   libraryUnionPluginDir,
   withSkillName,
   isInsideLibraryPluginsRoot,
+  LIBRARY_PLUGIN_LOCK_FILE,
+  LibraryPluginLockBusyError,
+  libraryPluginsRoot,
+  withLibraryPluginWriteLock,
 } from "./plugin.js";
 import { resolveLibrarySessionPlugins } from "./session-plugins.js";
 import { createFakeConsole, fakeCredentials, fakeSession, fakeSkill, type FakeConsole } from "./test-fixtures.js";
@@ -546,5 +551,94 @@ describe("library agent report", () => {
     });
     expect(byId.get("financeiro")).toMatchObject({ acceptsRequests: true, project: null });
     expect([...byId.keys()].sort()).toEqual(["atendente", "financeiro"]);
+  });
+});
+
+describe("library plugin write lock", () => {
+  const lockPath = () => join(libraryPluginsRoot(), LIBRARY_PLUGIN_LOCK_FILE);
+  const holdLock = (content = `${process.pid} live-holder`) => {
+    withLibraryPluginWriteLock(() => {}); // creates the plugins root
+    writeFileSync(lockPath(), content);
+  };
+
+  it("runs the writer holding the lock and removes it after, also when the writer throws", () => {
+    expect(withLibraryPluginWriteLock(() => existsSync(lockPath()))).toBe(true);
+    expect(existsSync(lockPath())).toBe(false);
+    expect(() =>
+      withLibraryPluginWriteLock(() => {
+        throw new Error("boom");
+      }),
+    ).toThrow("boom");
+    expect(existsSync(lockPath())).toBe(false);
+  });
+
+  it("waits for a live holder and gives up without writing", () => {
+    holdLock();
+    let ran = false;
+    expect(() =>
+      withLibraryPluginWriteLock(
+        () => {
+          ran = true;
+        },
+        { timeoutMs: 100 },
+      ),
+    ).toThrow(LibraryPluginLockBusyError);
+    expect(ran).toBe(false);
+    expect(existsSync(lockPath())).toBe(true);
+  });
+
+  it("waits on a fresh lock that names no holder yet, and breaks it by age only", () => {
+    for (const content of ["", "12"]) {
+      if (existsSync(lockPath())) unlinkSync(lockPath());
+      holdLock(content);
+      let ran = false;
+      expect(() =>
+        withLibraryPluginWriteLock(
+          () => {
+            ran = true;
+          },
+          { timeoutMs: 100 },
+        ),
+      ).toThrow(LibraryPluginLockBusyError);
+      expect(ran).toBe(false);
+      expect(readFileSync(lockPath(), "utf8")).toBe(content);
+    }
+    const old = (Date.now() - 10 * 60_000) / 1000;
+    utimesSync(lockPath(), old, old);
+    expect(withLibraryPluginWriteLock(() => "ran", { timeoutMs: 100, staleMs: 60_000 })).toBe("ran");
+  });
+
+  it("never leaves the lock without its owner line, nor an owner file behind", () => {
+    const root = libraryPluginsRoot();
+    const seen = withLibraryPluginWriteLock(() => readFileSync(lockPath(), "utf8"));
+    expect(seen).toMatch(new RegExp(`^${process.pid} [0-9a-f]+$`));
+    expect(readdirSync(root).filter((name) => name.startsWith(LIBRARY_PLUGIN_LOCK_FILE))).toEqual([]);
+  });
+
+  it("breaks a lock whose holder is gone, or that is older than the stale limit", () => {
+    holdLock("2147483646 gone-holder");
+    expect(withLibraryPluginWriteLock(() => "ran", { timeoutMs: 100 })).toBe("ran");
+    holdLock();
+    const old = (Date.now() - 10 * 60_000) / 1000;
+    utimesSync(lockPath(), old, old);
+    expect(withLibraryPluginWriteLock(() => "ran", { timeoutMs: 100, staleMs: 60_000 })).toBe("ran");
+    expect(existsSync(lockPath())).toBe(false);
+  });
+
+  it("serializes both generation writers: the Console sync and the MCP pin rebuild", async () => {
+    pin("main", "tom-de-voz");
+    holdLock();
+    const plugins = { timeoutMs: 100 } as never;
+    await expect(syncLibraryPins(fakeSession(fake), { report: false }, deps({ plugins }))).rejects.toBeInstanceOf(
+      LibraryPluginLockBusyError,
+    );
+    expect(dbListLibraryPins()).toEqual([]);
+    expect(() => rebuildLibraryPluginGeneration(deps({ plugins }))).toThrow(LibraryPluginLockBusyError);
+
+    writeFileSync(lockPath(), "2147483646 gone-holder");
+    const outcome = await syncLibraryPins(fakeSession(fake), { report: false }, deps({ plugins }));
+    expect(outcome.changed).toBe(true);
+    expect(rebuildLibraryPluginGeneration(deps({ plugins })).pluginDir).not.toBeNull();
+    expect(existsSync(lockPath())).toBe(false);
   });
 });

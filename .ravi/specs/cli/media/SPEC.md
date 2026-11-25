@@ -106,7 +106,7 @@ live channel (WhatsApp/Slack) and cannot be unsent.
   the sessions action hints and the image/audio skills. A dedicated skill (or a
   section in a channel skill) is pending.
 - Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope because
-  `media` is registered in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`).
+  `media` is registered in `AGENT_CONTRACT_DOMAINS` (`src/cli/agent-contract-domains.ts`).
 
 ## Validation
 

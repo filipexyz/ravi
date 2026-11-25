@@ -11,9 +11,35 @@
   listed in `permissions/provider-runtime` CHECKS (Runtime tool call
   regressions); verify with
   `bun test src/bash/hook.test.ts src/runtime/host-hooks.test.ts`.
+- Approval hooks fail closed (`src/runtime/host-hooks.test.ts`, "approval
+  hooks fail closed"): a throwing `requestCascadingApproval` denies
+  `mcp__spec__exit_spec_mode` and `ExitPlanMode`, a throwing
+  `requestPollAnswer` or approval event denies `AskUserQuestion`, a failing
+  crash recovery marker denies instead of throwing, the reason names no error
+  text, and a declined plan or a timed-out poll keep their old answers.
 - The spec server is registered under `SPEC_MCP_SERVER_NAME`, the same key the
   tool gate exempts; `src/runtime/host-hooks.test.ts` builds a session and
   compares the two.
+- Registered-only loading (`src/runtime/claude-provider.test.ts`): every query
+  carries `strictMcpConfig: true`, `skipMcpDiscovery: true` on each plugin and
+  `settings.disableClaudeAiConnectors: true`, and caller permission options
+  cannot turn them off; an init message listing a server outside the declared
+  names, or a declared name from a source other than `sdk`, fails the turn
+  (not recoverable) with the server and source named, and closes the query; a
+  result after it does not complete the turn; a missing declared server and an
+  init without a server list do not fail. A name shared by the host and
+  gateway lists throws when the hook is built (`src/bash/hook.test.ts`).
+- `bun test src/remote-spawn.test.ts src/remote-spawn-nats.test.ts`: both
+  argument filters keep `--strict-mcp-config` and the `--settings` value that
+  carries `disableClaudeAiConnectors`, in the form Agent SDK 0.3.323 builds.
+- Facades (`src/mcp/claude-facade.test.ts`): tool names are exactly
+  `mcp__<server>__<tool>`; facade names reach the hook only as
+  `gatewayMcpServers`; a declared `timeout` argument does not extend the
+  watchdog for a facade tool; the trace row lists host and gateway servers.
+- Live check before relying on it (`mcp` RUNBOOK): the strict flags leave
+  `system/init.mcp_servers` equal to the declared set, and a facade tool call
+  reports `source: "sdk"` locally and on remote spawn. The first half was run
+  on Claude Code 2.1.323 on 2026-11-25 (RUNBOOK, recorded result).
 - Every Claude Code process starts with `CLAUDE_CODE_DISABLE_FILE_MENTIONS=1`,
   over a caller value of `0`: session turns on every path of
   `buildClaudeCodeEnvironment`, the memory agent (the value the spawned

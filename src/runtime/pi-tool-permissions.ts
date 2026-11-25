@@ -341,11 +341,26 @@ const PI_FIRE_AND_FORGET_UI_METHODS = new Set([
   "seteditortext",
 ]);
 
+/**
+ * Pi has no native MCP tools in Ravi (`mcp` spec): registered servers reach Pi
+ * only as the dynamic tools `mcp_tools` / `mcp_call`. A tool named
+ * `mcp__<server>__<tool>` therefore came from somewhere else (an extension)
+ * and passed no gateway check. The prefix is matched without regard to case.
+ */
+export function isPiNativeMcpToolName(name?: string): boolean {
+  return typeof name === "string" && name.trim().toLowerCase().startsWith("mcp__");
+}
+
 export function mapPiToolNameToRavi(name?: string): string {
   const raw = name?.trim();
   const normalized = raw?.toLowerCase().replace(/[\s_-]+/g, "") ?? "";
   if (!normalized) {
     return "tool";
+  }
+  // Substring rules below must not turn `mcp__a__webfetch_x` into WebFetch or
+  // `mcp__a__run_terminal` into Bash.
+  if (raw && isPiNativeMcpToolName(raw)) {
+    return raw;
   }
   if (
     normalized === "bash" ||
@@ -449,6 +464,12 @@ export async function authorizePiToolCall(
   rawRequest: Record<string, unknown> = {},
 ): Promise<PiToolPermissionDecision> {
   const mapped = mapPiToolNameToRavi(toolName);
+  if (isPiNativeMcpToolName(mapped)) {
+    return {
+      allowed: false,
+      reason: `MCP tool ${mapped} is not served by Ravi. Registered MCP servers are reached through mcp_tools and mcp_call.`,
+    };
+  }
   if (!handlers.canUseTool) {
     return { allowed: false, reason: "Pi tool permission handler is unavailable." };
   }

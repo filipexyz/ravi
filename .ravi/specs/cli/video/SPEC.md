@@ -60,7 +60,7 @@ immediately.
 ## Known gaps
 
 - Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope because
-  `video` is registered in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`).
+  `video` is registered in `AGENT_CONTRACT_DOMAINS` (`src/cli/agent-contract-domains.ts`).
 
 ## Validation
 

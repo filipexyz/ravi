@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import {
   buildChannelTurnOrigin,
+  carriesRaviRuntimeEnvMarker,
+  RAVI_RUNTIME_ENV_MARKERS,
   buildSignalTurnOrigin,
   buildRuntimeCallerPrincipal,
   buildSessionRelayTurnOrigin,
@@ -88,6 +90,16 @@ describe("runtime turn origin", () => {
       type: "automation",
       id: "operator:local",
     });
+  });
+
+  it("counts a set runtime marker whatever its value: empty, blank and malformed ones too (fail closed)", () => {
+    expect(carriesRaviRuntimeEnvMarker({})).toBe(false);
+    expect(carriesRaviRuntimeEnvMarker({ PATH: "/bin", RAVI_STATE_DIR: "/s", RAVI_CONTEXT_KEY: "k" })).toBe(false);
+    for (const name of RAVI_RUNTIME_ENV_MARKERS) {
+      for (const value of ["", " ", "\t", "x", "not-a-principal"]) {
+        expect(carriesRaviRuntimeEnvMarker({ [name]: value }), `${name}=${JSON.stringify(value)}`).toBe(true);
+      }
+    }
   });
 
   it("accepts only known producer and action combinations", () => {

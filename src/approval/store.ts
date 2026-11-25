@@ -2,7 +2,25 @@ import { getDb } from "../router/router-db.js";
 import { fromSubjectColumns, resolveSubjectForChat, toSubjectColumns, type SubjectRef } from "../identity/subject.js";
 import type { PermissionGrantMetadata } from "./grant-metadata.js";
 
-export type ApprovalRequestType = "plan" | "spec" | "permission";
+export type ApprovalRequestType = "plan" | "spec" | "permission" | "elicitation";
+/** The request types that are decided on an approval card (reaction, reply or Slack button). */
+export type ApprovalCardRequestType = Exclude<ApprovalRequestType, "elicitation">;
+export type ElicitationApprovalAction = "accept" | "decline" | "cancel";
+export type ElicitationApprovalMode = "form" | "url";
+
+/**
+ * What an `elicitation` row records about one MCP server question: which
+ * server and tool asked, the mode, the names of the requested fields and the
+ * final action. Never a value the person typed, never the URL of a URL-mode
+ * request, never the server's message.
+ */
+export interface ElicitationApprovalDetail {
+  readonly server: string;
+  readonly tool: string;
+  readonly mode: ElicitationApprovalMode;
+  readonly fields: readonly string[];
+  readonly action?: ElicitationApprovalAction;
+}
 export type ApprovalRequestStatus = "pending" | "decided" | "expired";
 export type ApprovalDecisionValue = "approved" | "rejected";
 export type ApprovalGrantOutcome = "applied" | "failed";
@@ -27,6 +45,8 @@ export interface ApprovalRequestRecord {
   readonly subject?: SubjectRef;
   /** Grant choices a permission denial card may apply. Absent on legacy requests. */
   readonly grant?: PermissionGrantMetadata;
+  /** Present on `elicitation` rows only: names, never values. */
+  readonly elicitation?: ElicitationApprovalDetail;
   /** Set when the decision came from a grant card. */
   readonly grantIntent?: string | null;
   readonly grantScope?: string | null;
@@ -54,6 +74,8 @@ export interface CreateApprovalRequestInput {
   readonly objectType?: string;
   readonly objectId?: string;
   readonly grant?: PermissionGrantMetadata;
+  /** Required for, and only accepted on, an `elicitation` row. */
+  readonly elicitation?: ElicitationApprovalDetail;
   readonly createdAt: number;
   readonly expiresAt: number;
 }
@@ -116,9 +138,17 @@ interface ApprovalRequestRow {
   grant_intent: string | null;
   grant_scope: string | null;
   grant_outcome: string | null;
+  elicitation_json: string | null;
 }
 
 export function createApprovalRequest(input: CreateApprovalRequestInput): ApprovalRequestRecord {
+  if ((input.type === "elicitation") !== Boolean(input.elicitation)) {
+    throw new Error("An elicitation approval request needs its detail, and only it may carry one.");
+  }
+  if (input.type === "elicitation" && input.grant) {
+    throw new Error("An elicitation approval request cannot carry a permission grant.");
+  }
+  const elicitation = input.elicitation ? normalizeElicitationDetail(input.elicitation, false) : null;
   ensureApprovalRequestTable();
   const subject = toSubjectColumns(resolveSubjectForChat(input.chatId));
   getDb()
@@ -127,9 +157,9 @@ export function createApprovalRequest(input: CreateApprovalRequestInput): Approv
         id, type, channel, account_id, chat_id, instance_id, thread_id, message_id,
         session_name, agent_id, permission, object_type, object_id,
         subject_kind, subject_contact_id, subject_identity_id, subject_agent_id, subject_channel, subject_raw_id,
-        grant_json,
+        grant_json, elicitation_json,
         status, decision, decided_by, reason, created_at, expires_at, decided_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, NULL, ?, ?, NULL)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, NULL, ?, ?, NULL)`,
     )
     .run(
       input.id,
@@ -152,6 +182,7 @@ export function createApprovalRequest(input: CreateApprovalRequestInput): Approv
       subject.subjectChannel,
       subject.subjectRawId,
       input.grant ? JSON.stringify(input.grant) : null,
+      elicitation ? JSON.stringify(elicitation) : null,
       input.createdAt,
       input.expiresAt,
     );
@@ -229,6 +260,7 @@ export function claimApprovalDecision(input: ClaimApprovalDecisionInput): Approv
             grant_scope = ?,
             decided_at = ?
         WHERE id = ?
+          AND type != 'elicitation'
           AND status = 'pending'
           AND expires_at > ?`,
     )
@@ -244,6 +276,45 @@ export function claimApprovalDecision(input: ClaimApprovalDecisionInput): Approv
     );
   if (result.changes !== 1) return null;
   return getApprovalRequest(input.id);
+}
+
+/**
+ * Settle one `elicitation` row with the action that was sent to the server.
+ * `accept` and `decline` record who answered (the person's contact id);
+ * `cancel` (timeout, send failure, nobody answered) expires the row. Only the
+ * action is stored, never the answer. Returns null when the row is not a
+ * pending elicitation.
+ */
+export function settleElicitationApprovalRequest(input: {
+  readonly id: string;
+  readonly action: ElicitationApprovalAction;
+  readonly decidedBy?: string;
+  readonly now: number;
+}): ApprovalRequestRecord | null {
+  if (input.action !== "accept" && input.action !== "decline" && input.action !== "cancel") {
+    throw new Error("Invalid elicitation action.");
+  }
+  ensureApprovalRequestTable();
+  const current = getApprovalRequest(input.id);
+  if (!current || current.type !== "elicitation" || current.status !== "pending" || !current.elicitation) return null;
+  const detail = JSON.stringify(normalizeElicitationDetail({ ...current.elicitation, action: input.action }, true));
+  const status = input.action === "cancel" ? "expired" : "decided";
+  const decision = input.action === "accept" ? "approved" : input.action === "decline" ? "rejected" : null;
+  const result = getDb()
+    .prepare(
+      `UPDATE approval_requests
+        SET status = ?, decision = ?, decided_by = ?, elicitation_json = ?, decided_at = ?
+        WHERE id = ? AND type = 'elicitation' AND status = 'pending'`,
+    )
+    .run(
+      status,
+      decision,
+      input.action === "cancel" ? null : emptyToNull(input.decidedBy),
+      detail,
+      input.now,
+      input.id,
+    );
+  return result.changes === 1 ? getApprovalRequest(input.id) : null;
 }
 
 /** Persist only the trusted executor's terminal result, never provider errors or message text. */
@@ -378,6 +449,7 @@ function ensureApprovalRequestTable(): void {
     "grant_intent",
     "grant_scope",
     "grant_outcome",
+    "elicitation_json",
   ]) {
     if (!approvalColumns.has(column)) {
       db.exec(`ALTER TABLE approval_requests ADD COLUMN ${column} TEXT`);
@@ -408,6 +480,7 @@ function ensureApprovalRequestTable(): void {
 
 function rowToRecord(row: ApprovalRequestRow): ApprovalRequestRecord {
   const grant = parseGrantJson(row.grant_json);
+  const elicitation = row.type === "elicitation" ? parseElicitationJson(row.elicitation_json) : null;
   return {
     id: row.id,
     type: row.type as ApprovalRequestType,
@@ -426,6 +499,7 @@ function rowToRecord(row: ApprovalRequestRow): ApprovalRequestRecord {
     decision: (row.decision as ApprovalDecisionValue | null) ?? null,
     ...(fromSubjectColumns(row) ? { subject: fromSubjectColumns(row) } : {}),
     ...(grant ? { grant } : {}),
+    ...(elicitation ? { elicitation } : {}),
     ...(row.grant_intent ? { grantIntent: row.grant_intent } : {}),
     ...(row.grant_scope ? { grantScope: row.grant_scope } : {}),
     ...(row.grant_outcome === "applied" || row.grant_outcome === "failed" ? { grantOutcome: row.grant_outcome } : {}),
@@ -449,6 +523,54 @@ function parseGrantJson(value: string | null): PermissionGrantMetadata | null {
     if (!parsed || typeof parsed !== "object" || !parsed.capability) return null;
     return parsed;
   } catch {
+    return null;
+  }
+}
+
+const ELICITATION_NAME_PATTERN = /^[A-Za-z0-9_.:/-]{1,128}$/;
+const MAX_ELICITATION_FIELDS = 64;
+
+/**
+ * Keep exactly the recorded keys, so nothing else (a value, a message, a URL)
+ * can ride along into the row. Field names are names: short, with no spaces.
+ */
+function normalizeElicitationDetail(
+  detail: ElicitationApprovalDetail,
+  allowAction: boolean,
+): ElicitationApprovalDetail {
+  const server = typeof detail?.server === "string" ? detail.server.trim() : "";
+  const tool = typeof detail?.tool === "string" ? detail.tool.trim() : "";
+  if (!ELICITATION_NAME_PATTERN.test(server) || !ELICITATION_NAME_PATTERN.test(tool)) {
+    throw new Error("Elicitation detail needs a server and a tool name.");
+  }
+  if (detail.mode !== "form" && detail.mode !== "url") throw new Error("Elicitation mode must be form or url.");
+  if (!Array.isArray(detail.fields) || detail.fields.length > MAX_ELICITATION_FIELDS) {
+    throw new Error("Elicitation fields must be a short list of names.");
+  }
+  const fields: string[] = [];
+  for (const field of detail.fields) {
+    if (typeof field !== "string" || !ELICITATION_NAME_PATTERN.test(field)) {
+      throw new Error("Elicitation field names must be plain names.");
+    }
+    if (!fields.includes(field)) fields.push(field);
+  }
+  if (detail.mode === "url" && fields.length > 0) throw new Error("A URL-mode elicitation has no fields.");
+  const action = detail.action;
+  if (action !== undefined) {
+    if (!allowAction) throw new Error("A new elicitation request has no action yet.");
+    if (action !== "accept" && action !== "decline" && action !== "cancel") {
+      throw new Error("Invalid elicitation action.");
+    }
+  }
+  return { server, tool, mode: detail.mode, fields, ...(action ? { action } : {}) };
+}
+
+function parseElicitationJson(value: string | null): ElicitationApprovalDetail | null {
+  if (!value) return null;
+  try {
+    return normalizeElicitationDetail(JSON.parse(value) as ElicitationApprovalDetail, true);
+  } catch {
+    // no-cause: A damaged detail column reads as absent; the row keeps its status and nothing is guessed.
     return null;
   }
 }

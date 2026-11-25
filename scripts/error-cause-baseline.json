@@ -3286,20 +3286,6 @@
       "count": 1
     },
     {
-      "id": "src/library/turn.ts:551b02bbe90b77bd11f8894b",
-      "file": "src/library/turn.ts",
-      "boundary": "library",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
-      "id": "src/library/turn.ts:f3c4010f26f7b30c1eeb6454",
-      "file": "src/library/turn.ts",
-      "boundary": "library",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
       "id": "src/link/client.ts:142fcfbb7c9568d5686e81a3",
       "file": "src/link/client.ts",
       "boundary": "link",
@@ -5737,7 +5723,7 @@
     }
   ],
   "totals": {
-    "violations": 858,
+    "violations": 856,
     "byDirectory": {
       "src/access": 2,
       "src/adapters": 2,
@@ -5789,7 +5775,7 @@
       "src/knowledge/store": 6,
       "src/knowledge/turn": 6,
       "src/leader": 4,
-      "src/library": 51,
+      "src/library": 49,
       "src/link": 20,
       "src/mailbox": 2,
       "src/meetings": 4,

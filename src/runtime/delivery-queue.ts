@@ -93,6 +93,7 @@ export type RuntimeTurnAuthorityEnvelope = Pick<
   | "_sessionFollowup"
   | "_sessionFollowupCadenceId"
   | "_sessionFollowupRunId"
+  | "_mcpCall"
 >;
 
 /**
@@ -127,6 +128,7 @@ export function pickRuntimeTurnAuthorityEnvelope(
     if (prompt._sessionFollowupCadenceId) envelope._sessionFollowupCadenceId = prompt._sessionFollowupCadenceId;
     if (prompt._sessionFollowupRunId) envelope._sessionFollowupRunId = prompt._sessionFollowupRunId;
   }
+  if (prompt._mcpCall) envelope._mcpCall = { ...prompt._mcpCall };
   return envelope;
 }
 
@@ -325,6 +327,7 @@ function channelSteeringCompatibilityKey(message: RuntimeUserMessage): string | 
     prompt._cron ||
     prompt._trigger ||
     prompt._sessionFollowup ||
+    prompt._mcpCall ||
     prompt._thread ||
     prompt._resumeStashedMessages ||
     prompt._daemonRestartResume
@@ -564,6 +567,7 @@ function progressReportEnvelope(message: RuntimeUserMessage): object | null {
     prompt._trigger ||
     prompt._heartbeat ||
     prompt._sessionFollowup ||
+    prompt._mcpCall ||
     (message.commands?.length ?? 0) > 0 ||
     (prompt.commands?.length ?? 0) > 0
   )

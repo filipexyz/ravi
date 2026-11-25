@@ -49,6 +49,7 @@ const TITLE_BY_TYPE: Record<ApprovalRequestType, string> = {
   permission: "Permission requested",
   plan: "Plan pending",
   spec: "Spec pending",
+  elicitation: "Question pending",
 };
 
 export function isSlackApprovalActionId(

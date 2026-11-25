@@ -39,6 +39,44 @@
 - A `turn/interrupt` that never answers, for a turn that already ended, does not signal the process running the next turn.
 - `publicRuntimeFailureDetail` turns tracing lines, Rust `::` paths, thread-store errors and Codex exit/connection diagnostics into the generic message, strips control characters and redacts UUIDs in what stays visible.
 
+## MCP Isolation
+
+- `bun test src/runtime/codex-mcp-isolation.test.ts src/runtime/codex-provider.test.ts`
+- Launch arguments from a fixture home `config.toml` and a trusted project
+  `.codex/config.toml` hold one `-c mcp_servers.<key>.enabled=false` per key
+  (a quoted bare key included) plus `-c features.apps=false`; no
+  `-c mcp_servers={}`. System and managed layers add their keys.
+- An untrusted project's keys are left out; with a git root, every trusted
+  folder from the root to the cwd adds its keys, a folder's own trust entry
+  wins over the root's, and without a git root an ancestor's trust is not
+  inherited.
+- A key `-c` cannot address (`"my.server"`), an unreadable file and a
+  malformed file each fail the start closed with "Ravi could not read", and
+  the app-server is never spawned for a malformed file.
+- The scan is tested through a parser that rejects every file (the reader
+  and `resolveCodexMcpIsolation` take the parser as a parameter), so it runs
+  on any Bun: which valid TOML Bun's own parser rejects changes between
+  releases. Valid TOML with offset and local date-times, local dates and
+  local times is read either way: a file without servers works, and servers in
+  headers, dotted keys, quoted keys, an inline `mcp_servers = {...}` table,
+  `[mcp_servers]` subtables and `[[...]]` headers are all turned off; a
+  string over several lines that looks like a header is not a server; trust
+  from a scanned file is kept. A BOM is dropped. A bare value followed by a
+  tab (`x = 1<TAB># note`) is read, not refused. A line the scan cannot place
+  fails closed (`src/runtime/codex-mcp-isolation.test.ts`).
+- `mcpServerStatus/list` reporting a server that is not disabled aborts the
+  session with an error that names it and `ravi mcp import`, and no
+  `turn/start` is sent; an empty answer or all-disabled entries pass; an error
+  from the call aborts, naming Codex 0.172.0 and the update; a later page is
+  followed.
+- A simulated `item/mcpToolCall/*` event and an `item/started` item of type
+  `mcpToolCall` each fail the turn; the error carries no argument values.
+- A configured key added between turns respawns the app-server with the new
+  override.
+- The generated Bash hook matcher stays `^(Bash|shell)$`.
+- Live check (`mcp` RUNBOOK, done on Codex 0.172.0): the overrides and the
+  apps switch leave every configured server `disabled` in the status list.
+
 ## Automatic goals
 
 - `bun test src/runtime/codex-provider.test.ts --test-name-pattern "Codex automatic goal continuation"`

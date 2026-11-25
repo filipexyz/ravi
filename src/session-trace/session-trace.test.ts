@@ -4,7 +4,12 @@ import { attachChatToSession, getOrCreateSession, updateSessionName } from "../r
 import { dbUpsertChat, getDb, closeRouterDb } from "../router/router-db.js";
 import { recordDeliveryTrace, recordResponseEmittedTrace, recordRouteRejectedTrace } from "./channel-trace.js";
 import { querySessionTrace } from "./query.js";
-import { recordAdapterRequestTrace, recordTerminalTurnTrace, summarizeRuntimeCapabilities } from "./runtime-trace.js";
+import {
+  recordAdapterRequestTrace,
+  recordRuntimeMcpNameOverlap,
+  recordTerminalTurnTrace,
+  summarizeRuntimeCapabilities,
+} from "./runtime-trace.js";
 import {
   getLatestSessionTurn,
   getSessionTraceBlob,
@@ -218,6 +223,24 @@ describe("session trace query", () => {
     ).toEqual(["adapter.raw"]);
   });
 
+  it("records a gateway MCP server left out for a host name as a degraded runtime event", () => {
+    const identity = {
+      sessionKey: "agent:main:overlap",
+      sessionName: "overlap",
+      agentId: "main",
+      runId: "run-1",
+      turnId: "t1",
+    };
+    recordRuntimeMcpNameOverlap(identity, ["github", "x".repeat(80)]);
+    const events = listRecentSessionEventsByType(identity.sessionKey, "runtime.mcp_name_overlap");
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      eventGroup: "runtime",
+      status: "degraded",
+      payloadJson: { dropped_gateway_servers: ["github", "x".repeat(64)] },
+    });
+  });
+
   it("reads a session's newest turn started at or after a time", () => {
     const sessionKey = "agent:main:latest-turn";
     upsertSessionTurn({ turnId: "turn-old", sessionKey, status: "complete", startedAt: 1000, updatedAt: 1500 });
@@ -361,6 +384,40 @@ describe("session trace query", () => {
       thinking_source: "runtime_default",
       turn_provenance: { origin: "cron", background: true, automationId: "cron:job-1" },
     });
+  });
+
+  it("records the MCP servers declared to the runtime in the adapter request payload", () => {
+    const mcpServers = [
+      { name: "spec", kind: "host" as const, transport: "in-process", era: null, toolCount: null, status: "attached" },
+      { name: "github", kind: "gateway" as const, transport: "http", era: "modern", toolCount: 3, status: "ok" },
+    ];
+    const base = {
+      sessionKey: "agent:main:trace-limit",
+      sessionName: "trace-limit",
+      agentId: "main",
+      provider: "claude",
+      model: "haiku",
+      prompt: "hello",
+      systemPrompt: "system",
+      cwd: "/tmp/main",
+      resume: false,
+      fork: false,
+      hasHooks: true,
+      pluginNames: [],
+      hasRemoteSpawn: false,
+    };
+    const withServers = recordAdapterRequestTrace({
+      ...base,
+      turnId: "turn-mcp-servers",
+      mcpServerNames: ["spec", "github"],
+      mcpServers,
+    });
+    expect(getSessionTraceBlob(withServers!.requestBlobSha256)?.contentJson).toMatchObject({
+      mcp_server_names: ["spec", "github"],
+      mcp_servers: mcpServers,
+    });
+    const without = recordAdapterRequestTrace({ ...base, turnId: "turn-no-mcp", mcpServerNames: [] });
+    expect(getSessionTraceBlob(without!.requestBlobSha256)?.contentJson).toMatchObject({ mcp_servers: [] });
   });
 
   it("records the signals rendered into the turn, and omits them when none were", () => {

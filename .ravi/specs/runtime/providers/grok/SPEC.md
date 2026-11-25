@@ -20,6 +20,7 @@ applies_to:
   - src/runtime/types.ts
   - src/runtime/provider-contract.test.ts
   - src/runtime/grok-provider.test.ts
+  - src/permissions/provider-config-paths.ts
 owners:
   - ravi-dev
 status: draft
@@ -64,6 +65,10 @@ The MVP MUST use ACP. Headless streaming-json is a worse fit for Ravi's live ses
 - Tool mode: Grok uses its own built-in tools. Client ACP `fs` / `terminal` capabilities stay disabled.
 - Permission mode: ravi-host. Restricted Ravi tool policy is required. Grok MUST start under least-privilege and MUST NOT use a tool Ravi did not grant.
 - MCP/plugins/remote spawn: not advertised in the MVP even though `session/new` accepts `mcpServers`.
+- MCP: Grok's own MCP tools are always off. Registered servers (`mcp`) are
+  reached only through `ravi mcp tools` and `ravi mcp call --execute` in the
+  shell tool, under the same `use:tool:mcp__<server>__<tool>` check as every
+  runtime.
 
 ## Capability Target
 
@@ -96,7 +101,7 @@ Initial advertised capabilities MUST be:
 
 - `initialize` negotiates protocol version `1` and empty client fs/terminal capabilities.
 - `authenticate` uses `xai.api_key` when `XAI_API_KEY` is present and advertised, otherwise `cached_token`.
-- `session/new` creates a session with Ravi cwd and `mcpServers: []`.
+- `session/new` and `session/load` MUST send `mcpServers: []`.
 - `session/load` resumes a stored `sessionId` when the agent advertises `loadSession`.
 - `session/prompt` starts a normal Ravi-delivered user prompt.
 - `session/cancel` maps to `interrupt()` and `turn.interrupt`.
@@ -132,6 +137,28 @@ Grok CLI `--effort` is documented without an enumerated Ravi-compatible set. The
 - `xhigh|max|ultra` -> `high`
 
 That strongest-compatible mapping MUST stay covered by an explicit provider test.
+
+## MCP
+
+- Spawn arguments MUST always carry `--deny MCPTool` and MUST list the MCPTool
+  internal ids (`search_tool`, `use_tool`) in `--disallowed-tools`, whatever
+  the grants say; they MUST NOT appear in `--tools`.
+- `decideGrokToolAuthorization` MUST refuse the MCPTool class for every
+  request, a `use:tool:MCPTool` or `use:tool:*` grant included. A
+  `session/request_permission` for an MCP tool is answered `reject_once`.
+- A permission request is for an MCP tool when its mapped class is MCPTool or
+  when any tool-name field of the raw request (`toolName`, `tool_name`,
+  `name`, `kind`) names MCP (`mcp`, `search_tool`, `use_tool`), or its title
+  starts like an MCP tool name (`mcp__`). The raw fields are checked first
+  because the class mapping matches shell and web substrings before MCP:
+  `mcp__a__bash` would otherwise ride a Bash grant. Such a request is
+  rejected before `canUseTool` or the command authorizer is asked.
+- `--allow` never carries an MCPTool rule: `MCPTool(...)` is not a scoped
+  grant.
+- `.grok` is provider configuration: writes into it need the same grant as
+  `.claude`, `.codex` and `.pi` (`permissions/provider-runtime`, Provider
+  Settings File Writes), so an agent cannot add a server to Grok's own
+  configuration with an ordinary write grant.
 
 ## Invariants
 

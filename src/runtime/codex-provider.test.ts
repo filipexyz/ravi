@@ -353,6 +353,7 @@ const send = (message) => {
 
 rl.on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.id && message.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: message.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
   if (message.id && message.method === "initialize") {
     send({ id: message.id, result: {} });
     return;
@@ -428,6 +429,7 @@ const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
 
 createInterface({ input: process.stdin }).on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.id && message.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: message.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
   if (message.id) appendFileSync(requestsPath, JSON.stringify({ method: message.method }) + "\\n");
   if (message.id && message.method === "initialize") send({ id: message.id, result: {} });
   // thread/goal/get gets no answer on purpose: an older app-server may not implement it.
@@ -476,6 +478,7 @@ const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
 
 rl.on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.id && message.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: message.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
   if (message.id && message.method === "initialize") {
     send({ id: message.id, result: {} });
     return;
@@ -535,6 +538,7 @@ const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
 
 rl.on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.id && message.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: message.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
   if (message.id && message.method === "initialize") {
     send({ id: message.id, result: {} });
     return;
@@ -615,6 +619,7 @@ const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
 
 rl.on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.id && message.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: message.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
   if (message.id && message.method === "initialize") {
     send({ id: message.id, result: {} });
     return;
@@ -694,6 +699,7 @@ const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
 
 rl.on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.id && message.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: message.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
   if (message.id && message.method === "initialize") {
     send({ id: message.id, result: {} });
     return;
@@ -783,6 +789,7 @@ const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
 
 rl.on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.id && message.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: message.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
   if (message.id && message.method === "initialize") {
     send({ id: message.id, result: {} });
     return;
@@ -853,6 +860,7 @@ const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
 
 rl.on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.id && message.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: message.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
   if (message.id && message.method === "initialize") {
     send({ id: message.id, result: {} });
     return;
@@ -948,6 +956,7 @@ let turns = 0;
 
 rl.on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.id && message.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: message.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
   if (message.id && message.method === "initialize") {
     send({ id: message.id, result: {} });
     return;
@@ -1039,6 +1048,7 @@ let acceptedTurnCount = 0;
 
 rl.on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.id && message.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: message.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
   if (message.id && message.method === "initialize") {
     send({ id: message.id, result: {} });
     return;
@@ -1187,6 +1197,7 @@ const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
 
 rl.on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.id && message.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: message.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
   if (message.id && message.method === "initialize") {
     send({ id: message.id, result: {} });
     return;
@@ -1271,6 +1282,7 @@ const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
 
 rl.on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.id && message.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: message.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
   if (message.id && message.method === "initialize") {
     send({ id: message.id, result: {} });
     return;
@@ -1346,6 +1358,7 @@ const send = (message) => {
 
 rl.on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.id && message.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: message.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
   if (message.id && message.method === "initialize") {
     send({ id: message.id, result: {} });
     return;
@@ -1420,6 +1433,7 @@ const send = (message) => {
 
 rl.on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.id && message.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: message.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
   if (message.id && message.method === "initialize") {
     send({ id: message.id, result: {} });
     return;
@@ -1494,6 +1508,10 @@ const server = Bun.serve({
   websocket: {
     message(ws, payload) {
       const message = JSON.parse(String(payload));
+      if (message.id && message.method === "mcpServerStatus/list") {
+        send(ws, { id: message.id, result: { data: [], nextCursor: null } });
+        return;
+      }
       if (message.id && message.method === "initialize") {
         send(ws, { id: message.id, result: {} });
         return;
@@ -2579,6 +2597,7 @@ const send = (message) => {
 
 rl.on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.id && message.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: message.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
   if (message.id && message.method === "initialize") {
     const optOut = message.params?.capabilities?.optOutNotificationMethods ?? [];
     if (optOut.includes("item/commandExecution/outputDelta")) {
@@ -2781,6 +2800,7 @@ const send = (message) => {
 
 rl.on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.id && message.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: message.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
   if (message.id && message.method) log(message);
 
   if (message.id && message.method === "initialize") {
@@ -2936,6 +2956,7 @@ const send = (message) => {
 
 rl.on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.id && message.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: message.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
   if (message.id && message.method) log(message);
 
   if (message.id && message.method === "initialize") {
@@ -3074,6 +3095,7 @@ let turns = 0;
 
 rl.on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.id && message.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: message.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
   if (message.id && message.method === "initialize") {
     send({ id: message.id, result: {} });
     return;
@@ -3212,6 +3234,7 @@ const finishIfReady = () => {
 
 rl.on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.id && message.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: message.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
   if (message.id && !message.method) {
     responses[message.id] = message.result;
     finishIfReady();
@@ -3419,6 +3442,7 @@ const finishIfReady = () => {
 
 rl.on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.id && message.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: message.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
   if (message.id && !message.method) {
     if (message.jsonrpc !== "2.0") throw new Error("tool response must include jsonrpc 2.0");
     if (typeof message.id !== "number") throw new Error("numeric tool request ids must remain numeric");
@@ -3544,6 +3568,7 @@ const finishIfReady = () => {
 
 rl.on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.id && message.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: message.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
   if (message.id && !message.method) {
     toolResponse = message.result;
     finishIfReady();
@@ -3683,6 +3708,7 @@ const finishIfReady = () => {
 
 rl.on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.id && message.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: message.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
   if (message.id && !message.method) {
     if (message.id === "tool_req_fail") {
       if (message.jsonrpc !== "2.0") throw new Error("tool response must include jsonrpc 2.0");
@@ -3772,6 +3798,7 @@ const send = (message) => {
 
 rl.on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.id && message.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: message.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
   if (message.id && !message.method) {
     send({
       jsonrpc: "2.0",
@@ -3946,6 +3973,7 @@ const event = (method, params) => send({method, params: {threadId:"thread_goal",
 const goal = (status) => event("thread/goal/updated", {turnId:"turn_first",goal:{objective:"Fixture goal",status,tokenBudget:null,tokensUsed:12,timeUsedSeconds:3,createdAt:1,updatedAt:2}});
 createInterface({input:process.stdin}).on("line", (line) => {
  const m = JSON.parse(line);
+ if (m.id && m.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: m.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
  if (m.method === "initialize") send({id:m.id,result:{}});
  if (m.method === "thread/start") send({id:m.id,result:{thread:{id:"thread_goal"}}});
  if (m.method !== "turn/start") return;
@@ -4012,6 +4040,7 @@ const send = (m) => process.stdout.write(JSON.stringify(m) + "\\n");
 const event = (method, params) => send({method,params:{threadId:"thread_resumed",...params}});
 createInterface({input:process.stdin}).on("line", line => {
  const m = JSON.parse(line);
+ if (m.id && m.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: m.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
  if(m.method === "initialize") send({id:m.id,result:{}});
  if(m.method === "thread/resume") {
    send({id:m.id,result:{thread:{id:"thread_resumed",turns:[]}}});
@@ -4062,6 +4091,7 @@ const event = (method, params) => send({method, params: {threadId:"thread_usage"
 const usage = (last, total) => event("thread/tokenUsage/updated", {tokenUsage:{last, total}});
 createInterface({input:process.stdin}).on("line", (line) => {
  const m = JSON.parse(line);
+ if (m.id && m.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: m.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
  if (m.method === "initialize") send({id:m.id,result:{}});
  if (m.method === "thread/start") send({id:m.id,result:{thread:{id:"thread_usage"}}});
  if (m.method !== "turn/start") return;
@@ -4171,6 +4201,7 @@ const rl = createInterface({ input: process.stdin });
 const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
 rl.on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.id && message.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: message.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
   if (message.id && message.method === "initialize") return send({ id: message.id, result: {} });
   if (message.method === "initialized") return;
   if (message.id && message.method === "thread/start") {
@@ -4238,6 +4269,7 @@ const error = {message: "Selected model is at capacity. Please try a different m
   headers: {"Retry-After": "4"}};
 createInterface({input: process.stdin}).on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.id && message.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: message.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
   if (message.method === "initialize") send({id:message.id,result:{}});
   if (message.method === "thread/start") send({id:message.id,result:{thread:{id:"thread_capacity"}}});
   if (message.method === "turn/start") {
@@ -4327,6 +4359,7 @@ const initialized = ${JSON.stringify(initialized)};
 const send = (value) => process.stdout.write(JSON.stringify(value) + "\\n");
 createInterface({ input: process.stdin }).on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.id && message.method === "mcpServerStatus/list") { process.stdout.write(JSON.stringify({ id: message.id, result: { data: [], nextCursor: null } }) + "\\n"); return; }
   if (message.method === "initialize") appendFileSync(initialized, JSON.stringify(process.pid) + "\\n");
   if (message.method === rejectedMethod && !existsSync(marker)) {
     writeFileSync(marker, "yes");
@@ -4364,6 +4397,282 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     },
     20_000,
   );
+});
+
+describe("Codex MCP isolation", () => {
+  type IsolationFakeOptions = {
+    statusData?: unknown[];
+    statusError?: boolean;
+    turnNotifications?: Array<Record<string, unknown>>;
+  };
+
+  function writeIsolationFake(cwd: string, options: IsolationFakeOptions = {}) {
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "requests.jsonl");
+    const argsPath = join(cwd, "args.jsonl");
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+appendFileSync(${JSON.stringify(argsPath)}, JSON.stringify(process.argv.slice(2)) + "\\n");
+const options = ${JSON.stringify(options)};
+const rl = createInterface({ input: process.stdin });
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method) {
+    appendFileSync(${JSON.stringify(requestsPath)}, JSON.stringify({ method: message.method, params: message.params ?? {} }) + "\\n");
+  }
+  if (message.id && message.method === "initialize") return send({ id: message.id, result: {} });
+  if (message.method === "initialized") return;
+  if (message.id && message.method === "mcpServerStatus/list") {
+    if (options.statusError) return send({ id: message.id, error: { code: -32603, message: "failed to reload config" } });
+    return send({ id: message.id, result: { data: options.statusData ?? [], nextCursor: null } });
+  }
+  if (message.id && message.method === "thread/goal/get") return send({ id: message.id, result: { goal: null } });
+  if (message.id && (message.method === "thread/start" || message.method === "thread/resume")) {
+    return send({ id: message.id, result: { thread: { id: "thread_iso" }, model: "gpt-5.4", modelProvider: "openai" } });
+  }
+  if (message.id && message.method === "turn/start") {
+    send({ id: message.id, result: {} });
+    send({ jsonrpc: "2.0", method: "turn/started", params: { threadId: "thread_iso", turn: { id: "turn_iso", status: "inProgress" } } });
+    for (const notification of options.turnNotifications ?? []) send({ jsonrpc: "2.0", ...notification });
+    send({ jsonrpc: "2.0", method: "turn/completed", params: { threadId: "thread_iso", turn: { id: "turn_iso", status: "completed" } } });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+    const readJsonLines = (path: string) =>
+      existsSync(path)
+        ? readFileSync(path, "utf8")
+            .trim()
+            .split("\n")
+            .filter(Boolean)
+            .map((line) => JSON.parse(line))
+        : [];
+    return {
+      command,
+      requests: () => readJsonLines(requestsPath) as Array<{ method: string; params: Record<string, unknown> }>,
+      argv: () => readJsonLines(argsPath) as string[][],
+    };
+  }
+
+  function isolationEnv(codexHome: string): Record<string, string> {
+    return { PATH: process.env.PATH ?? "", RAVI_CODEX_TRANSPORT: "stdio", CODEX_HOME: codexHome };
+  }
+
+  async function settle(events: AsyncIterable<RuntimeEvent>): Promise<{ events: RuntimeEvent[]; error?: unknown }> {
+    const output: RuntimeEvent[] = [];
+    try {
+      for await (const event of events) output.push(event);
+      return { events: output };
+    } catch (error) {
+      return { events: output, error };
+    }
+  }
+
+  function failureText(result: { events: RuntimeEvent[]; error?: unknown }): string {
+    const parts: string[] = [];
+    if (result.error) parts.push(String((result.error as Error)?.message ?? result.error));
+    for (const event of result.events) {
+      if (event.type === "turn.failed") parts.push(JSON.stringify(event));
+    }
+    return parts.join("\n");
+  }
+
+  it("launches with one enabled=false override per configured key plus the apps switch, and checks the thread", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-mcp-iso-args-"));
+    const codexHome = join(cwd, "codex-home");
+    mkdirSync(codexHome);
+    writeFileSync(
+      join(codexHome, "config.toml"),
+      `[mcp_servers.foo]\ncommand = "/bin/false"\n\n[mcp_servers."bar"]\nurl = "http://127.0.0.1:9/mcp"\n\n[projects.${JSON.stringify(cwd)}]\ntrust_level = "trusted"\n`,
+    );
+    mkdirSync(join(cwd, ".codex"));
+    writeFileSync(join(cwd, ".codex", "config.toml"), '[mcp_servers.projonly]\ncommand = "/bin/true"\n');
+    const fake = writeIsolationFake(cwd, {
+      statusData: ["bar", "foo", "projonly"].map((name) => ({ name, runtimeStatus: "disabled", tools: [] })),
+    });
+
+    const provider = createCodexRuntimeProvider({ command: fake.command, defaultModel: "gpt-5" });
+    const session = provider.startSession(makeStartRequest(["hi"], { cwd, env: isolationEnv(codexHome) }));
+    const events = await collectEvents(session.events);
+
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(1);
+    const argv = fake.argv()[0] ?? [];
+    for (const key of ["bar", "foo", "projonly"]) {
+      expect(argv).toContain(`mcp_servers.${key}.enabled=false`);
+    }
+    expect(argv).toContain("features.apps=false");
+    expect(argv).not.toContain("mcp_servers={}");
+    expect(argv.at(-1)).toBe("app-server");
+    expect(argv).toContain("features.codex_hooks=true");
+
+    const methods = fake.requests().map((request) => request.method);
+    expect(methods).toEqual(["initialize", "thread/start", "mcpServerStatus/list", "turn/start"]);
+    expect(fake.requests()[2]?.params).toEqual({ threadId: "thread_iso", detail: "toolsAndAuthOnly" });
+  }, 20_000);
+
+  it("fails the session closed when the status list reports an active server", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-mcp-iso-active-"));
+    const codexHome = join(cwd, "codex-home");
+    mkdirSync(codexHome);
+    const fake = writeIsolationFake(cwd, {
+      statusData: [{ name: "plugin-srv", runtimeStatus: "connected", pluginId: "p@x", tools: { t: {} } }],
+    });
+
+    const provider = createCodexRuntimeProvider({ command: fake.command, defaultModel: "gpt-5" });
+    const session = provider.startSession(makeStartRequest(["hi"], { cwd, env: isolationEnv(codexHome) }));
+    const result = await settle(session.events);
+
+    expect(findEventsByType(result.events, "turn.complete")).toHaveLength(0);
+    const text = failureText(result);
+    expect(text).toContain("plugin-srv");
+    expect(text).toContain("ravi mcp import");
+    expect(fake.requests().map((request) => request.method)).not.toContain("turn/start");
+  }, 20_000);
+
+  it("fails the session closed when the status call errors", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-mcp-iso-error-"));
+    const codexHome = join(cwd, "codex-home");
+    mkdirSync(codexHome);
+    const fake = writeIsolationFake(cwd, { statusError: true });
+
+    const provider = createCodexRuntimeProvider({ command: fake.command, defaultModel: "gpt-5" });
+    const session = provider.startSession(makeStartRequest(["hi"], { cwd, env: isolationEnv(codexHome) }));
+    const result = await settle(session.events);
+
+    expect(findEventsByType(result.events, "turn.complete")).toHaveLength(0);
+    expect(failureText(result)).toContain("mcpServerStatus/list failed");
+    // What the operator can do: the version it was verified on, never a guess at the installed one.
+    expect(failureText(result)).toContain("verified on Codex 0.172.0");
+    expect(failureText(result)).toContain("Update Codex");
+    expect(fake.requests().map((request) => request.method)).not.toContain("turn/start");
+  }, 20_000);
+
+  it("refuses to start Codex when its configuration cannot be parsed", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-mcp-iso-bad-"));
+    const codexHome = join(cwd, "codex-home");
+    mkdirSync(codexHome);
+    writeFileSync(join(codexHome, "config.toml"), "[mcp_servers.foo\ncommand = ");
+    const fake = writeIsolationFake(cwd);
+
+    const provider = createCodexRuntimeProvider({ command: fake.command, defaultModel: "gpt-5" });
+    const session = provider.startSession(makeStartRequest(["hi"], { cwd, env: isolationEnv(codexHome) }));
+    const result = await settle(session.events);
+
+    expect(findEventsByType(result.events, "turn.complete")).toHaveLength(0);
+    expect(failureText(result)).toContain("Ravi could not read Codex configuration");
+    expect(fake.argv()).toHaveLength(0);
+  }, 20_000);
+
+  it("fails the turn when an MCP tool call item shows up", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-mcp-iso-call-"));
+    const codexHome = join(cwd, "codex-home");
+    mkdirSync(codexHome);
+    const fake = writeIsolationFake(cwd, {
+      turnNotifications: [
+        {
+          method: "item/started",
+          params: {
+            threadId: "thread_iso",
+            turnId: "turn_iso",
+            item: {
+              id: "mcp_1",
+              type: "mcpToolCall",
+              server: "github",
+              tool: "search",
+              arguments: { q: "secret-arg" },
+            },
+          },
+        },
+      ],
+    });
+
+    const provider = createCodexRuntimeProvider({ command: fake.command, defaultModel: "gpt-5" });
+    const session = provider.startSession(makeStartRequest(["hi"], { cwd, env: isolationEnv(codexHome) }));
+    const result = await settle(session.events);
+
+    expect(findEventsByType(result.events, "turn.complete")).toHaveLength(0);
+    const text = failureText(result);
+    expect(text).toContain("github");
+    expect(text).not.toContain("secret-arg");
+  }, 20_000);
+
+  it("fails the turn on an item/mcpToolCall progress event", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-mcp-iso-progress-"));
+    const codexHome = join(cwd, "codex-home");
+    mkdirSync(codexHome);
+    const fake = writeIsolationFake(cwd, {
+      turnNotifications: [
+        {
+          method: "item/mcpToolCall/progress",
+          params: { threadId: "thread_iso", turnId: "turn_iso", itemId: "mcp_1", message: "working" },
+        },
+      ],
+    });
+
+    const provider = createCodexRuntimeProvider({ command: fake.command, defaultModel: "gpt-5" });
+    const session = provider.startSession(makeStartRequest(["hi"], { cwd, env: isolationEnv(codexHome) }));
+    const result = await settle(session.events);
+
+    expect(findEventsByType(result.events, "turn.complete")).toHaveLength(0);
+    expect(failureText(result)).toContain("MCP server");
+  }, 20_000);
+
+  it("respawns the app-server when the configured servers change between turns", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-mcp-iso-respawn-"));
+    const codexHome = join(cwd, "codex-home");
+    mkdirSync(codexHome);
+    const fake = writeIsolationFake(cwd);
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const provider = createCodexRuntimeProvider({ command: fake.command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest([], {
+        cwd,
+        env: isolationEnv(codexHome),
+        prompt: (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "one" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+          await gate;
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "two" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+        })(),
+      }),
+    );
+
+    const events: RuntimeEvent[] = [];
+    for await (const event of session.events) {
+      events.push(event);
+      if (event.type === "turn.complete" && findEventsByType(events, "turn.complete").length === 1) {
+        writeFileSync(join(codexHome, "config.toml"), '[mcp_servers.late]\ncommand = "/bin/true"\n');
+        release?.();
+      }
+      if (findEventsByType(events, "turn.complete").length === 2) break;
+    }
+
+    const argv = fake.argv();
+    expect(argv).toHaveLength(2);
+    expect(argv[0]).not.toContain("mcp_servers.late.enabled=false");
+    expect(argv[1]).toContain("mcp_servers.late.enabled=false");
+    session.close?.();
+  }, 20_000);
 });
 
 describe("Codex Bash permission gate verification", () => {
@@ -4506,6 +4815,9 @@ rl.on("line", (line) => {
     const edit = message.params.edits[0];
     if (edit.keyPath === 'hooks.state."user:ravi".trusted_hash' && edit.value === "h1") trustStatus = "trusted";
     return send({ id: message.id, result: {} });
+  }
+  if (message.id && message.method === "mcpServerStatus/list") {
+    return send({ id: message.id, result: { data: [], nextCursor: null } });
   }
   if (message.id && message.method === "thread/start") {
     return send({ id: message.id, result: { thread: { id: "thread_gate" }, model: "gpt-5.4", modelProvider: "openai" } });

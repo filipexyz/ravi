@@ -117,13 +117,29 @@ Runtime tool call regressions (`src/bash/hook.test.ts`,
   are denied without a matching capability.
 - A call without a tool name, and an MCP call without agent identity, are
   denied.
-- A tool or Bash permission hook whose check throws denies the call.
+- A tool or Bash permission hook whose check throws denies the call, and so
+  does an approval hook (`exit_spec_mode`, `ExitPlanMode`, `AskUserQuestion`)
+  whose approval request throws (`src/runtime/host-hooks.test.ts`).
 - A `spec` tool runs without the tool capability only when the runtime reports
   `source: "sdk"` and the session declared `spec`. The same name from any other
   source, a missing or malformed server report, and an undeclared in-process
   server are checked. A host name denied without a server report says so.
 - The registered PreToolUse chain attaches `spec` as a host server only for a
   spec-mode agent.
+- Registered-only provenance (`src/bash/hook.ts` option
+  `gatewayMcpServers`): an `mcp__` call reported from a `.mcp.json`
+  (`project`), `user`, `plugin` or claude.ai source is denied even with
+  `use:tool:*`, and the denial names the server and source; a call reported
+  as `sdk` under a name in the gateway list is checked by name; a gateway name
+  is never treated as a host tool. Without a server report, a name under the
+  `spec` or a gateway prefix is checked by name (phase 1a behaviour) and a
+  foreign prefix is denied. The hook throwing still denies. The denial is
+  recorded as `use mcp_server:<name>` with code `not_registered`, and the
+  server text in the reason is quoted on one line.
+- A gateway facade name never appears in `hostMcpServers`, and a name shared
+  by the two lists fails the session build.
+- `use:tool:mcp_*` covers `mcp__<server>__<tool>` names (the documented
+  prefix warning), and a grant `mcp__a__*` does not cover server `a-b`.
 - A grant of `use:tool:Task` allows a call reported as `Agent`, and a grant of
   `use:tool:Agent` allows a call reported as `Task`. So does a tool group that
   lists `Task` and a prefix pattern that matches either name, and a `deny_use`
@@ -180,6 +196,8 @@ Provider settings regressions (`src/bash/provider-config-writes.test.ts`):
 - A symlink followed by `..` resolves physically for file tools and shell
   redirects; dangling file links and cyclic links cannot bypass the guard.
 - Safe writes such as `cd nested && echo ok > notes.txt` remain allowed.
+- A write into `.grok` (file tool and shell redirect) needs the same
+  executable or admin grant as `.claude`, `.codex` and `.pi`.
 - Variable/glob/brace targets, multiline comments/continuations, pipelines,
   subshells and state-changing builtins cannot turn an unresolved destination
   into a permission allow.

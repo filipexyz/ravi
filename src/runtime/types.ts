@@ -457,6 +457,45 @@ interface RuntimeEventBase {
   metadata?: RuntimeEventMetadata;
 }
 
+/** One MCP server a turn declares to its runtime, as the runtime trace lists it. */
+export interface RuntimeMcpServerDetail {
+  name: string;
+  /** `host`: a server Ravi itself provides; `gateway`: a facade of a registered server. */
+  kind: "host" | "gateway";
+  /** `in-process` for host servers; the registered transport for gateway servers. */
+  transport: string;
+  era: string | null;
+  /** Tools the turn may list (gateway); null when Ravi does not count them (host). */
+  toolCount: number | null;
+  status: string;
+}
+
+/** What the runtime itself reported loading (Claude Code `system/init.mcp_servers`). */
+export interface RuntimeReportedMcpServers {
+  declared: string[];
+  /** False when the runtime sent no server list (an older Claude Code). */
+  reported: boolean;
+  servers: Array<{ name: string; source?: string; status?: string }>;
+  /** Reported but not declared (the turn fails). */
+  extra: Array<{ name: string; source?: string; status?: string }>;
+  /** Declared but not reported. */
+  missing: string[];
+}
+
+/** The gateway facades of a session; see `RuntimeStartRequest.gatewayMcpServers`. */
+export interface RuntimeGatewayMcpServers {
+  /** Rebuild the facades for the turn about to start; returns the detail of what was built. */
+  prepareTurn(): RuntimeMcpServerDetail[];
+  /** The facades of the current turn, keyed by server name (`{type:'sdk', name, instance}`). */
+  current(): Record<string, Record<string, unknown>>;
+  /** The names of `current()`. */
+  names(): readonly string[];
+  /** The runtime reports which servers it loaded; the host traces it. */
+  reportRuntimeServers?(report: RuntimeReportedMcpServers): void;
+  /** Gateway servers the runtime left out of a turn because a host server holds their names; the host traces it. */
+  reportNameOverlap?(names: string[]): void;
+}
+
 export interface RuntimeStartRequest {
   prompt: AsyncGenerator<RuntimePromptMessage>;
   model: string;
@@ -476,6 +515,13 @@ export interface RuntimeStartRequest {
   dynamicTools?: RuntimeDynamicToolSpec[];
   handleRuntimeToolCall?: RuntimeDynamicToolCallHandler;
   mcpServers?: Record<string, unknown>;
+  /**
+   * The gateway facades of the session (spec mcp, Claude Facade): in-process
+   * forwarding servers for registered MCP servers, rebuilt by the host for
+   * every turn. A provider that supports MCP servers registers `current()`
+   * beside `mcpServers` on each query; the names never overlap.
+   */
+  gatewayMcpServers?: RuntimeGatewayMcpServers;
   hooks?: Record<string, RuntimeHookMatcher[]>;
   plugins?: RuntimePlugin[];
   remoteSpawn?: unknown;

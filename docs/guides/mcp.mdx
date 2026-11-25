@@ -1,0 +1,274 @@
+---
+title: MCP servers
+description: Register MCP servers in Ravi, attach them to agents, and decide per turn who may call which tool, on every runtime.
+icon: plug
+---
+
+By the end of this page an agent can call the tools of an MCP server you registered, only in the turns you allow, and you know how to check what it did.
+
+Ravi is the MCP client. Runtimes no longer load MCP servers from their own configuration files: a server is usable only when it is registered in Ravi, attached to the agent, and allowed for the turn by the same permission check every other tool passes. The daemon holds the connections; you need it running.
+
+## Register a server
+
+An HTTP server:
+
+```bash
+ravi mcp add docs --url https://mcp.example.com/mcp --execute
+```
+
+A URL that carries a token (a bridge URL, a key in the query) is a secret. The command line refuses it: put it in a file and give it on stdin, so it stays out of your shell history:
+
+```bash
+ravi mcp add docs --url-stdin --execute < url.txt
+```
+
+Run it first without `--execute`, with the same redirection: the dry run reads and checks what stdin holds, and its plan shows the address with the token hidden (`urlDisplay`) and what was read (`fromStdin`), never a value. A value that cannot be used fails there (exit 2). Nothing is stored before `--execute`.
+
+A server that needs a login takes `--auth oauth` or `--auth bearer`. An OAuth server then signs in through the browser:
+
+```bash
+ravi mcp login docs --execute
+```
+
+A bearer server reads its token from stdin, from a file:
+
+```bash
+ravi mcp login docs --token-stdin --execute < token.txt
+```
+
+Its dry run checks the token too and shows only that one was received (`tokenReceived`). `ravi mcp login` and `ravi mcp import` run only in your terminal on the host: a session turn, or the process of a cron job, a trigger or a job, is refused (`CLI_ONLY_COMMAND`).
+
+For an OAuth login Ravi opens the sign-in page in your browser. The sign-in address carries the server's secret address, so Ravi prints it only on a terminal, never in `--json` output, a log or an error. Do not paste it into a chat or a ticket. Without a terminal, `--paste` is refused (`INVALID_OPTION`) before anything is sent. `ravi mcp logout docs` forgets the login and asks the server to revoke it; a new login revokes the login it replaces. The result says whether the server confirmed the revocation (`revocation` on logout, `previousGrant` on login: `revoked`, `not_confirmed` or `not_offered`); when it did not, the logout still happens.
+
+A login holds the scopes you allowed. When a tool needs one more (a server's write scope, for example), only that call is refused: the answer names the missing scope, and the server's other tools keep working. Log in again and allow it, or, on a Ravi Console server, turn **Allow changes** on for that bridge.
+
+A local (stdio) server runs as a child of the daemon, with only `PATH` and the environment keys you declare. Values come from stdin, never the command line. It needs the superadmin scope:
+
+```bash
+ravi mcp add files --command some-mcp-server --env API_KEY --execute < values.env
+```
+
+`values.env` holds one `KEY=value` line per declared key. The values go to the credentials store; the plan names the keys only.
+
+Every write that adds authority is a dry run first: run it without `--execute` to see the plan (exit 3), then again with it.
+
+## Bring over the servers your runtimes used to load
+
+Before this, Claude Code and Codex loaded MCP servers from their own files (`.mcp.json`, `~/.claude.json`, plugin manifests, Codex `config.toml`). They no longer do: an agent sees only the servers registered in Ravi and attached to it. `ravi mcp import` reads those files (it never changes them) and shows what it would register, for which agents:
+
+```bash
+ravi mcp import
+ravi mcp import --execute
+```
+
+Each imported server starts operator-only and is attached only to the agents whose runtime loaded it. Full URLs and environment values go to the credentials store. Two entries that end up with the same name need `--as <old>=<new>`; `--skip <name>` leaves one out.
+
+The import changes no grant. An agent sees an imported server's tools only with `use:tool:mcp__<name>__*` (or a grant per tool) under the name the server is registered with. Agents on the default profile already hold it. For every other agent the plan and the result (`grant.agentsWithout`) give the exact `ravi agents permissions ... --execute` command that adds it, built from that agent's current explicit list; nothing runs it for you. A `chat-only` agent gets a note instead, since it takes no tools at all.
+
+On Codex, a server that stays in `config.toml` after the import is turned off at each launch when its key is a plain name (letters, digits, `-` and `_`), so it may stay there. A key that contains a dot or needs quotes, such as `[mcp_servers."my.server"]`, cannot be turned off that way: every Codex session on the host refuses to start until you delete that entry from `~/.codex/config.toml` (or from the trusted project's `.codex/config.toml`) by hand, even after `ravi mcp import` registered it. The session fails with:
+
+```text
+Codex MCP server "my.server" in /home/you/.codex/config.toml cannot be turned off at launch (Codex overrides take bare keys only), so the session was not started. Codex reaches MCP servers only through Ravi: register the server with `ravi mcp import` (or `ravi mcp add`) and remove it from the Codex configuration.
+```
+
+`ravi doctor` reports servers a runtime's own files still declare that no registered server covers, and the daemon writes the same list to its log once at start, one warning per file (names and paths only). It also warns about each such Codex entry by file and key, and says it must be removed, even once the import registered the server. For Codex it reads the files Codex loads for each agent's directory: `/etc/codex/config.toml`, `/etc/codex/managed_config.toml`, `$CODEX_HOME/config.toml` and the `.codex/config.toml` of each trusted project folder from the repository root down to the agent's directory; an untrusted project's file is not reported, since Codex does not load it. `ravi doctor` also warns when Claude Code's enterprise MCP configuration exists (`/Library/Application Support/ClaudeCode/managed-mcp.json` on macOS, `C:\Program Files\ClaudeCode\managed-mcp.json` on Windows, `/etc/claude-code/managed-mcp.json` on Linux): with it present, Claude Code refuses to start Ravi's Claude sessions.
+
+## Attach it to an agent
+
+```bash
+ravi mcp attach docs main --execute
+ravi mcp show docs
+```
+
+An attachment starts with audience `operator`: the agent may use the server only in your own turns (your terminal, your own direct chat, your heartbeat and routines). On an agent with the default profile, attaching gives it every tool of the server at once, writes included: its floor holds `use:tool:*` (see [Grant the tools](#grant-the-tools)). To let it serve other people's turns too:
+
+```bash
+ravi mcp set docs --audience any --execute
+```
+
+<Warning>
+A server holds one credential, yours. With audience `any`, everyone who may drive the agent acts with your login on that server. A server that holds a login or a secret URL and still speaks the older protocol revision stays operator-only, whatever the audience says.
+</Warning>
+
+`ravi mcp detach`, `ravi mcp set --audience operator`, `ravi mcp disable` and `ravi mcp remove` reduce authority, so they apply at once. `remove` also deletes the stored address and values (and the login) at once; Ravi cannot show them again, so keep a copy of a bridge URL elsewhere if you may need it.
+
+## Grant the tools
+
+Each tool is named `mcp__<server>__<tool>`, and each call needs `use:tool:mcp__<server>__<tool>` in the turn, like any other tool. `use:tool:mcp__docs__*` grants every tool of `docs`.
+
+A `bootstrap` or `full-access` agent already holds `use:tool:*`, so it needs no grant: it may call every tool of every server attached to it, and run the commands below (`ravi mcp tools`, `call`, `calls list|cancel` and `skills read`), which are in the bootstrap floor. To choose servers and tools, give the agent `explicit-only`, which has no floor: list the runtime's own way in with the tools.
+
+```bash
+# Claude Code
+ravi agents permissions support explicit-only --capabilities 'use:tool:ToolSearch,use:tool:mcp__github__*' --execute
+# Codex or Grok
+ravi agents permissions support explicit-only --capabilities 'use:tool:Bash,execute:executable:ravi,read:mcp.tools:list,mutate:mcp.tools:call,read:mcp.calls:list,mutate:mcp.calls:cancel,use:tool:mcp__github__*' --execute
+# Pi
+ravi agents permissions support explicit-only --capabilities 'use:tool:mcp_tools,use:tool:mcp_call,use:tool:mcp_calls_list,use:tool:mcp_calls_cancel,read:mcp.tools:list,mutate:mcp.tools:call,read:mcp.calls:list,mutate:mcp.calls:cancel,use:tool:mcp__github__*' --execute
+```
+
+Each line lets the agent list and call the `github` tools and follow or cancel its background calls, and no other `ravi` command or tool. On Codex any `use:tool:` grant also takes an `explicit-only` agent out of its read-only sandbox, so Codex's own file edits and web search are on again (see [Permissions](/guides/permissions#agent-ceilings)). On Claude Code, following a background call and reading a pinned remote skill go through the shell, so add `use:tool:Bash,execute:executable:ravi,read:mcp.calls:list,mutate:mcp.calls:cancel,read:mcp.skills:read` if it needs them. Elsewhere, add `read:mcp.skills:read` for pinned skills (on Pi with `use:tool:mcp_skills_read`). See [Permissions](/guides/permissions#agent-ceilings).
+
+## How each runtime reaches the tools
+
+| Runtime | How the agent calls a tool |
+|---|---|
+| Claude Code | As native tools named `mcp__<server>__<tool>` |
+| Codex, Grok | With `ravi mcp tools` and `ravi mcp call --execute` in its shell |
+| Pi | With its two tools `mcp_tools` and `mcp_call` |
+
+<Warning>
+Claude Code loads MCP tools on demand through its `ToolSearch` tool. An agent on Claude whose ceiling lacks `use:tool:ToolSearch` may never find them; agents on the default profile hold it. `ravi mcp show` and `ravi mcp attach` read each agent's ceiling and warn about every agent on Claude without it (an `explicit-only` agent that was not given it, or a `chat-only` one); grant it with `ravi agents permissions <agent> ... --capabilities 'use:tool:ToolSearch,...'`.
+</Warning>
+
+The agent's side, as taught by the `mcp` skill:
+
+```bash
+ravi mcp tools --json
+ravi mcp tools docs --query search --json
+ravi mcp call docs search --input '{"query":"pricing"}' --execute --json
+```
+
+`ravi mcp call` waits 45 seconds by default (`--wait`, at most 110). Pi's `mcp_call` tool waits at most 55 seconds. A call that takes longer continues in the background (below). `ravi mcp tools` and `ravi mcp call` run in the daemon, the dry run of a call too: without a running daemon they fail with `MCP_DAEMON_REQUIRED` (exit 1). The process of a shell cron job, trigger or job is refused (`MCP_NO_TURN`, exit 3): it is not a turn Ravi can identify, and it never acts with your terminal's credential.
+
+One `ravi mcp tools` answer lists at most 100 tools and 96 KB of tool entries, with servers taking turns. When more matched, the answer counts what was left out per server and a note says how to see it: list one server (`ravi mcp tools <server>`) or narrow with `--query`.
+
+In chat, a call to one of these tools shows as `MCP <server>: <tool>`, with the names of its arguments and never their values. On Codex and Grok that holds for a shell line that is exactly one `ravi mcp call` of one server and tool, with plain arguments; any other shell line shows as a shell command. Such a line without `--execute` shows `(dry run)` after the tool, and `--agent` and `--wait` are named, without their values.
+
+If a server's name is also the name of one of Ravi's own built-in servers in a Claude session, the built-in one wins: the registered server is left out of that turn with a warning in the logs and a `runtime.mcp_name_overlap` event in the session trace.
+
+## When a server asks a question
+
+A server may ask the person for a confirmation or a few fields before it changes something. Ravi asks only the person of the turn, privately (on Slack an ephemeral card that opens a private form, elsewhere their own direct chat), and only when that person holds the credential: you, for a server with your login. A turn with no person (a cron job, a trigger, a heartbeat, another agent) declines without asking anyone. Fields that look like secrets (passwords, tokens, codes, card numbers) are always declined, and Ravi never opens a link a server sends.
+
+In every question, Ravi's first line names the server and the tool, the lines the server wrote start with `>` (a long text is cut at 12 lines) and field names sit in quotation marks, so a server cannot write lines that pass for Ravi's own. The line that says how to answer is Ravi's and always comes last. A write confirmation (one yes or no) is one question: Sim sends it, Não changes nothing. A form with more fields is asked field by field, then reviewed. The questions of one confirmation share 4 minutes, never more than the call waits; an unanswered question is cancelled and nothing changes. When Ravi answered for the person (nobody could be asked, nobody answered in time), the agent's result starts with a line marked `[Ravi note, not from the MCP server]` that says so. Only Ravi writes that marker: if a server's own text imitates it, the agent sees `[text from the MCP server]` in its place. If a confirmed change reached the server after its confirmation expired, the note says nothing changed and the tool must be called again only if the person still wants it.
+
+## Long calls run in the background
+
+When a server answers with a task, or a call takes longer than the turn waits, the call leaves the turn: the agent gets a call id and the result arrives later in the same session as a new message. The agent must not call the tool again for the same request.
+
+```bash
+ravi mcp calls list --state open
+ravi mcp calls cancel mc_...
+```
+
+Your own turns and your terminal see and cancel every call. Any other turn sees and cancels only the calls of its own session on servers and tools it may use (the same check as making the call), and the turn that delivers a call sees that call.
+
+A cancel asks the server to stop the call; the server decides whether its work stops. Cancelling a cloud run stops following it, nothing more: the run keeps going, and the server's answer names the tool that stops it. A publish is committed within milliseconds of its start, so cancelling one almost never stops it. A cancel is confirmed by one more read of the task: if the server had already finished, you get its result with a note.
+
+## Remote skills
+
+A server that offers skills (such as the Ravi Console) can lend them to an agent. Pinning reviews a manifest and its digest; the agent then reads the skill on demand, never a copy stored at pin time.
+
+```bash
+ravi mcp skills list docs --json
+ravi mcp skills pin docs <id> --agent main --json
+ravi mcp skills pin docs <id> --agent main --digest <manifestDigest> --execute
+ravi mcp skills read <id> --agent main
+```
+
+On Claude Code, the agent reads a pinned skill with `ravi mcp skills read` in its shell, so it needs the shell tool.
+
+`skills list` is yours only: it shows the organization's skill catalog through your login, so any other turn is refused (`OPERATOR_TURN_REQUIRED`) before anything is sent. It pages with `--limit` and `--offset` (50 by default; `total` counts every skill). An id may end in `/SKILL.md`; it names the same skill.
+
+If your login lacks the server's skills scope, the server lists nothing. The listing then says so (`scopeMissing: true`) and tells you to run `ravi mcp login docs --execute` and allow it.
+
+`--external` loads the skill on other people's turns too. On a server whose audience is still `operator`, those turns cannot read it (`MCP_AUDIENCE`): the pin is made, but the plan and the result warn you and name `ravi mcp set docs --audience any --agent main --execute`.
+
+Every `skills list`, and the daemon on its own every 15 minutes, checks the pins against what the server lists:
+
+- a skill listed with another manifest: the pin turns `stale` (`manifest_changed`) and stops loading until you pin it again;
+- a skill missing from a listing that still holds other skills (it was unpublished), or that a read no longer finds (also while the organization's skills are off): the pin turns `stale` (`gone`) and its stub stops loading;
+- a `gone` skill listed again with exactly the manifest you approved: the pin is active again by itself. Any other manifest needs a new pin.
+
+An empty listing changes no pin: the server answers it for no skills, for skills turned off and for a login without the skills scope, and Ravi cannot tell them apart. Pins of skills the server no longer lists appear apart in `skills list` (`unlistedPins`), and `ravi mcp show` lists every pin with its state and reason. `ravi mcp skills unpin <id> --agent main` removes a pin at once.
+
+Each read, allowed or refused, is recorded in the session trace (`mcp.skill`: server, skill, file, size, cache or server, outcome and reason, never the content), and so is each pin Ravi marks stale or restores by itself.
+
+## File uploads
+
+A server that takes files (the Ravi Console's page publish tool, for example) can receive files from the agent's workspace. Uploads are off per attachment:
+
+```bash
+ravi mcp set docs --uploads on --agent main --execute
+```
+
+The agent then passes a file path where the tool takes a file. Before anything is sent:
+
+- the attachment must have uploads on, the server must be a modern HTTP server that takes files, and the agent must run on this host;
+- the turn must be allowed to read the file (`use:tool:Read`); the real path, after links are followed, must be in the agent's workspace or a temp directory (unless the turn may run any program), must not be a runtime's configuration or Ravi's state directory, and must be a regular file with one name;
+- each file is at most 25 MB (even when the server takes larger ones), at most 100 MB and 10 files per call.
+
+The temp directories are the system's (`/tmp`, `/private/tmp` and the one the OS names), which every agent and program on the host shares. With uploads on, a turn that may read files can send any regular file there, another agent's included, as well as its workspace.
+
+A refused file sends nothing (`MCP_FILE_REFUSED`). Files go only to an https storage address the server names, with nothing of the server's login, never through a redirect. The storage host must be a host name, never an IP address, that resolves only to public addresses and presents a publicly trusted certificate: a server whose storage sits on a private network or uses a private certificate authority cannot take files from Ravi. After the upload, Ravi finishes the call once. If that last step fails in a way that leaves its outcome unknown, Ravi does not send it again: check on the server before you retry.
+
+## Check what happened
+
+```bash
+ravi mcp show docs --json
+```
+
+`show` reports the display URL (never a token), status and protocol era, the extensions the server declared, its tools and the tools it dropped (with the reason), the login (`not_needed`; `logged_in`, with when the access token expires and whether it is renewed on use; `needs_login`; or `unknown` when the credentials store cannot be read; never a token), the attachments, open background calls, the last rate-limit answer, every pinned remote skill with its state and stale reason, the tools an attachment with uploads sees, and warnings.
+
+The daemon keeps each server's tool list and checks it again on its own. It looks for lists due a check every 15 minutes: when the server says how long its list stays fresh (the newer protocol revision sends this, the Ravi Console says 5 minutes), the list is checked at the first look after that time; otherwise once a day. A change to an attachment within that time reuses the list without asking the server. Changing the server's address, command, protocol or login always lists the tools again.
+
+Every call is recorded in the session trace (`mcp.call`) with server, tool, duration, outcome and byte counts, and how the server's questions were answered (`elicitation`: accepted, declined, cancelled or none, with a reason code), never arguments, results, answers or addresses. A server's tool list changing publishes `ravi.mcp.catalog.changed` (see [NATS events](/reference/nats-events)).
+
+To use a server for a while with only the newer protocol revision (the Ravi Console at `mcp.ravi.so`, for example):
+
+```bash
+ravi mcp set docs --protocol 2026-07-28 --execute
+```
+
+## Limits to know
+
+- A question a background call asks after its turn has ended is declined.
+- A call still waiting in the daemon's memory is lost if the daemon restarts. It is delivered as "outcome unknown" and never sent again.
+- A cancel is confirmed by one more read of the task; a task that already finished delivers its result.
+- A result fetched in your own turn stays in that session's context, which other people in a shared session can then see.
+- File uploads never work for agents that run on another host, for local (stdio) servers, or for servers on the older protocol revision.
+- An agent on Claude needs `use:tool:ToolSearch` to find MCP tools.
+- One credential per server, yours. It is kept in Ravi's state directory, where an agent with file or shell tools on that host can read it, as it can the Console login.
+- A tool's description is written by the server and reaches the model as it is: attach only servers you trust.
+- When a server answers HTTP 429, Ravi waits the time it names (`Retry-After`, or 60 seconds when it names none) before it sends that server anything else: calls in that time answer "try again in N s" without being sent, and a refused call is never sent again.
+- There is no switch that turns the MCP client off as a whole. Stop a server with `ravi mcp disable <name>`, take it from one agent with `ravi mcp detach <name> <agent>`, or go back to the release before the last update with `ravi update --rollback` (it shows the plan; add `--execute` to do it).
+
+## Error codes
+
+Commands print `{success:false, op, error:{code, message}}` with `--json`. Exit 1 is a failure, 2 a usage error, 3 a policy refusal or a dry run.
+
+| Code | Meaning |
+|---|---|
+| `WRITE_REQUIRES_EXECUTE` | Dry run: repeat with `--execute`. |
+| `OPERATOR_TURN_REQUIRED` | Only your own turn may do this. |
+| `PERMISSION_DENIED` | A local server needs the superadmin scope, or the agent lacks the command itself (an `explicit-only` agent without the grants in [Grant the tools](#grant-the-tools)). |
+| `MCP_SERVER_NOT_FOUND`, `NOT_REGISTERED`, `MCP_NOT_ATTACHED`, `MCP_DISABLED`, `NOT_ATTACHED` | The server is not registered, not attached to the agent, or disabled. |
+| `MCP_AUDIENCE`, `MCP_AUDIENCE_LEGACY`, `AUDIENCE_LEGACY` | The server is operator-only for this turn. |
+| `MCP_CAPABILITY` | The turn lacks `use:tool:mcp__<server>__<tool>`. |
+| `MCP_NO_TURN`, `MCP_CONTEXT_REQUIRED` | The command ran outside a turn Ravi can identify, such as the process of a shell cron job, trigger or job. |
+| `CLI_ONLY_COMMAND` | `ravi mcp login` and `ravi mcp import` run only in your terminal on the host, never from a session turn or an automation's process. |
+| `MCP_NEEDS_LOGIN` | Run `ravi mcp login <name> --execute` (a bearer server: `ravi mcp login <name> --token-stdin --execute < token.txt`). The hint in the error names the exact command. |
+| `MCP_INVALID_REQUEST`, `MCP_AUTHORIZATION_FAILED` | The request or the permission check could not be read. |
+| `MCP_DAEMON_REQUIRED`, `MCP_GATEWAY_UNAVAILABLE`, `GATEWAY_RESPONSE_INVALID` | The daemon is not running or did not answer. |
+| `MCP_CALL_TIMEOUT` | No answer in time; the call may still finish on the server. |
+| `MCP_CALL_OUTCOME_UNKNOWN` | Ravi cannot know whether the call ran. Do not repeat it blindly. |
+| `MCP_CALL_CANCELLED`, `MCP_CALL_FAILED`, `MCP_CALL_NOT_FOUND` | The call was cancelled, failed, or is not one you can see. |
+| `MCP_FILE_REFUSED` | A file was refused before anything was sent. |
+| `REMOTE_SPAWN_UPLOADS`, `REMOTE_SPAWN_STDIO`, `UPLOADS_NOT_SUPPORTED` | Uploads or a local server for an agent on another host, or uploads on a local server. |
+| `MCP_SKILLS_SCOPE_MISSING` | The login lacks the skills scope: log in again and allow it. A tool call refused for a missing scope answers an error naming the scope instead, and the server keeps working. |
+| `MCP_SKILLS_RATE_LIMITED`, `MCP_SKILLS_TIMEOUT`, `MCP_SKILLS_UNSUPPORTED`, `MCP_SKILLS_FAILED` | The server is limiting requests, did not answer, offers no skills, or failed. |
+| `MCP_SKILL_NOT_FOUND`, `MCP_SKILL_NOT_PINNED`, `MCP_SKILL_ID_INVALID` | The skill does not exist, is not pinned, or the id is malformed. |
+| `MCP_SKILL_STALE` | The pin is stale: the skill changed since the pin (pin it again), or the server no longer serves it (`gone`: it comes back by itself when the server lists the approved manifest again). |
+| `MCP_SKILL_MANIFEST_CHANGED`, `MCP_SKILL_DIGEST_MISMATCH`, `MCP_SKILL_MANIFEST_INVALID` | The manifest differs from the one you reviewed, or cannot be read. |
+| `MCP_SKILL_FILE_NOT_FOUND`, `MCP_SKILL_FILE_INVALID` | The skill file is not in its manifest, or did not match it. |
+| `MCP_SKILL_DYNAMIC`, `MCP_SKILL_LIBRARY_DUPLICATE`, `MCP_SKILL_EXTERNAL_DENIED` | The skill cannot be pinned, the agent already has it from the Library, or it may not serve outside turns. |
+| `ALREADY_REGISTERED`, `INVALID_NAME`, `RESERVED_NAME`, `INVALID_URL`, `INLINE_SECRET`, `INVALID_VALUE`, `INVALID_ENV_KEY`, `AGENT_NOT_FOUND`, `IMPORT_CONFLICT`, `USAGE_ERROR` | Registration input was refused. |
+| `LOGIN_FAILED`, `NOT_HTTP`, `NO_LOGIN_NEEDED`, `INVALID_OPTION`, `PORT_UNAVAILABLE`, `TIMEOUT`, `STATE_MISMATCH`, `INVALID_CALLBACK`, `AUTHORIZATION_DENIED`, `ISSUER_MISMATCH`, `NO_AUTHORIZATION_REQUESTED`, `TOKEN_REFUSED`, `REGISTRATION_CHANGED` | The login did not complete; nothing was stored. |
+| `SECRET_MISSING`, `SECRET_INVALID`, `SECRET_TOO_LARGE`, `SECRET_UNAVAILABLE`, `WRITE_FAILED`, `COMMAND_FAILED` | The credentials store or the registry could not be written or read. |
+
+## Related
+
+- [Use the Console over MCP](/console/mcp): the Ravi Console as an MCP server, and Ravi as its client.
+- [Permissions](/guides/permissions): capabilities and the per-turn check.
+- [NATS events](/reference/nats-events): `ravi.mcp.catalog.changed`.

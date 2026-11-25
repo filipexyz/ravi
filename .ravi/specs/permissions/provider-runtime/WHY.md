@@ -73,6 +73,21 @@ whatever the runtime's configuration says, so a second server can take it, and
 the binding would promise an identity the runtime does not give. Choosing
 which servers exist belongs to the registry of servers Ravi loads itself.
 
+## Registered servers only
+
+With the registry in place (`mcp`), a server name in a grant means a row Ravi
+registered, not whatever a runtime's configuration called it. Registered names
+hold no underscore, so a prefix grant reaches one server. A tool whose
+reported provenance is a runtime-configured source is denied even under
+`use:tool:*`: a grant was written for registered servers, and a full-access
+turn must not silently gain servers a project file or plugin adds. The
+gateway's own facades are not host servers because they forward to servers
+outside Ravi; keeping them out of the host list keeps every remote tool under
+the name check. An unattributed name is still checked by name when it falls
+under a host or gateway prefix, so an older Claude Code that does not report
+provenance keeps working for `spec` tools; any other unattributed `mcp__` name
+cannot come from a registered server and is denied.
+
 ## A mention is not a tool call
 
 With every tool denied, a live Claude Code session still answered with the

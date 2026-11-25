@@ -3476,6 +3476,175 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
     CREATE INDEX IF NOT EXISTS idx_triggers_topic ON triggers(topic);
   `);
 
+  db.exec(`
+    -- Registered MCP servers (spec mcp). Secrets, including the full URL,
+    -- live in the credentials store; url_display is the display form only.
+    CREATE TABLE IF NOT EXISTS mcp_servers (
+      name TEXT PRIMARY KEY,
+      transport TEXT NOT NULL CHECK(transport IN ('http', 'stdio')),
+      url_display TEXT,
+      -- 1 when the full URL carries a secret (a token segment, user info, a
+      -- query or a fragment): the URL itself is the operator's credential.
+      url_secret INTEGER NOT NULL DEFAULT 0 CHECK(url_secret IN (0, 1)),
+      command TEXT,
+      args_json TEXT NOT NULL DEFAULT '[]',
+      env_keys_json TEXT NOT NULL DEFAULT '[]',
+      auth_kind TEXT NOT NULL DEFAULT 'none' CHECK(auth_kind IN ('none', 'bearer', 'oauth')),
+      credential_rev INTEGER NOT NULL DEFAULT 0,
+      protocol TEXT NOT NULL DEFAULT 'auto' CHECK(protocol IN ('auto', '2026-07-28', 'legacy')),
+      enabled INTEGER NOT NULL DEFAULT 1,
+      origin TEXT NOT NULL DEFAULT 'manual',
+      status TEXT NOT NULL DEFAULT 'unknown' CHECK(status IN ('unknown', 'ok', 'needs_login', 'error')),
+      status_detail TEXT,
+      era TEXT CHECK(era IS NULL OR era IN ('modern', 'legacy')),
+      discover_json TEXT,
+      extensions_json TEXT,
+      catalog_json TEXT,
+      catalog_fingerprint TEXT,
+      checked_at INTEGER,
+      created_by TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      CHECK((transport = 'http' AND url_display IS NOT NULL AND command IS NULL)
+        OR (transport = 'stdio' AND command IS NOT NULL AND url_display IS NULL))
+    );
+
+    -- Which agent may reach which registered server. No row: no agent reaches it.
+    CREATE TABLE IF NOT EXISTS mcp_agent_servers (
+      agent_id TEXT NOT NULL,
+      server TEXT NOT NULL REFERENCES mcp_servers(name) ON DELETE CASCADE,
+      audience TEXT NOT NULL DEFAULT 'operator' CHECK(audience IN ('operator', 'any')),
+      uploads INTEGER NOT NULL DEFAULT 0 CHECK(uploads IN (0, 1)),
+      created_by TEXT,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (agent_id, server)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mcp_agent_servers_server ON mcp_agent_servers(server);
+
+    -- One pending MCP elicitation on its private Slack surface (spec mcp,
+    -- Elicitation). request_json holds what the person is asked (the server's
+    -- message and the planned field definitions, or the URL); an answer, its
+    -- values and any secret are never stored here.
+    CREATE TABLE IF NOT EXISTS mcp_elicitation_requests (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      instance_id TEXT,
+      chat_id TEXT NOT NULL,
+      thread_ts TEXT,
+      -- The one Slack user that may open and submit the modal.
+      user_id TEXT NOT NULL,
+      contact_id TEXT NOT NULL,
+      agent_id TEXT,
+      session_name TEXT,
+      approval_id TEXT,
+      server TEXT NOT NULL,
+      tool TEXT NOT NULL,
+      mode TEXT NOT NULL CHECK(mode IN ('form', 'url')),
+      request_json TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open'
+        CHECK(status IN ('open', 'opened', 'answered', 'declined', 'expired', 'cancelled')),
+      team_id TEXT,
+      view_id TEXT,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      settled_at INTEGER
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mcp_elicitation_requests_expires
+      ON mcp_elicitation_requests(expires_at);
+
+    -- MCP calls that left their turn (spec mcp, Background Calls And Tasks):
+    -- a task the server runs in the background, or a call past its inline
+    -- budget. Arguments are never stored; result_json holds the capped text
+    -- to deliver and is cleared once delivered. No foreign key to
+    -- mcp_servers: removing a server must leave the row, so its session is
+    -- told the result was discarded.
+    CREATE TABLE IF NOT EXISTS mcp_calls (
+      id TEXT PRIMARY KEY,
+      server TEXT NOT NULL,
+      -- The registration the call went to (mcp_servers.created_at when it
+      -- detached): a server removed and registered again under the same name
+      -- is another server, and gets nothing of this call.
+      server_created_at INTEGER,
+      tool TEXT NOT NULL,
+      agent_id TEXT NOT NULL,
+      session_name TEXT NOT NULL,
+      session_key TEXT,
+      origin_json TEXT NOT NULL DEFAULT '{}',
+      surface TEXT NOT NULL,
+      era TEXT CHECK(era IS NULL OR era IN ('modern', 'legacy')),
+      detach_reason TEXT NOT NULL CHECK(detach_reason IN ('task', 'budget')),
+      state TEXT NOT NULL CHECK(state IN ('running', 'task', 'delivering', 'delivered', 'failed')),
+      outcome TEXT CHECK(outcome IS NULL
+        OR outcome IN ('ok', 'tool_error', 'error', 'cancelled', 'expired', 'lost', 'discarded')),
+      remote_task_id TEXT,
+      task_status TEXT,
+      poll_interval_ms INTEGER,
+      next_poll_at INTEGER,
+      expires_at INTEGER NOT NULL,
+      cancel_requested_at INTEGER,
+      cancel_sent_at INTEGER,
+      result_json TEXT,
+      input_rounds INTEGER NOT NULL DEFAULT 0,
+      poll_failures INTEGER NOT NULL DEFAULT 0,
+      delivery_attempts INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      rate_limited_at INTEGER,
+      rate_limited_until INTEGER,
+      owner TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      delivered_at INTEGER
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mcp_calls_state_next ON mcp_calls(state, next_poll_at);
+    CREATE INDEX IF NOT EXISTS idx_mcp_calls_agent ON mcp_calls(agent_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_mcp_calls_server ON mcp_calls(server, state);
+
+    -- The last HTTP 429 a server answered (inline call or background poll), for ravi mcp show.
+    CREATE TABLE IF NOT EXISTS mcp_server_rate_limits (
+      server TEXT PRIMARY KEY,
+      limited_at INTEGER NOT NULL,
+      limited_until INTEGER NOT NULL,
+      method TEXT NOT NULL
+    );
+
+    -- Remote skills of MCP servers pinned to an agent (spec mcp, Remote
+    -- Skills). Apart from library_pins, which a Console sync replaces
+    -- wholesale. The pin binds to the manifest the operator approved
+    -- (manifest_json, manifest_digest); no skill file is stored here. No
+    -- foreign key: detach and remove drop the pins and rebuild the plugin.
+    CREATE TABLE IF NOT EXISTS mcp_skill_pins (
+      agent_id TEXT NOT NULL,
+      server TEXT NOT NULL,
+      skill_uri TEXT NOT NULL,
+      skill_id TEXT NOT NULL,
+      skill_name TEXT NOT NULL,
+      description TEXT NOT NULL,
+      manifest_json TEXT NOT NULL,
+      manifest_digest TEXT NOT NULL,
+      library_ref TEXT,
+      external_allowed INTEGER NOT NULL DEFAULT 0 CHECK(external_allowed IN (0, 1)),
+      state TEXT NOT NULL DEFAULT 'active' CHECK(state IN ('active', 'stale')),
+      stale_reason TEXT,
+      approved_by TEXT,
+      approved_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (agent_id, server, skill_uri)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mcp_skill_pins_server ON mcp_skill_pins(server);
+    CREATE INDEX IF NOT EXISTS idx_mcp_skill_pins_name ON mcp_skill_pins(skill_name);
+  `);
+
+  // mcp_calls rows written before the registration column existed carry none (no identity check).
+  const mcpCallColumns = db.prepare("PRAGMA table_info(mcp_calls)").all() as Array<{ name: string }>;
+  if (!mcpCallColumns.some((c) => c.name === "server_created_at")) {
+    db.exec("ALTER TABLE mcp_calls ADD COLUMN server_created_at INTEGER");
+  }
+  migrateMcpFileColumns(db);
+
   // Migrations for triggers
   const triggerColumns = db.prepare("PRAGMA table_info(triggers)").all() as Array<{ name: string }>;
   if (!triggerColumns.some((c) => c.name === "reply_session")) {
@@ -10012,6 +10181,19 @@ export function dbDeleteAgent(id: string): boolean {
   }
   // And its Library listing: a same-id recreation starts unlisted and closed to requests.
   getDb().prepare("DELETE FROM library_agents WHERE agent_id = ?").run(id);
+  // And its MCP server attachments: a same-id recreation reaches no registered server (spec mcp).
+  getDb().prepare("DELETE FROM mcp_agent_servers WHERE agent_id = ?").run(id);
+  // And its remote skill pins: a same-id recreation loads no skill pinned to the old agent.
+  getDb().prepare("DELETE FROM mcp_skill_pins WHERE agent_id = ?").run(id);
+  // And its open background MCP calls: they end here, discarded, with nothing sent to the server and
+  // nothing delivered, so a same-id recreation never receives the old agent's results (spec mcp).
+  getDb()
+    .prepare(
+      `UPDATE mcp_calls SET state = 'failed', outcome = 'discarded', result_json = NULL, next_poll_at = NULL,
+         last_error = 'The agent was deleted.', updated_at = ?
+       WHERE agent_id = ? AND state IN ('running', 'task', 'delivering')`,
+    )
+    .run(Date.now(), id);
   s.deleteAgent.run(id);
   if (getDbChanges() > 0) {
     log.info("Deleted agent", { id });
@@ -12043,6 +12225,21 @@ export function dbListAuditLog(entity?: string, limit = 100): AuditEntry[] {
  * Debounce window per trigger (ms; 0 = fire per event). Existing triggers get 0,
  * so they keep firing exactly as before.
  */
+/**
+ * The MCP file upload columns (spec mcp, File Uploads): `mcp_calls.files_upload`
+ * is 1 when the call declared the files extension, so its task polls declare it
+ * too; `mcp_servers.files_catalog_json` is the catalog listed with the files
+ * extension declared, what an attachment with uploads on sees;
+ * `mcp_servers.catalog_expires_at` is when the listed catalog stops being
+ * fresh (the server's `tools/list` ttlMs).
+ */
+export function migrateMcpFileColumns(database: Database): void {
+  ensureColumn(database, "mcp_calls", "files_upload", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(database, "mcp_servers", "files_catalog_json", "TEXT");
+  // When the cached tool list stops being fresh (the server's tools/list ttlMs).
+  ensureColumn(database, "mcp_servers", "catalog_expires_at", "INTEGER");
+}
+
 export function migrateTriggerDebounce(database: Database): void {
   ensureColumn(database, "triggers", "debounce_ms", "INTEGER DEFAULT 0");
 }

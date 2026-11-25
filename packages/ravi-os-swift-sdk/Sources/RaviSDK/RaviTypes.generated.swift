@@ -21140,6 +21140,855 @@ public struct MailThreadsReadReturn: Codable, Sendable {
   }
 }
 
+public struct McpAddOptions: Codable, Sendable {
+  public var agent: [String]?
+  public var arg: [String]?
+  public var auth: String?
+  public var command: String?
+  public var env: [String]?
+  public var execute: Bool?
+  public var protocol_: String?
+  public var url: String?
+  public var urlStdin: Bool?
+
+  public init(agent: [String]? = nil, arg: [String]? = nil, auth: String? = nil, command: String? = nil, env: [String]? = nil, execute: Bool? = nil, protocol_: String? = nil, url: String? = nil, urlStdin: Bool? = nil) {
+    self.agent = agent
+    self.arg = arg
+    self.auth = auth
+    self.command = command
+    self.env = env
+    self.execute = execute
+    self.protocol_ = protocol_
+    self.url = url
+    self.urlStdin = urlStdin
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+    case arg = "arg"
+    case auth = "auth"
+    case command = "command"
+    case env = "env"
+    case execute = "execute"
+    case protocol_ = "protocol"
+    case url = "url"
+    case urlStdin = "urlStdin"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.agent {
+      body["agent"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.arg {
+      body["arg"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.auth {
+      body["auth"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.command {
+      body["command"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.env {
+      body["env"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.protocol_ {
+      body["protocol"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.url {
+      body["url"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.urlStdin {
+      body["urlStdin"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct McpAddReturn: Codable, Sendable {
+  public var attached: [String]
+  public var secretStored: Bool
+  public var server: RaviJSON
+
+  public init(attached: [String], secretStored: Bool, server: RaviJSON) {
+    self.attached = attached
+    self.secretStored = secretStored
+    self.server = server
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case attached = "attached"
+    case secretStored = "secretStored"
+    case server = "server"
+  }
+}
+
+public struct McpAttachOptions: Codable, Sendable {
+  public var execute: Bool?
+
+  public init(execute: Bool? = nil) {
+    self.execute = execute
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case execute = "execute"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct McpAttachReturn: Codable, Sendable {
+  public var agentId: String
+  public var audience: String
+  public var created: Bool
+  public var server: String
+  public var uploads: Bool
+  public var warnings: [String]
+
+  public init(agentId: String, audience: String, created: Bool, server: String, uploads: Bool, warnings: [String]) {
+    self.agentId = agentId
+    self.audience = audience
+    self.created = created
+    self.server = server
+    self.uploads = uploads
+    self.warnings = warnings
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agentId = "agentId"
+    case audience = "audience"
+    case created = "created"
+    case server = "server"
+    case uploads = "uploads"
+    case warnings = "warnings"
+  }
+}
+
+public struct McpCallOptions: Codable, Sendable {
+  public var agent: String?
+  public var execute: Bool?
+  public var input: String?
+  public var wait: String?
+
+  public init(agent: String? = nil, execute: Bool? = nil, input: String? = nil, wait: String? = nil) {
+    self.agent = agent
+    self.execute = execute
+    self.input = input
+    self.wait = wait
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+    case execute = "execute"
+    case input = "input"
+    case wait = "wait"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.agent {
+      body["agent"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.input {
+      body["input"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.wait {
+      body["wait"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct McpCallReturn: Codable, Sendable {
+  public var bytes: Double
+  public var callId: RaviJSON
+  public var content: [RaviJSON]
+  public var era: String
+  public var name: String
+  public var outcome: String
+  public var server: String
+  public var structuredContent: RaviJSON
+  public var tool: String
+  public var truncated: Bool
+  public var waitSeconds: Double
+
+  public init(bytes: Double, callId: RaviJSON, content: [RaviJSON], era: String, name: String, outcome: String, server: String, structuredContent: RaviJSON, tool: String, truncated: Bool, waitSeconds: Double) {
+    self.bytes = bytes
+    self.callId = callId
+    self.content = content
+    self.era = era
+    self.name = name
+    self.outcome = outcome
+    self.server = server
+    self.structuredContent = structuredContent
+    self.tool = tool
+    self.truncated = truncated
+    self.waitSeconds = waitSeconds
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case bytes = "bytes"
+    case callId = "callId"
+    case content = "content"
+    case era = "era"
+    case name = "name"
+    case outcome = "outcome"
+    case server = "server"
+    case structuredContent = "structuredContent"
+    case tool = "tool"
+    case truncated = "truncated"
+    case waitSeconds = "waitSeconds"
+  }
+}
+
+public struct McpCallsCancelReturn: Codable, Sendable {
+  public var call: RaviJSON
+  public var cancelRequested: Bool
+
+  public init(call: RaviJSON, cancelRequested: Bool) {
+    self.call = call
+    self.cancelRequested = cancelRequested
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case call = "call"
+    case cancelRequested = "cancelRequested"
+  }
+}
+
+public struct McpCallsListOptions: Codable, Sendable {
+  public var limit: String?
+  public var offset: String?
+  public var server: String?
+  public var session: String?
+  public var state: String?
+
+  public init(limit: String? = nil, offset: String? = nil, server: String? = nil, session: String? = nil, state: String? = nil) {
+    self.limit = limit
+    self.offset = offset
+    self.server = server
+    self.session = session
+    self.state = state
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case limit = "limit"
+    case offset = "offset"
+    case server = "server"
+    case session = "session"
+    case state = "state"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.server {
+      body["server"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.session {
+      body["session"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.state {
+      body["state"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct McpCallsListReturn: Codable, Sendable {
+  public var calls: [RaviJSON]
+  public var pagination: RaviJSON
+  public var scope: String
+  public var total: Double
+
+  public init(calls: [RaviJSON], pagination: RaviJSON, scope: String, total: Double) {
+    self.calls = calls
+    self.pagination = pagination
+    self.scope = scope
+    self.total = total
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case calls = "calls"
+    case pagination = "pagination"
+    case scope = "scope"
+    case total = "total"
+  }
+}
+
+public struct McpDetachReturn: Codable, Sendable {
+  public var agentId: String
+  public var detached: Bool
+  public var server: String
+  public var skillPinsDropped: Double
+
+  public init(agentId: String, detached: Bool, server: String, skillPinsDropped: Double) {
+    self.agentId = agentId
+    self.detached = detached
+    self.server = server
+    self.skillPinsDropped = skillPinsDropped
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agentId = "agentId"
+    case detached = "detached"
+    case server = "server"
+    case skillPinsDropped = "skillPinsDropped"
+  }
+}
+
+public struct McpDisableReturn: Codable, Sendable {
+  public var changed: Bool
+  public var server: RaviJSON
+
+  public init(changed: Bool, server: RaviJSON) {
+    self.changed = changed
+    self.server = server
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case changed = "changed"
+    case server = "server"
+  }
+}
+
+public struct McpEnableOptions: Codable, Sendable {
+  public var execute: Bool?
+
+  public init(execute: Bool? = nil) {
+    self.execute = execute
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case execute = "execute"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct McpEnableReturn: Codable, Sendable {
+  public var changed: Bool
+  public var server: RaviJSON
+
+  public init(changed: Bool, server: RaviJSON) {
+    self.changed = changed
+    self.server = server
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case changed = "changed"
+    case server = "server"
+  }
+}
+
+public struct McpListOptions: Codable, Sendable {
+  public var agent: String?
+  public var limit: String?
+  public var offset: String?
+
+  public init(agent: String? = nil, limit: String? = nil, offset: String? = nil) {
+    self.agent = agent
+    self.limit = limit
+    self.offset = offset
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+    case limit = "limit"
+    case offset = "offset"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.agent {
+      body["agent"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct McpListReturn: Codable, Sendable {
+  public var items: [RaviJSON]
+  public var pagination: RaviJSON
+  public var total: Double
+
+  public init(items: [RaviJSON], pagination: RaviJSON, total: Double) {
+    self.items = items
+    self.pagination = pagination
+    self.total = total
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case items = "items"
+    case pagination = "pagination"
+    case total = "total"
+  }
+}
+
+public struct McpLogoutReturn: Codable, Sendable {
+  public var removed: Bool
+  public var revocation: String
+  public var server: String
+  public var status: String
+
+  public init(removed: Bool, revocation: String, server: String, status: String) {
+    self.removed = removed
+    self.revocation = revocation
+    self.server = server
+    self.status = status
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case removed = "removed"
+    case revocation = "revocation"
+    case server = "server"
+    case status = "status"
+  }
+}
+
+public struct McpRemoveReturn: Codable, Sendable {
+  public var callsCancelled: Double
+  public var detachedAgents: [String]
+  public var removed: RaviJSON
+  public var secretDeleteFailed: Bool
+  public var secretDeleted: Bool
+  public var skillPinsDropped: Double
+
+  public init(callsCancelled: Double, detachedAgents: [String], removed: RaviJSON, secretDeleteFailed: Bool, secretDeleted: Bool, skillPinsDropped: Double) {
+    self.callsCancelled = callsCancelled
+    self.detachedAgents = detachedAgents
+    self.removed = removed
+    self.secretDeleteFailed = secretDeleteFailed
+    self.secretDeleted = secretDeleted
+    self.skillPinsDropped = skillPinsDropped
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case callsCancelled = "callsCancelled"
+    case detachedAgents = "detachedAgents"
+    case removed = "removed"
+    case secretDeleteFailed = "secretDeleteFailed"
+    case secretDeleted = "secretDeleted"
+    case skillPinsDropped = "skillPinsDropped"
+  }
+}
+
+public struct McpSetOptions: Codable, Sendable {
+  public var agent: String?
+  public var audience: String?
+  public var execute: Bool?
+  public var protocol_: String?
+  public var uploads: String?
+
+  public init(agent: String? = nil, audience: String? = nil, execute: Bool? = nil, protocol_: String? = nil, uploads: String? = nil) {
+    self.agent = agent
+    self.audience = audience
+    self.execute = execute
+    self.protocol_ = protocol_
+    self.uploads = uploads
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+    case audience = "audience"
+    case execute = "execute"
+    case protocol_ = "protocol"
+    case uploads = "uploads"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.agent {
+      body["agent"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.audience {
+      body["audience"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.protocol_ {
+      body["protocol"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.uploads {
+      body["uploads"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct McpSetReturn: Codable, Sendable {
+  public var attachments: [RaviJSON]
+  public var changed: Bool
+  public var protocol_: RaviJSON
+  public var server: RaviJSON
+
+  public init(attachments: [RaviJSON], changed: Bool, protocol_: RaviJSON, server: RaviJSON) {
+    self.attachments = attachments
+    self.changed = changed
+    self.protocol_ = protocol_
+    self.server = server
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case attachments = "attachments"
+    case changed = "changed"
+    case protocol_ = "protocol"
+    case server = "server"
+  }
+}
+
+public struct McpShowReturn: Codable, Sendable {
+  public var calls: RaviJSON
+  public var server: RaviJSON
+  public var skills: [RaviJSON]
+  public var uploadCatalog: RaviJSON
+  public var warnings: [String]
+
+  public init(calls: RaviJSON, server: RaviJSON, skills: [RaviJSON], uploadCatalog: RaviJSON, warnings: [String]) {
+    self.calls = calls
+    self.server = server
+    self.skills = skills
+    self.uploadCatalog = uploadCatalog
+    self.warnings = warnings
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case calls = "calls"
+    case server = "server"
+    case skills = "skills"
+    case uploadCatalog = "uploadCatalog"
+    case warnings = "warnings"
+  }
+}
+
+public struct McpSkillsListOptions: Codable, Sendable {
+  public var agent: String?
+  public var limit: String?
+  public var offset: String?
+
+  public init(agent: String? = nil, limit: String? = nil, offset: String? = nil) {
+    self.agent = agent
+    self.limit = limit
+    self.offset = offset
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+    case limit = "limit"
+    case offset = "offset"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.agent {
+      body["agent"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct McpSkillsListReturn: Codable, Sendable {
+  public var agentId: String
+  public var invalid: Double
+  public var pagination: RaviJSON
+  public var pinCheck: String
+  public var restoredPins: [RaviJSON]
+  public var scopeMissing: Bool
+  public var server: String
+  public var skills: [RaviJSON]
+  public var stalePins: [RaviJSON]
+  public var suggestedAction: RaviJSON
+  public var supported: Bool
+  public var total: Double
+  public var unlistedPins: [RaviJSON]
+
+  public init(agentId: String, invalid: Double, pagination: RaviJSON, pinCheck: String, restoredPins: [RaviJSON], scopeMissing: Bool, server: String, skills: [RaviJSON], stalePins: [RaviJSON], suggestedAction: RaviJSON, supported: Bool, total: Double, unlistedPins: [RaviJSON]) {
+    self.agentId = agentId
+    self.invalid = invalid
+    self.pagination = pagination
+    self.pinCheck = pinCheck
+    self.restoredPins = restoredPins
+    self.scopeMissing = scopeMissing
+    self.server = server
+    self.skills = skills
+    self.stalePins = stalePins
+    self.suggestedAction = suggestedAction
+    self.supported = supported
+    self.total = total
+    self.unlistedPins = unlistedPins
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agentId = "agentId"
+    case invalid = "invalid"
+    case pagination = "pagination"
+    case pinCheck = "pinCheck"
+    case restoredPins = "restoredPins"
+    case scopeMissing = "scopeMissing"
+    case server = "server"
+    case skills = "skills"
+    case stalePins = "stalePins"
+    case suggestedAction = "suggestedAction"
+    case supported = "supported"
+    case total = "total"
+    case unlistedPins = "unlistedPins"
+  }
+}
+
+public struct McpSkillsPinOptions: Codable, Sendable {
+  public var agent: String?
+  public var digest: String?
+  public var execute: Bool?
+  public var external: Bool?
+
+  public init(agent: String? = nil, digest: String? = nil, execute: Bool? = nil, external: Bool? = nil) {
+    self.agent = agent
+    self.digest = digest
+    self.execute = execute
+    self.external = external
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+    case digest = "digest"
+    case execute = "execute"
+    case external = "external"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.agent {
+      body["agent"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.digest {
+      body["digest"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.external {
+      body["external"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct McpSkillsPinReturn: Codable, Sendable {
+  public var agent: String
+  public var created: Bool
+  public var externalAllowed: Bool
+  public var id: String
+  public var manifestDigest: String
+  public var pinned: Bool
+  public var pluginRebuilt: Bool
+  public var skill: String
+  public var warnings: [String]
+
+  public init(agent: String, created: Bool, externalAllowed: Bool, id: String, manifestDigest: String, pinned: Bool, pluginRebuilt: Bool, skill: String, warnings: [String]) {
+    self.agent = agent
+    self.created = created
+    self.externalAllowed = externalAllowed
+    self.id = id
+    self.manifestDigest = manifestDigest
+    self.pinned = pinned
+    self.pluginRebuilt = pluginRebuilt
+    self.skill = skill
+    self.warnings = warnings
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+    case created = "created"
+    case externalAllowed = "externalAllowed"
+    case id = "id"
+    case manifestDigest = "manifestDigest"
+    case pinned = "pinned"
+    case pluginRebuilt = "pluginRebuilt"
+    case skill = "skill"
+    case warnings = "warnings"
+  }
+}
+
+public struct McpSkillsReadOptions: Codable, Sendable {
+  public var agent: String?
+  public var file: String?
+
+  public init(agent: String? = nil, file: String? = nil) {
+    self.agent = agent
+    self.file = file
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+    case file = "file"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.agent {
+      body["agent"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.file {
+      body["file"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct McpSkillsReadReturn: Codable, Sendable {
+  public var binary: Bool
+  public var cached: Bool
+  public var digest: String
+  public var file: String
+  public var id: String
+  public var mimeType: RaviJSON
+  public var server: String
+  public var size: Double
+  public var text: RaviJSON
+  public var truncated: Bool
+  public var uri: String
+
+  public init(binary: Bool, cached: Bool, digest: String, file: String, id: String, mimeType: RaviJSON, server: String, size: Double, text: RaviJSON, truncated: Bool, uri: String) {
+    self.binary = binary
+    self.cached = cached
+    self.digest = digest
+    self.file = file
+    self.id = id
+    self.mimeType = mimeType
+    self.server = server
+    self.size = size
+    self.text = text
+    self.truncated = truncated
+    self.uri = uri
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case binary = "binary"
+    case cached = "cached"
+    case digest = "digest"
+    case file = "file"
+    case id = "id"
+    case mimeType = "mimeType"
+    case server = "server"
+    case size = "size"
+    case text = "text"
+    case truncated = "truncated"
+    case uri = "uri"
+  }
+}
+
+public struct McpSkillsUnpinOptions: Codable, Sendable {
+  public var agent: String?
+
+  public init(agent: String? = nil) {
+    self.agent = agent
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.agent {
+      body["agent"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct McpSkillsUnpinReturn: Codable, Sendable {
+  public var agent: String
+  public var id: String
+  public var pluginRebuilt: Bool
+  public var removed: Bool
+
+  public init(agent: String, id: String, pluginRebuilt: Bool, removed: Bool) {
+    self.agent = agent
+    self.id = id
+    self.pluginRebuilt = pluginRebuilt
+    self.removed = removed
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+    case id = "id"
+    case pluginRebuilt = "pluginRebuilt"
+    case removed = "removed"
+  }
+}
+
+public struct McpToolsOptions: Codable, Sendable {
+  public var agent: String?
+  public var query: String?
+
+  public init(agent: String? = nil, query: String? = nil) {
+    self.agent = agent
+    self.query = query
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+    case query = "query"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.agent {
+      body["agent"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.query {
+      body["query"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct McpToolsReturn: Codable, Sendable {
+  public var agentId: String
+  public var note: RaviJSON
+  public var omitted: [RaviJSON]
+  public var query: RaviJSON
+  public var server: RaviJSON
+  public var tools: [RaviJSON]
+  public var total: Double
+  public var unavailable: [RaviJSON]
+
+  public init(agentId: String, note: RaviJSON, omitted: [RaviJSON], query: RaviJSON, server: RaviJSON, tools: [RaviJSON], total: Double, unavailable: [RaviJSON]) {
+    self.agentId = agentId
+    self.note = note
+    self.omitted = omitted
+    self.query = query
+    self.server = server
+    self.tools = tools
+    self.total = total
+    self.unavailable = unavailable
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agentId = "agentId"
+    case note = "note"
+    case omitted = "omitted"
+    case query = "query"
+    case server = "server"
+    case tools = "tools"
+    case total = "total"
+    case unavailable = "unavailable"
+  }
+}
+
 public struct MediaSendOptions: Codable, Sendable {
   public var account: String?
   public var caption: String?

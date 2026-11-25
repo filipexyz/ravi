@@ -19,6 +19,13 @@ import {
   ensureCodexHookGuard,
 } from "./codex-hook-guard.js";
 import {
+  type CodexMcpIsolationPlan,
+  codexMcpToolCallError,
+  isCodexMcpToolCallMessage,
+  resolveCodexMcpIsolation,
+  verifyCodexMcpServersDisabled,
+} from "./codex-mcp-isolation.js";
+import {
   CodexAppServerRequestError,
   isCodexCapacityError,
   normalizeCodexProviderError,
@@ -1302,6 +1309,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   let activeTurn: AppServerTurnState | null = null;
   let activeSpawnEnvSignature: string | null = null;
   let activeHookConfigSignature: string | null = null;
+  let activeMcpIsolationSignature: string | null = null;
   let intentionalChildRestart = false;
   let closePromise: Promise<void> | null = null;
   let resumedThreadResponse: Record<string, unknown> | null = null;
@@ -1425,9 +1433,10 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     child = null;
     activeSpawnEnvSignature = null;
     activeHookConfigSignature = null;
+    activeMcpIsolationSignature = null;
   };
 
-  const spawnChild = async (input: CodexCliTurnRequest): Promise<void> => {
+  const spawnChild = async (input: CodexCliTurnRequest, mcpIsolation: CodexMcpIsolationPlan): Promise<void> => {
     const hookResult = shouldMaterializeCodexHookForCommand(command)
       ? ensureCodexBashHookConfig(input.env?.CODEX_HOME, input.env?.RAVI_BRIDGE_TURN === "1")
       : null;
@@ -1447,7 +1456,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     let channelReady = false;
     const newTransport = createCodexTransport(transportKind, {
       command,
-      baseArgs: buildCodexAppServerBaseArgs(input.env?.RAVI_BRIDGE_TURN === "1"),
+      baseArgs: buildCodexAppServerBaseArgs(input.env?.RAVI_BRIDGE_TURN === "1", mcpIsolation.args),
       cwd: input.cwd,
       env: spawnEnv,
       onMessage: (line: string) => {
@@ -1487,6 +1496,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     child = newTransport.child;
     activeSpawnEnvSignature = buildCodexAppServerEnvSignature(input.env);
     activeHookConfigSignature = hookResult?.signature ?? null;
+    activeMcpIsolationSignature = mcpIsolation.signature;
     closed = false;
     nextRequestId = 1;
     pendingRequests = new Map();
@@ -2041,6 +2051,20 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
 
     const turn = activeTurn;
 
+    if (isCodexMcpToolCallMessage(method, params)) {
+      // Codex has no MCP server Ravi allowed, so this call reached no Ravi
+      // permission decision: stop the turn and the process running it.
+      const error = codexMcpToolCallError(params);
+      log.warn("codex MCP tool call outside Ravi; failing the turn", { method, servers: error.servers });
+      if (turn) {
+        settleTurn(turn, { exitCode: 1, stderr: getStderr().slice(turn.stderrOffset) }, { failQueue: error });
+      }
+      if (child && !closed) {
+        signalCodexTransportProcess(child, "SIGKILL");
+      }
+      return;
+    }
+
     switch (method) {
       case "thread/goal/updated":
       case "thread/goal/cleared": {
@@ -2176,8 +2200,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         break;
       }
       case "item/commandExecution/outputDelta":
-      case "item/commandExecution/terminalInteraction":
-      case "item/mcpToolCall/progress": {
+      case "item/commandExecution/terminalInteraction": {
         if (turn && notificationMatchesActiveTurn(turn, params)) {
           const toolUseId = firstString(params.itemId);
           if (toolUseId) {
@@ -2436,6 +2459,12 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         currentGoalStatus = undefined;
       }
     }
+    if (!currentThreadId) {
+      throw new Error("Codex app-server did not return a thread id");
+    }
+    // Every thread start, resume and fork proves that Codex loaded no MCP
+    // server of its own before a turn can run on it.
+    await verifyCodexMcpServersDisabled(sendRequest, currentThreadId);
     currentInstructionSources = stringArray(threadResponse.instructionSources);
     resolvedModel = firstString(threadResponse.model, input.model) ?? null;
     threadBaseModel ??= resolvedModel;
@@ -2450,16 +2479,31 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     const hookResult = shouldMaterializeCodexHookForCommand(command)
       ? ensureCodexBashHookConfig(input.env?.CODEX_HOME, input.env?.RAVI_BRIDGE_TURN === "1")
       : null;
+    // Reads Codex's configuration layers every turn; an unreadable file or a
+    // server key `-c` cannot address throws here and the turn fails closed.
+    const mcpIsolation = resolveCodexMcpIsolation({ cwd: input.cwd, env: input.env });
     const nextEnvSignature = buildCodexAppServerEnvSignature(input.env);
     const hookChanged =
       hookResult !== null && activeHookConfigSignature !== null && hookResult.signature !== activeHookConfigSignature;
-    if (!closed && child && !bootstrapPromise && (activeSpawnEnvSignature !== nextEnvSignature || hookChanged)) {
+    const mcpIsolationChanged =
+      activeMcpIsolationSignature !== null && activeMcpIsolationSignature !== mcpIsolation.signature;
+    if (
+      !closed &&
+      child &&
+      !bootstrapPromise &&
+      (activeSpawnEnvSignature !== nextEnvSignature || hookChanged || mcpIsolationChanged)
+    ) {
       log.info(
-        hookChanged ? "codex hooks changed; respawning app-server" : "codex env changed; respawning app-server",
+        hookChanged
+          ? "codex hooks changed; respawning app-server"
+          : mcpIsolationChanged
+            ? "codex MCP configuration changed; respawning app-server"
+            : "codex env changed; respawning app-server",
         {
           pid: child.pid,
           envKeys: listCodexAppServerEnvSignatureKeys(input.env),
           hookChanged,
+          mcpIsolationChanged,
         },
       );
       intentionalChildRestart = true;
@@ -2479,7 +2523,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     }
 
     if (!child || closed) {
-      await spawnChild(input);
+      await spawnChild(input, mcpIsolation);
     }
 
     bootstrapPromise = (async () => {
@@ -2809,8 +2853,11 @@ function buildCodexGateRefusalFailure(
   };
 }
 
-function buildCodexAppServerBaseArgs(humanBridge = false): string[] {
+function buildCodexAppServerBaseArgs(humanBridge = false, mcpIsolationArgs: readonly string[] = []): string[] {
   return [
+    // Codex's own MCP servers and apps are off: registered servers reach Codex
+    // only through `ravi mcp tools|call` (spec "MCP Isolation").
+    ...mcpIsolationArgs,
     "-c",
     // The bridge profile already runs on `features.hooks`; ordinary sessions send it
     // too and keep the legacy `features.codex_hooks` key. Neither is trusted on its

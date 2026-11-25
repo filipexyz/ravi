@@ -10,7 +10,7 @@ At the end of this page the `main` agent can do everything Ravi allows, your own
 
 Three things decide what a message can make the agent do:
 
-1. **The agent's ceiling.** A permission profile on the agent sets the most it can ever do. Every turn runs inside it. Two things run outside it: on Codex, tools from MCP servers in the operator's Codex configuration, and, on an agent with spec mode on, Ravi's own spec-mode tools ([Permissions](/guides/permissions#agent-ceilings)).
+1. **The agent's ceiling.** A permission profile on the agent sets the most it can ever do. Every turn runs inside it. One thing runs outside it: on an agent with spec mode on, Ravi's own spec-mode tools ([Permissions](/guides/permissions#agent-ceilings)). Runtimes no longer load MCP servers from their own configuration; the servers you register in Ravi and attach to the agent are checked on every call ([MCP servers](/guides/mcp)).
 2. **Who sent the message.** Ravi resolves the sender's chat identity to a contact.
    - In a chat that is not governed, a sender that resolves to any contact gets the agent's whole ceiling.
    - A sender with no contact gets no tools. The agent still replies in text.

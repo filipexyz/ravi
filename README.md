@@ -32,6 +32,7 @@ Documentation: **[docs.ravi.bot](https://docs.ravi.bot)**
 - **Durable sessions.** By default each DM, group and thread gets its own named session, cron jobs and triggers can run in sessions of their own, and sessions can send, ask, inform and answer each other. People can steer a busy agent from chat: `>>message` waits for the current turn to end, and `!!message` is recorded without starting a turn.
 - **Automation.** Cron jobs, event triggers on NATS topics, heartbeats driven by the agent's `HEARTBEAT.md`, and background jobs (`ravi jobs run`) whose result comes back to the session. When an agent creates or edits a pull request with `gh`, Ravi follows the PR and its CI and wakes the session when something changes.
 - **Permissions you can reason about.** Each agent has a runtime profile (`bootstrap`, `chat-only`, `explicit-only`, `full-access`) and optional explicit capabilities. In a governed chat, each person gets their own grants intersected with the agent's ceiling; in any other chat, every sender who resolves to a contact gets the whole ceiling, so entry policies and routes decide who gets in. Approvals can be resolved from Slack with buttons that only authorized people can click, and every denial is published on `ravi.audit.denied`.
+- **MCP servers under the same rules.** Register an MCP server once (`ravi mcp add`), attach it to the agents that need it, and every call passes the same per-turn permission check on every provider. Long calls finish in the background, servers can ask the right person to confirm a change, and files go up from the agent's workspace only when you turn uploads on. See [MCP servers](https://docs.ravi.bot/guides/mcp).
 - **Planned restarts resume work.** `ravi daemon restart -m "<reason>"` tells the calling session why it restarted and resumes the sessions that were active. A crash does not resume sessions.
 - **Pages and Bases.** Publish HTML to your project's `ravi.page` host with one command, and build members-only pages that read and write typed tables (Bases) in the Ravi Console.
 
@@ -144,7 +145,7 @@ Method names follow the CLI: `ravi instances routes add` is `ravi.instances.rout
 
 ## Learn more
 
-- [Architecture](https://docs.ravi.bot/architecture), [CLI reference](https://docs.ravi.bot/cli/overview), [Permissions](https://docs.ravi.bot/guides/permissions), [Troubleshooting](https://docs.ravi.bot/guides/troubleshooting).
+- [Architecture](https://docs.ravi.bot/architecture), [CLI reference](https://docs.ravi.bot/cli/overview), [Permissions](https://docs.ravi.bot/guides/permissions), [MCP servers](https://docs.ravi.bot/guides/mcp), [Troubleshooting](https://docs.ravi.bot/guides/troubleshooting).
 - Every command documents itself: `ravi --help` and `ravi <group> <command> --help`.
 - The built-in skills your agents read are available to you too: `ravi skills list` and `ravi skills show <name>`.
 

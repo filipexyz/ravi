@@ -4,7 +4,7 @@ description: Connect an MCP client such as a desktop assistant or an IDE to the 
 icon: server
 ---
 
-At the end of this page an MCP client is connected to your organization's Console. It can read your projects, pages, Bases, meetings and cloud agent runs, publish a page, build a Base and add or change rows, always as you and only after you agree to each change.
+At the end of this page an MCP client is connected to your organization's Console. It can read your projects, pages, Bases, mail, meetings and cloud agent runs, publish a page, build a Base and add or change rows, send an email, start a cloud run, always as you and only after you agree to each change.
 
 You need a Console login (see [Log in to the Console](/console/login)).
 
@@ -26,9 +26,15 @@ You need a Console login (see [Log in to the Console](/console/login)).
    ```json
    { "mcpServers": { "ravi-console": { "url": "https://mcp.ravi.so/<token>/console/mcp" } } }
    ```
-3. The client opens the Console to sign you in. By default it asks for read access (`mcp.console.tools.read`). The first time you ask for a change, the client asks you again for write access (`mcp.console.tools.write`).
+3. The client opens the Console to sign you in. By default it asks for read access (`mcp.console.tools.read`). The first time you ask for a change, the client asks you again for write access (`mcp.console.tools.write`). Reading the organization's Library skills needs a third scope, `mcp.console.skills.read`.
+
+The server speaks two protocol revisions. Clients on revision `2026-07-28` get form confirmation, background tasks, file uploads and skills (below). Older clients keep working with the preview-and-token confirmation and the upload link.
 
 `ravi bridges list` shows your bridges, and `ravi bridges revoke <id> --execute` turns one off together with every client token issued for it.
+
+### Allow changes
+
+Each bridge has an **Allow changes** switch in the Console. With it off, the bridge is read-only: every write tool answers the tool error `capability_class_not_allowed`, whatever scopes the client holds. Turn it on only for bridges whose clients should change things.
 
 ## Tools
 
@@ -37,34 +43,78 @@ The tools are the Console operations, named after the operation id with `_` inst
 | You can | Kind |
 |---|---|
 | list projects, Pages sites and published pages; read a page's text, its comments and the project's theme | read |
-| publish a page on a route of the project's host (private by default) | write |
-| mark a page's comments as read | write |
-| list Bases, read a Base's columns, its views, charts and a row's history | read |
+| publish a page on a route of the project's host (private to signed-in members unless you ask for another visibility) | write |
+| reply to a comment on a page; mark a page's comments as read for yourself | write |
+| list Bases, read a Base's columns, its views, its charts and a row's history; check whether a view's rows changed | read |
 | describe and query a Bases view, read a row, read chart data | read |
 | add a row, change a row, archive a row through a view that allows it | write |
 | create a Base; add or change a column; create or change a view or a chart (Bases managers) | write |
+| store the value of an agent column of a row (project write access) | write |
+| list the messages of a project mailbox and read one | read |
+| send a plain-text email from a project mailbox (owners, admins and developers with project write access) | write |
+| send an inbox notification to a member who can read the project | write |
 | search the project's Knowledge with sources, list its sources | read |
 | list meetings, read a meeting and its transcript | read |
 | list and read your own calendar events | read |
-| list cloud agents, their runs, a run's events and the schedules | read |
-| start a cloud agent run; send it a message, answer its approval, stop it | write |
+| list cloud agents and read one, their runs, a run's events and the schedules | read |
+| start a cloud agent run; send it a message, answer its approval or its question, stop it | write |
+| start a Cursor background agent on a GitHub repository, or a Devin session, with the organization's Cursor or Devin key | write |
+| post into the chat a cloud run was started from (a cloud run's own bridge only) | write |
 | search and read the Library; propose a new item or version | read / write |
 | list and read your bug reports; open a bug, comment on it, send feedback | read / write |
 
-Reads run at once. There is a limit of 120 calls per minute for each person. Text other people wrote (transcripts, comments, run events, Library items) comes marked as untrusted, so the client should not follow instructions inside it.
+Every write needs the write scope (`mcp.console.tools.write`) and a bridge with **Allow changes** on.
 
-A cloud agent run reaches only the tools that stay inside its own project. It cannot read your calendar, open bugs, use the Library, or message, approve or stop runs. You see only the runs that act for you, unless you are an organization owner or admin.
+Reads run at once. Each bridge takes at most 120 calls per minute, and each client at most 600 per hour; reading a task's progress counts against its own limit of 60 per minute. Over a limit, the server answers HTTP 429. On revision `2026-07-28` the answer carries a `Retry-After` header, and the client should wait that long before it asks again; an older client's 429 has none. Text other people wrote (transcripts, comments, run events, Library items) comes marked as untrusted, so the client should not follow instructions inside it.
+
+A cloud agent run reaches only the tools that stay inside its own project. It cannot read your calendar, open bugs, send feedback, use the Library, mark comments as read, or message, approve, answer or stop runs. You see only the runs that act for you, unless you are an organization owner or admin.
 
 ## Changes take two steps
 
-A write tool never changes anything on its first call:
+A write tool never changes anything on its first call. How you are asked depends on the client.
 
-1. The client calls the tool. The answer is a preview of the change and a `confirmationToken`, and nothing has changed yet.
+**A client that can show forms** (revision `2026-07-28` with form elicitation) gets a form: the server asks "Apply this change" with the change listed, and the client shows it to you. Accept runs the change once; decline or cancel changes nothing ("Nothing changed: the person did not confirm.").
+
+**Any other client** gets a preview and a token:
+
+1. The client calls the tool. The answer is a preview of the change and a `confirmationToken` (it starts with `rmc2.`), and nothing has changed yet.
 2. The client shows you the preview and asks whether to go ahead.
-3. Only after you agree, it calls the same tool again with the same arguments plus the `confirmationToken`. The token is valid for 5 minutes and only for those arguments.
+3. Only after you agree, it calls the same tool again with the same arguments plus the `confirmationToken`. The token is valid for 5 minutes, only for those arguments, and only once: a second use answers `confirmation_used`. Older `rmc1` tokens are refused.
 
-A client should never confirm for you. If it does, revoke its bridge.
+A client should never confirm for you. If it does, revoke its bridge. A bridge that serves a cloud agent run is never asked: its writes wait for an approval in the Console.
+
+## Background tasks
+
+On revision `2026-07-28`, a client that declares the tasks extension gets a task instead of waiting for two long operations: starting a cloud agent run, and publishing a page from uploaded files. The task answers at once with an id; the client reads it with `tasks/get` until it completes. Cancelling a cloud run's task stops following it here only: the run keeps going (stop it with the run's stop tool). Cancelling a publish that already started does not undo it: read the task once more after the cancel to see what happened.
+
+## File uploads
+
+On revision `2026-07-28`, a client that declares file uploads sees a `files` argument on the page publish tool. After you confirm, the server answers with one upload address per file. The client sends each file there, then repeats the call once to finish. The finishing call must arrive within 60 minutes of your confirmation (the upload addresses live 75), and it works once. Every other client keeps the upload link it gets today, since it is its only way to send files.
+
+## Skills
+
+A client with `mcp.console.skills.read` can list and read the organization's Library skills. Without that scope the list is empty and reading a skill answers HTTP 403 `insufficient_scope`: sign in again and grant it. When the organization's **Skills** setting is off, the list is empty, and reading a skill answers "Skill not found", exactly as for a skill that was unpublished. A skill whose `SKILL.md` name is not its slug is never listed. A cloud agent run's bridge never sees skills.
+
+Ravi, as a client, handles this for you. `ravi mcp skills list ravi-console` says when your login lacks the skills scope (`scopeMissing`). An empty list changes none of your pins. A pin of a skill that was unpublished, or that a read could not find while the setting was off, stops loading; it comes back by itself once the Console lists the skill again with the manifest you approved, so turning the setting off and on again needs no new pin. A skill that changed needs a new pin.
+
+## Ravi as a client of mcp.ravi.so
+
+Ravi itself can use this server. Register the bridge URL (it carries a token: put it in a file, here `console-url.txt`, and give it on stdin so it stays out of your shell history), sign in, and attach it to an agent:
+
+```bash
+ravi mcp add ravi-console --url-stdin --auth oauth --execute < console-url.txt
+ravi mcp login ravi-console --execute
+ravi mcp attach ravi-console main --execute
+```
+
+Pin the modern revision so Ravi never falls back to the older one:
+
+```bash
+ravi mcp set ravi-console --protocol 2026-07-28 --execute
+```
+
+Ravi then confirms writes with one question sent to you in your private chat (Sim sends it, Não changes nothing; answer within 4 minutes), follows tasks in the background, uploads files (at most 25 MB each) from the agent's workspace or the system temp directory when you turn uploads on for that agent, and can pin the organization's skills. The login is yours: every agent attached to the server acts as you, and by default only in your own turns. On an agent with the default profile, attaching gives it every tool above at once (each write still asks you); to choose tools, see [Grant the tools](/guides/mcp#grant-the-tools). The sign-in address holds your bridge URL: Ravi shows it only on a terminal, and you should not paste it into a chat or a ticket. A write refused for `mcp.console.tools.write` is refused for that call only; log in again and allow it (`ravi mcp login ravi-console --execute`), or turn **Allow changes** on for the bridge. When the Console answers HTTP 429, Ravi sends it nothing more until `Retry-After` has passed (60 seconds when the answer names none), and a refused call is never sent again. `ravi mcp calls cancel` on a cloud run stops following it, not the run; on a publish it almost never arrives before the publish is committed. `ravi mcp logout ravi-console` revokes the login at the Console, and a new login revokes the one it replaces. See [MCP servers](/guides/mcp).
 
 ## What is not available
 
-Changing a page's visibility or password, inviting people, sharing pages and deleting or archiving anything other than a Bases row are not tools here. Neither are mail, sending the recording bot to a meeting, Bases agent columns, deploying cloud agents, publishing in the Library or changing the active theme. A column type change that rewrites every row only returns its report here. Use the Console or the `ravi` commands for those, where they keep their own confirmation.
+Changing a page's visibility or password, inviting people, sharing pages and deleting or archiving anything other than a Bases row are not tools here. Neither are sending the recording bot to a meeting, deploying cloud agents, publishing in the Library or changing the active theme. A column type change that rewrites every row only returns its report here. Use the Console or the `ravi` commands for those, where they keep their own confirmation.
