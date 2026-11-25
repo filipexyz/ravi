@@ -25,7 +25,10 @@ concurrency:
 jobs:
   release:
     name: Version And Publish SDK
-    runs-on: ubuntu-latest
+    # Pinned to the image the test shards run on (ci.yml). `ubuntu-latest` moved to 26.04, where coreutils is the Rust
+    # uutils build under /usr/lib/cargo/bin/coreutils, outside the Bash guard's trusted roots, so the pre-push suite
+    # of the version bump failed there on 2026-11-25 (run 45684222557).
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       id-token: write
