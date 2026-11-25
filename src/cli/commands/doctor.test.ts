@@ -907,13 +907,14 @@ describe("inspectDoctor", () => {
 
 function omniDbReport(overrides: Partial<OmniDbAuthReport> = {}): OmniDbAuthReport {
   return {
-    status: "password_required",
+    status: "requires_credentials",
     databaseUrl: "postgresql://omni:***@127.0.0.1:5432/omni",
     host: "127.0.0.1",
     port: 5432,
     user: "omni",
     database: "omni",
     passwordlessAddresses: [],
+    addresses: [{ address: "127.0.0.1", state: "password_required" }],
     message: 'Omni\'s database asks user "omni" for a password',
     remediation: [],
     ...overrides,
@@ -925,6 +926,10 @@ const PASSWORDLESS_OMNI_DB: OmniDbAuthReport = omniDbReport({
   databaseUrl: "postgresql://root@localhost:5432/omni",
   user: "root",
   passwordlessAddresses: ["127.0.0.1", "::1"],
+  addresses: [
+    { address: "127.0.0.1", state: "accepts_without_password" },
+    { address: "::1", state: "accepts_without_password" },
+  ],
   message: 'Omni\'s database lets user "root" log in to "omni" without a password on 127.0.0.1, ::1',
   remediation: ["replace the `trust` lines for Omni's database in pg_hba.conf with `scram-sha-256`"],
 });
@@ -946,6 +951,8 @@ describe("doctor Omni database authentication check", () => {
     expect(report.summary.warnings).toBe(1);
     const finding = report.findings.find((item) => item.id === "runtime.omni_db_auth");
     expect(finding?.fixHint).toContain("scram-sha-256");
+    const labels = finding?.evidence.map((evidence) => evidence.label) ?? [];
+    expect(labels).toContain("address ::1: accepts_without_password (plaintext probe, no TLS)");
     expect(finding?.data).toMatchObject({ status: "no_password_login", passwordlessAddresses: ["127.0.0.1", "::1"] });
   });
 
@@ -953,7 +960,7 @@ describe("doctor Omni database authentication check", () => {
     expect(inspectDoctor(makeHealthyDeps()).checks.find((item) => item.id === "runtime.omni_db_auth")?.status).toBe(
       "skip",
     );
-    for (const status of ["not_configured", "remote", "unknown", "rejected"] as const) {
+    for (const status of ["not_configured", "remote", "unknown"] as const) {
       const report = inspectDoctor(makeHealthyDeps(), { omniDbAuth: omniDbReport({ status }) });
       expect(report.checks.find((item) => item.id === "runtime.omni_db_auth")?.status).toBe("skip");
       expect(report.summary.warnings).toBe(0);

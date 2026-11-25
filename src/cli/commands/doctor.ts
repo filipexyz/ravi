@@ -1365,10 +1365,12 @@ function buildOmniDbAuthCheck(report: OmniDbAuthReport | null): LegacyDoctorChec
     user: report.user,
     database: report.database,
     passwordlessAddresses: report.passwordlessAddresses,
+    addresses: report.addresses,
   };
   const details = [
     `status: ${report.status}`,
     ...(report.databaseUrl ? [`database url: ${report.databaseUrl}`] : []),
+    ...report.addresses.map((item) => `address ${item.address}: ${item.state} (plaintext probe, no TLS)`),
     ...report.remediation.map((step) => `remediation: ${step}`),
   ];
   if (isRiskyOmniDbAuth(report.status)) {
@@ -1382,7 +1384,7 @@ function buildOmniDbAuthCheck(report: OmniDbAuthReport | null): LegacyDoctorChec
       data,
     };
   }
-  if (report.status === "password_required") {
+  if (report.status === "requires_credentials") {
     return { ...base, status: "ok", summary: report.message, details, data };
   }
   return { ...base, status: "skip", summary: report.message, details, data };

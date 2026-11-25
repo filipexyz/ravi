@@ -30,12 +30,10 @@ const MAX_AUTH_LENGTH = 1024;
 const MAX_ERROR_LENGTH = 64 * 1024;
 
 export type OmniDbAuthStatus =
-  /** The server asked for a password (or another credential). */
-  | "password_required"
-  /** The server let Omni's user in with no credential: a `trust` rule. */
+  /** At least one answering address let Omni's user in with no credential: a `trust` rule. */
   | "no_password_login"
-  /** The server refused the plaintext startup before authentication; how the configured path authenticates is unproven. */
-  | "rejected"
+  /** Every answering address asked for a credential or refused before authentication; none let the user in. */
+  | "requires_credentials"
   /** Omni has no database URL in its config. */
   | "not_configured"
   /** The database is on another host; it is not probed. */
@@ -71,6 +69,24 @@ export interface OmniDbAuthDeps {
   defaultUser?: () => string;
 }
 
+/** How one probed loopback address answered the plaintext (no TLS) StartupMessage. */
+export type OmniDbAddressState =
+  /** AuthenticationOk with no credential. */
+  | "accepts_without_password"
+  /** It asked for a password or another credential. */
+  | "password_required"
+  /** An ErrorResponse before authentication: no pg_hba entry, unknown role, TLS required. */
+  | "rejected"
+  /** The connection was actively refused: nothing listens there. */
+  | "no_listener"
+  /** Timeout, network failure or a non-PostgreSQL answer. */
+  | "no_answer";
+
+export interface OmniDbAddressResult {
+  address: string;
+  state: OmniDbAddressState;
+}
+
 export interface OmniDbAuthReport {
   status: OmniDbAuthStatus;
   /** The database URL with any password removed. */
@@ -81,6 +97,8 @@ export interface OmniDbAuthReport {
   database: string | null;
   /** Loopback addresses that let the user in without a password. */
   passwordlessAddresses: string[];
+  /** The state of every probed address (plaintext probe, no TLS); empty when nothing was probed. */
+  addresses: OmniDbAddressResult[];
   message: string;
   remediation: string[];
 }
@@ -143,6 +161,7 @@ export async function probeOmniDatabaseAuth(
     user: null,
     database: null,
     passwordlessAddresses: [],
+    addresses: [] as OmniDbAddressResult[],
     remediation: [],
   };
   if (!databaseUrl) {
@@ -208,35 +227,50 @@ export async function probeOmniDatabaseAuth(
     }),
   );
 
-  const passwordless = replies.filter((r) => r.reply.kind === "auth_ok").map((r) => r.address);
+  const results: OmniDbAddressResult[] = replies.map((r) => ({ address: r.address, state: addressState(r.reply) }));
+  const probed = { ...located, addresses: results };
+  const listed = results.map((r) => `${r.address} ${r.state}`).join(", ");
+
+  const passwordless = results.filter((r) => r.state === "accepts_without_password").map((r) => r.address);
   if (passwordless.length > 0) {
     return {
-      ...located,
+      ...probed,
       status: "no_password_login",
       passwordlessAddresses: passwordless,
-      message: `Omni's database lets user "${user}" log in to "${database}" without a password on ${passwordless.join(", ")}: any process on this host can read and change every WhatsApp message`,
+      message: `Omni's database lets user "${user}" log in to "${database}" without a password over a plaintext connection on ${passwordless.join(", ")}: any process on this host can read and change every WhatsApp message`,
       remediation: REMEDIATION,
     };
   }
-  const inconclusive = replies.filter((r) => r.reply.kind === "unreachable" || r.reply.kind === "not_postgres");
-  if (inconclusive.length > 0) {
+  if (results.some((r) => r.state === "no_answer")) {
     return {
-      ...located,
+      ...probed,
       status: "unknown",
-      message: `Omni's database gave no PostgreSQL answer on ${inconclusive.map((r) => r.address).join(", ")}:${port}`,
+      message: `Omni's database gave no PostgreSQL answer on every address (${listed}); not decided`,
     };
   }
-  if (replies.some((r) => r.reply.kind === "auth_required")) {
-    return { ...located, status: "password_required", message: `Omni's database asks user "${user}" for a password` };
-  }
-  if (replies.some((r) => r.reply.kind === "error")) {
+  if (results.some((r) => r.state === "password_required" || r.state === "rejected")) {
     return {
-      ...located,
-      status: "rejected",
-      message: `Omni's database refused the plaintext startup for user "${user}"; how Omni's own connection authenticates is not proven`,
+      ...probed,
+      status: "requires_credentials",
+      message: `No address lets user "${user}" into Omni's database without a password over a plaintext connection (${listed}); TLS was not probed`,
     };
   }
-  return { ...located, status: "unknown", message: `Nothing listens on ${addresses.join(", ")}:${port}` };
+  return { ...probed, status: "unknown", message: `Nothing listens on ${addresses.join(", ")}:${port}` };
+}
+
+function addressState(reply: PgStartupReply): OmniDbAddressState {
+  switch (reply.kind) {
+    case "auth_ok":
+      return "accepts_without_password";
+    case "auth_required":
+      return "password_required";
+    case "error":
+      return "rejected";
+    case "refused":
+      return "no_listener";
+    default:
+      return "no_answer";
+  }
 }
 
 /** Bytes of a PostgreSQL v3 StartupMessage for this user and database. */

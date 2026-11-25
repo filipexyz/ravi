@@ -140,16 +140,17 @@ describe("probeOmniDatabaseAuth against a fake server", () => {
   it("passes when the server asks for SCRAM and never sends it anything else", async () => {
     const server = await fakePostgres(authReply(10));
     const report = await probeOmniDatabaseAuth(`postgresql://omni:pw@127.0.0.1:${server.port}/omni`);
-    expect(report.status).toBe("password_required");
+    expect(report.status).toBe("requires_credentials");
     expect(report.databaseUrl).not.toContain("pw@");
     await sleep(30);
     expect(server.afterReply).toEqual([]);
   });
 
-  it("reports a refusal before authentication as rejected", async () => {
+  it("records a refusal before authentication as a rejected address, not a login", async () => {
     const server = await fakePostgres(errorReply());
     const report = await probeOmniDatabaseAuth(`postgresql://root@127.0.0.1:${server.port}/omni`);
-    expect(report.status).toBe("rejected");
+    expect(report.status).toBe("requires_credentials");
+    expect(report.addresses).toEqual([{ address: "127.0.0.1", state: "rejected" }]);
   });
 
   it("reports an HTTP answer on the port as unknown, not as safe", async () => {
@@ -194,7 +195,31 @@ describe("probeOmniDatabaseAuth decisions", () => {
     const report = await probeOmniDatabaseAuth("postgresql://root@localhost/omni", {
       probe: replying({ "127.0.0.1": { kind: "auth_required", method: 10 }, "::1": { kind: "refused" } }),
     });
-    expect(report.status).toBe("password_required");
+    expect(report.status).toBe("requires_credentials");
+  });
+
+  it("passes a mixed localhost: one address asks for a password, the other refuses before authentication", async () => {
+    const report = await probeOmniDatabaseAuth("postgresql://root@localhost/omni", {
+      probe: replying({ "127.0.0.1": { kind: "auth_required", method: 10 }, "::1": { kind: "error" } }),
+    });
+    expect(report.status).toBe("requires_credentials");
+    expect(report.addresses).toEqual([
+      { address: "127.0.0.1", state: "password_required" },
+      { address: "::1", state: "rejected" },
+    ]);
+    expect(report.message).toContain("plaintext");
+  });
+
+  it("fails when one address asks for a password and the other lets the user in", async () => {
+    const report = await probeOmniDatabaseAuth("postgresql://root@localhost/omni", {
+      probe: replying({ "127.0.0.1": { kind: "auth_required", method: 10 }, "::1": { kind: "auth_ok" } }),
+    });
+    expect(report.status).toBe("no_password_login");
+    expect(report.passwordlessAddresses).toEqual(["::1"]);
+    expect(report.addresses).toEqual([
+      { address: "127.0.0.1", state: "password_required" },
+      { address: "::1", state: "accepts_without_password" },
+    ]);
   });
 
   it("does not probe a TLS-only URL in plaintext", async () => {
@@ -247,7 +272,7 @@ describe("probeOmniDatabaseAuth decisions", () => {
       },
     });
     expect(seen).toEqual(["ravi", "ravi"]);
-    expect(report.status).toBe("password_required");
+    expect(report.status).toBe("requires_credentials");
   });
 
   it("treats a throwing probe as unreachable", async () => {
