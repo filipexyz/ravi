@@ -97,6 +97,7 @@ export function redactDatabaseUrl(raw: string): string {
     if (url.password) url.password = "***";
     return url.toString();
   } catch {
+    // no-cause: an unparseable URL is printed as a fixed placeholder, never echoed, because it may hold a password.
     return "<unparseable database url>";
   }
 }
@@ -135,6 +136,7 @@ export async function probeOmniDatabaseAuth(
   try {
     url = new URL(databaseUrl);
   } catch {
+    // no-cause: an unparseable URL is a report status (unknown), and its text may hold a password.
     return { ...empty, status: "unknown", message: "Omni's database URL could not be parsed" };
   }
   if (url.protocol !== "postgres:" && url.protocol !== "postgresql:") {
@@ -163,6 +165,7 @@ export async function probeOmniDatabaseAuth(
       try {
         return { address, reply: await probe(address, port, user, database, timeoutMs) };
       } catch {
+        // no-cause: the probe never throws by contract; a throw is treated as an unreachable address, so the verdict stays unknown, never safe.
         return { address, reply: { kind: "unreachable" } as PgStartupReply };
       }
     }),
