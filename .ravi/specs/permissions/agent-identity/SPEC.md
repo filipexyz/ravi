@@ -116,7 +116,8 @@ Ungoverned chats keep `agent_identity ∩ turn_caps`, with one exception:
 - A contact whose own power holds full access, in a governed chat (the
   operator with an admin tag), is not an overlay turn: the overlay is lifted
   (`permissions/user-overlay`, "Lifted Overlay"), so its automation is not
-  held, a cron job it writes is unbound like one from an ungoverned chat, and
+  held, a cron job it writes is bound to the chat so each run re-evaluates
+  the owner's full access, a relay built from it re-validates the lift, and
   the threads it opens are stamped by the rule below. The lift reads the
   contact's global permission tags, never a chat grant: full access granted
   in a chat keeps the turn an overlay turn and its automation refused, and a

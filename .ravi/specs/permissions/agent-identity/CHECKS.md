@@ -47,14 +47,15 @@
   a thread opened from a person with no grant MUST stay held
   (`runtime-request-context.test.ts`).
 - In a chat governed by contact grants, the operator (admin tag, full access over the
-  agent) MUST pass the automation guards, write an unbound cron job, and open
+  agent) MUST pass the automation guards, write a cron job bound to the chat, and open
   stamped threads whose return is stamped; a contact whose power there comes
   from a chat grant (full access included), a partial grant, no grant, a
   partial global tag, or an admin narrowed by a `deny_*` (a grant in that
   chat or one of their own tags, also when the agent holds a `deny_*` of its
   own) MUST stay held, and so must its threads (`runtime-request-context.test.ts`,
   "a contact speaking in a chat governed by contact grants";
-  `cron-commands.test.ts`, "lifted overlay unbound").
+  `cron-commands.test.ts`, "binds a job from an overlay turn or a lifted
+  overlay to its chat").
 - The automation refusal MUST name its cause, in the command and the store
   guard: a held relay (also one narrowed to a governed chat's grants, and a
   stamped relay that still carries withheld break-glass) says it is a relay and

@@ -64,7 +64,7 @@ import {
   resolveCronOwnerPrincipalForCurrentTurn,
 } from "../../link/connector-turn.js";
 import { assertShellAutomationAuthorized } from "../../permissions/shell-automation.js";
-import { assertNoUserOverlayAutomationWrite } from "../../permissions/user-overlay-automation.js";
+import { assertNoUserOverlayAutomationWrite, automationHoldCause } from "../../permissions/user-overlay-automation.js";
 
 /** Why a shell timeout value is invalid, or null when it parses (same rules as parseCronShellTimeout). */
 function cronShellTimeoutError(value: string): string | null {
@@ -474,7 +474,7 @@ function cronOwnerUpdateForSet(
 ): Pick<CronJob, "ownerPrincipal" | "creatorChat"> | Record<string, never> {
   if (CRON_OWNER_KEEP_KEYS.has(key)) return {};
   const setterOwner = resolveCronOwnerPrincipalForCurrentTurn();
-  const overlayChat = currentUserOverlayChat();
+  const overlayChat = currentUserOverlayChat({ includeLifted: true });
   if (setterOwner === cronJobRunsAs(job)) {
     return overlayChat && overlayChat !== job.creatorChat ? { creatorChat: overlayChat } : {};
   }
@@ -489,10 +489,20 @@ function cronOwnerUpdateForSet(
  * The chat whose contact grants narrow the current turn, when they do. A job
  * written from such a turn keeps running under those grants, never under the
  * executor agent's full ceiling.
+ *
+ * With `includeLifted`, also the chat of a lifted overlay (the contact's own
+ * full access lifted it, `permissions/user-overlay`). A job bound there
+ * re-evaluates its owner on every run: it runs as the agent while that full
+ * access holds, and under the owner's chat grants once it is withdrawn (review
+ * of #990, N3). Only where a job is bound: the held-relay guard reads the
+ * overlay mode alone.
  */
-function currentUserOverlayChat(): string | undefined {
+function currentUserOverlayChat(options: { includeLifted?: boolean } = {}): string | undefined {
   const metadata = getContext()?.context?.metadata;
-  if (metadata?.actorAuthorizationMode !== "user-overlay") return undefined;
+  const bindable =
+    metadata?.actorAuthorizationMode === "user-overlay" ||
+    (options.includeLifted === true && metadata?.userOverlay === "lifted");
+  if (!bindable) return undefined;
   const chat = typeof metadata.userOverlayChat === "string" ? metadata.userOverlayChat.replace(/^chat:/, "") : "";
   return chat || undefined;
 }
@@ -509,6 +519,18 @@ function assertCronCreatorBindable(op: string): void {
   if ((isRelayHeldBelowAgent(metadata) && !currentUserOverlayChat()) || withheldBreakGlass) {
     assertNoUserOverlayAutomationWrite(op);
   }
+}
+
+/**
+ * A turn held below the agent (a contact's chat grants, a held relay) may enable, reschedule, run now or delete
+ * only a job it owns: a bound job of another owner can run as the agent (a lifted owner), so the chat binding
+ * does not bound it. `cron run` fires the job now even when it is disabled; deleting it cannot be undone by its
+ * owner. Disabling stays open to any turn: it only reduces, and the owner can enable it again.
+ */
+function assertHeldTurnOwnsJob(op: string, job: CronJob): void {
+  if (automationHoldCause() === null) return;
+  if (resolveCronOwnerPrincipalForCurrentTurn() === cronJobRunsAs(job)) return;
+  assertNoUserOverlayAutomationWrite(op);
 }
 
 function serializeCronJob(job: CronJob) {
@@ -935,7 +957,7 @@ export class CronCommands {
       shellEnvFile: isShellJob ? envFile : undefined,
       onError: normalizedOnError,
       ownerPrincipal,
-      creatorChat: currentUserOverlayChat(),
+      creatorChat: currentUserOverlayChat({ includeLifted: true }),
     };
 
     try {
@@ -1008,6 +1030,7 @@ export class CronCommands {
     const job = dbGetCronJob(id);
     if (!job) failCronJobNotFound("cron enable", id, asJson);
     assertCronJobMutable("cron enable", id, job, asJson);
+    assertHeldTurnOwnsJob("cron enable", job);
 
     try {
       // Recalculate nextRunAt in case job was disabled for a while
@@ -1095,6 +1118,7 @@ export class CronCommands {
     }
     if (key === "shell" || key === "exec" || key === "env-file") assertShellAutomationAuthorized("cron set");
     if (!CRON_OWNER_KEEP_KEYS.has(key)) assertCronCreatorBindable("cron set");
+    else assertHeldTurnOwnsJob("cron set", job);
     if (key === "reply-session" && value !== "null" && value !== "-") {
       assertCronTargetAuthorized("cron set", { agentId: cronJobOwnerId(job), replySession: value }, asJson);
     }
@@ -1390,6 +1414,7 @@ export class CronCommands {
     const job = dbGetCronJob(id);
     if (!job) failCronJobNotFound("cron run", id, asJson);
     assertCronJobMutable("cron run", id, job, asJson);
+    assertHeldTurnOwnsJob("cron run", job);
 
     if (execute !== true) {
       // Write brake (Manual v2 7.8): `cron run` fires the REAL job right now,
@@ -1458,6 +1483,8 @@ export class CronCommands {
     const job = dbGetCronJob(id);
     if (!job) failCronJobNotFound("cron rm", id, asJson);
     assertCronJobMutable("cron rm", id, job, asJson);
+    // Deleting another owner's job cannot be undone by that owner, unlike disabling it.
+    assertHeldTurnOwnsJob("cron rm", job);
 
     if (execute !== true) {
       // Write brake (Manual v2 7.8): deleting a job is destructive (schedule

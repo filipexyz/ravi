@@ -13,13 +13,15 @@ import { authorizeContextCapabilities } from "../permissions/context-capabilitie
 import { canWithCapabilityContext } from "../permissions/capability-context.js";
 import { recordBridgeRuntimeEvent } from "../bridge/native.js";
 import { bridgeContextCapabilities, bridgeContextLive } from "../bridge/authority.js";
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import { nats } from "../nats.js";
 import { blockContact, createContact, removeContactTag } from "../contacts.js";
 import { accessActorFromTurn } from "../access/actor.js";
 import { resolveConnectorExecRoute, resolveConnectorTurn, resolveOperatorTurn } from "../link/connector-turn.js";
 import { upsertPermissionProfileDefinition } from "../permissions/apply-grant.js";
 import { dbDeleteContactChatGrant, dbEnsureContactChatGrant } from "../permissions/contact-chat-grants.js";
-import { dbCreateCronJob, dbUpdateCronJob } from "../cron/cron-db.js";
+import { dbCreateCronJob, dbListCronJobs, dbUpdateCronJob } from "../cron/cron-db.js";
+import { CronCommands } from "../cli/commands/cron.js";
 import { canWithCapabilities } from "../permissions/provider-runtime.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
@@ -3486,6 +3488,67 @@ describe("verified human work handoffs", () => {
       expect(automationHoldCause(thread)).toBe("held-relay");
     });
 
+    it("a relay from a lifted turn lends nothing once the lift is withdrawn, whatever the action", () => {
+      // Review of #990 (N2, probe V7): an inform, answer or return from a lifted admin carried the
+      // destination agent's whole authority with no hold, also when built after the admin tag was
+      // withdrawn. A relay now re-validates the caller's lift as the grants and tags stand.
+      dbUpdateAgent(workerAgent.id, { defaults: { runtimePermissions: { profile: "full-access" } } });
+      dbCreateTagDefinition({
+        slug: "permission-no-shell",
+        label: "No shell",
+        kind: "system",
+        source: "permissions",
+        metadata: { permissions: { capabilities: ["deny_execute:executable:*"] } },
+      });
+      const untagged = person("Admin later untagged", { tags: ["permission-owner"], status: "allowed" });
+      const narrowed = person("Admin later denied a shell here", { tags: ["permission-owner"], status: "allowed" });
+      const kept = person("Admin who keeps full access", { tags: ["permission-owner"], status: "allowed" });
+      const untaggedTurn = speak(untagged, "n2-untagged");
+      const narrowedTurn = speak(narrowed, "n2-narrowed");
+      const keptTurn = speak(kept, "n2-kept");
+      for (const turn of [untaggedTurn, narrowedTurn, keptTurn]) expect(turn.metadata?.userOverlay).toBe("lifted");
+
+      // Withdrawn without the revoking command (an untag), and narrowed by a deny granted in the chat later.
+      removeContactTag(untagged.phone, "permission-owner");
+      grantHere(narrowed.id, "permission-no-shell");
+      const withdrawn = [
+        ["untagged", untaggedTurn],
+        ["narrowed", narrowedTurn],
+      ] as const;
+      for (const [label, turn] of withdrawn) {
+        for (const action of ["inform", "answer", "session.return", "session.bootstrap", "execute"] as const) {
+          const child = handoff(turn, action, {}, workerAgent);
+          expect(`${label}/${action}:${child.capabilities.length}`).toBe(`${label}/${action}:0`);
+          expect(automationHoldCause(child)).toBe("held-relay");
+        }
+      }
+
+      // Still holding full access: an inform carries the destination's authority, unheld, as before.
+      const informed = handoff(keptTurn, "inform", {}, workerAgent);
+      expect(canWithCapabilities(informed.capabilities, "admin", "system", "*")).toBe(true);
+      expect(automationHoldCause(informed)).toBeNull();
+    });
+
+    it("a lifted caller whose context lacks the owner or chat of its overlay lends nothing", () => {
+      dbUpdateAgent(workerAgent.id, { defaults: { runtimePermissions: { profile: "full-access" } } });
+      const admin = person("Admin", { tags: ["permission-owner"], status: "allowed" });
+      const turn = speak(admin, "n2-malformed");
+      expect(turn.metadata?.userOverlay).toBe("lifted");
+      for (const missing of ["userOverlayContact", "userOverlayChat"] as const) {
+        const { [missing]: _dropped, ...rest } = turn.metadata ?? {};
+        const forged = createRuntimeContext({
+          kind: "turn-runtime",
+          agentId: turn.agentId,
+          sessionKey: turn.sessionKey,
+          sessionName: turn.sessionName,
+          capabilities: turn.capabilities,
+          metadata: rest,
+        });
+        const child = handoff(forged, "inform", {}, workerAgent);
+        expect(`${missing}:${child.capabilities.length}`).toBe(`${missing}:0`);
+      }
+    });
+
     it("the lift rests on the contact's own power: withdrawing it revokes the live turn and narrows the next", () => {
       const operator = person("Operator", { tags: ["permission-owner"], status: "allowed" });
       const turn = speak(operator, "operator-withdrawn");
@@ -3498,6 +3561,180 @@ describe("verified human work handoffs", () => {
       expect(next.metadata).toMatchObject({ actorAuthorizationMode: "user-overlay", userOverlay: "active" });
       expect(next.capabilities).toEqual([]);
       expect(automationHoldCause(next)).toBe("contact-chat-grants");
+    });
+
+    describe("cron jobs a turn held below the agent may touch", () => {
+      // Review of #991 (B1, probes C6 to C8): binding a lifted turn's job to the chat made the store read it as
+      // limited to the chat's grants, so a narrowed member's turn or held relay could enable or reschedule the
+      // admin's job, which runs as the whole agent. A held turn may enable or reschedule only a job it owns.
+      // `cron add|set|enable` publish `ravi.cron.refresh`: a test never reaches a NATS server (CI has none, and
+      // on the daemon's machine the default URL is the live one).
+      let emitSpy: { mock: { calls: unknown[][] }; mockRestore: () => void } | undefined;
+      beforeEach(() => {
+        emitSpy = spyOn(nats, "emit").mockResolvedValue(undefined);
+      });
+      afterEach(() => {
+        emitSpy?.mockRestore();
+        emitSpy = undefined;
+      });
+      // `cron run --execute` fires the job through `ravi.cron.trigger`.
+      const triggered = (id: string) =>
+        (emitSpy?.mock.calls ?? []).some(
+          ([subject, data]) => subject === "ravi.cron.trigger" && (data as { jobId?: string })?.jobId === id,
+        );
+      const toolCtx = (turn: Turn) => ({
+        ...asTool(turn),
+        transport: "tool" as const,
+        sessionKey: turn.sessionKey,
+        sessionName: turn.sessionName,
+      });
+      // "ok", or the code with the automation hold that refused it (the REBAC refusal shares the code).
+      async function runAs(turn: Turn, fn: () => unknown): Promise<string> {
+        const original = console.log;
+        console.log = () => {};
+        try {
+          await runWithContext(toolCtx(turn) as never, fn as never);
+          return "ok";
+        } catch (error) {
+          const failure = error as { code?: string; details?: { automationHold?: string } };
+          const hold = failure?.details?.automationHold;
+          return hold ? `${String(failure?.code)}/${hold}` : String(failure?.code);
+        } finally {
+          console.log = original;
+        }
+      }
+      const addArgs = (name: string): Parameters<CronCommands["add"]> => [
+        name,
+        undefined,
+        "30m",
+        undefined,
+        undefined,
+        "hello",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        originAgent.id,
+        undefined,
+        undefined,
+        true,
+      ];
+      const job = (name: string) => dbListCronJobs().find((candidate) => candidate.name === name);
+
+      it("a narrowed member's turn and held relay cannot enable, reschedule, run or delete an admin's lifted-turn job", async () => {
+        const member = person("Member C7", { status: "allowed" });
+        grantHere(member.id, "permission-reader");
+        const admin = person("Cron admin C7", { tags: ["permission-owner"], status: "allowed" });
+        const adminTurn = speak(admin, "c7-admin");
+        expect(await runAs(adminTurn, () => new CronCommands().add(...addArgs("c7-job")))).toBe("ok");
+        const written = job("c7-job")!;
+        expect(written).toMatchObject({ ownerPrincipal: `contact:${admin.id}`, creatorChat: governedChat });
+        expect(await runAs(adminTurn, () => new CronCommands().disable(written.id, true))).toBe("ok");
+
+        const memberTurn = speak(member, "c7-member");
+        expect(memberTurn.metadata?.actorAuthorizationMode).toBe("user-overlay");
+        const relay = handoff(memberTurn, "execute", {}, originAgent);
+        expect(isRelayHeldBelowAgent(relay.metadata)).toBe(true);
+        // Every key that keeps the job's owner (`CRON_OWNER_KEEP_KEYS`), enable, run now and delete (review of
+        // #991, N6 and N7). `run --execute` fires the job even while it is disabled.
+        const keepKeys = [
+          ["description", "touched"],
+          ["cron", "*/5 * * * *"],
+          ["every", "1m"],
+          ["tz", "UTC"],
+          ["timezone", "UTC"],
+          ["timeout", "60"],
+          ["delete-after", "true"],
+        ] as const;
+        const held = [
+          ["member", memberTurn, "contact-chat-grants"],
+          ["relay", relay, "held-relay"],
+        ] as const;
+        for (const [who, turn, hold] of held) {
+          const attempts: Array<[string, () => unknown]> = [
+            ...keepKeys.map(
+              ([key, value]) =>
+                [`set ${key}`, () => new CronCommands().set(written.id, key, value, true)] as [string, () => unknown],
+            ),
+            ["enable", () => new CronCommands().enable(written.id, true)],
+            ["run", () => new CronCommands().run(written.id, true, true)],
+            ["rm", () => new CronCommands().rm(written.id, true, true)],
+          ];
+          for (const [label, attempt] of attempts) {
+            expect(`${who} ${label}:${await runAs(turn, attempt)}`).toBe(`${who} ${label}:PERMISSION_DENIED/${hold}`);
+          }
+        }
+        expect(triggered(written.id)).toBe(false);
+        expect(job("c7-job")).toMatchObject({
+          enabled: false,
+          schedule: written.schedule,
+          deleteAfterRun: written.deleteAfterRun,
+          message: "hello",
+          ownerPrincipal: `contact:${admin.id}`,
+        });
+        expect(job("c7-job")?.description).toBe(written.description);
+      });
+
+      it("a held relay acting for the job's own owner still may: ownership decides, not the hold", async () => {
+        const admin = person("Cron admin C6", { tags: ["permission-owner"], status: "allowed" });
+        const turn = speak(admin, "c6");
+        expect(await runAs(turn, () => new CronCommands().add(...addArgs("c6-job")))).toBe("ok");
+        const written = job("c6-job")!;
+        expect(await runAs(turn, () => new CronCommands().disable(written.id, true))).toBe("ok");
+        const held = createRuntimeContext({
+          kind: "turn-runtime",
+          agentId: turn.agentId,
+          sessionKey: turn.sessionKey,
+          sessionName: turn.sessionName,
+          capabilities: turn.capabilities,
+          metadata: { ...turn.metadata, relayNarrowing: true },
+        });
+        expect(isRelayHeldBelowAgent(held.metadata)).toBe(true);
+        expect(await runAs(held, () => new CronCommands().enable(written.id, true))).toBe("ok");
+        expect(await runAs(held, () => new CronCommands().set(written.id, "every", "1m", true))).toBe("ok");
+        expect(await runAs(held, () => new CronCommands().run(written.id, true, true))).toBe("ok");
+        expect(triggered(written.id)).toBe(true);
+        expect(await runAs(held, () => new CronCommands().rm(written.id, true, true))).toBe("ok");
+        expect(job("c6-job")).toBeUndefined();
+      });
+
+      it("a member's own bound job and an admin's own lifted job stay editable by their owners", async () => {
+        const member = person("Member C8", { status: "allowed" });
+        grantHere(member.id, "permission-reader");
+        const memberTurn = speak(member, "c8-member");
+        expect(await runAs(memberTurn, () => new CronCommands().add(...addArgs("c8-job")))).toBe("ok");
+        const own = job("c8-job")!;
+        expect(own).toMatchObject({ ownerPrincipal: `contact:${member.id}`, creatorChat: governedChat });
+        const relay = handoff(memberTurn, "execute", {}, originAgent);
+        const admin = person("Admin C8", { tags: ["permission-owner"], status: "allowed" });
+        const adminTurn = speak(admin, "c8-admin");
+        expect(await runAs(adminTurn, () => new CronCommands().add(...addArgs("c8-admin-job")))).toBe("ok");
+        const adminJob = job("c8-admin-job")!;
+        const thread = handoff(adminTurn, "session.bootstrap", {}, originAgent);
+        const attempts = {
+          "member every": await runAs(memberTurn, () => new CronCommands().set(own.id, "every", "10m", true)),
+          "member disable": await runAs(memberTurn, () => new CronCommands().disable(own.id, true)),
+          "member enable": await runAs(memberTurn, () => new CronCommands().enable(own.id, true)),
+          "member relay every": await runAs(relay, () => new CronCommands().set(own.id, "every", "20m", true)),
+          "member relay enable": await runAs(relay, () => new CronCommands().enable(own.id, true)),
+          "admin disable": await runAs(adminTurn, () => new CronCommands().disable(adminJob.id, true)),
+          "admin enable": await runAs(adminTurn, () => new CronCommands().enable(adminJob.id, true)),
+          "admin every": await runAs(adminTurn, () => new CronCommands().set(adminJob.id, "every", "5m", true)),
+          "admin thread enable": await runAs(thread, () => new CronCommands().enable(adminJob.id, true)),
+          "admin thread every": await runAs(thread, () => new CronCommands().set(adminJob.id, "every", "6m", true)),
+          "admin run": await runAs(adminTurn, () => new CronCommands().run(adminJob.id, true, true)),
+          "member relay run": await runAs(relay, () => new CronCommands().run(own.id, true, true)),
+          "member rm": await runAs(memberTurn, () => new CronCommands().rm(own.id, true, true)),
+          "admin thread rm": await runAs(thread, () => new CronCommands().rm(adminJob.id, true, true)),
+        };
+        for (const [label, result] of Object.entries(attempts)) expect(`${label}:${result}`).toBe(`${label}:ok`);
+        expect(triggered(adminJob.id) && triggered(own.id)).toBe(true);
+        expect(job("c8-job")).toBeUndefined();
+        expect(job("c8-admin-job")).toBeUndefined();
+      });
     });
   });
 });

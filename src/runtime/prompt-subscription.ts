@@ -374,7 +374,11 @@ export class RuntimePromptSubscription {
             })
             .catch((emitError) => log.warn("Failed to emit admission inbox event", { sessionName, error: emitError }));
         }
-        if (prompt.source && created) {
+        // Only a person waits for this receipt. An automation turn (cron, trigger, follow-up, observer, task,
+        // agent/system relay) has no one waiting: its `source` is just the chat it would have posted to, which can
+        // be a group with outsiders. The saved inbox item and the runtime_start_rejected event above are the
+        // operator's receipt. Same predicate as the SQLite capacity notice below.
+        if (prompt.source && created && classifyTurnProvenance({ prompt }).background !== true) {
           const c = error.capacity;
           // Occupant identities belong in operator telemetry, never in an unrelated chat.
           const response =
@@ -410,18 +414,7 @@ export class RuntimePromptSubscription {
             error: ackError,
           });
         }
-        nats
-          .emit(`ravi.session.${sessionName}.runtime`, {
-            type: "turn.failed",
-            error: SQLITE_CAPACITY_USER_MESSAGE,
-            _turnProvenance: classifyTurnProvenance({ prompt }),
-            recoverable: false,
-            sessionName,
-            timestamp: new Date().toISOString(),
-          })
-          .catch((emitError) => {
-            log.warn("Failed to emit sqlite capacity runtime failure", { sessionName, error: emitError });
-          });
+        this.emitSqliteCapacityTurnFailed(sessionName, prompt);
         if (classifyTurnProvenance({ prompt }).background !== true && prompt.source) {
           nats
             .emit(`ravi.session.${sessionName}.response`, {
@@ -498,6 +491,23 @@ export class RuntimePromptSubscription {
         timestamp: new Date().toISOString(),
       })
       .catch((error) => log.warn("Failed to emit prompt receipt", { sessionName, error }));
+  }
+
+  // Moved verbatim out of `dispatchPrompt`'s catch so that handler no longer builds a raw `turn.failed` envelope
+  // inline. Rebuilding it through the shared diagnostic constructor is a separate change.
+  private emitSqliteCapacityTurnFailed(sessionName: string, prompt: RuntimeLaunchPrompt): void {
+    nats
+      .emit(`ravi.session.${sessionName}.runtime`, {
+        type: "turn.failed",
+        error: SQLITE_CAPACITY_USER_MESSAGE,
+        _turnProvenance: classifyTurnProvenance({ prompt }),
+        recoverable: false,
+        sessionName,
+        timestamp: new Date().toISOString(),
+      })
+      .catch((emitError) => {
+        log.warn("Failed to emit sqlite capacity runtime failure", { sessionName, error: emitError });
+      });
   }
 
   private async emitAdmissionRejected(
