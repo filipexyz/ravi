@@ -154,6 +154,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/allowed-skills.test.ts",
   ],
   "src/runtime/": [
+    // A finishing session keeps its slot until its loop restarts the stashed recovery (pool reclaimer race).
+    "src/runtime/recoverable-interrupt-slot-release.test.ts",
     // Agent runtime env: the provider spawn carries no daemon secret (allowlist, per-provider login).
     "src/runtime/agent-env-policy.test.ts",
     // Codex stored-session control spawns through the same env filter.

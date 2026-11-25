@@ -496,14 +496,20 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
         onToolBarrierReleased,
         crashRecovery,
       }),
-    ).catch((err) => {
-      const isAbort = err instanceof Error && /abort/i.test(err.message);
-      if (isAbort) {
-        log.info("Streaming session aborted", { sessionName });
-      } else {
-        log.error("Streaming session failed", { sessionName, error: err });
-      }
-    });
+    )
+      .catch((err) => {
+        const isAbort = err instanceof Error && /abort/i.test(err.message);
+        if (isAbort) {
+          log.info("Streaming session aborted", { sessionName });
+        } else {
+          log.error("Streaming session failed", { sessionName, error: err });
+        }
+      })
+      .finally(() => {
+        // The loop clears this at the end of its cleanup; a loop that threw
+        // before reaching it must not keep sweepers off a dead session.
+        streamingSession.eventLoopActive = false;
+      });
   } catch (err) {
     if (modelBrokerPlanClaim && !modelBrokerPlanHandedToBuilder) {
       await abandonClaimedRuntimeModelBrokerPlan(modelBrokerPlanClaim, "runtime_preparation_failed").catch(
