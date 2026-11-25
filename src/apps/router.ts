@@ -21,6 +21,8 @@ import type {
 import { RaviAppError } from "./types.js";
 import { runWithCliAudit } from "../cli/audit.js";
 import { getContext } from "../cli/context.js";
+import { getCallerCwd } from "../cli/caller-cwd.js";
+import { CliExpectedError } from "../cli/expected-error.js";
 import {
   AppPermissionProviderDeniedError,
   canWithCapabilityContext,
@@ -55,6 +57,9 @@ import {
 import { logger } from "../utils/logger.js";
 import { assertStoreAppRunnable } from "./store/run-guard.js";
 import { AppStoreError } from "./store/types.js";
+import { AppScriptError, runAppScript } from "./script-sandbox.js";
+import { checkThenArgs, collectScriptInput, readScriptSource, stageScriptOutput } from "./script-operation.js";
+import { rmSync } from "node:fs";
 
 interface ResolvedOperation {
   id: string;
@@ -116,7 +121,7 @@ export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviA
   } catch (error) {
     const errorCode = classifyAppRunError(error);
     const message =
-      error instanceof AppStoreError
+      error instanceof AppStoreError || error instanceof AppScriptError
         ? error.message
         : errorCode === "not_found"
           ? "Ravi app was not found."
@@ -155,6 +160,8 @@ export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviA
 function classifyAppRunError(error: unknown): string {
   if (error instanceof RaviAppError) return error.code;
   if (error instanceof AppStoreError) return error.code;
+  if (error instanceof AppScriptError) return error.code;
+  if (error instanceof CliExpectedError && error.code === "PERMISSION_DENIED") return "PERMISSION_DENIED";
   if (error instanceof RaviAppCompositionError) return error.code;
   if (error instanceof OmieAppError && /^(OMIE_[A-Z0-9_]+|INVALID_INPUT)$/.test(error.code)) return error.code;
   if (error instanceof RaviAppPermissionDeniedError) return "PERMISSION_DENIED";
@@ -461,7 +468,77 @@ async function dispatchResolvedOperation(
     );
   }
 
+  if (interfaceName === "script") {
+    return withPermissionProvider(
+      await runScriptOperation(app, resolved, { ...options, composition }),
+      permissionProvider,
+    );
+  }
+
   throw new Error(`App operation interface is not supported by the router: ${interfaceName}`);
+}
+
+/**
+ * Run a script operation (spec apps/router, "Script Operations"): the script runs in the QuickJS sandbox with the
+ * declared input folder; with `handoff`, its files go to a fresh private folder handed to the declared command, which
+ * runs exactly like a CLI operation (child context, redacted failure). The folder is removed afterwards.
+ */
+async function runScriptOperation(
+  app: RaviAppManifestRecord,
+  resolved: ResolvedOperation,
+  options: {
+    args: string[];
+    json: boolean;
+    cwd?: string;
+    env?: NodeJS.ProcessEnv;
+    runtime?: RaviAppRunOptions["runtime"];
+    callerContext?: ContextRecord;
+    startedAt: number;
+    composition: CompositionPlan;
+  },
+): Promise<RaviAppRunResult> {
+  const appId = app.manifest?.id ?? app.id;
+  const operation = resolved.operation;
+  const base = {
+    appId,
+    operation: localOperationName(appId, resolved.id),
+    operationId: resolved.id,
+    interface: "script" as const,
+    mutating: operation.mutating === true,
+    ...(options.callerContext ? { callerContextId: options.callerContext.contextId } : {}),
+  };
+  const source = readScriptSource(dirname(app.path), operation.script ?? "");
+  const input = collectScriptInput(options.args, operation.input?.dir, options.cwd ?? getCallerCwd());
+  const output = await runAppScript(source, { args: input.args, files: input.files });
+  const handoff = operation.handoff;
+  if (!handoff) {
+    return {
+      ...base,
+      ok: true,
+      status: "completed",
+      durationMs: Date.now() - options.startedAt,
+      result: { result: output.result, files: output.files, log: output.log },
+    };
+  }
+  const thenArgs = checkThenArgs(output.args, handoff.flags ?? []);
+  if (Object.keys(output.files).length === 0) {
+    throw new AppScriptError("APP_SCRIPT_OUTPUT_INVALID", "The script returned no files for its handoff command.");
+  }
+  const outputDir = stageScriptOutput(output.files);
+  try {
+    const run = await runCliOperation(
+      app,
+      { ...resolved, operation: { ...operation, command: handoff.command } },
+      { ...options, args: [...thenArgs, handoff.outputFlag, outputDir] },
+    );
+    return {
+      ...run,
+      interface: "script",
+      ...(run.ok && options.json ? { result: { result: output.result, log: output.log, handoff: run.result } } : {}),
+    };
+  } finally {
+    rmSync(outputDir, { recursive: true, force: true });
+  }
 }
 
 function lazyManifests(options: { cwd?: string; env?: NodeJS.ProcessEnv }): () => RaviAppManifestRecord[] {
@@ -516,7 +593,7 @@ function planComposition(
   };
   // Only an operation that starts the app's own process needs what the app needs. `help`, `show` and `check` are how a
   // missing provider gets diagnosed, so they keep answering.
-  if (interfaceName !== "cli" || !declaresRequires(app.manifest)) return plan;
+  if ((interfaceName !== "cli" && interfaceName !== "script") || !declaresRequires(app.manifest)) return plan;
   const closure = resolveDependencyClosure(app, records());
   if (closure.unavailable.length > 0) {
     throw new RaviAppCompositionError(

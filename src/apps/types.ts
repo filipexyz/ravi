@@ -86,7 +86,23 @@ export interface RaviAppManifest {
   [key: string]: unknown;
 }
 
-export type RaviAppOperationInterface = "builtin" | "cli";
+export type RaviAppOperationInterface = "builtin" | "cli" | "script";
+
+/**
+ * A script operation (spec apps/router, "Script Operations"): `script` is a JavaScript file in the app package run in
+ * the QuickJS sandbox. `input.dir` names the flag whose folder (inside the caller's working directory) becomes the
+ * script's input files. `handoff` runs one declared command with the script's files in a fresh folder passed through
+ * `handoff.outputFlag`; the script may add only `handoff.flags`, each with one value.
+ */
+export interface RaviAppScriptHandoffDeclaration {
+  command: string;
+  outputFlag: string;
+  flags?: string[];
+}
+
+export interface RaviAppScriptInputDeclaration {
+  dir?: string;
+}
 
 export type RaviAppOperationAuthorizationOwner = "actor" | "surface" | "executorAgent";
 
@@ -145,6 +161,9 @@ export interface RaviAppOperationDeclaration {
   interface: RaviAppOperationInterface;
   handler?: string;
   command?: string;
+  script?: string;
+  input?: RaviAppScriptInputDeclaration;
+  handoff?: RaviAppScriptHandoffDeclaration;
   namespace?: string;
   method?: string;
   name?: string;

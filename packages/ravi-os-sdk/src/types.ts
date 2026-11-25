@@ -1716,7 +1716,7 @@ export type AppsGuideReturn = {
         };
         failClosed: true;
         id: string;
-        interface: "builtin" | "cli";
+        interface: "builtin" | "cli" | "script";
         operation: string;
         requestSchema: {
           kind: "ref" | "inline" | "unknown";
@@ -1861,7 +1861,7 @@ export type AppsListReturn = {
         };
         failClosed: true;
         id: string;
-        interface: "builtin" | "cli";
+        interface: "builtin" | "cli" | "script";
         operation: string;
         requestSchema: {
           kind: "ref" | "inline" | "unknown";
@@ -1903,7 +1903,7 @@ export type AppsListReturn = {
         };
         failClosed: true;
         id: string;
-        interface: "builtin" | "cli";
+        interface: "builtin" | "cli" | "script";
         operation: string;
         requestSchema: {
           kind: "ref" | "inline" | "unknown";
@@ -1965,7 +1965,7 @@ export type AppsPromptsReturn = {
         };
         failClosed: true;
         id: string;
-        interface: "builtin" | "cli";
+        interface: "builtin" | "cli" | "script";
         operation: string;
         requestSchema: {
           kind: "ref" | "inline" | "unknown";
@@ -2043,7 +2043,7 @@ export type AppsRunReturn = {
   errorCode?: string;
   exitCode?: number | null;
   handler?: string;
-  interface: ("builtin" | "cli") | null;
+  interface: ("builtin" | "cli" | "script") | null;
   mutating: boolean;
   ok: boolean;
   operation: string | null;
@@ -2073,7 +2073,7 @@ export type AppsRunReturn = {
       };
       ttlSec?: number;
     };
-    interface: "builtin" | "cli";
+    interface: "builtin" | "cli" | "script";
     providerId: string;
     providerOperationId: string;
     providerVersion: string;
@@ -2085,7 +2085,7 @@ export type AppsRunReturn = {
   plan?: {
     appId: string;
     argumentCount: number;
-    interface: "builtin" | "cli";
+    interface: "builtin" | "cli" | "script";
     mutating: true;
     operationId: string;
   };
@@ -2187,7 +2187,7 @@ export type AppsShowReturn = {
         };
         failClosed: true;
         id: string;
-        interface: "builtin" | "cli";
+        interface: "builtin" | "cli" | "script";
         operation: string;
         requestSchema: {
           kind: "ref" | "inline" | "unknown";

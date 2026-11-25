@@ -39,7 +39,7 @@ export const RAVI_APP_BUILTIN_OPERATION_HANDLERS = new Set([
   "apps.omie-orders.read",
 ]);
 
-const VALID_OPERATION_INTERFACES = new Set(["builtin", "cli"]);
+const VALID_OPERATION_INTERFACES = new Set(["builtin", "cli", "script"]);
 const VALID_PERMISSION_PROVIDER_INTERFACES = new Set(["builtin", "cli"]);
 const VALID_STORAGE_KINDS = new Set(["state", "cache", "artifact-index", "config", "ledger"]);
 const VALID_EVENT_DURABILITY = new Set(["ephemeral", "logged", "replayable"]);
@@ -512,7 +512,7 @@ function validateOperations(
     const interfaceName = operation.interface;
     if (typeof interfaceName !== "string" || !VALID_OPERATION_INTERFACES.has(interfaceName)) {
       errors.push(`${path}.interface must be one of ${Array.from(VALID_OPERATION_INTERFACES).join("|")}.`);
-    } else if (interfaceName !== "builtin" && !isObject(declaredInterfaces[interfaceName])) {
+    } else if (interfaceName === "cli" && !isObject(declaredInterfaces[interfaceName])) {
       errors.push(`${path}.interface references undeclared interfaces.${interfaceName}.`);
     }
 
@@ -607,6 +607,11 @@ function validateOperationTarget(
     return;
   }
 
+  if (interfaceName === "script") {
+    validateScriptOperation(operation, path, appId, errors);
+    return;
+  }
+
   if (interfaceName === "cli") {
     if (typeof operation.command !== "string" || !operation.command.trim()) {
       errors.push(`${path}.command is required for cli operations.`);
@@ -620,6 +625,53 @@ function validateOperationTarget(
       warnings.push(`${path}.command should support --json for Web OS snapshots and actions.`);
     }
     return;
+  }
+}
+
+const SCRIPT_FLAG_PATTERN = /^--[a-z][a-z0-9-]*$/;
+const SCRIPT_PATH_PATTERN = /^(?:[A-Za-z0-9_][A-Za-z0-9._-]*\/)*[A-Za-z0-9_][A-Za-z0-9._-]*\.js$/;
+
+function validateScriptOperation(
+  operation: Record<string, unknown>,
+  path: string,
+  appId: string,
+  errors: string[],
+): void {
+  if (typeof operation.script !== "string" || !SCRIPT_PATH_PATTERN.test(operation.script)) {
+    errors.push(`${path}.script must be a relative .js path inside the app package.`);
+  }
+  if (operation.command !== undefined) errors.push(`${path}.command is not allowed on script operations; use handoff.`);
+  if (operation.input !== undefined) {
+    if (!isObject(operation.input)) errors.push(`${path}.input must be an object when present.`);
+    else if (
+      operation.input.dir !== undefined &&
+      !(typeof operation.input.dir === "string" && SCRIPT_FLAG_PATTERN.test(operation.input.dir))
+    ) {
+      errors.push(`${path}.input.dir must be a long flag such as --posts.`);
+    }
+  }
+  if (operation.handoff === undefined) return;
+  if (!isObject(operation.handoff)) {
+    errors.push(`${path}.handoff must be an object when present.`);
+    return;
+  }
+  const handoff = operation.handoff;
+  if (typeof handoff.command !== "string" || !handoff.command.trim()) {
+    errors.push(`${path}.handoff.command is required.`);
+  } else if (validateCliCommand(handoff.command, `${path}.handoff.command`, errors)) {
+    if (isRecursiveDynamicAppCommand(appId, handoff.command)) {
+      errors.push(`${path}.handoff.command must not recursively invoke ravi ${appId.split("/").join(" ")}.`);
+    }
+  }
+  if (typeof handoff.outputFlag !== "string" || !SCRIPT_FLAG_PATTERN.test(handoff.outputFlag)) {
+    errors.push(`${path}.handoff.outputFlag must be a long flag such as --dir.`);
+  }
+  if (handoff.flags !== undefined) {
+    if (!isStringArray(handoff.flags) || !handoff.flags.every((flag) => SCRIPT_FLAG_PATTERN.test(flag))) {
+      errors.push(`${path}.handoff.flags must be long flags such as --title.`);
+    } else if (typeof handoff.outputFlag === "string" && handoff.flags.includes(handoff.outputFlag)) {
+      errors.push(`${path}.handoff.flags must not include the output flag.`);
+    }
   }
 }
 

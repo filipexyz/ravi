@@ -3,8 +3,10 @@
  *
  * - `compose`: every command the app can run is the `ravi` CLI itself, aimed
  *   at a command the registry knows, that is exposed to remote callers and is
- *   not an administration command. Such an app can do nothing its caller's
- *   own grants do not already allow.
+ *   not an administration command, and any code it ships runs as a script
+ *   operation in the QuickJS sandbox (no disk, network, environment or
+ *   process). Such an app can do nothing its caller's own grants do not
+ *   already allow.
  * - `connector`: reserved for the core HTTP executor (not in this release).
  * - `code`: anything else. It runs as the daemon user and equals the operator.
  */
@@ -136,6 +138,32 @@ function collectCommandSites(manifest: RaviAppManifest, reasons: string[]): Comm
       }
       continue;
     }
+    if (operation.interface === "script") {
+      const handoff = operation.handoff;
+      if (!handoff) continue;
+      if (typeof handoff.command !== "string") {
+        reasons.push(`operations.${id}.handoff has no command`);
+        continue;
+      }
+      sites.push({
+        path: `operations.${id}.handoff.command`,
+        command: handoff.command,
+        mutating: operation.mutating === true,
+      });
+      let tokens: string[] = [];
+      try {
+        tokens = parseRaviAppCommand(handoff.command).argv;
+      } catch {
+        // no-cause: a command that does not parse is reported by checkSite for the same site.
+      }
+      const declared = [handoff.outputFlag, ...(handoff.flags ?? [])];
+      for (const flag of declared) {
+        if (tokens.some((token) => token === flag || token.startsWith(`${flag}=`))) {
+          reasons.push(`operations.${id}.handoff sets ${flag} in its command and lets the script set it too`);
+        }
+      }
+      continue;
+    }
     if (typeof operation.command === "string") {
       sites.push({
         path: `operations.${id}.command`,
@@ -203,9 +231,17 @@ export function classifyAppManifest(manifest: RaviAppManifest, options: Classify
       runs:
         operation.interface === "builtin"
           ? `builtin:${operation.handler ?? ""}`
-          : typeof operation.command === "string"
-            ? operation.command
-            : null,
+          : operation.interface === "script"
+            ? `sandbox:${operation.script ?? ""}${
+                operation.handoff
+                  ? ` then ${operation.handoff.command} ${operation.handoff.outputFlag} <files>${
+                      operation.handoff.flags?.length ? ` [script may set ${operation.handoff.flags.join(" ")}]` : ""
+                    }`
+                  : ""
+              }${operation.input?.dir ? ` (reads ${operation.input.dir} <folder in the working directory>)` : ""}`
+            : typeof operation.command === "string"
+              ? operation.command
+              : null,
       mutating: operation.mutating === true,
     };
   }

@@ -18,6 +18,13 @@ ravi specs sync --json
 - A declared operation id like `<app-id>.test.a` can be invoked with
   `ravi <app-id> test a --json`.
 - Static root commands take precedence over dynamic app ids.
+- A script operation MUST see no `require`, `process`, `fetch`, `std`, `os` or
+  timers; an endless loop, a memory bomb and deep recursion MUST end with
+  `APP_SCRIPT_LIMIT` (`src/apps/script-sandbox.test.ts`).
+- A script operation MUST refuse an input folder outside the working directory
+  or behind a symbolic link, output paths with `..` or a leading `/`, and any
+  `handoff` flag it did not declare (`src/apps/script-sandbox.test.ts`,
+  `src/apps/router.test.ts`).
 - Unknown root commands still use normal CLI error/help handling.
 - Duplicate app ids fail before dispatch and report both manifest sources.
 - Invalid manifests fail before dispatch.

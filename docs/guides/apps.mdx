@@ -47,4 +47,21 @@ ravi apps uninstall blog            # the files go to the store's trash
 
 `ravi apps install --from <folder>` installs an app you wrote, with the same plan and the same per-agent choice. An app that runs any program other than `ravi` runs with your authority as the operator, so Ravi asks for `--allow-code` before installing it.
 
+## Apps with code
+
+An app's own logic, such as turning Markdown posts into a site, ships as a JavaScript file and runs as a `script` operation inside Ravi's sandbox: QuickJS in WebAssembly, with no disk, network, environment or other programs, and with limits on memory, time and size. The script gets the files of one folder the caller names (it must be inside the caller's working directory) and returns files. When the operation declares a follow-up command, Ravi hands those files to it, for example `ravi pages ship --dir <files>`, under the calling agent's own grants. These apps stay in the official index.
+
+```json
+"blog.publish": {
+  "interface": "script",
+  "script": "lib/blog.js",
+  "input": { "dir": "--posts" },
+  "handoff": { "command": "ravi pages ship --json {args}", "outputFlag": "--dir", "flags": ["--route", "--title", "--project"] },
+  "mutating": true,
+  "permission": "blog:write"
+}
+```
+
+The script defines `function main(input)`, where `input` is `{ args, files }`, and returns `{ files, args, result }`. `args` may only use the flags listed in `handoff.flags`.
+
 Once the store is in use, a folder copied by hand into `~/.ravi/apps` is not loaded. Apps that were already there keep working.

@@ -63,7 +63,10 @@ can do without the operator's explicit, per-agent decision.
   before `{args}`) is a registry command that is not `@CliOnly`, has an access
   contract and is outside the administration groups; a target that mutates, or
   a literal `--execute`/`--apply`, requires `mutating: true`; builtins are
-  limited to the manifest readers. Anything else is `code`.
+  limited to the manifest readers; app code runs only as `script` operations
+  in the sandbox (spec apps/router, "Script Operations"), whose `handoff.command`
+  meets the same rules and does not itself set `handoff.outputFlag` or any
+  `handoff.flags`. Anything else is `code`.
 - The official index MUST list only `compose` apps. A local `code` app needs
   `--allow-code`.
 - A published version MUST NOT change: a rebuild with other files for the same

@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "081c57dd9cd7c344"
+    "version": "3983a362c7d905c2"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -10744,7 +10744,8 @@
                                         "interface": {
                                           "enum": [
                                             "builtin",
-                                            "cli"
+                                            "cli",
+                                            "script"
                                           ],
                                           "type": "string"
                                         },
@@ -11615,7 +11616,8 @@
                                       "interface": {
                                         "enum": [
                                           "builtin",
-                                          "cli"
+                                          "cli",
+                                          "script"
                                         ],
                                         "type": "string"
                                       },
@@ -11905,7 +11907,8 @@
                                       "interface": {
                                         "enum": [
                                           "builtin",
-                                          "cli"
+                                          "cli",
+                                          "script"
                                         ],
                                         "type": "string"
                                       },
@@ -12311,7 +12314,8 @@
                                         "interface": {
                                           "enum": [
                                             "builtin",
-                                            "cli"
+                                            "cli",
+                                            "script"
                                           ],
                                           "type": "string"
                                         },
@@ -12768,7 +12772,8 @@
                         {
                           "enum": [
                             "builtin",
-                            "cli"
+                            "cli",
+                            "script"
                           ],
                           "type": "string"
                         },
@@ -12908,7 +12913,8 @@
                         "interface": {
                           "enum": [
                             "builtin",
-                            "cli"
+                            "cli",
+                            "script"
                           ],
                           "type": "string"
                         },
@@ -12966,7 +12972,8 @@
                         "interface": {
                           "enum": [
                             "builtin",
-                            "cli"
+                            "cli",
+                            "script"
                           ],
                           "type": "string"
                         },
@@ -13576,7 +13583,8 @@
                                     "interface": {
                                       "enum": [
                                         "builtin",
-                                        "cli"
+                                        "cli",
+                                        "script"
                                       ],
                                       "type": "string"
                                     },

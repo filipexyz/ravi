@@ -559,6 +559,84 @@ describe("Ravi app router", () => {
     expect(tampered.errorCode).toBe("APP_TREE_CHANGED");
   });
 
+  it("runs a script operation in the sandbox with the declared input folder", async () => {
+    const root = makeRepo();
+    const body = manifest("site-gen");
+    body.operations = {
+      "site-gen.build": {
+        interface: "script",
+        script: "lib/build.js",
+        input: { dir: "--posts" },
+        mutating: false,
+      },
+      "site-gen.publish": {
+        interface: "script",
+        script: "lib/build.js",
+        input: { dir: "--posts" },
+        handoff: { command: "ravi pages ship --json {args}", outputFlag: "--dir", flags: ["--route"] },
+        mutating: true,
+        permission: "site:write",
+      },
+    };
+    body.permissions = { required: [], optional: ["site:write"], mutating: ["site:write"] };
+    writeManifest(root, "site-gen", body);
+    const appDir = join(root, "src", "apps", "site-gen");
+    mkdirSync(join(appDir, "lib"), { recursive: true });
+    writeFileSync(
+      join(appDir, "lib", "build.js"),
+      `function main(input) { var names = Object.keys(input.files).sort(); return { files: { "index.html": names.join(",") }, args: ["--route", "/s"], result: { names: names, args: input.args } }; }`,
+    );
+    mkdirSync(join(root, "posts"));
+    writeFileSync(join(root, "posts", "a.md"), "A");
+
+    const built = await runAppOperation({
+      appId: "site-gen",
+      operation: "build",
+      args: ["--posts", "posts", "--title", "T"],
+      json: true,
+    });
+    expect(built.errorCode ?? null).toBeNull();
+    expect(built.ok).toBe(true);
+    expect(built.interface).toBe("script");
+    expect(built.result).toEqual({
+      result: { names: ["a.md"], args: ["--title", "T"] },
+      files: { "index.html": "a.md" },
+      log: [],
+    });
+
+    const escaped = await runAppOperation({
+      appId: "site-gen",
+      operation: "build",
+      args: ["--posts", tmpdir()],
+      json: true,
+    });
+    expect(escaped.errorCode).toBe("APP_SCRIPT_INPUT_INVALID");
+
+    // An agent reads the folder only with the right to read local files, as for any CLI file argument.
+    const agentBuild = (capabilities: ReturnType<typeof appCapability>[]) =>
+      runWithContext(appToolContext(capabilities), () =>
+        runAppOperation({ appId: "site-gen", operation: "build", args: ["--posts", "posts"], json: true }),
+      );
+    expect((await agentBuild([appCapability("use", "site-gen")])).errorCode).toBe("PERMISSION_DENIED");
+    expect(
+      (
+        await agentBuild([
+          appCapability("use", "site-gen"),
+          { permission: "use", objectType: "tool", objectId: "Read" },
+        ])
+      ).ok,
+    ).toBe(true);
+
+    const plan = await runAppOperation({
+      appId: "site-gen",
+      operation: "publish",
+      args: ["--posts", "posts"],
+      json: true,
+    });
+    expect(plan.status).toBe("blocked");
+    expect(plan.dryRun).toBe(true);
+  });
+
   it("keeps the operation name when routing <op> --help to the help builtin", () => {
     const root = makeRepo();
     writeManifest(root, "khal-tasks", manifest("khal-tasks"));

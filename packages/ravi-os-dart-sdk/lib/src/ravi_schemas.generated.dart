@@ -9597,7 +9597,8 @@ class RaviSchemas {
                         "interface": {
                           "enum": [
                             "builtin",
-                            "cli"
+                            "cli",
+                            "script"
                           ],
                           "type": "string"
                         },
@@ -10449,7 +10450,8 @@ class RaviSchemas {
                       "interface": {
                         "enum": [
                           "builtin",
-                          "cli"
+                          "cli",
+                          "script"
                         ],
                         "type": "string"
                       },
@@ -10739,7 +10741,8 @@ class RaviSchemas {
                       "interface": {
                         "enum": [
                           "builtin",
-                          "cli"
+                          "cli",
+                          "script"
                         ],
                         "type": "string"
                       },
@@ -11119,7 +11122,8 @@ class RaviSchemas {
                         "interface": {
                           "enum": [
                             "builtin",
-                            "cli"
+                            "cli",
+                            "script"
                           ],
                           "type": "string"
                         },
@@ -11536,7 +11540,8 @@ class RaviSchemas {
         {
           "enum": [
             "builtin",
-            "cli"
+            "cli",
+            "script"
           ],
           "type": "string"
         },
@@ -11676,7 +11681,8 @@ class RaviSchemas {
         "interface": {
           "enum": [
             "builtin",
-            "cli"
+            "cli",
+            "script"
           ],
           "type": "string"
         },
@@ -11734,7 +11740,8 @@ class RaviSchemas {
         "interface": {
           "enum": [
             "builtin",
-            "cli"
+            "cli",
+            "script"
           ],
           "type": "string"
         },
@@ -12299,7 +12306,8 @@ class RaviSchemas {
                     "interface": {
                       "enum": [
                         "builtin",
-                        "cli"
+                        "cli",
+                        "script"
                       ],
                       "type": "string"
                     },

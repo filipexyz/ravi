@@ -293,6 +293,8 @@ Operations MAY dispatch to one of these executor types:
 
 - `builtin`: router-owned allowlisted handler.
 - `cli`: the app's declared CLI implementation.
+- `script`: a JavaScript file in the app package, run in the script sandbox
+  (see "Script Operations").
 
 Builtin operations MUST declare `handler`, such as `apps.manifest.show`,
 `apps.manifest.check`, `apps.help`, or another router-owned allowlisted
@@ -312,6 +314,37 @@ Command strings are declarative command lines, not shell programs.
 
 `sdk`, `tool`, and `stream` MUST NOT be operation executor values. Those
 surfaces are adapters that call this router.
+
+## Script Operations
+
+A script operation MUST declare `script`, a relative `.js` path inside the app
+folder; the router MUST refuse a path that leaves the folder or is a symbolic
+link. It MUST NOT declare `command`.
+
+- The script MUST run in QuickJS compiled to WebAssembly, in a fresh runtime
+  and context per run, with no module loader, no `std`/`os`, no timers and no
+  host functions. It MUST NOT be able to reach the disk, the network, the
+  environment or another process.
+- Each run MUST be bounded: 64 MiB of memory, 1 MiB of stack, 5 seconds, 4 MiB
+  of input, 8 MiB of output, 500 input and 500 output files.
+- The script MUST define a global `main(input)` that returns synchronously.
+  `input` is `{args, files}`; the return value is `{files?, args?, result?,
+  log?}`. Output paths MUST be relative package-style paths and contents text.
+- `input.dir` names one long flag. Its folder MUST resolve inside the caller's
+  working directory with no symbolic link in the path or below it; dot files and
+  binary files are left out. The flag is removed from the script's args.
+- With `handoff`, the router MUST write the files to a new private folder, run
+  `handoff.command` exactly as a `cli` operation (child context, redacted failure)
+  with `handoff.outputFlag <folder>` appended, and remove the folder afterwards.
+  The script MAY add only `handoff.flags`, each followed by one value that does
+  not start with `-`. `handoff.flags` MUST NOT include `handoff.outputFlag`.
+- Without `handoff`, the result carries the script's `result`, `files` and `log`.
+- A mutating script operation MUST stop at the `--execute` brake before the
+  script runs.
+- Input, limit and output refusals use `APP_SCRIPT_INPUT_INVALID`,
+  `APP_SCRIPT_LIMIT` and `APP_SCRIPT_OUTPUT_INVALID` with Ravi's own message;
+  a script that throws uses `APP_SCRIPT_FAILED`, its message labeled as the
+  app's (`appReported`).
 
 ## App-To-Ravi Contract
 

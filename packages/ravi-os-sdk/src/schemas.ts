@@ -9527,7 +9527,8 @@ export const AppsGuideReturnSchema = {
                         "interface": {
                           "enum": [
                             "builtin",
-                            "cli"
+                            "cli",
+                            "script"
                           ],
                           "type": "string"
                         },
@@ -10375,7 +10376,8 @@ export const AppsListReturnSchema = {
                       "interface": {
                         "enum": [
                           "builtin",
-                          "cli"
+                          "cli",
+                          "script"
                         ],
                         "type": "string"
                       },
@@ -10665,7 +10667,8 @@ export const AppsListReturnSchema = {
                       "interface": {
                         "enum": [
                           "builtin",
-                          "cli"
+                          "cli",
+                          "script"
                         ],
                         "type": "string"
                       },
@@ -11043,7 +11046,8 @@ export const AppsPromptsReturnSchema = {
                         "interface": {
                           "enum": [
                             "builtin",
-                            "cli"
+                            "cli",
+                            "script"
                           ],
                           "type": "string"
                         },
@@ -11456,7 +11460,8 @@ export const AppsRunReturnSchema = {
         {
           "enum": [
             "builtin",
-            "cli"
+            "cli",
+            "script"
           ],
           "type": "string"
         },
@@ -11596,7 +11601,8 @@ export const AppsRunReturnSchema = {
         "interface": {
           "enum": [
             "builtin",
-            "cli"
+            "cli",
+            "script"
           ],
           "type": "string"
         },
@@ -11654,7 +11660,8 @@ export const AppsRunReturnSchema = {
         "interface": {
           "enum": [
             "builtin",
-            "cli"
+            "cli",
+            "script"
           ],
           "type": "string"
         },
@@ -12213,7 +12220,8 @@ export const AppsShowReturnSchema = {
                     "interface": {
                       "enum": [
                         "builtin",
-                        "cli"
+                        "cli",
+                        "script"
                       ],
                       "type": "string"
                     },

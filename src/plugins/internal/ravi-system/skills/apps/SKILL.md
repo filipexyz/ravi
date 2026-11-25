@@ -84,9 +84,14 @@ ravi apps allow <app-id> --agent <agent> --execute
 - App instalado pela loja fica invisivel para todo agente ate `apps allow`,
   mesmo com `full-access` ou `use:app:*`. Se um app da loja "sumiu", peca ao
   operador para rodar `ravi apps verify` e `ravi apps allow`.
-- O indice so aceita apps `compose`: todo comando e o proprio `ravi`. O app
-  nunca faz mais que o agente que chama ja pode; a permissao do comando de
-  baixo (ex.: `pages ship`) continua sendo do agente.
+- O indice so aceita apps `compose`: todo comando e o proprio `ravi`, e o
+  codigo do app roda como operacao `script` no sandbox (QuickJS em
+  WebAssembly, sem disco, rede, ambiente ou processos). O app nunca faz mais
+  que o agente que chama ja pode; a permissao do comando de baixo (ex.:
+  `pages ship`) continua sendo do agente.
+- Operacao `script` com `input.dir` (ex.: `--posts posts`) le so uma pasta
+  dentro do seu diretorio de trabalho, sem links simbolicos. Erros
+  `APP_SCRIPT_*` dizem o que corrigir.
 - Nao copie pastas para `~/.ravi/apps`: depois que a loja e usada, pasta sem
   recibo nao carrega. Ferramentas de escrita de arquivo do agente tambem nao
   escrevem ali.
