@@ -137427,6 +137427,43 @@ export const VoiceCallsEventsInputSchema = {
 
 /** JSON Schema for the return shape of `voice.calls.events`. */
 export const VoiceCallsEventsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "callId": {
@@ -137434,8 +137471,53 @@ export const VoiceCallsEventsReturnSchema = {
     },
     "events": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "callId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "data": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "seq": {
+            "type": "number"
+          },
+          "type": {
+            "enum": [
+              "call.snapshot",
+              "call.state",
+              "call.ended",
+              "agent.state",
+              "work.state",
+              "work.tool",
+              "user.transcript",
+              "agent.transcript",
+              "turn.accepted",
+              "turn.completed",
+              "turn.approval_requested",
+              "turn.approval_resolved",
+              "usage",
+              "error"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "callId",
+          "seq",
+          "type",
+          "data",
+          "createdAt"
+        ],
         "type": "object"
       },
       "type": "array"
@@ -137478,14 +137560,149 @@ export const VoiceCallsListReturnSchema = {
   "properties": {
     "calls": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "agentState": {
+            "enum": [
+              "listening",
+              "thinking",
+              "speaking",
+              "idle"
+            ],
+            "type": "string"
+          },
+          "connectionKind": {
+            "enum": [
+              "none",
+              "webrtc",
+              "room"
+            ],
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "endedAt": {
+            "type": "string"
+          },
+          "endedReason": {
+            "type": "string"
+          },
+          "engine": {
+            "enum": [
+              "push",
+              "live",
+              "handsfree",
+              "mock"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "push",
+              "live",
+              "handsfree",
+              "mock"
+            ],
+            "type": "string"
+          },
+          "profileId": {
+            "type": "string"
+          },
+          "sessionName": {
+            "type": "string"
+          },
+          "speaker": {
+            "additionalProperties": false,
+            "properties": {
+              "contactId": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "operator",
+                  "device",
+                  "guest"
+                ],
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "type": "object"
+          },
+          "state": {
+            "enum": [
+              "starting",
+              "active",
+              "ending",
+              "ended"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "usage": {
+            "additionalProperties": false,
+            "properties": {
+              "audioInSeconds": {
+                "type": "number"
+              },
+              "audioOutSeconds": {
+                "type": "number"
+              },
+              "charactersSpoken": {
+                "type": "number"
+              },
+              "engineSeconds": {
+                "type": "number"
+              },
+              "estimatedCostUsd": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "audioInSeconds",
+              "audioOutSeconds",
+              "charactersSpoken",
+              "engineSeconds",
+              "estimatedCostUsd"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "sessionName",
+          "mode",
+          "engine",
+          "profileId",
+          "state",
+          "agentState",
+          "speaker",
+          "connectionKind",
+          "usage",
+          "createdAt",
+          "updatedAt"
+        ],
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -137668,13 +137885,197 @@ export const VoiceCallsShowReturnSchema = {
   "additionalProperties": false,
   "properties": {
     "call": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "agentState": {
+          "enum": [
+            "listening",
+            "thinking",
+            "speaking",
+            "idle"
+          ],
+          "type": "string"
+        },
+        "connectionKind": {
+          "enum": [
+            "none",
+            "webrtc",
+            "room"
+          ],
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "endedAt": {
+          "type": "string"
+        },
+        "endedReason": {
+          "type": "string"
+        },
+        "engine": {
+          "enum": [
+            "push",
+            "live",
+            "handsfree",
+            "mock"
+          ],
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "push",
+            "live",
+            "handsfree",
+            "mock"
+          ],
+          "type": "string"
+        },
+        "profileId": {
+          "type": "string"
+        },
+        "sessionName": {
+          "type": "string"
+        },
+        "speaker": {
+          "additionalProperties": false,
+          "properties": {
+            "contactId": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "operator",
+                "device",
+                "guest"
+              ],
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        "state": {
+          "enum": [
+            "starting",
+            "active",
+            "ending",
+            "ended"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "usage": {
+          "additionalProperties": false,
+          "properties": {
+            "audioInSeconds": {
+              "type": "number"
+            },
+            "audioOutSeconds": {
+              "type": "number"
+            },
+            "charactersSpoken": {
+              "type": "number"
+            },
+            "engineSeconds": {
+              "type": "number"
+            },
+            "estimatedCostUsd": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "audioInSeconds",
+            "audioOutSeconds",
+            "charactersSpoken",
+            "engineSeconds",
+            "estimatedCostUsd"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "sessionName",
+        "mode",
+        "engine",
+        "profileId",
+        "state",
+        "agentState",
+        "speaker",
+        "connectionKind",
+        "usage",
+        "createdAt",
+        "updatedAt"
+      ],
       "type": "object"
     },
     "engine": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "additionalProperties": false,
+          "properties": {
+            "bargeIn": {
+              "type": "boolean"
+            },
+            "exactSpeech": {
+              "type": "boolean"
+            },
+            "needs": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "serverAudio": {
+              "type": "boolean"
+            },
+            "streamingAudio": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "bargeIn",
+            "streamingAudio",
+            "exactSpeech",
+            "serverAudio",
+            "needs"
+          ],
+          "type": "object"
+        },
+        "id": {
+          "enum": [
+            "push",
+            "live",
+            "handsfree",
+            "mock"
+          ],
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "capabilities"
+      ],
       "type": "object"
     },
     "lastSeq": {
@@ -137682,16 +138083,85 @@ export const VoiceCallsShowReturnSchema = {
     },
     "openApprovals": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "approvalId": {
+            "type": "string"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "approvalId",
+          "version",
+          "digest",
+          "text"
+        ],
         "type": "object"
       },
       "type": "array"
     },
     "turns": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "speaker": {
+            "additionalProperties": false,
+            "properties": {
+              "contactId": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "operator",
+                  "device",
+                  "guest"
+                ],
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "type": "object"
+          },
+          "state": {
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "failed",
+              "cancelled"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "state",
+          "speaker",
+          "createdAt"
+        ],
         "type": "object"
       },
       "type": "array"
@@ -137776,8 +138246,34 @@ export const VoiceCallsStartReturnSchema = {
       "type": "string"
     },
     "capabilities": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "bargeIn": {
+          "type": "boolean"
+        },
+        "exactSpeech": {
+          "type": "boolean"
+        },
+        "needs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "serverAudio": {
+          "type": "boolean"
+        },
+        "streamingAudio": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "bargeIn",
+        "streamingAudio",
+        "exactSpeech",
+        "serverAudio",
+        "needs"
+      ],
       "type": "object"
     },
     "connectionKind": {
@@ -137880,8 +138376,27 @@ export const VoiceCallsTranscriptReturnSchema = {
     },
     "lines": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "type": "string"
+          },
+          "seq": {
+            "type": "number"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "text",
+          "seq"
+        ],
         "type": "object"
       },
       "type": "array"
@@ -137922,8 +138437,45 @@ export const VoiceDevicesListReturnSchema = {
       "items": {
         "anyOf": [
           {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": false,
+            "properties": {
+              "contactId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "lastSeenAt": {
+                "type": "string"
+              },
+              "revoked": {
+                "type": "boolean"
+              },
+              "sessions": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "id",
+              "label",
+              "contactId",
+              "sessions",
+              "createdAt",
+              "expiresAt",
+              "revoked"
+            ],
             "type": "object"
           },
           {
@@ -137934,7 +138486,7 @@ export const VoiceDevicesListReturnSchema = {
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -138030,8 +138582,45 @@ export const VoiceDevicesPairReturnSchema = {
     "device": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": false,
+          "properties": {
+            "contactId": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "string"
+            },
+            "expiresAt": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "lastSeenAt": {
+              "type": "string"
+            },
+            "revoked": {
+              "type": "boolean"
+            },
+            "sessions": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "label",
+            "contactId",
+            "sessions",
+            "createdAt",
+            "expiresAt",
+            "revoked"
+          ],
           "type": "object"
         },
         {
@@ -138074,8 +138663,45 @@ export const VoiceDevicesRevokeReturnSchema = {
     "device": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": false,
+          "properties": {
+            "contactId": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "string"
+            },
+            "expiresAt": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "lastSeenAt": {
+              "type": "string"
+            },
+            "revoked": {
+              "type": "boolean"
+            },
+            "sessions": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "label",
+            "contactId",
+            "sessions",
+            "createdAt",
+            "expiresAt",
+            "revoked"
+          ],
           "type": "object"
         },
         {
@@ -138110,8 +138736,39 @@ export const VoiceEnginesCheckReturnSchema = {
   "properties": {
     "checks": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "engine": {
+            "enum": [
+              "push",
+              "live",
+              "handsfree",
+              "mock"
+            ],
+            "type": "string"
+          },
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "ready": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "engine",
+          "ready",
+          "missing",
+          "notes"
+        ],
         "type": "object"
       },
       "type": "array"
@@ -138145,14 +138802,76 @@ export const VoiceEnginesListReturnSchema = {
   "properties": {
     "engines": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "capabilities": {
+            "additionalProperties": false,
+            "properties": {
+              "bargeIn": {
+                "type": "boolean"
+              },
+              "exactSpeech": {
+                "type": "boolean"
+              },
+              "needs": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "serverAudio": {
+                "type": "boolean"
+              },
+              "streamingAudio": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "bargeIn",
+              "streamingAudio",
+              "exactSpeech",
+              "serverAudio",
+              "needs"
+            ],
+            "type": "object"
+          },
+          "connectionKind": {
+            "enum": [
+              "none",
+              "webrtc",
+              "room"
+            ],
+            "type": "string"
+          },
+          "costPerMinuteUsd": {
+            "type": "number"
+          },
+          "id": {
+            "enum": [
+              "push",
+              "live",
+              "handsfree",
+              "mock"
+            ],
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "connectionKind",
+          "capabilities",
+          "costPerMinuteUsd"
+        ],
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -138278,8 +138997,78 @@ export const VoiceProfilesCreateReturnSchema = {
   "additionalProperties": false,
   "properties": {
     "profile": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "allowGuests": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "delivery": {
+          "enum": [
+            "speak",
+            "when_idle",
+            "silent"
+          ],
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "language": {
+          "type": "string"
+        },
+        "liveModel": {
+          "type": "string"
+        },
+        "liveVoice": {
+          "type": "string"
+        },
+        "maxCallCostUsd": {
+          "type": "number"
+        },
+        "maxCallMinutes": {
+          "type": "number"
+        },
+        "maxDailyCostUsd": {
+          "type": "number"
+        },
+        "mode": {
+          "enum": [
+            "push",
+            "live",
+            "handsfree",
+            "mock"
+          ],
+          "type": "string"
+        },
+        "ttsModel": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "voice": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "mode",
+        "language",
+        "delivery",
+        "allowGuests",
+        "maxCallMinutes",
+        "maxCallCostUsd",
+        "maxDailyCostUsd",
+        "createdAt",
+        "updatedAt"
+      ],
       "type": "object"
     }
   },
@@ -138344,7 +139133,7 @@ export const VoiceProfilesListReturnSchema = {
   "additionalProperties": false,
   "properties": {
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -138392,8 +139181,78 @@ export const VoiceProfilesListReturnSchema = {
     },
     "profiles": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "allowGuests": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "delivery": {
+            "enum": [
+              "speak",
+              "when_idle",
+              "silent"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "language": {
+            "type": "string"
+          },
+          "liveModel": {
+            "type": "string"
+          },
+          "liveVoice": {
+            "type": "string"
+          },
+          "maxCallCostUsd": {
+            "type": "number"
+          },
+          "maxCallMinutes": {
+            "type": "number"
+          },
+          "maxDailyCostUsd": {
+            "type": "number"
+          },
+          "mode": {
+            "enum": [
+              "push",
+              "live",
+              "handsfree",
+              "mock"
+            ],
+            "type": "string"
+          },
+          "ttsModel": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "voice": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "mode",
+          "language",
+          "delivery",
+          "allowGuests",
+          "maxCallMinutes",
+          "maxCallCostUsd",
+          "maxDailyCostUsd",
+          "createdAt",
+          "updatedAt"
+        ],
         "type": "object"
       },
       "type": "array"
@@ -138430,8 +139289,78 @@ export const VoiceProfilesShowReturnSchema = {
   "additionalProperties": false,
   "properties": {
     "profile": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "allowGuests": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "delivery": {
+          "enum": [
+            "speak",
+            "when_idle",
+            "silent"
+          ],
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "language": {
+          "type": "string"
+        },
+        "liveModel": {
+          "type": "string"
+        },
+        "liveVoice": {
+          "type": "string"
+        },
+        "maxCallCostUsd": {
+          "type": "number"
+        },
+        "maxCallMinutes": {
+          "type": "number"
+        },
+        "maxDailyCostUsd": {
+          "type": "number"
+        },
+        "mode": {
+          "enum": [
+            "push",
+            "live",
+            "handsfree",
+            "mock"
+          ],
+          "type": "string"
+        },
+        "ttsModel": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "voice": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "mode",
+        "language",
+        "delivery",
+        "allowGuests",
+        "maxCallMinutes",
+        "maxCallCostUsd",
+        "maxDailyCostUsd",
+        "createdAt",
+        "updatedAt"
+      ],
       "type": "object"
     }
   },
@@ -138514,8 +139443,78 @@ export const VoiceProfilesUpdateReturnSchema = {
   "additionalProperties": false,
   "properties": {
     "profile": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "allowGuests": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "delivery": {
+          "enum": [
+            "speak",
+            "when_idle",
+            "silent"
+          ],
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "language": {
+          "type": "string"
+        },
+        "liveModel": {
+          "type": "string"
+        },
+        "liveVoice": {
+          "type": "string"
+        },
+        "maxCallCostUsd": {
+          "type": "number"
+        },
+        "maxCallMinutes": {
+          "type": "number"
+        },
+        "maxDailyCostUsd": {
+          "type": "number"
+        },
+        "mode": {
+          "enum": [
+            "push",
+            "live",
+            "handsfree",
+            "mock"
+          ],
+          "type": "string"
+        },
+        "ttsModel": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "voice": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "mode",
+        "language",
+        "delivery",
+        "allowGuests",
+        "maxCallMinutes",
+        "maxCallCostUsd",
+        "maxDailyCostUsd",
+        "createdAt",
+        "updatedAt"
+      ],
       "type": "object"
     }
   },
@@ -138546,7 +139545,7 @@ export const VoiceTargetsListReturnSchema = {
   "additionalProperties": false,
   "properties": {
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -138594,8 +139593,30 @@ export const VoiceTargetsListReturnSchema = {
     },
     "targets": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "activeCalls": {
+            "type": "number"
+          },
+          "agentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionName",
+          "agentId",
+          "activeCalls"
+        ],
         "type": "object"
       },
       "type": "array"
@@ -138637,7 +139658,7 @@ export const VoiceVoicesListReturnSchema = {
   "additionalProperties": false,
   "properties": {
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -138688,8 +139709,31 @@ export const VoiceVoicesListReturnSchema = {
     },
     "voices": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "name": {
+            "type": "string"
+          },
+          "voiceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "voiceId",
+          "name"
+        ],
         "type": "object"
       },
       "type": "array"

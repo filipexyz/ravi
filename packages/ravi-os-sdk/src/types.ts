@@ -26936,7 +26936,13 @@ export type VoiceCallsEventsInput = {
 /** Return shape for `voice.calls.events`. */
 export type VoiceCallsEventsReturn = {
   callId: string;
-  events: Array<Record<string, unknown>>;
+  events: Array<{
+    callId: string;
+    createdAt: number;
+    data: Record<string, unknown>;
+    seq: number;
+    type: "call.snapshot" | "call.state" | "call.ended" | "agent.state" | "work.state" | "work.tool" | "user.transcript" | "agent.transcript" | "turn.accepted" | "turn.completed" | "turn.approval_requested" | "turn.approval_resolved" | "usage" | "error";
+  }>;
   lastSeq: number;
 };
 
@@ -26949,7 +26955,33 @@ export type VoiceCallsListInput = {
 
 /** Return shape for `voice.calls.list`. */
 export type VoiceCallsListReturn = {
-  calls: Array<Record<string, unknown>>;
+  calls: Array<{
+    agentState: "listening" | "thinking" | "speaking" | "idle";
+    connectionKind: "none" | "webrtc" | "room";
+    createdAt: string;
+    endedAt?: string;
+    endedReason?: string;
+    engine: "push" | "live" | "handsfree" | "mock";
+    id: string;
+    mode: "push" | "live" | "handsfree" | "mock";
+    profileId: string;
+    sessionName: string;
+    speaker: {
+      contactId?: string;
+      id: string;
+      kind: "operator" | "device" | "guest";
+      label?: string;
+    };
+    state: "starting" | "active" | "ending" | "ended";
+    updatedAt: string;
+    usage: {
+      audioInSeconds: number;
+      audioOutSeconds: number;
+      charactersSpoken: number;
+      engineSeconds: number;
+      estimatedCostUsd: number;
+    };
+  }>;
   pagination: {
     hasMore?: boolean;
     limit: number;
@@ -26958,7 +26990,6 @@ export type VoiceCallsListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
 };
@@ -26999,11 +27030,62 @@ export type VoiceCallsShowInput = {
 
 /** Return shape for `voice.calls.show`. */
 export type VoiceCallsShowReturn = {
-  call: Record<string, unknown>;
-  engine: Record<string, unknown>;
+  call: {
+    agentState: "listening" | "thinking" | "speaking" | "idle";
+    connectionKind: "none" | "webrtc" | "room";
+    createdAt: string;
+    endedAt?: string;
+    endedReason?: string;
+    engine: "push" | "live" | "handsfree" | "mock";
+    id: string;
+    mode: "push" | "live" | "handsfree" | "mock";
+    profileId: string;
+    sessionName: string;
+    speaker: {
+      contactId?: string;
+      id: string;
+      kind: "operator" | "device" | "guest";
+      label?: string;
+    };
+    state: "starting" | "active" | "ending" | "ended";
+    updatedAt: string;
+    usage: {
+      audioInSeconds: number;
+      audioOutSeconds: number;
+      charactersSpoken: number;
+      engineSeconds: number;
+      estimatedCostUsd: number;
+    };
+  };
+  engine: {
+    capabilities: {
+      bargeIn: boolean;
+      exactSpeech: boolean;
+      needs: string[];
+      serverAudio: boolean;
+      streamingAudio: boolean;
+    };
+    id: "push" | "live" | "handsfree" | "mock";
+    label: string;
+  };
   lastSeq: number;
-  openApprovals: Array<Record<string, unknown>>;
-  turns: Array<Record<string, unknown>>;
+  openApprovals: Array<{
+    approvalId: string;
+    digest: string;
+    text: string;
+    version: number;
+  }>;
+  turns: Array<{
+    createdAt: string;
+    id: string;
+    speaker: {
+      contactId?: string;
+      id: string;
+      kind: "operator" | "device" | "guest";
+      label?: string;
+    };
+    state: "queued" | "running" | "done" | "failed" | "cancelled";
+  }>;
 };
 
 /** Input shape for `voice.calls.silence`. */
@@ -27028,7 +27110,13 @@ export type VoiceCallsStartInput = {
 /** Return shape for `voice.calls.start`. */
 export type VoiceCallsStartReturn = {
   callId: string;
-  capabilities: Record<string, unknown>;
+  capabilities: {
+    bargeIn: boolean;
+    exactSpeech: boolean;
+    needs: string[];
+    serverAudio: boolean;
+    streamingAudio: boolean;
+  };
   connectionKind: "none" | "webrtc" | "room";
   lastSeq: number;
   mode: "push" | "live" | "handsfree" | "mock";
@@ -27048,7 +27136,11 @@ export type VoiceCallsTranscriptInput = {
 /** Return shape for `voice.calls.transcript`. */
 export type VoiceCallsTranscriptReturn = {
   callId: string;
-  lines: Array<Record<string, unknown>>;
+  lines: Array<{
+    role: "user" | "assistant";
+    seq: number;
+    text: string;
+  }>;
 };
 
 /** Input shape for `voice.devices.list`. */
@@ -27060,7 +27152,16 @@ export type VoiceDevicesListInput = {
 
 /** Return shape for `voice.devices.list`. */
 export type VoiceDevicesListReturn = {
-  devices: Array<(Record<string, unknown>) | null>;
+  devices: Array<({
+    contactId: string;
+    createdAt: string;
+    expiresAt: string;
+    id: string;
+    label: string;
+    lastSeenAt?: string;
+    revoked: boolean;
+    sessions: string[];
+  }) | null>;
   pagination: {
     hasMore?: boolean;
     limit: number;
@@ -27069,7 +27170,6 @@ export type VoiceDevicesListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
 };
@@ -27086,7 +27186,16 @@ export type VoiceDevicesPairInput = {
 /** Return shape for `voice.devices.pair`. */
 export type VoiceDevicesPairReturn = {
   contextKey: string;
-  device: (Record<string, unknown>) | null;
+  device: ({
+    contactId: string;
+    createdAt: string;
+    expiresAt: string;
+    id: string;
+    label: string;
+    lastSeenAt?: string;
+    revoked: boolean;
+    sessions: string[];
+  }) | null;
   shownOnce: true;
 };
 
@@ -27097,7 +27206,16 @@ export type VoiceDevicesRevokeInput = {
 
 /** Return shape for `voice.devices.revoke`. */
 export type VoiceDevicesRevokeReturn = {
-  device: (Record<string, unknown>) | null;
+  device: ({
+    contactId: string;
+    createdAt: string;
+    expiresAt: string;
+    id: string;
+    label: string;
+    lastSeenAt?: string;
+    revoked: boolean;
+    sessions: string[];
+  }) | null;
   endedCalls: string[];
 };
 
@@ -27106,7 +27224,12 @@ export type VoiceEnginesCheckInput = Record<string, never>;
 
 /** Return shape for `voice.engines.check`. */
 export type VoiceEnginesCheckReturn = {
-  checks: Array<Record<string, unknown>>;
+  checks: Array<{
+    engine: "push" | "live" | "handsfree" | "mock";
+    missing: string[];
+    notes: string[];
+    ready: boolean;
+  }>;
 };
 
 /** Input shape for `voice.engines.list`. */
@@ -27117,7 +27240,19 @@ export type VoiceEnginesListInput = {
 
 /** Return shape for `voice.engines.list`. */
 export type VoiceEnginesListReturn = {
-  engines: Array<Record<string, unknown>>;
+  engines: Array<{
+    capabilities: {
+      bargeIn: boolean;
+      exactSpeech: boolean;
+      needs: string[];
+      serverAudio: boolean;
+      streamingAudio: boolean;
+    };
+    connectionKind: "none" | "webrtc" | "room";
+    costPerMinuteUsd: number;
+    id: "push" | "live" | "handsfree" | "mock";
+    label: string;
+  }>;
   pagination: {
     hasMore?: boolean;
     limit: number;
@@ -27126,7 +27261,6 @@ export type VoiceEnginesListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
 };
@@ -27150,7 +27284,23 @@ export type VoiceProfilesCreateInput = {
 
 /** Return shape for `voice.profiles.create`. */
 export type VoiceProfilesCreateReturn = {
-  profile: Record<string, unknown>;
+  profile: {
+    allowGuests: boolean;
+    createdAt: number;
+    delivery: "speak" | "when_idle" | "silent";
+    id: string;
+    label: string;
+    language: string;
+    liveModel?: string;
+    liveVoice?: string;
+    maxCallCostUsd: number;
+    maxCallMinutes: number;
+    maxDailyCostUsd: number;
+    mode: "push" | "live" | "handsfree" | "mock";
+    ttsModel?: string;
+    updatedAt: number;
+    voice?: string;
+  };
 };
 
 /** Input shape for `voice.profiles.delete`. */
@@ -27180,9 +27330,24 @@ export type VoiceProfilesListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
-  profiles: Array<Record<string, unknown>>;
+  profiles: Array<{
+    allowGuests: boolean;
+    createdAt: number;
+    delivery: "speak" | "when_idle" | "silent";
+    id: string;
+    label: string;
+    language: string;
+    liveModel?: string;
+    liveVoice?: string;
+    maxCallCostUsd: number;
+    maxCallMinutes: number;
+    maxDailyCostUsd: number;
+    mode: "push" | "live" | "handsfree" | "mock";
+    ttsModel?: string;
+    updatedAt: number;
+    voice?: string;
+  }>;
   total: number;
 };
 
@@ -27193,7 +27358,23 @@ export type VoiceProfilesShowInput = {
 
 /** Return shape for `voice.profiles.show`. */
 export type VoiceProfilesShowReturn = {
-  profile: Record<string, unknown>;
+  profile: {
+    allowGuests: boolean;
+    createdAt: number;
+    delivery: "speak" | "when_idle" | "silent";
+    id: string;
+    label: string;
+    language: string;
+    liveModel?: string;
+    liveVoice?: string;
+    maxCallCostUsd: number;
+    maxCallMinutes: number;
+    maxDailyCostUsd: number;
+    mode: "push" | "live" | "handsfree" | "mock";
+    ttsModel?: string;
+    updatedAt: number;
+    voice?: string;
+  };
 };
 
 /** Input shape for `voice.profiles.update`. */
@@ -27216,7 +27397,23 @@ export type VoiceProfilesUpdateInput = {
 
 /** Return shape for `voice.profiles.update`. */
 export type VoiceProfilesUpdateReturn = {
-  profile: Record<string, unknown>;
+  profile: {
+    allowGuests: boolean;
+    createdAt: number;
+    delivery: "speak" | "when_idle" | "silent";
+    id: string;
+    label: string;
+    language: string;
+    liveModel?: string;
+    liveVoice?: string;
+    maxCallCostUsd: number;
+    maxCallMinutes: number;
+    maxDailyCostUsd: number;
+    mode: "push" | "live" | "handsfree" | "mock";
+    ttsModel?: string;
+    updatedAt: number;
+    voice?: string;
+  };
 };
 
 /** Input shape for `voice.targets.list`. */
@@ -27235,9 +27432,12 @@ export type VoiceTargetsListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
-  targets: Array<Record<string, unknown>>;
+  targets: Array<{
+    activeCalls: number;
+    agentId: string | null;
+    sessionName: string;
+  }>;
   total: number;
 };
 
@@ -27258,10 +27458,14 @@ export type VoiceVoicesListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
-  voices: Array<Record<string, unknown>>;
+  voices: Array<{
+    category?: string;
+    labels?: Record<string, string>;
+    name: string;
+    voiceId: string;
+  }>;
 };
 
 /** Input shape for `watch.connectors`. */

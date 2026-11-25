@@ -72,7 +72,10 @@ import {
   DEFAULT_VOICE_PROFILE_ID,
   emptyVoiceUsage,
   isVoiceMode,
+  VOICE_AGENT_STATES,
+  VOICE_CALL_STATES,
   VOICE_DELIVERY_CLASSES,
+  VOICE_EVENT_TYPES,
   VOICE_MODES,
   type VoiceCall,
   type VoiceConnectionKind,
@@ -90,9 +93,9 @@ import {
 } from "../agent-contract.js";
 import { getContext } from "../context.js";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
-import { declareCommandReturns, looseObjectSchema } from "./operational-return-schemas.js";
+import { declareCommandReturns } from "./operational-return-schemas.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
-import { cliOffsetPaginationSchema } from "../return-schemas.js";
+import { jsonObjectSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
 
 const DEVICE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_CLIP_BYTES = 25 * 1024 * 1024;
@@ -1353,7 +1356,78 @@ export class VoiceEnginesCommands {
 // Return schemas (generated SDK types)
 // ---------------------------------------------------------------------------
 
-const callSchema = looseObjectSchema;
+const speakerSchema = z.object({
+  kind: z.enum(["operator", "device", "guest"]),
+  id: z.string(),
+  contactId: z.string().optional(),
+  label: z.string().optional(),
+});
+const usageSchema = z.object({
+  audioInSeconds: z.number(),
+  audioOutSeconds: z.number(),
+  charactersSpoken: z.number(),
+  engineSeconds: z.number(),
+  estimatedCostUsd: z.number(),
+});
+const callSchema = z.object({
+  id: z.string(),
+  sessionName: z.string(),
+  mode: z.enum(VOICE_MODES),
+  engine: z.enum(VOICE_MODES),
+  profileId: z.string(),
+  state: z.enum(VOICE_CALL_STATES),
+  agentState: z.enum(VOICE_AGENT_STATES),
+  speaker: speakerSchema,
+  connectionKind: z.enum(["none", "webrtc", "room"]),
+  usage: usageSchema,
+  endedReason: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  endedAt: z.string().optional(),
+});
+const capabilitiesSchema = z.object({
+  bargeIn: z.boolean(),
+  streamingAudio: z.boolean(),
+  exactSpeech: z.boolean(),
+  serverAudio: z.boolean(),
+  needs: z.array(z.string()),
+});
+const approvalSchema = z.object({ approvalId: z.string(), version: z.number(), digest: z.string(), text: z.string() });
+const eventSchema = z.object({
+  callId: z.string(),
+  seq: z.number(),
+  type: z.enum(VOICE_EVENT_TYPES),
+  data: jsonObjectSchema,
+  createdAt: z.number(),
+});
+const profileSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  mode: z.enum(VOICE_MODES),
+  language: z.string(),
+  voice: z.string().optional(),
+  ttsModel: z.string().optional(),
+  liveVoice: z.string().optional(),
+  liveModel: z.string().optional(),
+  delivery: z.enum(VOICE_DELIVERY_CLASSES),
+  allowGuests: z.boolean(),
+  maxCallMinutes: z.number(),
+  maxCallCostUsd: z.number(),
+  maxDailyCostUsd: z.number(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+const deviceSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  contactId: z.string(),
+  sessions: z.array(z.string()),
+  createdAt: z.string(),
+  expiresAt: z.string(),
+  revoked: z.boolean(),
+  lastSeenAt: z.string().optional(),
+});
+const page = strictCliOffsetPaginationSchema;
 const connectionSchema = z.object({
   callId: z.string(),
   connectionKind: z.enum(["none", "webrtc", "room"]),
@@ -1364,7 +1438,11 @@ const connectionSchema = z.object({
 });
 
 declareCommandReturns(VoiceTargetsCommands, {
-  list: z.object({ targets: z.array(looseObjectSchema), total: z.number(), pagination: cliOffsetPaginationSchema }),
+  list: z.object({
+    targets: z.array(z.object({ sessionName: z.string(), agentId: z.string().nullable(), activeCalls: z.number() })),
+    total: z.number(),
+    pagination: page,
+  }),
 });
 
 declareCommandReturns(VoiceCallsCommands, {
@@ -1373,19 +1451,29 @@ declareCommandReturns(VoiceCallsCommands, {
     mode: z.enum(VOICE_MODES),
     profileId: z.string(),
     state: z.string(),
-    capabilities: looseObjectSchema,
+    capabilities: capabilitiesSchema,
   }),
   connect: connectionSchema,
-  list: z.object({ calls: z.array(callSchema), total: z.number(), pagination: cliOffsetPaginationSchema }),
+  list: z.object({ calls: z.array(callSchema), total: z.number(), pagination: page }),
   show: z.object({
     call: callSchema,
-    engine: looseObjectSchema,
-    turns: z.array(looseObjectSchema),
-    openApprovals: z.array(looseObjectSchema),
+    engine: z.object({ id: z.enum(VOICE_MODES), label: z.string(), capabilities: capabilitiesSchema }),
+    turns: z.array(
+      z.object({
+        id: z.string(),
+        state: z.enum(["queued", "running", "done", "failed", "cancelled"]),
+        speaker: speakerSchema,
+        createdAt: z.string(),
+      }),
+    ),
+    openApprovals: z.array(approvalSchema),
     lastSeq: z.number(),
   }),
-  transcript: z.object({ callId: z.string(), lines: z.array(looseObjectSchema) }),
-  events: z.object({ callId: z.string(), events: z.array(looseObjectSchema), lastSeq: z.number() }),
+  transcript: z.object({
+    callId: z.string(),
+    lines: z.array(z.object({ role: z.enum(["user", "assistant"]), text: z.string(), seq: z.number() })),
+  }),
+  events: z.object({ callId: z.string(), events: z.array(eventSchema), lastSeq: z.number() }),
   push: z.object({ callId: z.string(), turnId: z.string().nullable(), text: z.string() }),
   send: z.object({ callId: z.string(), turnId: z.string(), text: z.string() }),
   audio: z.object({
@@ -1404,28 +1492,60 @@ declareCommandReturns(VoiceCallsCommands, {
 });
 
 declareCommandReturns(VoiceProfilesCommands, {
-  list: z.object({ profiles: z.array(looseObjectSchema), total: z.number(), pagination: cliOffsetPaginationSchema }),
-  show: z.object({ profile: looseObjectSchema }),
-  create: z.object({ profile: looseObjectSchema }),
-  update: z.object({ profile: looseObjectSchema }),
+  list: z.object({ profiles: z.array(profileSchema), total: z.number(), pagination: page }),
+  show: z.object({ profile: profileSchema }),
+  create: z.object({ profile: profileSchema }),
+  update: z.object({ profile: profileSchema }),
   delete: z.object({ id: z.string(), deleted: z.literal(true) }),
 });
 
 declareCommandReturns(VoiceVoicesCommands, {
-  list: z.object({ voices: z.array(looseObjectSchema), total: z.number(), pagination: cliOffsetPaginationSchema }),
+  list: z.object({
+    voices: z.array(
+      z.object({
+        voiceId: z.string(),
+        name: z.string(),
+        category: z.string().optional(),
+        labels: z.record(z.string(), z.string()).optional(),
+      }),
+    ),
+    total: z.number(),
+    pagination: page,
+  }),
 });
 
 declareCommandReturns(VoiceDevicesCommands, {
-  pair: z.object({ device: looseObjectSchema.nullable(), contextKey: z.string(), shownOnce: z.literal(true) }),
+  pair: z.object({ device: deviceSchema.nullable(), contextKey: z.string(), shownOnce: z.literal(true) }),
   list: z.object({
-    devices: z.array(looseObjectSchema.nullable()),
+    devices: z.array(deviceSchema.nullable()),
     total: z.number(),
-    pagination: cliOffsetPaginationSchema,
+    pagination: page,
   }),
-  revoke: z.object({ device: looseObjectSchema.nullable(), endedCalls: z.array(z.string()) }),
+  revoke: z.object({ device: deviceSchema.nullable(), endedCalls: z.array(z.string()) }),
 });
 
 declareCommandReturns(VoiceEnginesCommands, {
-  list: z.object({ engines: z.array(looseObjectSchema), total: z.number(), pagination: cliOffsetPaginationSchema }),
-  check: z.object({ checks: z.array(looseObjectSchema) }),
+  list: z.object({
+    engines: z.array(
+      z.object({
+        id: z.enum(VOICE_MODES),
+        label: z.string(),
+        connectionKind: z.enum(["none", "webrtc", "room"]),
+        capabilities: capabilitiesSchema,
+        costPerMinuteUsd: z.number(),
+      }),
+    ),
+    total: z.number(),
+    pagination: page,
+  }),
+  check: z.object({
+    checks: z.array(
+      z.object({
+        engine: z.enum(VOICE_MODES),
+        ready: z.boolean(),
+        missing: z.array(z.string()),
+        notes: z.array(z.string()),
+      }),
+    ),
+  }),
 });

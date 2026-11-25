@@ -34059,13 +34059,13 @@ class VoiceCallsEventsReturn {
   const VoiceCallsEventsReturn({required this.callId, required this.events, required this.lastSeq});
 
   final String callId;
-  final List<Map<String, RaviJson>> events;
+  final List<RaviJson> events;
   final double lastSeq;
 
   factory VoiceCallsEventsReturn.fromJson(Map<String, Object?> json) {
     return VoiceCallsEventsReturn(
       callId: raviJsonAsString(json["callId"]),
-      events: raviJsonAsList(json["events"], raviJsonAsRaviJsonMap),
+      events: raviJsonAsList(json["events"], RaviJson.from),
       lastSeq: raviJsonAsDouble(json["lastSeq"]),
     );
   }
@@ -34100,13 +34100,13 @@ class VoiceCallsListOptions {
 class VoiceCallsListReturn {
   const VoiceCallsListReturn({required this.calls, required this.pagination, required this.total});
 
-  final List<Map<String, RaviJson>> calls;
+  final List<RaviJson> calls;
   final RaviJson pagination;
   final double total;
 
   factory VoiceCallsListReturn.fromJson(Map<String, Object?> json) {
     return VoiceCallsListReturn(
-      calls: raviJsonAsList(json["calls"], raviJsonAsRaviJsonMap),
+      calls: raviJsonAsList(json["calls"], RaviJson.from),
       pagination: RaviJson.from(json["pagination"]),
       total: raviJsonAsDouble(json["total"]),
     );
@@ -34198,19 +34198,19 @@ VoiceCallsSendReturn voiceCallsSendReturnFromJson(Object? json) => VoiceCallsSen
 class VoiceCallsShowReturn {
   const VoiceCallsShowReturn({required this.call, required this.engine, required this.lastSeq, required this.openApprovals, required this.turns});
 
-  final Map<String, RaviJson> call;
-  final Map<String, RaviJson> engine;
+  final RaviJson call;
+  final RaviJson engine;
   final double lastSeq;
-  final List<Map<String, RaviJson>> openApprovals;
-  final List<Map<String, RaviJson>> turns;
+  final List<RaviJson> openApprovals;
+  final List<RaviJson> turns;
 
   factory VoiceCallsShowReturn.fromJson(Map<String, Object?> json) {
     return VoiceCallsShowReturn(
-      call: raviJsonAsRaviJsonMap(json["call"]),
-      engine: raviJsonAsRaviJsonMap(json["engine"]),
+      call: RaviJson.from(json["call"]),
+      engine: RaviJson.from(json["engine"]),
       lastSeq: raviJsonAsDouble(json["lastSeq"]),
-      openApprovals: raviJsonAsList(json["openApprovals"], raviJsonAsRaviJsonMap),
-      turns: raviJsonAsList(json["turns"], raviJsonAsRaviJsonMap),
+      openApprovals: raviJsonAsList(json["openApprovals"], RaviJson.from),
+      turns: raviJsonAsList(json["turns"], RaviJson.from),
     );
   }
 
@@ -34265,7 +34265,7 @@ class VoiceCallsStartReturn {
   const VoiceCallsStartReturn({required this.callId, required this.capabilities, required this.connectionKind, required this.lastSeq, required this.mode, required this.profileId, required this.roomToken, required this.roomUrl, required this.sdpAnswer, required this.sessionName, required this.state});
 
   final String callId;
-  final Map<String, RaviJson> capabilities;
+  final RaviJson capabilities;
   final String connectionKind;
   final double lastSeq;
   final String mode;
@@ -34279,7 +34279,7 @@ class VoiceCallsStartReturn {
   factory VoiceCallsStartReturn.fromJson(Map<String, Object?> json) {
     return VoiceCallsStartReturn(
       callId: raviJsonAsString(json["callId"]),
-      capabilities: raviJsonAsRaviJsonMap(json["capabilities"]),
+      capabilities: RaviJson.from(json["capabilities"]),
       connectionKind: raviJsonAsString(json["connectionKind"]),
       lastSeq: raviJsonAsDouble(json["lastSeq"]),
       mode: raviJsonAsString(json["mode"]),
@@ -34303,12 +34303,12 @@ class VoiceCallsTranscriptReturn {
   const VoiceCallsTranscriptReturn({required this.callId, required this.lines});
 
   final String callId;
-  final List<Map<String, RaviJson>> lines;
+  final List<RaviJson> lines;
 
   factory VoiceCallsTranscriptReturn.fromJson(Map<String, Object?> json) {
     return VoiceCallsTranscriptReturn(
       callId: raviJsonAsString(json["callId"]),
-      lines: raviJsonAsList(json["lines"], raviJsonAsRaviJsonMap),
+      lines: raviJsonAsList(json["lines"], RaviJson.from),
     );
   }
 
@@ -34434,11 +34434,11 @@ VoiceDevicesRevokeReturn voiceDevicesRevokeReturnFromJson(Object? json) => Voice
 class VoiceEnginesCheckReturn {
   const VoiceEnginesCheckReturn({required this.checks});
 
-  final List<Map<String, RaviJson>> checks;
+  final List<RaviJson> checks;
 
   factory VoiceEnginesCheckReturn.fromJson(Map<String, Object?> json) {
     return VoiceEnginesCheckReturn(
-      checks: raviJsonAsList(json["checks"], raviJsonAsRaviJsonMap),
+      checks: raviJsonAsList(json["checks"], RaviJson.from),
     );
   }
 
@@ -34468,13 +34468,13 @@ class VoiceEnginesListOptions {
 class VoiceEnginesListReturn {
   const VoiceEnginesListReturn({required this.engines, required this.pagination, required this.total});
 
-  final List<Map<String, RaviJson>> engines;
+  final List<RaviJson> engines;
   final RaviJson pagination;
   final double total;
 
   factory VoiceEnginesListReturn.fromJson(Map<String, Object?> json) {
     return VoiceEnginesListReturn(
-      engines: raviJsonAsList(json["engines"], raviJsonAsRaviJsonMap),
+      engines: raviJsonAsList(json["engines"], RaviJson.from),
       pagination: RaviJson.from(json["pagination"]),
       total: raviJsonAsDouble(json["total"]),
     );
@@ -34546,11 +34546,11 @@ class VoiceProfilesCreateOptions {
 class VoiceProfilesCreateReturn {
   const VoiceProfilesCreateReturn({required this.profile});
 
-  final Map<String, RaviJson> profile;
+  final RaviJson profile;
 
   factory VoiceProfilesCreateReturn.fromJson(Map<String, Object?> json) {
     return VoiceProfilesCreateReturn(
-      profile: raviJsonAsRaviJsonMap(json["profile"]),
+      profile: RaviJson.from(json["profile"]),
     );
   }
 
@@ -34601,13 +34601,13 @@ class VoiceProfilesListReturn {
   const VoiceProfilesListReturn({required this.pagination, required this.profiles, required this.total});
 
   final RaviJson pagination;
-  final List<Map<String, RaviJson>> profiles;
+  final List<RaviJson> profiles;
   final double total;
 
   factory VoiceProfilesListReturn.fromJson(Map<String, Object?> json) {
     return VoiceProfilesListReturn(
       pagination: RaviJson.from(json["pagination"]),
-      profiles: raviJsonAsList(json["profiles"], raviJsonAsRaviJsonMap),
+      profiles: raviJsonAsList(json["profiles"], RaviJson.from),
       total: raviJsonAsDouble(json["total"]),
     );
   }
@@ -34622,11 +34622,11 @@ VoiceProfilesListReturn voiceProfilesListReturnFromJson(Object? json) => VoicePr
 class VoiceProfilesShowReturn {
   const VoiceProfilesShowReturn({required this.profile});
 
-  final Map<String, RaviJson> profile;
+  final RaviJson profile;
 
   factory VoiceProfilesShowReturn.fromJson(Map<String, Object?> json) {
     return VoiceProfilesShowReturn(
-      profile: raviJsonAsRaviJsonMap(json["profile"]),
+      profile: RaviJson.from(json["profile"]),
     );
   }
 
@@ -34700,11 +34700,11 @@ class VoiceProfilesUpdateOptions {
 class VoiceProfilesUpdateReturn {
   const VoiceProfilesUpdateReturn({required this.profile});
 
-  final Map<String, RaviJson> profile;
+  final RaviJson profile;
 
   factory VoiceProfilesUpdateReturn.fromJson(Map<String, Object?> json) {
     return VoiceProfilesUpdateReturn(
-      profile: raviJsonAsRaviJsonMap(json["profile"]),
+      profile: RaviJson.from(json["profile"]),
     );
   }
 
@@ -34735,13 +34735,13 @@ class VoiceTargetsListReturn {
   const VoiceTargetsListReturn({required this.pagination, required this.targets, required this.total});
 
   final RaviJson pagination;
-  final List<Map<String, RaviJson>> targets;
+  final List<RaviJson> targets;
   final double total;
 
   factory VoiceTargetsListReturn.fromJson(Map<String, Object?> json) {
     return VoiceTargetsListReturn(
       pagination: RaviJson.from(json["pagination"]),
-      targets: raviJsonAsList(json["targets"], raviJsonAsRaviJsonMap),
+      targets: raviJsonAsList(json["targets"], RaviJson.from),
       total: raviJsonAsDouble(json["total"]),
     );
   }
@@ -34778,13 +34778,13 @@ class VoiceVoicesListReturn {
 
   final RaviJson pagination;
   final double total;
-  final List<Map<String, RaviJson>> voices;
+  final List<RaviJson> voices;
 
   factory VoiceVoicesListReturn.fromJson(Map<String, Object?> json) {
     return VoiceVoicesListReturn(
       pagination: RaviJson.from(json["pagination"]),
       total: raviJsonAsDouble(json["total"]),
-      voices: raviJsonAsList(json["voices"], raviJsonAsRaviJsonMap),
+      voices: raviJsonAsList(json["voices"], RaviJson.from),
     );
   }
 

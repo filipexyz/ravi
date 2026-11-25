@@ -39971,10 +39971,10 @@ public struct VoiceCallsEventsOptions: Codable, Sendable {
 
 public struct VoiceCallsEventsReturn: Codable, Sendable {
   public var callId: String
-  public var events: [[String: RaviJSON]]
+  public var events: [RaviJSON]
   public var lastSeq: Double
 
-  public init(callId: String, events: [[String: RaviJSON]], lastSeq: Double) {
+  public init(callId: String, events: [RaviJSON], lastSeq: Double) {
     self.callId = callId
     self.events = events
     self.lastSeq = lastSeq
@@ -40018,11 +40018,11 @@ public struct VoiceCallsListOptions: Codable, Sendable {
 }
 
 public struct VoiceCallsListReturn: Codable, Sendable {
-  public var calls: [[String: RaviJSON]]
+  public var calls: [RaviJSON]
   public var pagination: RaviJSON
   public var total: Double
 
-  public init(calls: [[String: RaviJSON]], pagination: RaviJSON, total: Double) {
+  public init(calls: [RaviJSON], pagination: RaviJSON, total: Double) {
     self.calls = calls
     self.pagination = pagination
     self.total = total
@@ -40120,13 +40120,13 @@ public struct VoiceCallsSendReturn: Codable, Sendable {
 }
 
 public struct VoiceCallsShowReturn: Codable, Sendable {
-  public var call: [String: RaviJSON]
-  public var engine: [String: RaviJSON]
+  public var call: RaviJSON
+  public var engine: RaviJSON
   public var lastSeq: Double
-  public var openApprovals: [[String: RaviJSON]]
-  public var turns: [[String: RaviJSON]]
+  public var openApprovals: [RaviJSON]
+  public var turns: [RaviJSON]
 
-  public init(call: [String: RaviJSON], engine: [String: RaviJSON], lastSeq: Double, openApprovals: [[String: RaviJSON]], turns: [[String: RaviJSON]]) {
+  public init(call: RaviJSON, engine: RaviJSON, lastSeq: Double, openApprovals: [RaviJSON], turns: [RaviJSON]) {
     self.call = call
     self.engine = engine
     self.lastSeq = lastSeq
@@ -40190,7 +40190,7 @@ public struct VoiceCallsStartOptions: Codable, Sendable {
 
 public struct VoiceCallsStartReturn: Codable, Sendable {
   public var callId: String
-  public var capabilities: [String: RaviJSON]
+  public var capabilities: RaviJSON
   public var connectionKind: String
   public var lastSeq: Double
   public var mode: String
@@ -40201,7 +40201,7 @@ public struct VoiceCallsStartReturn: Codable, Sendable {
   public var sessionName: String
   public var state: String
 
-  public init(callId: String, capabilities: [String: RaviJSON], connectionKind: String, lastSeq: Double, mode: String, profileId: String, roomToken: RaviJSON, roomUrl: RaviJSON, sdpAnswer: RaviJSON, sessionName: String, state: String) {
+  public init(callId: String, capabilities: RaviJSON, connectionKind: String, lastSeq: Double, mode: String, profileId: String, roomToken: RaviJSON, roomUrl: RaviJSON, sdpAnswer: RaviJSON, sessionName: String, state: String) {
     self.callId = callId
     self.capabilities = capabilities
     self.connectionKind = connectionKind
@@ -40232,9 +40232,9 @@ public struct VoiceCallsStartReturn: Codable, Sendable {
 
 public struct VoiceCallsTranscriptReturn: Codable, Sendable {
   public var callId: String
-  public var lines: [[String: RaviJSON]]
+  public var lines: [RaviJSON]
 
-  public init(callId: String, lines: [[String: RaviJSON]]) {
+  public init(callId: String, lines: [RaviJSON]) {
     self.callId = callId
     self.lines = lines
   }
@@ -40369,9 +40369,9 @@ public struct VoiceDevicesRevokeReturn: Codable, Sendable {
 }
 
 public struct VoiceEnginesCheckReturn: Codable, Sendable {
-  public var checks: [[String: RaviJSON]]
+  public var checks: [RaviJSON]
 
-  public init(checks: [[String: RaviJSON]]) {
+  public init(checks: [RaviJSON]) {
     self.checks = checks
   }
 
@@ -40405,11 +40405,11 @@ public struct VoiceEnginesListOptions: Codable, Sendable {
 }
 
 public struct VoiceEnginesListReturn: Codable, Sendable {
-  public var engines: [[String: RaviJSON]]
+  public var engines: [RaviJSON]
   public var pagination: RaviJSON
   public var total: Double
 
-  public init(engines: [[String: RaviJSON]], pagination: RaviJSON, total: Double) {
+  public init(engines: [RaviJSON], pagination: RaviJSON, total: Double) {
     self.engines = engines
     self.pagination = pagination
     self.total = total
@@ -40507,9 +40507,9 @@ public struct VoiceProfilesCreateOptions: Codable, Sendable {
 }
 
 public struct VoiceProfilesCreateReturn: Codable, Sendable {
-  public var profile: [String: RaviJSON]
+  public var profile: RaviJSON
 
-  public init(profile: [String: RaviJSON]) {
+  public init(profile: RaviJSON) {
     self.profile = profile
   }
 
@@ -40559,10 +40559,10 @@ public struct VoiceProfilesListOptions: Codable, Sendable {
 
 public struct VoiceProfilesListReturn: Codable, Sendable {
   public var pagination: RaviJSON
-  public var profiles: [[String: RaviJSON]]
+  public var profiles: [RaviJSON]
   public var total: Double
 
-  public init(pagination: RaviJSON, profiles: [[String: RaviJSON]], total: Double) {
+  public init(pagination: RaviJSON, profiles: [RaviJSON], total: Double) {
     self.pagination = pagination
     self.profiles = profiles
     self.total = total
@@ -40576,9 +40576,9 @@ public struct VoiceProfilesListReturn: Codable, Sendable {
 }
 
 public struct VoiceProfilesShowReturn: Codable, Sendable {
-  public var profile: [String: RaviJSON]
+  public var profile: RaviJSON
 
-  public init(profile: [String: RaviJSON]) {
+  public init(profile: RaviJSON) {
     self.profile = profile
   }
 
@@ -40678,9 +40678,9 @@ public struct VoiceProfilesUpdateOptions: Codable, Sendable {
 }
 
 public struct VoiceProfilesUpdateReturn: Codable, Sendable {
-  public var profile: [String: RaviJSON]
+  public var profile: RaviJSON
 
-  public init(profile: [String: RaviJSON]) {
+  public init(profile: RaviJSON) {
     self.profile = profile
   }
 
@@ -40715,10 +40715,10 @@ public struct VoiceTargetsListOptions: Codable, Sendable {
 
 public struct VoiceTargetsListReturn: Codable, Sendable {
   public var pagination: RaviJSON
-  public var targets: [[String: RaviJSON]]
+  public var targets: [RaviJSON]
   public var total: Double
 
-  public init(pagination: RaviJSON, targets: [[String: RaviJSON]], total: Double) {
+  public init(pagination: RaviJSON, targets: [RaviJSON], total: Double) {
     self.pagination = pagination
     self.targets = targets
     self.total = total
@@ -40764,9 +40764,9 @@ public struct VoiceVoicesListOptions: Codable, Sendable {
 public struct VoiceVoicesListReturn: Codable, Sendable {
   public var pagination: RaviJSON
   public var total: Double
-  public var voices: [[String: RaviJSON]]
+  public var voices: [RaviJSON]
 
-  public init(pagination: RaviJSON, total: Double, voices: [[String: RaviJSON]]) {
+  public init(pagination: RaviJSON, total: Double, voices: [RaviJSON]) {
     self.pagination = pagination
     self.total = total
     self.voices = voices
