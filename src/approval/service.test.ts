@@ -27,6 +27,7 @@ import {
   type ApprovalRespondSlackInput,
   type ApprovalServiceDependencies,
   APPROVAL_REFUSAL_REASON,
+  buildNoApproverInDirectChatReason,
   isFixedApprovalRefusalReason,
 } from "./service.js";
 import { setApprovalGrantorRouterConfigForTest } from "../channels/slack/grantors.js";
@@ -948,6 +949,128 @@ describe("approval service", () => {
     expect(result.approved).toBe(false);
     expect(result.reason ?? "").toMatch(/Timeout/);
     expect(dbGetContext(context.contextId)?.capabilities).toEqual([]);
+  });
+
+  describe("a direct chat whose requester cannot grant", () => {
+    function seedRequesterTurn(input: { id: string; chatType: "dm" | "group"; phone: string; tags: string[] }) {
+      const requester = seedApprovalContact({ phone: input.phone, name: "Requester", tags: input.tags });
+      const platformChatId = input.chatType === "dm" ? input.phone : "120363000000000001@g.us";
+      const chat = dbUpsertChat({
+        channel: "whatsapp",
+        instanceId: "main",
+        platformChatId,
+        chatType: input.chatType,
+      });
+      const context = dbCreateContext({
+        contextId: input.id,
+        contextKey: `r${input.id}`,
+        kind: "agent-runtime",
+        sessionName: "dev-main",
+        capabilities: [],
+        source: { channel: "whatsapp", accountId: "main", chatId: platformChatId },
+        metadata: {
+          actorPrincipal: `contact:${requester.id}`,
+          actorResolution: "resolved",
+          surfacePrincipal: `chat:${chat.id}`,
+        },
+        createdAt: 1000,
+      });
+      createdContextIds.add(context.contextId);
+      return { requester, chat, context };
+    }
+
+    it("refuses without posting the prompt to the requester's own chat", async () => {
+      seedWhatsAppOwner();
+      const { context } = seedRequesterTurn({
+        id: "ctx_dm_requester_cannot_grant",
+        chatType: "dm",
+        phone: APPROVAL_TEST_STRANGER_PHONE,
+        tags: ["lead"],
+      });
+
+      const result = await authorizeRuntimeContext({
+        context,
+        permission: "execute",
+        objectType: "group",
+        objectId: "daemon",
+        timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+      });
+
+      expect(result).toMatchObject({ allowed: false, approved: false, inherited: false });
+      expect(result.reason).toBe(
+        buildNoApproverInDirectChatReason({ permission: "execute", objectType: "group", objectId: "daemon" }),
+      );
+      expect(deliveredRequests).toEqual([]);
+      expect(emitted.map((entry) => entry.topic)).not.toContain("ravi.approval.request");
+      expect(dbGetContext(context.contextId)?.capabilities).toEqual([]);
+    });
+
+    it("still posts the prompt in a group, where someone else may decide it", async () => {
+      seedWhatsAppOwner();
+      subscribeEvents = [
+        { topic: "ravi.inbound.reaction", data: { targetMessageId: "msg_1", emoji: "👍", senderId: OWNER_PHONE } },
+      ];
+      const { context } = seedRequesterTurn({
+        id: "ctx_group_requester_cannot_grant",
+        chatType: "group",
+        phone: APPROVAL_TEST_STRANGER_PHONE,
+        tags: ["lead"],
+      });
+
+      const result = await authorizeRuntimeContext({
+        context,
+        permission: "execute",
+        objectType: "group",
+        objectId: "daemon",
+        timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+      });
+
+      expect(deliveredRequests[0]?.topic).toBe("ravi.outbound.deliver");
+      expect(result.approved).toBe(true);
+    });
+
+    it("still asks a requester who can grant, in their own direct chat", async () => {
+      subscribeEvents = [
+        { topic: "ravi.inbound.reaction", data: { targetMessageId: "msg_1", emoji: "👍", senderId: OWNER_PHONE } },
+      ];
+      const { context } = seedRequesterTurn({
+        id: "ctx_dm_requester_can_grant",
+        chatType: "dm",
+        phone: OWNER_PHONE,
+        tags: ["permission.admin"],
+      });
+
+      const result = await authorizeRuntimeContext({
+        context,
+        permission: "execute",
+        objectType: "group",
+        objectId: "daemon",
+        timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+      });
+
+      expect(deliveredRequests[0]?.topic).toBe("ravi.outbound.deliver");
+      expect(result.approved).toBe(true);
+    });
+
+    it("never lets the requester approve their own request by reacting", async () => {
+      seedWhatsAppOwner();
+      seedApprovalContact({ phone: APPROVAL_TEST_STRANGER_PHONE, name: "Requester", tags: ["lead"] });
+      subscribeEvents = [
+        {
+          topic: "ravi.inbound.reaction",
+          data: { targetMessageId: "msg_1", emoji: "👍", senderId: APPROVAL_TEST_STRANGER_PHONE },
+        },
+      ];
+
+      const result = await requestApproval(
+        { channel: "whatsapp", accountId: "main", chatId: "120363000000000001@g.us" },
+        "permission request",
+        { timeoutMs: APPROVAL_TEST_TIMEOUT_MS, permission: "execute", objectType: "group", objectId: "daemon" },
+      );
+
+      expect(result.approved).toBe(false);
+      expect(result.reason ?? "").toMatch(/Timeout/);
+    });
   });
 
   it("publishes approval.response once per messageId even when reaction traffic retries", async () => {

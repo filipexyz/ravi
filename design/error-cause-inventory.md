@@ -123,18 +123,18 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | sessions | src/adapters/session-adapter-bus.ts | 862 | fixed | binding retained / no recognized error surface | src/adapters/session-adapter-bus.ts:0d2a4edcb0058e0977f9a2a6 |
 | adapters | src/adapters/stdio-supervisor.ts | 181 | triaged-follow-up | surface-bypasses-constructor | src/adapters/stdio-supervisor.ts:fbe96ff56a9d990ac368d3bc |
 | adapters | src/adapters/stdio-supervisor.ts | 584 | fixed | binding retained / no recognized error surface | src/adapters/stdio-supervisor.ts:5c0b98290c11943e2bd3b8e0 |
-| permissions | src/approval/service.ts | 313 | fixed | binding retained / no recognized error surface | src/approval/service.ts:4113090bdfee8676e562b4a3 |
-| permissions | src/approval/service.ts | 484 | fixed | binding retained / no recognized error surface | src/approval/service.ts:5b38d947769e34f5d06100d8 |
-| permissions | src/approval/service.ts | 525 | triaged-follow-up | rejection-without-binding | src/approval/service.ts:1e5b2ada9e3eb6121bb823ad |
-| permissions | src/approval/service.ts | 548 | triaged-follow-up | rejection-without-binding | src/approval/service.ts:1e5b2ada9e3eb6121bb823ad |
-| permissions | src/approval/service.ts | 658 | fixed | binding retained / no recognized error surface | src/approval/service.ts:cec06f9a9c66f6330b63f868 |
-| permissions | src/approval/service.ts | 880 | fixed | binding retained / no recognized error surface | src/approval/service.ts:f268eb99be81506853371f91 |
-| permissions | src/approval/service.ts | 917 | fixed | binding retained / no recognized error surface | src/approval/service.ts:3a7468362c542614807a743e |
-| permissions | src/approval/service.ts | 935 | fixed | binding retained / no recognized error surface | src/approval/service.ts:f645966f7ff5ceaa4ff9d49a |
-| permissions | src/approval/service.ts | 956 | fixed | binding retained / no recognized error surface | src/approval/service.ts:2ff5bafadd9c5191b11954a8 |
-| permissions | src/approval/service.ts | 971 | fixed | binding retained / no recognized error surface | src/approval/service.ts:02b6e0be80efebbe843d1f3e |
-| permissions | src/approval/service.ts | 1016 | fixed | binding retained / no recognized error surface | src/approval/service.ts:0446c3e82195d3d0cb0b9e59 |
-| permissions | src/approval/service.ts | 1275 | fixed | binding retained / no recognized error surface | src/approval/service.ts:e75d2182c32380dcc097db58 |
+| permissions | src/approval/service.ts | 319 | fixed | binding retained / no recognized error surface | src/approval/service.ts:4113090bdfee8676e562b4a3 |
+| permissions | src/approval/service.ts | 490 | fixed | binding retained / no recognized error surface | src/approval/service.ts:5b38d947769e34f5d06100d8 |
+| permissions | src/approval/service.ts | 531 | triaged-follow-up | rejection-without-binding | src/approval/service.ts:1e5b2ada9e3eb6121bb823ad |
+| permissions | src/approval/service.ts | 554 | triaged-follow-up | rejection-without-binding | src/approval/service.ts:1e5b2ada9e3eb6121bb823ad |
+| permissions | src/approval/service.ts | 716 | fixed | binding retained / no recognized error surface | src/approval/service.ts:cec06f9a9c66f6330b63f868 |
+| permissions | src/approval/service.ts | 938 | fixed | binding retained / no recognized error surface | src/approval/service.ts:f268eb99be81506853371f91 |
+| permissions | src/approval/service.ts | 975 | fixed | binding retained / no recognized error surface | src/approval/service.ts:3a7468362c542614807a743e |
+| permissions | src/approval/service.ts | 993 | fixed | binding retained / no recognized error surface | src/approval/service.ts:f645966f7ff5ceaa4ff9d49a |
+| permissions | src/approval/service.ts | 1014 | fixed | binding retained / no recognized error surface | src/approval/service.ts:2ff5bafadd9c5191b11954a8 |
+| permissions | src/approval/service.ts | 1029 | fixed | binding retained / no recognized error surface | src/approval/service.ts:02b6e0be80efebbe843d1f3e |
+| permissions | src/approval/service.ts | 1074 | fixed | binding retained / no recognized error surface | src/approval/service.ts:0446c3e82195d3d0cb0b9e59 |
+| permissions | src/approval/service.ts | 1333 | fixed | binding retained / no recognized error surface | src/approval/service.ts:e75d2182c32380dcc097db58 |
 | permissions | src/approval/slack-click-feedback.ts | 114 | fixed | binding retained / no recognized error surface | src/approval/slack-click-feedback.ts:bd781b46e5db4e6dd05bf998 |
 | permissions | src/approval/slack-click-feedback.ts | 120 | fixed | binding retained / no recognized error surface | src/approval/slack-click-feedback.ts:9b04d5b1beb41af8f4b7d658 |
 | permissions | src/approval/store.ts | 468 | triaged-follow-up | catch-without-binding | src/approval/store.ts:ac1d131e8f2f6d84c0becd00 |

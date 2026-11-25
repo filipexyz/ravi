@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { authorizeBridgeAction } from "../bridge/native.js";
 import { nats as runtimeNats } from "../nats.js";
 import { isChatOnlyAgent, isToolOrExecCapability } from "../permissions/agent-default-capabilities-provider.js";
-import { canWithCapabilityContext } from "../permissions/provider-runtime.js";
+import { canWithCapabilityContext, materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
+import { canWithCapabilities } from "../permissions/capability-snapshot.js";
 import {
   recordAndEmitPermissionDenial,
   listPermissionDenials,
@@ -17,7 +18,12 @@ import {
 } from "../permissions/apply-grant.js";
 import { buildAuditContextProvenance } from "../permissions/audit-provenance.js";
 import { buildAuthorizationGuidance, formatCanonicalCapability } from "../permissions/authorization-guidance.js";
-import { dbUpdateContextCapabilities, type ContextCapability, type ContextRecord } from "../router/router-db.js";
+import {
+  dbGetChat,
+  dbUpdateContextCapabilities,
+  type ContextCapability,
+  type ContextRecord,
+} from "../router/router-db.js";
 import { isRuntimeContextLive } from "../runtime/context-liveness.js";
 import { updateSlackText } from "../channels/slack/text-send.js";
 import { respondToSlackInteraction } from "../channels/slack/interactions.js";
@@ -580,6 +586,23 @@ export async function authorizeRuntimeContext(opts: ContextAuthorizationOptions)
 
   const resolvedSource = toApprovalTarget(context.source);
   const approvalSource = resolvedSource ? undefined : getApprovalSourceFromMetadata(context);
+
+  // An approval that is not routed privately to grantors is posted into the turn's own
+  // conversation. In a direct chat the only person there is the one who asked: when that
+  // person cannot grant what is asked, nobody who sees the prompt can decide it, and it
+  // would ask the requester to approve their own missing permission. Fail closed instead.
+  if (
+    resolvedSource &&
+    !isSlackChannel(resolvedSource.channel) &&
+    directChatRequesterCannotGrant(context, { permission, objectType, objectId })
+  ) {
+    return denyRuntimeContext(
+      opts,
+      buildNoApproverInDirectChatReason({ permission, objectType, objectId }),
+      "runtime_requester_cannot_grant",
+    );
+  }
+
   const text = buildPermissionRequestText(permission, objectType, objectId, context);
   const grant = buildRuntimePermissionGrant(context, { permission, objectType, objectId });
   const result = await requestCascadingApproval({
@@ -627,6 +650,41 @@ export async function authorizeRuntimeContext(opts: ContextAuthorizationOptions)
 
 function isUnresolvedExternalActor(context: ContextRecord): boolean {
   return context.metadata?.actorResolution === "missing_contact";
+}
+
+function parseRuntimePrincipal(value: unknown): { type: string; id: string } | null {
+  if (typeof value !== "string") return null;
+  const separator = value.indexOf(":");
+  if (separator <= 0 || separator === value.length - 1) return null;
+  return { type: value.slice(0, separator), id: value.slice(separator + 1) };
+}
+
+/**
+ * True when the turn's actor is a contact talking to the agent in a direct chat and that
+ * contact does not hold the requested capability. Only the actor can answer a prompt posted
+ * into a direct chat, so such a prompt could never reach anyone allowed to decide it.
+ * Channel-neutral: it reads the actor and surface principals and the chat type the core
+ * already records for every conversation.
+ */
+function directChatRequesterCannotGrant(
+  context: ContextRecord,
+  capability: { permission: string; objectType: string; objectId: string },
+): boolean {
+  const actor = parseRuntimePrincipal(context.metadata?.actorPrincipal);
+  const surface = parseRuntimePrincipal(context.metadata?.surfacePrincipal);
+  if (actor?.type !== "contact" || surface?.type !== "chat") return false;
+  if (dbGetChat(surface.id)?.chatType !== "dm") return false;
+  const capabilities = materializeSubjectCapabilities("contact", actor.id);
+  return !canWithCapabilities(capabilities, capability.permission, capability.objectType, capability.objectId);
+}
+
+export function buildNoApproverInDirectChatReason(capability: {
+  permission: string;
+  objectType: string;
+  objectId: string;
+}): string {
+  const asked = formatCanonicalCapability(capability);
+  return `Ninguém nesta conversa pode aprovar ${asked}: o pedido apareceria só para quem pediu, que não tem essa permissão. Nenhum pedido foi enviado. Quem administra o Ravi pode ver o plano de menor privilégio para essa negativa com ravi permissions resolve <id-da-negativa>.`;
 }
 
 /**
