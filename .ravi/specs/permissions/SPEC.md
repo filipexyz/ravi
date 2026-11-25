@@ -143,6 +143,15 @@ Agents MUST be guided toward explainable least-privilege requests.
 - Approval prompts for a single runtime capability MUST state that the grant is
   scoped to the current context. Recurring access MUST be modeled as a
   provider-owned profile/tag.
+- An approval prompt MUST only be shown where someone allowed to decide it can
+  see it. A prompt posted into the turn's own conversation, in a direct chat
+  whose actor is a contact that does not hold the requested capability, would
+  ask the requester to approve their own missing permission: the runtime MUST
+  refuse without sending it, with a reason that says nobody in that
+  conversation can approve and points to an administrator. Group chats keep
+  posting, because another participant may decide; a requester who can grant
+  keeps being asked. The rule reads the core's actor, surface and chat type,
+  never a channel name.
 - Agents asking for authorization MUST include: the missing canonical
   capability, the blocking branch when known, the profile/tag they recommend,
   the command used for inspection, and whether the fallback is break-glass.
