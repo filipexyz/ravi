@@ -161,6 +161,16 @@ export interface RuntimeHostStreamingSession {
   lastActivity: number;
   /** Whether the event loop is done (session ended) */
   done: boolean;
+  /**
+   * True while `runRuntimeEventLoop` is still running for this session, through
+   * the end of its `finally`. A `done` session in that window still owns its
+   * slot: the loop releases it and restarts any stashed recovery itself.
+   * Slot sweepers must leave it alone, or the loop loses ownership, skips the
+   * restart and strands the stashed queue with no runtime to deliver it.
+   */
+  eventLoopActive?: boolean;
+  /** When the pool reclaimer first saw this session `done` with its loop still active. */
+  closingObservedAt?: number;
   /** Whether the current turn was interrupted (discard response, keep queue) */
   interrupted: boolean;
   /** Internal cancellation reason; suppresses provider abort noise from user-facing output. */
@@ -574,6 +584,17 @@ export function getPendingRuntimeTurnSuccessors(session: RuntimeHostStreamingSes
   return pendingMessages.filter(
     (message) => typeof message.pendingId === "string" && !currentTurnPendingIds.has(message.pendingId),
   );
+}
+
+/**
+ * A finished session whose slot a sweeper may release. `done` alone is not
+ * enough: while its event loop is still running, the loop owns the slot and
+ * its cleanup restarts any stashed recovery (see `eventLoopActive`).
+ */
+export function isReleasableDoneRuntimeSession(
+  session: Pick<RuntimeHostStreamingSession, "done" | "eventLoopActive">,
+): boolean {
+  return session.done && session.eventLoopActive !== true;
 }
 
 export function shutdownRuntimeStreamingSession(session: RuntimeHostStreamingSession, reason?: string): void {

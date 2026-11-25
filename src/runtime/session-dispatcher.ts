@@ -72,6 +72,7 @@ import {
   getCrashRecoveryReplayablePendingRuntimeMessages,
   getPendingRuntimeTurnSuccessors,
   getRuntimeTurnReplaySafety,
+  isReleasableDoneRuntimeSession,
   runtimeTurnAttemptTerminalEventType,
   shutdownRuntimeStreamingSession,
   stashPendingRuntimeMessages,
@@ -2545,6 +2546,7 @@ export class RuntimeSessionDispatcher {
 
     for (const [sessionName, session] of this.streamingSessions) {
       if (session.done) {
+        if (this.holdsClosingSlot(sessionName, session, now)) continue;
         this.releaseRuntimeSessionSlot(sessionName);
         continue;
       }
@@ -2669,10 +2671,34 @@ export class RuntimeSessionDispatcher {
     setTimeout(tick, STATELESS_OBSERVATION_POLL_MS).unref?.();
   }
 
+  /**
+   * A `done` session whose event loop is still closing the provider keeps its
+   * slot: the loop releases it and restarts any stashed recovery. Taking it
+   * from a periodic sweep makes the loop skip that restart and strands the
+   * queue (25/11). Only a cleanup that has not finished within the turn
+   * inactivity window, timed from when it was first seen closing (not from the
+   * last turn event), is released, with a warning.
+   */
+  private holdsClosingSlot(sessionName: string, session: RuntimeHostStreamingSession, now: number): boolean {
+    if (!session.done || isReleasableDoneRuntimeSession(session)) return false;
+    session.closingObservedAt ??= now;
+    const closingMs = now - session.closingObservedAt;
+    const timeoutMs = this.turnInactivityMs();
+    if (closingMs < timeoutMs) return true;
+    log.warn("Releasing a finished runtime session whose event loop never settled its slot", {
+      sessionName,
+      closingMs,
+      timeoutMs,
+      stashedQueueSize: this.stashedMessages.get(sessionName)?.length ?? 0,
+    });
+    return false;
+  }
+
   reclaimIdleObserverSessions(now = Date.now(), options: { drainPendingStarts?: boolean } = {}): string[] {
     const reclaimed: string[] = [];
     for (const [sessionName, session] of this.streamingSessions) {
       if (!isObserverRuntimeSessionName(sessionName)) continue;
+      if (this.holdsClosingSlot(sessionName, session, now)) continue;
       if (runtimeSessionIsServing(session)) continue;
       const idleMs = session.lastActivity ? now - session.lastActivity : now;
       log.info("Reclaiming idle observer runtime session", { sessionName, idleMs });
