@@ -84,6 +84,13 @@ entered the session, and the feature spec `runtime/providers/realtime-voice` (ar
 - One active call per (session, speaker). One utterance in flight per call; later utterances queue
   in the door in order. Across calls on the same session, one voice turn runs at a time, so each
   call reads only its own reply.
+- A voice turn MUST find its own terminal without `turn.started` (Claude emits none). Its prompt
+  carries `_correlationId: <turnId>`; the dispatcher echoes it on `dispatch.queued`, and only that
+  event counts. Queued behind a turn in flight, the next terminal is that turn's; the one after is
+  this turn's. Another prompt's `dispatch.queued` never changes this turn's wait.
+- Ending a call releases its pending turn as `cancelled` at once (the session turn keeps its reply),
+  so it never holds the next voice turn of the session. A voice turn that outlives 10 min fails with
+  `VOICE_TURN_TIMEOUT`.
 - Long turns: one acknowledgement, progress only from real session events (`work.state`,
   `work.tool`), completion announced by event.
 - A daemon restart ends `live` calls (the sideband cannot reconnect); `push` and `mock` calls survive
