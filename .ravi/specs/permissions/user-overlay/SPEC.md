@@ -169,7 +169,13 @@ speaking in a chat where another person had a grant.
   `every`, `tz`, `timezone`, `timeout`, `delete-after`), run it now
   (`cron run`, which fires even a disabled job) or delete it (`cron rm`) only
   when it owns the job (review of #991, B1 and N7). Disabling stays open to
-  any turn: it only reduces, and the owner can enable it again.
+  any turn: it only reduces, and the owner can enable it again. Only a
+  principal that says who is asking proves ownership (review of #992, N1). A
+  held relay that acts as the agent (`agent:<id>`, a thread's return) owns
+  none of the agent's jobs, though an unrestricted turn of the agent wrote
+  them under that principal. A turn whose actor cannot be resolved
+  (`unknown`) owns no legacy row, though such a row reports `unknown` as its
+  owner.
 - The lift is decided on every turn, from the grants and tags as they are at
   that turn, also for a cron job bound to the chat (`creatorChat`): the job of
   an owner with full access runs as the agent, and is narrowed to the owner's

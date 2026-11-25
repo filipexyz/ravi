@@ -3566,7 +3566,8 @@ describe("verified human work handoffs", () => {
     describe("cron jobs a turn held below the agent may touch", () => {
       // Review of #991 (B1, probes C6 to C8): binding a lifted turn's job to the chat made the store read it as
       // limited to the chat's grants, so a narrowed member's turn or held relay could enable or reschedule the
-      // admin's job, which runs as the whole agent. A held turn may enable or reschedule only a job it owns.
+      // admin's job, which runs as the whole agent. A held turn may enable, reschedule, run or delete only a job
+      // it owns, and only a principal that says who is asking proves that (review of #992, N1).
       // `cron add|set|enable` publish `ravi.cron.refresh`: a test never reaches a NATS server (CI has none, and
       // on the daemon's machine the default URL is the live one).
       let emitSpy: { mock: { calls: unknown[][] }; mockRestore: () => void } | undefined;
@@ -3624,22 +3625,30 @@ describe("verified human work handoffs", () => {
       ];
       const job = (name: string) => dbListCronJobs().find((candidate) => candidate.name === name);
 
-      it("a narrowed member's turn and held relay cannot enable, reschedule, run or delete an admin's lifted-turn job", async () => {
+      it("a narrowed member's turn and held relay cannot enable, reschedule, run or delete a job of another owner", async () => {
         const member = person("Member C7", { status: "allowed" });
         grantHere(member.id, "permission-reader");
         const admin = person("Cron admin C7", { tags: ["permission-owner"], status: "allowed" });
         const adminTurn = speak(admin, "c7-admin");
-        expect(await runAs(adminTurn, () => new CronCommands().add(...addArgs("c7-job")))).toBe("ok");
-        const written = job("c7-job")!;
-        expect(written).toMatchObject({ ownerPrincipal: `contact:${admin.id}`, creatorChat: governedChat });
-        expect(await runAs(adminTurn, () => new CronCommands().disable(written.id, true))).toBe("ok");
+        for (const name of ["c7-job", "c7-legacy", "c7-operator"]) {
+          expect(await runAs(adminTurn, () => new CronCommands().add(...addArgs(name)))).toBe("ok");
+          expect(await runAs(adminTurn, () => new CronCommands().disable(job(name)!.id, true))).toBe("ok");
+        }
+        expect(job("c7-job")).toMatchObject({ ownerPrincipal: `contact:${admin.id}`, creatorChat: governedChat });
+        // A legacy row without an owner (it reports `unknown`) and an operator-owned row are not the held turn's
+        // either (review of #992, N2).
+        dbUpdateCronJob(job("c7-legacy")!.id, { ownerPrincipal: undefined });
+        dbUpdateCronJob(job("c7-operator")!.id, { ownerPrincipal: "operator" });
+        expect(job("c7-legacy")?.ownerPrincipal).toBeUndefined();
+        const before = ["c7-job", "c7-legacy", "c7-operator"].map((name) => job(name)!);
 
         const memberTurn = speak(member, "c7-member");
         expect(memberTurn.metadata?.actorAuthorizationMode).toBe("user-overlay");
         const relay = handoff(memberTurn, "execute", {}, originAgent);
         expect(isRelayHeldBelowAgent(relay.metadata)).toBe(true);
         // Every key that keeps the job's owner (`CRON_OWNER_KEEP_KEYS`), enable, run now and delete (review of
-        // #991, N6 and N7). `run --execute` fires the job even while it is disabled.
+        // #991, N6 and N7), each with and without `--execute` where the command has a dry run (review of #992,
+        // N2): the refusal comes before the plan. `run --execute` fires the job even while it is disabled.
         const keepKeys = [
           ["description", "touched"],
           ["cron", "*/5 * * * *"],
@@ -3653,29 +3662,161 @@ describe("verified human work handoffs", () => {
           ["member", memberTurn, "contact-chat-grants"],
           ["relay", relay, "held-relay"],
         ] as const;
-        for (const [who, turn, hold] of held) {
-          const attempts: Array<[string, () => unknown]> = [
-            ...keepKeys.map(
-              ([key, value]) =>
-                [`set ${key}`, () => new CronCommands().set(written.id, key, value, true)] as [string, () => unknown],
-            ),
-            ["enable", () => new CronCommands().enable(written.id, true)],
-            ["run", () => new CronCommands().run(written.id, true, true)],
-            ["rm", () => new CronCommands().rm(written.id, true, true)],
-          ];
-          for (const [label, attempt] of attempts) {
-            expect(`${who} ${label}:${await runAs(turn, attempt)}`).toBe(`${who} ${label}:PERMISSION_DENIED/${hold}`);
+        for (const written of before) {
+          for (const [who, turn, hold] of held) {
+            const attempts: Array<[string, () => unknown]> = [
+              ...keepKeys.map(
+                ([key, value]) =>
+                  [`set ${key}`, () => new CronCommands().set(written.id, key, value, true)] as [string, () => unknown],
+              ),
+              ["enable", () => new CronCommands().enable(written.id, true)],
+              ["run dry", () => new CronCommands().run(written.id, true, false)],
+              ["run", () => new CronCommands().run(written.id, true, true)],
+              ["rm dry", () => new CronCommands().rm(written.id, true, false)],
+              ["rm", () => new CronCommands().rm(written.id, true, true)],
+            ];
+            for (const [label, attempt] of attempts) {
+              const attempted = `${written.name} ${who} ${label}`;
+              expect(`${attempted}:${await runAs(turn, attempt)}`).toBe(`${attempted}:PERMISSION_DENIED/${hold}`);
+            }
           }
+          expect(triggered(written.id)).toBe(false);
+          expect(job(written.name)).toMatchObject({
+            enabled: false,
+            schedule: written.schedule,
+            deleteAfterRun: written.deleteAfterRun,
+            message: "hello",
+          });
+          expect(job(written.name)?.ownerPrincipal).toBe(written.ownerPrincipal);
+          expect(job(written.name)?.description).toBe(written.description);
         }
-        expect(triggered(written.id)).toBe(false);
-        expect(job("c7-job")).toMatchObject({
-          enabled: false,
-          schedule: written.schedule,
-          deleteAfterRun: written.deleteAfterRun,
-          message: "hello",
-          ownerPrincipal: `contact:${admin.id}`,
+      });
+
+      it("a held turn may still disable another owner's job: it only reduces, and the owner can enable it again", async () => {
+        const member = person("Member D1", { status: "allowed" });
+        grantHere(member.id, "permission-reader");
+        const admin = person("Cron admin D1", { tags: ["permission-owner"], status: "allowed" });
+        const adminTurn = speak(admin, "d1-admin");
+        expect(await runAs(adminTurn, () => new CronCommands().add(...addArgs("d1-job")))).toBe("ok");
+        const written = job("d1-job")!;
+        expect(written.enabled).toBe(true);
+        const memberTurn = speak(member, "d1-member");
+        const relay = handoff(memberTurn, "execute", {}, originAgent);
+        expect(automationHoldCause(memberTurn)).toBe("contact-chat-grants");
+        expect(isRelayHeldBelowAgent(relay.metadata)).toBe(true);
+        for (const [who, turn] of [
+          ["member", memberTurn],
+          ["relay", relay],
+        ] as const) {
+          expect(`${who} disable:${await runAs(turn, () => new CronCommands().disable(written.id, true))}`).toBe(
+            `${who} disable:ok`,
+          );
+          expect(job("d1-job")?.enabled).toBe(false);
+          expect(await runAs(adminTurn, () => new CronCommands().enable(written.id, true))).toBe("ok");
+          expect(job("d1-job")?.enabled).toBe(true);
+        }
+      });
+
+      it("a held relay that acts as the agent owns none of the agent's jobs", async () => {
+        // Review of #992, N1 (probes Q7 and Q9). A thread's return is a relay that acts as the agent
+        // (`agent:<id>`), and so is the owner of a job an unrestricted thread return wrote. The return of a
+        // thread opened by a person without a grant is held: matching the job's owner proves nothing.
+        const ungoverned = { chatId: "120363400000000099@g.us", canonicalChatId: "chat_group_2" };
+        const speakUngoverned = (who: { id: string }, label: string) => {
+          const prompt = promptForContact(who.id, "Schedule the weekly report and plan it in a thread");
+          const source = { ...prompt.source!, ...ungoverned };
+          const context = { ...prompt.context!, ...ungoverned };
+          return runtimeFor({ ...prompt, source, context }, originAgent, `ungoverned-${label}`);
+        };
+        const admin = person("Operator Q7", { tags: ["permission-owner"], status: "allowed" });
+        const adminTurn = speakUngoverned(admin, "q7-admin");
+        const adminReturn = handoff(
+          handoff(adminTurn, "session.bootstrap", {}, originAgent),
+          "session.return",
+          {},
+          originAgent,
+        );
+        expect(automationHoldCause(adminReturn)).toBeNull();
+        expect(await runAs(adminReturn, () => new CronCommands().add(...addArgs("q7-back-job")))).toBe("ok");
+        expect(await runAs(adminTurn, () => new CronCommands().add(...addArgs("q9-agent-owned")))).toBe("ok");
+        dbUpdateCronJob(job("q9-agent-owned")!.id, { ownerPrincipal: `agent:${originAgent.id}` });
+        const jobs = ["q7-back-job", "q9-agent-owned"].map((name) => job(name)!);
+        for (const written of jobs) expect(written.ownerPrincipal).toBe(`agent:${originAgent.id}`);
+
+        const stranger = person("Stranger Q7");
+        const strangerTurn = speakUngoverned(stranger, "q7-stranger");
+        const strangerReturn = handoff(
+          handoff(strangerTurn, "session.bootstrap", {}, originAgent),
+          "session.return",
+          {},
+          originAgent,
+        );
+        expect(automationHoldCause(strangerTurn)).toBe("person-without-chat-grant");
+        expect(automationHoldCause(strangerReturn)).toBe("held-relay");
+        expect(strangerReturn.metadata?.actorPrincipal).toBe(`agent:${originAgent.id}`);
+        for (const written of jobs) {
+          for (const [who, turn, hold] of [
+            ["stranger", strangerTurn, "person-without-chat-grant"],
+            ["stranger return", strangerReturn, "held-relay"],
+          ] as const) {
+            const attempts: Array<[string, () => unknown]> = [
+              ["enable", () => new CronCommands().enable(written.id, true)],
+              ["set every", () => new CronCommands().set(written.id, "every", "1m", true)],
+              ["run", () => new CronCommands().run(written.id, true, true)],
+              ["rm", () => new CronCommands().rm(written.id, true, true)],
+            ];
+            for (const [label, attempt] of attempts) {
+              const attempted = `${written.name} ${who} ${label}`;
+              expect(`${attempted}:${await runAs(turn, attempt)}`).toBe(`${attempted}:PERMISSION_DENIED/${hold}`);
+            }
+          }
+          expect(triggered(written.id)).toBe(false);
+          expect(job(written.name)).toMatchObject({
+            schedule: written.schedule,
+            ownerPrincipal: written.ownerPrincipal,
+          });
+        }
+        // The unrestricted return that wrote the job still runs and deletes it: only held turns lose the match.
+        expect(await runAs(adminReturn, () => new CronCommands().run(jobs[0]!.id, true, true))).toBe("ok");
+        expect(triggered(jobs[0]!.id)).toBe(true);
+        expect(await runAs(adminReturn, () => new CronCommands().rm(jobs[0]!.id, true, true))).toBe("ok");
+        expect(job("q7-back-job")).toBeUndefined();
+      });
+
+      it("a held turn whose actor cannot be resolved owns no legacy job", async () => {
+        // Review of #992, N1: a turn whose context no longer resolves to an actor gets the principal `unknown`,
+        // which is also the owner a legacy row without one reports.
+        const member = person("Member U1", { status: "allowed" });
+        grantHere(member.id, "permission-reader");
+        const admin = person("Cron admin U1", { tags: ["permission-owner"], status: "allowed" });
+        const adminTurn = speak(admin, "u1-admin");
+        expect(await runAs(adminTurn, () => new CronCommands().add(...addArgs("u1-legacy")))).toBe("ok");
+        expect(await runAs(adminTurn, () => new CronCommands().disable(job("u1-legacy")!.id, true))).toBe("ok");
+        dbUpdateCronJob(job("u1-legacy")!.id, { ownerPrincipal: undefined });
+        const legacy = job("u1-legacy")!;
+        const memberTurn = speak(member, "u1-member");
+        const { actorPrincipal: _actor, ...withoutActor } = memberTurn.metadata ?? {};
+        const unresolved = createRuntimeContext({
+          kind: "turn-runtime",
+          agentId: memberTurn.agentId,
+          sessionKey: memberTurn.sessionKey,
+          sessionName: memberTurn.sessionName,
+          capabilities: memberTurn.capabilities,
+          metadata: withoutActor,
         });
-        expect(job("c7-job")?.description).toBe(written.description);
+        expect(automationHoldCause(unresolved)).toBe("contact-chat-grants");
+        const attempts: Array<[string, () => unknown]> = [
+          ["enable", () => new CronCommands().enable(legacy.id, true)],
+          ["set every", () => new CronCommands().set(legacy.id, "every", "1m", true)],
+          ["run", () => new CronCommands().run(legacy.id, true, true)],
+          ["rm", () => new CronCommands().rm(legacy.id, true, true)],
+        ];
+        for (const [label, attempt] of attempts) {
+          expect(`${label}:${await runAs(unresolved, attempt)}`).toBe(`${label}:PERMISSION_DENIED/contact-chat-grants`);
+        }
+        expect(triggered(legacy.id)).toBe(false);
+        expect(job("u1-legacy")).toMatchObject({ enabled: false, schedule: legacy.schedule });
+        expect(job("u1-legacy")?.ownerPrincipal).toBeUndefined();
       });
 
       it("a held relay acting for the job's own owner still may: ownership decides, not the hold", async () => {
