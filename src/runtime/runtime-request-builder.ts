@@ -29,10 +29,12 @@ import {
   createRuntimeMessageGenerator,
   pickRuntimeTurnAuthorityEnvelope,
   type RuntimeMessageGeneratorOptions,
+  type RuntimeTurnPromptTransform,
   withoutSharedTriggerAuthority,
   withoutTriggerAuthority,
 } from "./delivery-queue.js";
 import { commitRenderedSignals, releaseRenderedSignals, renderSignalsForTurn } from "../signals/render.js";
+import { INBOX_DRAIN_ON_HEARTBEAT_SETTING, prepareInboxTurnBlock, type InboxTurnBlock } from "../session-inbox/turn.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./task-runtime-context.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
@@ -119,6 +121,60 @@ const runtimeRequestLog = logger.child("runtime-request");
 let signalRenderFailures = 0;
 export function getSignalRenderFailureCount(): number {
   return signalRenderFailures;
+}
+
+/** Session inbox render failures since start; each one also logs a warning (runtime/session-inbox). */
+let inboxRenderFailures = 0;
+export function getInboxRenderFailureCount(): number {
+  return inboxRenderFailures;
+}
+
+/**
+ * Reserves and renders the deferred notices for a draining turn. A failure keeps the turn going
+ * without the block, and the items stay `pending`.
+ */
+export function prepareInboxForTurn(
+  sessionName: string,
+  deliverableMessages: readonly Pick<RuntimeUserMessage, "launchPrompt">[],
+): InboxTurnBlock | null {
+  try {
+    return prepareInboxTurnBlock({
+      sessionName,
+      messages: deliverableMessages,
+      drainOnHeartbeat: dbGetSetting(INBOX_DRAIN_ON_HEARTBEAT_SETTING) === "true",
+    });
+  } catch (error) {
+    inboxRenderFailures += 1;
+    runtimeRequestLog.warn("Session inbox render failed; turn continues without the block", {
+      sessionName,
+      failures: inboxRenderFailures,
+      error,
+    });
+    return null;
+  }
+}
+
+/**
+ * Settles the inbox reservation together with the rest of the turn prompt: committed when the
+ * prompt reaches the provider, released when the turn never starts.
+ */
+export function composeInboxWithTurnPrompt(
+  inbox: Pick<InboxTurnBlock, "commit" | "release"> | null,
+  rest: string | RuntimeTurnPromptTransform,
+): string | RuntimeTurnPromptTransform {
+  if (!inbox) return rest;
+  if (typeof rest === "string") return { prompt: rest, commit: inbox.commit, release: inbox.release };
+  return {
+    prompt: rest.prompt,
+    commit: () => {
+      rest.commit?.();
+      inbox.commit();
+    },
+    release: (reason: string) => {
+      rest.release?.(reason);
+      inbox.release(reason);
+    },
+  };
 }
 
 class RuntimeCrashRecoveryApprovalOwnershipChangedError extends Error {
@@ -1204,61 +1260,72 @@ async function buildRuntimeStartRequestInternal(
       stopActiveContextLease = undefined;
     },
     transformTurnPrompt: ({ combinedPrompt, deliverableMessages }) => {
-      const retriesRecoveredCapacityRequest =
-        deliverableMessages.length > 0 &&
-        deliverableMessages.every(
-          (message) =>
-            message.providerCapacityRetry !== undefined &&
-            message.pendingId !== undefined &&
-            recoveryPendingIds?.has(message.pendingId),
-        );
-      // Capacity rejection did not consume the recovered context. Keep it on
-      // retries of that logical input, without adding it to a successor.
-      if (recovery && (recoveryPending || retriesRecoveredCapacityRequest)) {
-        if (recoveryPending) {
-          recoveryPendingIds = new Set(
-            deliverableMessages.flatMap((message) => (message.pendingId ? [message.pendingId] : [])),
-          );
-        }
-        combinedPrompt = `${recovery.prompt}\n\n# Current Request\n${combinedPrompt}`;
-        recoveryPending = false;
-      }
-      turnSignals = null;
-      try {
-        const rendered = renderSignalsForTurn({ sessionName, sessionKey: dbSessionKey });
-        if (!rendered.suffix) {
-          if (rendered.skipped.length > 0) {
-            turnSignals = { surfaced: [], skipped: rendered.skipped, budget: rendered.budget };
-          }
-          return combinedPrompt;
-        }
-        const signals = { surfaced: rendered.surfacedIds, skipped: rendered.skipped, budget: rendered.budget };
-        turnSignals = signals;
-        return {
-          prompt: `${combinedPrompt}${rendered.suffix}`,
-          // The block reached the provider: the reservations are consumed.
-          commit: () => {
-            commitRenderedSignals(rendered.reservations);
-          },
-          // The turn never started: return the units, no cooldown starts.
-          release: (reason: string) => {
-            signals.budget.released = releaseRenderedSignals(rendered.reservations, reason);
-          },
-        };
-      } catch (error) {
-        // A render failure keeps the original prompt, warns and is counted.
-        signalRenderFailures += 1;
-        runtimeRequestLog.warn("Signals render failed; turn continues without the block", {
-          sessionName,
-          failures: signalRenderFailures,
-          error,
-        });
-        turnSignals = { surfaced: [], skipped: [], budget: null, renderError: String(error) };
-        return combinedPrompt;
-      }
+      // Deferred notices open the turn that may drain them (runtime/session-inbox). They become
+      // part of the current request, so a recovered context still wraps them.
+      const inbox = prepareInboxForTurn(sessionName, deliverableMessages);
+      if (inbox) combinedPrompt = `${inbox.block}\n\n${combinedPrompt}`;
+      return composeInboxWithTurnPrompt(inbox, applySignalsToTurnPrompt(combinedPrompt, deliverableMessages));
     },
     traceTurnStart,
   });
+
+  function applySignalsToTurnPrompt(
+    combinedPrompt: string,
+    deliverableMessages: RuntimeUserMessage[],
+  ): string | RuntimeTurnPromptTransform {
+    const retriesRecoveredCapacityRequest =
+      deliverableMessages.length > 0 &&
+      deliverableMessages.every(
+        (message) =>
+          message.providerCapacityRetry !== undefined &&
+          message.pendingId !== undefined &&
+          recoveryPendingIds?.has(message.pendingId),
+      );
+    // Capacity rejection did not consume the recovered context. Keep it on
+    // retries of that logical input, without adding it to a successor.
+    if (recovery && (recoveryPending || retriesRecoveredCapacityRequest)) {
+      if (recoveryPending) {
+        recoveryPendingIds = new Set(
+          deliverableMessages.flatMap((message) => (message.pendingId ? [message.pendingId] : [])),
+        );
+      }
+      combinedPrompt = `${recovery.prompt}\n\n# Current Request\n${combinedPrompt}`;
+      recoveryPending = false;
+    }
+    turnSignals = null;
+    try {
+      const rendered = renderSignalsForTurn({ sessionName, sessionKey: dbSessionKey });
+      if (!rendered.suffix) {
+        if (rendered.skipped.length > 0) {
+          turnSignals = { surfaced: [], skipped: rendered.skipped, budget: rendered.budget };
+        }
+        return combinedPrompt;
+      }
+      const signals = { surfaced: rendered.surfacedIds, skipped: rendered.skipped, budget: rendered.budget };
+      turnSignals = signals;
+      return {
+        prompt: `${combinedPrompt}${rendered.suffix}`,
+        // The block reached the provider: the reservations are consumed.
+        commit: () => {
+          commitRenderedSignals(rendered.reservations);
+        },
+        // The turn never started: return the units, no cooldown starts.
+        release: (reason: string) => {
+          signals.budget.released = releaseRenderedSignals(rendered.reservations, reason);
+        },
+      };
+    } catch (error) {
+      // A render failure keeps the original prompt, warns and is counted.
+      signalRenderFailures += 1;
+      runtimeRequestLog.warn("Signals render failed; turn continues without the block", {
+        sessionName,
+        failures: signalRenderFailures,
+        error,
+      });
+      turnSignals = { surfaced: [], skipped: [], budget: null, renderError: String(error) };
+      return combinedPrompt;
+    }
+  }
 
   const result = {
     runtimeRequest: {

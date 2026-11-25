@@ -153,6 +153,7 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/cli/commands/skills.test.ts",
     "src/runtime/allowed-skills.test.ts",
   ],
+  "src/session-inbox/": ["src/session-inbox/session-inbox.test.ts"],
   "src/runtime/": [
     // Person credentials: a relay made with one person's key is that person's turn, never the agent's.
     "src/runtime/person-credential.test.ts",
@@ -174,6 +175,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/runtime-events.test.ts",
     // Signals piggyback: the transformTurnPrompt seam in the delivery queue.
     "src/signals/delivery-seam.test.ts",
+    // Session inbox: deferred notices drained only by a human (or opted-in heartbeat) turn.
+    "src/session-inbox/session-inbox.test.ts",
     "src/runtime/index.test.ts",
     "src/runtime/model-catalog.test.ts",
     // Fail-fast model existence (catalog-driven) on every runtime write path.
