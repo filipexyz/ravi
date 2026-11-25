@@ -2551,11 +2551,14 @@ export class RuntimeSessionDispatcher {
           // Its event loop is still closing the provider and will release the
           // slot itself, restarting any stashed recovery. Taking the slot now
           // makes that loop skip the restart and strands the queue (25/11).
-          // Only a loop that stopped making progress is released from here.
-          if (idleMs < stuckAfterMs) continue;
+          // Only a loop that stopped making progress is released from here,
+          // timed from when cleanup was first seen, not from the last turn event.
+          session.closingObservedAt ??= now;
+          const closingMs = now - session.closingObservedAt;
+          if (closingMs < stuckAfterMs) continue;
           log.warn("Releasing a finished runtime session whose event loop never settled its slot", {
             sessionName,
-            idleMs,
+            closingMs,
             timeoutMs: stuckAfterMs,
             stashedQueueSize: this.stashedMessages.get(sessionName)?.length ?? 0,
           });

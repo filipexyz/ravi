@@ -169,6 +169,8 @@ export interface RuntimeHostStreamingSession {
    * restart and strands the stashed queue with no runtime to deliver it.
    */
   eventLoopActive?: boolean;
+  /** When the pool reclaimer first saw this session `done` with its loop still active. */
+  closingObservedAt?: number;
   /** Whether the current turn was interrupted (discard response, keep queue) */
   interrupted: boolean;
   /** Internal cancellation reason; suppresses provider abort noise from user-facing output. */

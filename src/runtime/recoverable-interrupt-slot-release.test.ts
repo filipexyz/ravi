@@ -242,6 +242,7 @@ describe("pool reclaimer and finished sessions", () => {
   function finishedSession(overrides: {
     eventLoopActive?: boolean;
     lastActivity?: number;
+    closingObservedAt?: number;
   }): RuntimeHostStreamingSession {
     const session: RuntimeHostStreamingSession = {
       sessionKey: "agent:agent-a:main",
@@ -266,6 +267,7 @@ describe("pool reclaimer and finished sessions", () => {
     };
     if (overrides.eventLoopActive !== undefined) session.eventLoopActive = overrides.eventLoopActive;
     if (overrides.lastActivity !== undefined) session.lastActivity = overrides.lastActivity;
+    if (overrides.closingObservedAt !== undefined) session.closingObservedAt = overrides.closingObservedAt;
     return session;
   }
 
@@ -284,11 +286,19 @@ describe("pool reclaimer and finished sessions", () => {
     const now = Date.now();
     dispatcher.streamingSessions.set("exited", finishedSession({ eventLoopActive: false }));
     dispatcher.streamingSessions.set("legacy", finishedSession({}));
-    dispatcher.streamingSessions.set("wedged", finishedSession({ eventLoopActive: true, lastActivity: now - 61_000 }));
+    dispatcher.streamingSessions.set(
+      "wedged",
+      finishedSession({ eventLoopActive: true, closingObservedAt: now - 61_000 }),
+    );
+    // A turn that was silent for long before it ended is still closing, not wedged.
+    dispatcher.streamingSessions.set(
+      "silent-then-closing",
+      finishedSession({ eventLoopActive: true, lastActivity: now - 3_600_000 }),
+    );
 
     dispatcher.reclaimNonServingRuntimeSessions(now);
 
-    expect([...dispatcher.streamingSessions.keys()]).toEqual([]);
+    expect([...dispatcher.streamingSessions.keys()]).toEqual(["silent-then-closing"]);
   });
 
   it("treats a finished session as releasable only once its event loop has exited", () => {
