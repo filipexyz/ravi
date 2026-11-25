@@ -39,6 +39,8 @@ export interface CredentialInventorySyncPayload {
 /** Longest free text a person-typed field may carry to the Console. */
 export const FREE_TEXT_MAX_CHARS = 200;
 const SCOPE_MAX_CHARS = 100;
+/** Scopes per connection that go up; the rest collapse into one "+N more" entry, so one item always fits a page. */
+export const SCOPES_MAX_ITEMS = 50;
 
 /**
  * Token shapes a person might paste into a label, owner or purpose. Matched
@@ -56,37 +58,154 @@ const TOKEN_PATTERNS: RegExp[] = [
   /\b[A-Za-z0-9+/_-]{40,}={0,2}/g, // any long unbroken key-like run
 ];
 
+/**
+ * Token-shaped words are replaced, then the text is cut to `maxChars`. This is the LAST step that may touch a string
+ * (see credentialInventorySyncPayload): run it before the sync redactor and "Bearer x" grows past the limit again.
+ */
 export function guardFreeText(value: string | null, maxChars = FREE_TEXT_MAX_CHARS): string | null {
   if (value === null) return null;
   let text = value;
   for (const pattern of TOKEN_PATTERNS) text = text.replace(pattern, "[redacted]");
-  return text.length > maxChars ? `${text.slice(0, maxChars - 1)}…` : text;
+  if (text.length <= maxChars) return text;
+  // Never cut between the two halves of a surrogate pair (an emoji would leave a lone half).
+  let cut = maxChars - 1;
+  const last = text.charCodeAt(cut - 1);
+  if (last >= 0xd800 && last <= 0xdbff) cut -= 1;
+  return `${text.slice(0, cut)}…`;
 }
 
+/** Identifiers have no length rule in the store; the Console accepts at most this many characters. */
+const IDENTIFIER_MAX_CHARS = 100;
+/** The item `id` is `provider:connection` as the store keeps it, so two uncapped identifiers can pass what the Console accepts. */
+const ITEM_ID_MAX_CHARS = 200;
+const SECRET_REF_ALIAS_MAX_CHARS = 250;
+
+/**
+ * The payload as the Console takes it, built in the one order that keeps every field inside the Console's bounds:
+ *
+ * 1. the wire shape (`secret` becomes `storage` before the redactor can blank it);
+ * 2. the sync redactor, which the outbox runs again on every page it stores, and which LENGTHENS text
+ *    ("Bearer x" becomes "Bearer [REDACTED]");
+ * 3. the bounds, last, so that nothing after them can push a field back over its limit. The Console drops a whole page
+ *    when any one field is over its bound.
+ *
+ * The result is a fixed point of the redactor: sanitizing it again changes nothing.
+ */
 export function credentialInventorySyncPayload(inventory: CredentialInventory): CredentialInventorySyncPayload {
-  return {
+  const shaped: CredentialInventorySyncPayload = {
     schema: CREDENTIAL_INVENTORY_SCHEMA,
     generatedAt: inventory.generatedAt,
     degraded: inventory.degraded,
     degradedReasons: inventory.degradedReasons,
     total: inventory.total,
-    items: inventory.items.map(({ secret, ...item }) => ({
+    items: inventory.items.map(({ secret, ...item }) => ({ ...item, storage: secret })),
+    audit: inventory.audit,
+  };
+  const redacted = sanitizeSyncPayload(shaped);
+  return {
+    ...redacted,
+    items: redacted.items.map((item) => ({
       ...item,
+      // Bounded to the Console schema, which drops a whole page over any field limit.
+      id: guardFreeText(item.id, ITEM_ID_MAX_CHARS) ?? "",
+      provider: guardFreeText(item.provider, IDENTIFIER_MAX_CHARS) ?? "",
+      connection: guardFreeText(item.connection, IDENTIFIER_MAX_CHARS) ?? "",
+      secretRefAlias: guardFreeText(item.secretRefAlias, SECRET_REF_ALIAS_MAX_CHARS) ?? "",
       // Free text typed by people: capped, and token-shaped values never leave.
       label: guardFreeText(item.label),
       owner: guardFreeText(item.owner),
       purpose: guardFreeText(item.purpose),
-      scopes: item.scopes.map((scope) => guardFreeText(scope, SCOPE_MAX_CHARS) ?? ""),
-      storage: secret,
+      scopes: capScopes(item.scopes),
     })),
-    audit: inventory.audit,
+    // Audit strings are system values, but nothing bounds their length: capped like free text.
+    audit: redacted.audit.map((entry) => ({
+      ...entry,
+      provider: guardFreeText(entry.provider, IDENTIFIER_MAX_CHARS) ?? "",
+      connection: guardFreeText(entry.connection, IDENTIFIER_MAX_CHARS) ?? "",
+      action: guardFreeText(entry.action) ?? "",
+      decision: guardFreeText(entry.decision) ?? "",
+      resultStatus: guardFreeText(entry.resultStatus),
+      errorCode: guardFreeText(entry.errorCode),
+    })),
   };
+}
+
+function capScopes(scopes: string[]): string[] {
+  const kept = scopes.slice(0, SCOPES_MAX_ITEMS).map((scope) => guardFreeText(scope, SCOPE_MAX_CHARS) ?? "");
+  const rest = scopes.length - kept.length;
+  return rest > 0 ? [...kept, `+${rest} more`] : kept;
 }
 
 export interface EnqueueCredentialInventoryResult {
   status: "disabled" | "unchanged" | "throttled" | "enqueued";
   hash: string | null;
   outboxId: string | null;
+  outboxIds?: string[];
+  pages?: number;
+}
+
+/**
+ * The Console rejects a sync payload over 64 KiB (`MAX_JSON_FIELD_BYTES`, 413).
+ * Each page stays under this, with room for the envelope.
+ */
+export const CREDENTIAL_INVENTORY_PAGE_MAX_BYTES = 48 * 1024;
+
+/** One page of a snapshot: the Console shows a snapshot only when it has all `pages` of the same `snapshotId`. */
+export interface CredentialInventorySyncPage extends CredentialInventorySyncPayload {
+  snapshotId: string;
+  page: number;
+  pages: number;
+}
+
+/**
+ * Split a snapshot into pages of at most CREDENTIAL_INVENTORY_PAGE_MAX_BYTES
+ * (UTF-8 JSON). Page 1 carries the audit; every page repeats the header.
+ * Page 1 may hold only the audit when its first item does not fit beside it.
+ * An audit too large for a page alone loses its oldest entries (the list is
+ * newest first). Every page is measured at the end; one over the limit throws.
+ */
+export function paginateCredentialInventoryPayload(
+  payload: CredentialInventorySyncPayload,
+  snapshotId: string,
+  maxBytes = CREDENTIAL_INVENTORY_PAGE_MAX_BYTES,
+): CredentialInventorySyncPage[] {
+  const size = (value: unknown) => Buffer.byteLength(JSON.stringify(value), "utf8");
+  const audit = [...payload.audit];
+  const build = (items: CredentialInventorySyncPayload["items"], page: number): CredentialInventorySyncPage => ({
+    ...payload,
+    items,
+    audit: page === 1 ? audit : [],
+    snapshotId,
+    page,
+    pages: 0,
+  });
+  // Conservative header: the page-1 audit and the widest page numbers.
+  const headerSize = () => size({ ...build([], 1), page: 99_999, pages: 99_999 });
+  while (audit.length > 0 && headerSize() > maxBytes) audit.pop();
+  const header = headerSize();
+  const groups: CredentialInventorySyncPayload["items"][] = [];
+  let current: CredentialInventorySyncPayload["items"] = [];
+  let bytes = header;
+  for (const item of payload.items) {
+    const itemBytes = size(item) + 1; // + the separating comma
+    // No exception for an empty page: page 1 then goes up with the audit alone.
+    if (bytes + itemBytes > maxBytes && (current.length > 0 || groups.length === 0)) {
+      groups.push(current);
+      current = [];
+      bytes = header;
+    }
+    current.push(item);
+    bytes += itemBytes;
+  }
+  groups.push(current);
+  const pages = groups.map((items, index) => ({ ...build(items, index + 1), pages: groups.length }));
+  for (const page of pages) {
+    const bytes = size(page);
+    if (bytes > maxBytes) {
+      throw new Error(`credential inventory page ${page.page}/${page.pages} is ${bytes} bytes, over ${maxBytes}`);
+    }
+  }
+  return pages;
 }
 
 /**
@@ -113,6 +232,7 @@ export async function enqueueCredentialInventorySnapshot(
     return { status: "throttled", hash: null, outboxId: null };
   }
   setSyncCursor(CREDENTIAL_INVENTORY_SYNC_DOMAIN, CHECK_CURSOR_KEY, now, undefined, now);
+  // Sized and hashed as the outbox will store it: redacted first, then bounded (the redactor can lengthen text).
   const payload = credentialInventorySyncPayload(await buildCredentialInventory({ ...input.inventory, now }));
   const hash = contentHash(payload);
   const previous = getSyncCursor(CREDENTIAL_INVENTORY_SYNC_DOMAIN, CURSOR_KEY);
@@ -120,26 +240,38 @@ export async function enqueueCredentialInventorySnapshot(
   if (!input.force && previous?.cursorValue === hash && now - lastEnqueue < CREDENTIAL_INVENTORY_HEARTBEAT_MS) {
     return { status: "unchanged", hash, outboxId: null };
   }
-  const outbox = enqueueSyncEvent({
-    domain: CREDENTIAL_INVENTORY_SYNC_DOMAIN,
-    eventType: CREDENTIAL_INVENTORY_EVENT_TYPE,
-    entityType: "credential_inventory",
-    entityId: "installation",
-    idempotencyKey: `credentials.inventory:${hash}:${now}`,
-    payload,
-    schemaVersion: 1,
-    occurredAt: now,
-    now,
-  });
+  const pages = paginateCredentialInventoryPayload(payload, hash);
+  const outboxIds: string[] = [];
+  for (const page of pages) {
+    const outbox = enqueueSyncEvent({
+      domain: CREDENTIAL_INVENTORY_SYNC_DOMAIN,
+      eventType: CREDENTIAL_INVENTORY_EVENT_TYPE,
+      entityType: "credential_inventory",
+      entityId: "installation",
+      idempotencyKey: `credentials.inventory:${hash}:${now}:${page.page}/${page.pages}`,
+      payload: page,
+      schemaVersion: 1,
+      occurredAt: now,
+      now,
+    });
+    if (outbox) outboxIds.push(outbox.id);
+  }
   setSyncCursor(CREDENTIAL_INVENTORY_SYNC_DOMAIN, CURSOR_KEY, hash, { enqueuedAt: now }, now);
-  return { status: "enqueued", hash, outboxId: outbox?.id ?? null };
+  return { status: "enqueued", hash, outboxId: outboxIds[0] ?? null, outboxIds, pages: pages.length };
 }
+
+/**
+ * Wire format in the hash: a cursor written by an older format (the unpaged
+ * #970 payload) never matches, so the first check after an upgrade publishes
+ * the pages instead of waiting for the heartbeat.
+ */
+const CREDENTIAL_INVENTORY_WIRE_FORMAT = "paged/v1";
 
 /** Hash of what the Console would show, without the snapshot time. */
 function contentHash(payload: CredentialInventorySyncPayload): string {
   const { generatedAt: _generatedAt, ...stable } = payload;
   return createHash("sha256")
-    .update(JSON.stringify(sanitizeSyncPayload(stable)))
+    .update(JSON.stringify({ format: CREDENTIAL_INVENTORY_WIRE_FORMAT, ...sanitizeSyncPayload(stable) }))
     .digest("hex")
     .slice(0, 32);
 }
