@@ -3697,6 +3697,8 @@ describe("verified human work handoffs", () => {
         expect(await runAs(held, () => new CronCommands().set(written.id, "every", "1m", true))).toBe("ok");
         expect(await runAs(held, () => new CronCommands().run(written.id, true, true))).toBe("ok");
         expect(triggered(written.id)).toBe(true);
+        expect(await runAs(held, () => new CronCommands().rm(written.id, true, true))).toBe("ok");
+        expect(job("c6-job")).toBeUndefined();
       });
 
       it("a member's own bound job and an admin's own lifted job stay editable by their owners", async () => {
