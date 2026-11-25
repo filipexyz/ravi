@@ -34412,15 +34412,17 @@ class VoiceDevicesPairReturn {
 VoiceDevicesPairReturn voiceDevicesPairReturnFromJson(Object? json) => VoiceDevicesPairReturn.fromJsonValue(json);
 
 class VoiceDevicesRevokeReturn {
-  const VoiceDevicesRevokeReturn({required this.device, required this.endedCalls});
+  const VoiceDevicesRevokeReturn({required this.device, required this.endDeferred, required this.endRequested});
 
   final RaviJson device;
-  final List<String> endedCalls;
+  final List<String> endDeferred;
+  final List<String> endRequested;
 
   factory VoiceDevicesRevokeReturn.fromJson(Map<String, Object?> json) {
     return VoiceDevicesRevokeReturn(
       device: RaviJson.from(json["device"]),
-      endedCalls: raviJsonAsList(json["endedCalls"], raviJsonAsString),
+      endDeferred: raviJsonAsList(json["endDeferred"], raviJsonAsString),
+      endRequested: raviJsonAsList(json["endRequested"], raviJsonAsString),
     );
   }
 

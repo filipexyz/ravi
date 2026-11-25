@@ -328,16 +328,20 @@ async function openConnection(
  * what was just opened and refuse, so an ended call never comes back and no
  * connection material is handed out for it.
  */
+async function releaseConnection(call: VoiceCall, material: ConnectionMaterial): Promise<void> {
+  if (call.engine === "live" && material.providerRef) {
+    const apiKey = liveApiKey();
+    if (apiKey) await closeLiveSession({ apiKey, sessionId: material.providerRef });
+  }
+}
+
 async function refuseEndedConnection(
   op: string,
   call: VoiceCall,
   material: ConnectionMaterial,
   asJson?: boolean,
 ): Promise<never> {
-  if (call.engine === "live" && material.providerRef) {
-    const apiKey = liveApiKey();
-    if (apiKey) await closeLiveSession({ apiKey, sessionId: material.providerRef });
-  }
+  await releaseConnection(call, material);
   return fail(op, "VOICE_CALL_ENDED", `Call ${call.id} ended while it was connecting.`, asJson);
 }
 
@@ -424,7 +428,14 @@ async function submitApprovalDecision(
       // The daemon publishes the outcome too (on the approval response and in
       // its sweep), so a decision committed after this wait still reaches the call.
       // Attributed to whoever the approval store recorded, as the daemon does.
-      await publishVoiceApprovalOutcome(callId, approvalId);
+      try {
+        await publishVoiceApprovalOutcome(callId, approvalId);
+      } catch (error) {
+        // no-cause: the decision is committed; the daemon publishes the outcome from the store.
+        console.warn(
+          `Approval ${approvalId} is ${record.decision}; the call shows it on the next sweep: ${errorDiagnostic(error).cause}`,
+        );
+      }
       try {
         await sendVoiceControl({ op: "approval-resolved", callId, approvalId, decision: record.decision });
       } catch (error) {
@@ -574,9 +585,20 @@ export class VoiceCallsCommands {
         connectionKind: material.connectionKind,
         ...(material.providerRef ? { providerRef: material.providerRef } : {}),
       });
-      if (!updated || !(await emitWhileOpen(call.id, "call.state", { state: updated.state }))) {
-        await refuseEndedConnection(op, call, material, asJson);
+      let announced = false;
+      try {
+        announced = Boolean(updated) && (await emitWhileOpen(call.id, "call.state", { state: updated?.state }));
+      } catch (error) {
+        // The call could not be announced: end it (unless the daemon already
+        // did) so it does not hold the slot, and release its media.
+        const current = getVoiceCall(call.id);
+        if (current && current.state !== "ended") {
+          updateVoiceCall(call.id, { state: "ended", endedReason: "connect_failed", endedAt: Date.now() });
+        }
+        await releaseConnection(call, material);
+        throw error;
       }
+      if (!announced) await refuseEndedConnection(op, call, material, asJson);
       const payload = {
         callId: call.id,
         sessionName: call.sessionName,
@@ -1369,20 +1391,25 @@ export class VoiceDevicesCommands {
       revokeVoiceDeviceContext(device.contextId);
       // The revoked record is durable: the door's sweep ends any call this
       // loop could not reach. Ask now so they end at once.
-      const ended: string[] = [];
+      // Neither list confirms the end: the door ends calls asynchronously.
+      const endRequested: string[] = [];
+      const endDeferred: string[] = [];
       for (const call of listVoiceCalls({ activeOnly: true, speakerId: device.id, limit: "all" })) {
-        if (call.speaker.kind === "device" && call.speaker.id === device.id) {
-          try {
-            await sendVoiceControl({ op: "end", callId: call.id, reason: "device_revoked" });
-          } catch (error) {
-            // no-cause: the door's sweep ends this call from the revoked record.
-            console.warn(`Call ${call.id} will end on the door's next sweep: ${errorDiagnostic(error).cause}`);
-          }
-          ended.push(call.id);
+        if (call.speaker.kind !== "device" || call.speaker.id !== device.id) continue;
+        try {
+          await sendVoiceControl({ op: "end", callId: call.id, reason: "device_revoked" });
+          endRequested.push(call.id);
+        } catch (error) {
+          // no-cause: the door's sweep ends this call from the revoked record; reported in endDeferred.
+          console.warn(`Call ${call.id} will end on the door's next sweep: ${errorDiagnostic(error).cause}`);
+          endDeferred.push(call.id);
         }
       }
-      return emit({ device: publicDevice(revoked), endedCalls: ended }, asJson, () =>
-        console.log(`Device ${device.id} revoked; asked ${ended.length} call(s) to end.`),
+      return emit({ device: publicDevice(revoked), endRequested, endDeferred }, asJson, () =>
+        console.log(
+          `Device ${device.id} revoked; asked ${endRequested.length} call(s) to end` +
+            (endDeferred.length ? `, ${endDeferred.length} left to the door's sweep.` : "."),
+        ),
       );
     });
   }
@@ -1610,7 +1637,13 @@ declareCommandReturns(VoiceDevicesCommands, {
     total: z.number(),
     pagination: page,
   }),
-  revoke: z.object({ device: deviceSchema.nullable(), endedCalls: z.array(z.string()) }),
+  revoke: z.object({
+    device: deviceSchema.nullable(),
+    /** Calls the door was asked to end. */
+    endRequested: z.array(z.string()),
+    /** Calls the ask could not reach; the door's sweep ends them from the revoked device. */
+    endDeferred: z.array(z.string()),
+  }),
 });
 
 declareCommandReturns(VoiceEnginesCommands, {

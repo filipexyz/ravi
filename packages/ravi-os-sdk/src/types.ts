@@ -27216,7 +27216,8 @@ export type VoiceDevicesRevokeReturn = {
     revoked: boolean;
     sessions: string[];
   }) | null;
-  endedCalls: string[];
+  endDeferred: string[];
+  endRequested: string[];
 };
 
 /** Input shape for `voice.engines.check`. */

@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "b777fad89f689229"
+    "version": "2797cd78da8b0907"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -158932,7 +158932,13 @@
                         }
                       ]
                     },
-                    "endedCalls": {
+                    "endDeferred": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "endRequested": {
                       "items": {
                         "type": "string"
                       },
@@ -158941,7 +158947,8 @@
                   },
                   "required": [
                     "device",
-                    "endedCalls"
+                    "endRequested",
+                    "endDeferred"
                   ],
                   "type": "object"
                 }

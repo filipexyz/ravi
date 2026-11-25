@@ -477,6 +477,66 @@ describe("voice door", () => {
     expect(getVoiceCall(call.id)?.usage.estimatedCostUsd).toBeCloseTo(0.05, 5);
   });
 
+  it("a second connect replaces the sideband without ending the call; closing the current one ends it", async () => {
+    const all: any[] = [];
+    const hub = new Hub();
+    const door = new VoiceDoorService({
+      subscribe: hub.subscribe as VoiceDoorDeps["subscribe"],
+      emit: hub.emit,
+      publishPrompt: async () => {},
+      readHistory: () => [],
+      env: { RAVI_VOICE_OPENAI_API_KEY: "k" },
+      createSideband: (input) => {
+        const handlers = input.handlers;
+        all.push(handlers);
+        // Like the real sideband: close reports closed_by_door synchronously.
+        return {
+          connect: () => {},
+          commentary: () => {},
+          thinking: () => {},
+          close: () => handlers.onClosed("closed_by_door"),
+        };
+      },
+      closeLiveProviderSession: async () => {},
+    });
+    const call = makeCall("live", { state: "starting" });
+    await door.handleControl({ op: "live-attach", callId: call.id, providerSessionId: "ls_1" });
+    await door.handleControl({ op: "live-attach", callId: call.id, providerSessionId: "ls_2" });
+    await tick();
+    expect(getVoiceCall(call.id)).toMatchObject({ state: "active", providerRef: "ls_2" });
+    all[0].onClosed("remote_closed");
+    await tick();
+    expect(getVoiceCall(call.id)?.state).toBe("active");
+    all[1].onClosed("remote_closed");
+    await until(() => getVoiceCall(call.id)?.state === "ended", "ended by current sideband");
+  });
+
+  it("a turn that throws does not stall the turns queued behind it", async () => {
+    const { door, prompts } = harness();
+    const call = makeCall("push");
+    let first = true;
+    const original = (door as any).runTurn.bind(door);
+    (door as any).runTurn = async (...args: unknown[]) => {
+      if (first) {
+        first = false;
+        throw new Error("publish failed");
+      }
+      return original(...args);
+    };
+    for (const turnId of ["vt_boom", "vt_after"]) {
+      await door.handleControl({
+        op: "utterance",
+        callId: call.id,
+        turnId,
+        text: turnId,
+        speaker: { ...call.speaker },
+      });
+    }
+    await until(() => listVoiceTurns(call.id).find((turn) => turn.id === "vt_after")?.state === "done", "second turn");
+    expect(listVoiceTurns(call.id).find((turn) => turn.id === "vt_boom")?.state).toBe("failed");
+    expect(prompts).toHaveLength(1);
+  });
+
   it("a revoke interrupted after the device record is finished by the sweep", async () => {
     const context = createRuntimeContext({
       kind: VOICE_DEVICE_CONTEXT_KIND,

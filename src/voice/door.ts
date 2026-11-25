@@ -52,6 +52,7 @@ import {
   listVoiceDevices,
   listVoiceTurns,
   saveVoiceAudio,
+  updateOpenVoiceCall,
   updateVoiceCall,
   updateVoiceTurnState,
 } from "./store.js";
@@ -233,8 +234,9 @@ export class VoiceDoorService {
         await this.attachLive(call, message.providerSessionId);
         return;
       case "approval-resolved":
-        // The approval service resumes the turn; reflect the state for the app.
-        await this.setAgentState(call.id, "thinking");
+        // The approval service resumes the turn; reflect it only while a turn
+        // of this call is running (a stale notice leaves the state alone).
+        if (this.calls.get(call.id)?.running) await this.setAgentState(call.id, "thinking");
         return;
       default:
         return;
@@ -320,7 +322,19 @@ export class VoiceDoorService {
           const current = getVoiceCall(callId);
           if (!current || current.state === "ending" || current.state === "ended") return;
           if (getVoiceTurn(next.turn.id)?.state === "cancelled") return;
-          await this.runTurn(current, next.turn, next.delegationId);
+          // The door stopped while this turn waited for the session.
+          if (this.abort.signal.aborted) return;
+          try {
+            await this.runTurn(current, next.turn, next.delegationId);
+          } catch (error) {
+            // One failed turn never stalls the turns queued behind it.
+            log.warn("Voice turn failed", { callId, turnId: next.turn.id, error });
+            if (runtime.running?.turn.id === next.turn.id) runtime.running = null;
+            const stored = getVoiceTurn(next.turn.id);
+            if (stored && (stored.state === "queued" || stored.state === "running")) {
+              updateVoiceTurnState(next.turn.id, "failed", this.now());
+            }
+          }
         });
       }
     } finally {
@@ -610,8 +624,13 @@ export class VoiceDoorService {
       return;
     }
     const runtime = this.runtime(call.id);
-    runtime.sideband?.close();
+    // Retire the old sideband before closing it: its close callback must not
+    // end the call that a new connect is taking over.
+    const previous = runtime.sideband;
+    runtime.sideband = undefined;
+    previous?.close();
     runtime.providerSessionId = providerSessionId;
+    const self: { sideband: SidebandLike | null } = { sideband: null };
     const handlers: LiveSidebandHandlers = {
       onDelegation: ({ delegationId, text }) => {
         const current = getVoiceCall(call.id);
@@ -642,6 +661,8 @@ export class VoiceDoorService {
         });
       },
       onClosed: (reason) => {
+        // Only the call's current sideband ends it.
+        if (!self.sideband || runtime.sideband !== self.sideband) return;
         void this.endCall(call.id, reason === "closed_by_door" ? "ended" : reason);
       },
       onError: (error) => {
@@ -651,11 +672,12 @@ export class VoiceDoorService {
     const sideband = this.deps.createSideband
       ? this.deps.createSideband({ apiKey, sessionId: providerSessionId, handlers })
       : new LiveSideband({ apiKey, sessionId: providerSessionId, handlers });
+    self.sideband = sideband;
     const latest = getVoiceCall(call.id);
     if (!latest || latest.state === "ending" || latest.state === "ended") return;
     runtime.sideband = sideband;
     sideband.connect();
-    updateVoiceCall(call.id, { state: "active", providerRef: providerSessionId }, this.now());
+    if (!updateOpenVoiceCall(call.id, { state: "active", providerRef: providerSessionId }, this.now())) return;
     await this.emitOpen(call.id, "call.state", { state: "active" }, this.sink);
   }
 

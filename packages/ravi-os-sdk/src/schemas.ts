@@ -138717,7 +138717,13 @@ export const VoiceDevicesRevokeReturnSchema = {
         }
       ]
     },
-    "endedCalls": {
+    "endDeferred": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "endRequested": {
       "items": {
         "type": "string"
       },
@@ -138726,7 +138732,8 @@ export const VoiceDevicesRevokeReturnSchema = {
   },
   "required": [
     "device",
-    "endedCalls"
+    "endRequested",
+    "endDeferred"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

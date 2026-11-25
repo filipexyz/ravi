@@ -140411,7 +140411,13 @@ class RaviSchemas {
         }
       ]
     },
-    "endedCalls": {
+    "endDeferred": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "endRequested": {
       "items": {
         "type": "string"
       },
@@ -140420,7 +140426,8 @@ class RaviSchemas {
   },
   "required": [
     "device",
-    "endedCalls"
+    "endRequested",
+    "endDeferred"
   ],
   "type": "object"
 }

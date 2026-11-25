@@ -40355,16 +40355,19 @@ public struct VoiceDevicesPairReturn: Codable, Sendable {
 
 public struct VoiceDevicesRevokeReturn: Codable, Sendable {
   public var device: RaviJSON
-  public var endedCalls: [String]
+  public var endDeferred: [String]
+  public var endRequested: [String]
 
-  public init(device: RaviJSON, endedCalls: [String]) {
+  public init(device: RaviJSON, endDeferred: [String], endRequested: [String]) {
     self.device = device
-    self.endedCalls = endedCalls
+    self.endDeferred = endDeferred
+    self.endRequested = endRequested
   }
 
   enum CodingKeys: String, CodingKey {
     case device = "device"
-    case endedCalls = "endedCalls"
+    case endDeferred = "endDeferred"
+    case endRequested = "endRequested"
   }
 }
 
