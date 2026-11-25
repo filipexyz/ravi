@@ -668,7 +668,7 @@ export class VoiceDoorService {
 
   private async sweepLimits(): Promise<void> {
     try {
-      for (const call of listVoiceCalls({ activeOnly: true, limit: 200 })) {
+      for (const call of listVoiceCalls({ activeOnly: true, limit: "all" })) {
         // The revoked device record is the durable "end its calls" request:
         // `devices revoke` asks right away, and this sweep retries if that ask
         // was lost.
@@ -701,7 +701,7 @@ export class VoiceDoorService {
    * finish them, the reply stays in the session).
    */
   private async recoverAfterRestart(): Promise<void> {
-    for (const call of listVoiceCalls({ activeOnly: true, limit: 500 })) {
+    for (const call of listVoiceCalls({ activeOnly: true, limit: "all" })) {
       for (const turn of listVoiceTurns(call.id)) {
         if (turn.state === "queued" || turn.state === "running") {
           updateVoiceTurnState(turn.id, "failed", this.now());

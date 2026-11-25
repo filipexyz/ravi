@@ -30,6 +30,7 @@ export interface VoiceStreamDeps {
 }
 
 const VOICE_STREAM_GAP_CHECK_MS = 5_000;
+const VOICE_REPLAY_PAGE = 5_000;
 
 const defaultDeps: VoiceStreamDeps = {
   subscribe: (signal, topic) => nats.subscribe(topic, { signal }),
@@ -102,6 +103,7 @@ async function* subscribeVoiceCall(
   if (ctx.signal.aborted) local.abort();
   const buffered: VoiceEvent[] = [];
   const waker: { wake: (() => void) | null } = { wake: null };
+  const pumpState = { done: false };
   const pump = (async () => {
     try {
       for await (const item of deps.subscribe(local.signal, voiceSubjects.event(callId))) {
@@ -109,11 +111,20 @@ async function* subscribeVoiceCall(
         waker.wake?.();
       }
     } catch {
-      // no-cause: the stream ends below when the subscription drops.
+      // no-cause: the stream closes below when the subscription drops.
     } finally {
+      pumpState.done = true;
       waker.wake?.();
     }
   })();
+  // Every stored event after the cursor, page by page (the store caps a read).
+  const storedAfter = function* (): Generator<VoiceEvent> {
+    for (;;) {
+      const page = listVoiceEvents(callId, { after: cursor, limit: VOICE_REPLAY_PAGE });
+      for (const event of page) yield event;
+      if (page.length < VOICE_REPLAY_PAGE) return;
+    }
+  };
 
   try {
     yield {
@@ -139,7 +150,7 @@ async function* subscribeVoiceCall(
         createdAt: Date.now(),
       },
     };
-    for (const event of listVoiceEvents(callId, { after: cursor, limit: 5000 })) {
+    for (const event of storedAfter()) {
       cursor = event.seq;
       yield { id: String(event.seq), event: "message", data: event };
       if (event.type === "call.ended") return;
@@ -160,18 +171,21 @@ async function* subscribeVoiceCall(
         });
         waker.wake = null;
         if (buffered.length === 0 && !local.signal.aborted) {
-          for (const stored of listVoiceEvents(callId, { after: cursor, limit: 5000 })) {
+          for (const stored of storedAfter()) {
             cursor = stored.seq;
             yield { id: String(stored.seq), event: "message", data: stored };
             if (stored.type === "call.ended") return;
           }
+          // The subscription is gone: close without `end`, so the client
+          // reconnects from its last seq.
+          if (pumpState.done) return;
         }
         continue;
       }
       const event = buffered.shift() as VoiceEvent;
       if (typeof event?.seq !== "number" || event.seq <= cursor) continue;
       if (event.seq > cursor + 1) {
-        for (const stored of listVoiceEvents(callId, { after: cursor, limit: 5000 })) {
+        for (const stored of storedAfter()) {
           if (stored.seq >= event.seq) break;
           cursor = stored.seq;
           yield { id: String(stored.seq), event: "message", data: stored };

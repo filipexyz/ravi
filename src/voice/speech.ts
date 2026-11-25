@@ -62,6 +62,10 @@ export function sanitizeForSpeech(input: string): string {
   text = text.replace(/\b[A-Za-z0-9+/_-]{32,}={0,2}/g, " ");
   // Paths.
   text = text.replace(/(?:^|\s)(?:~|\.{1,2})?\/[\w.\-/]+/g, " ");
+  // Relative paths: two or more separators (src/voice/door.ts), or one with a
+  // file extension (config/private.pem). "e/ou" and "km/h" stay.
+  text = text.replace(/\b[\w.-]+(?:\/[\w.-]+){2,}\/?/g, " ");
+  text = text.replace(/\b[\w.-]+\/[\w-]+\.[A-Za-z0-9]{1,8}\b/g, " ");
   text = text.replace(/\b[\w-]+\.(?:ts|tsx|js|json|md|py|sh|yaml|yml|toml|sql|db)\b/g, " ");
   // Markdown structure.
   text = text.replace(/^\s{0,3}#{1,6}\s*/gm, "");

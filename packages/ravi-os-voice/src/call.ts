@@ -167,8 +167,8 @@ export class RaviVoiceCall {
     if (event.type === "call.snapshot") {
       const open = (event.data.openApprovals as OpenApproval[] | undefined) ?? [];
       this.approvals = new Map(open.map((item) => [item.approvalId, item]));
-      const lastSeq = Number(event.data.lastSeq ?? 0);
-      if (!this.lastSeq) this.lastSeq = lastSeq;
+      // The snapshot's lastSeq is only a high-water mark: the replayed events
+      // after the cursor still follow, and the cursor moves as each one arrives.
     } else if (event.type === "turn.approval_requested") {
       const data = event.data as unknown as OpenApproval;
       this.approvals.set(data.approvalId, {

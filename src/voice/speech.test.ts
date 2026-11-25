@@ -26,6 +26,15 @@ describe("voice speech", () => {
     expect(spoken).not.toContain("const a");
   });
 
+  it("drops whole relative paths but keeps ordinary slashes", () => {
+    const spoken = sanitizeForSpeech("Mudei src/voice/door.ts e config/private.pem, 24 km/h e/ou depois.");
+    expect(spoken).not.toContain("src/voice");
+    expect(spoken).not.toContain("door");
+    expect(spoken).not.toContain("private.pem");
+    expect(spoken).toContain("km/h");
+    expect(spoken).toContain("e/ou");
+  });
+
   it("marks guest speech in the prompt and asks for a spoken line", () => {
     const prompt = buildVoicePrompt({
       text: "oi",

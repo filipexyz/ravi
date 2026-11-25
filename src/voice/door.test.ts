@@ -11,6 +11,8 @@ import {
   saveVoiceProfile,
   defaultVoiceProfile,
   updateVoiceCall,
+  findActiveVoiceCall,
+  listVoiceCalls,
 } from "./store.js";
 import { emptyVoiceUsage, type VoiceCall, type VoiceMode } from "./types.js";
 
@@ -229,6 +231,13 @@ describe("voice door", () => {
     expect(types.slice(endedAt + 1)).toEqual([]);
     updateVoiceCall(call.id, { state: "active", agentState: "listening" });
     expect(getVoiceCall(call.id)?.state).toBe("ended");
+  });
+
+  it("finds a speaker's active call past the newest fifty", () => {
+    const first = makeCall("mock", { speaker: { kind: "device", id: "vd_old" } });
+    for (let i = 0; i < 55; i++) makeCall("mock", { speaker: { kind: "device", id: `vd_${i}` } });
+    expect(findActiveVoiceCall("agent:main:main", "vd_old")?.id).toBe(first.id);
+    expect(listVoiceCalls({ activeOnly: true, limit: "all" }).length).toBe(56);
   });
 
   it("runs one turn at a time per call, in order", async () => {

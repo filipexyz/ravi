@@ -257,7 +257,8 @@ export function getVoiceCall(id: string): VoiceCall | null {
 }
 
 export function listVoiceCalls(
-  options: { activeOnly?: boolean; sessionKey?: string; limit?: number } = {},
+  /** `limit: "all"` reads every matching call (callers that filter or page after the query). */
+  options: { activeOnly?: boolean; sessionKey?: string; speakerId?: string; limit?: number | "all" } = {},
 ): VoiceCall[] {
   const where: string[] = [];
   const params: Array<string | number> = [];
@@ -266,10 +267,18 @@ export function listVoiceCalls(
     where.push("session_key = ?");
     params.push(options.sessionKey);
   }
-  params.push(Math.max(1, Math.min(options.limit ?? 50, 500)));
+  if (options.speakerId) {
+    where.push("json_extract(speaker_json, '$.id') = ?");
+    params.push(options.speakerId);
+  }
+  let limitClause = "";
+  if (options.limit !== "all") {
+    limitClause = " LIMIT ?";
+    params.push(Math.max(1, Math.min(options.limit ?? 50, 500)));
+  }
   const rows = store()
     .prepare(
-      `SELECT * FROM voice_calls ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY created_at DESC LIMIT ?`,
+      `SELECT * FROM voice_calls ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY created_at DESC${limitClause}`,
     )
     .all(...params) as CallRow[];
   return rows.map(rowToCall);
@@ -324,9 +333,7 @@ export function updateVoiceCall(id: string, patch: VoiceCallPatch, now = Date.no
 
 /** Active call for one (session, speaker): the spec allows one. */
 export function findActiveVoiceCall(sessionKey: string, speakerId: string): VoiceCall | null {
-  return (
-    listVoiceCalls({ activeOnly: true, sessionKey, limit: 50 }).find((call) => call.speaker.id === speakerId) ?? null
-  );
+  return listVoiceCalls({ activeOnly: true, sessionKey, speakerId, limit: 1 })[0] ?? null;
 }
 
 // ---------------------------------------------------------------------------

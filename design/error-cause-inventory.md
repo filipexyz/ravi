@@ -942,9 +942,9 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/update.ts | 1347 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:74bbfa2976253cbe237bad91 |
 | cli | src/cli/commands/update.ts | 1353 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:74bbfa2976253cbe237bad91 |
 | cli | src/cli/commands/update.ts | 1383 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:c33f18a27e6494675a063425 |
-| cli | src/cli/commands/voice.ts | 134 | fixed | binding retained / no recognized error surface | src/cli/commands/voice.ts:675f59d919cb8dc01396cb68 |
-| cli | src/cli/commands/voice.ts | 544 | fixed | binding retained / no recognized error surface | src/cli/commands/voice.ts:890091ec01b3a72d26f14364 |
-| cli | src/cli/commands/voice.ts | 1351 | no-cause | the door's sweep ends this call from the revoked record. | src/cli/commands/voice.ts:6ec081bea293a7e9ff08ab27 |
+| cli | src/cli/commands/voice.ts | 135 | fixed | binding retained / no recognized error surface | src/cli/commands/voice.ts:675f59d919cb8dc01396cb68 |
+| cli | src/cli/commands/voice.ts | 543 | fixed | binding retained / no recognized error surface | src/cli/commands/voice.ts:890091ec01b3a72d26f14364 |
+| cli | src/cli/commands/voice.ts | 1350 | no-cause | the door's sweep ends this call from the revoked record. | src/cli/commands/voice.ts:6ec081bea293a7e9ff08ab27 |
 | cli | src/cli/commands/watch.ts | 561 | fixed | binding retained / no recognized error surface | src/cli/commands/watch.ts:fbff794a5bddadc3ca9ea59f |
 | cli | src/cli/commands/widgets.ts | 68 | triaged-follow-up | catch-without-binding | src/cli/commands/widgets.ts:8c447b55c38f008aa381b929 |
 | cli | src/cli/commands/widgets.ts | 80 | triaged-follow-up | catch-without-binding | src/cli/commands/widgets.ts:13d9ce0b17bf6fda14a722e3 |
@@ -2238,7 +2238,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | gateway | src/sdk/gateway/streaming/session-view.ts | 126 | fixed | binding retained / no recognized error surface | src/sdk/gateway/streaming/session-view.ts:768e9ed5a35840b0583cb9eb |
 | gateway | src/sdk/gateway/streaming/sse.ts | 64 | triaged-follow-up | catch-without-binding | src/sdk/gateway/streaming/sse.ts:6f7f381832976cb2630cf9db |
 | gateway | src/sdk/gateway/streaming/sse.ts | 115 | fixed | binding retained / no recognized error surface | src/sdk/gateway/streaming/sse.ts:32571c050cc0cfd4ae007da9 |
-| gateway | src/sdk/gateway/streaming/voice.ts | 111 | no-cause | the stream ends below when the subscription drops. | src/sdk/gateway/streaming/voice.ts:173220bacc06a0838700aa04 |
+| gateway | src/sdk/gateway/streaming/voice.ts | 113 | no-cause | the stream closes below when the subscription drops. | src/sdk/gateway/streaming/voice.ts:173220bacc06a0838700aa04 |
 | security | src/security/nats-exposure.ts | 175 | triaged-follow-up | catch-without-binding | src/security/nats-exposure.ts:5ef78255212172f516fc7c54 |
 | security | src/security/nats-exposure.ts | 192 | triaged-follow-up | catch-without-binding | src/security/nats-exposure.ts:17005c7984944bc9e6148230 |
 | security | src/security/nats-exposure.ts | 205 | triaged-follow-up | catch-without-binding | src/security/nats-exposure.ts:44ccbac3edcee516748136c8 |

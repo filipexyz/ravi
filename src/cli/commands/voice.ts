@@ -65,6 +65,7 @@ import {
   markVoiceDeviceRevoked,
   newVoiceCallId,
   newVoiceDeviceId,
+  findActiveVoiceCall,
   saveVoiceProfile,
   updateVoiceCall,
 } from "../../voice/store.js";
@@ -460,7 +461,7 @@ export class VoiceTargetsCommands {
       const targets = sessions.filter(callable).map((session) => ({
         sessionName: session.name ?? session.sessionKey,
         agentId: session.agentId ?? null,
-        activeCalls: listVoiceCalls({ activeOnly: true, sessionKey: session.sessionKey }).length,
+        activeCalls: listVoiceCalls({ activeOnly: true, sessionKey: session.sessionKey, limit: "all" }).length,
       }));
       const page = pageOf(targets, ["ravi", "voice", "targets", "list"], limit, offset);
       return emit({ targets: page.items, total: page.total, pagination: page.pagination }, asJson, () => {
@@ -507,9 +508,7 @@ export class VoiceCallsCommands {
       if (daily.costUsd >= profile.maxDailyCostUsd) {
         fail(op, "VOICE_LIMIT_REACHED", "Today's voice spend limit is reached.", asJson, CONTRACT_EXIT_POLICY);
       }
-      const existing = listVoiceCalls({ activeOnly: true, sessionKey: session.sessionKey }).find(
-        (call) => call.speaker.id === caller.speaker.id,
-      );
+      const existing = findActiveVoiceCall(session.sessionKey, caller.speaker.id);
       if (existing) {
         fail(
           op,
@@ -626,7 +625,7 @@ export class VoiceCallsCommands {
     const op = "voice calls list";
     return run(op, asJson, () => {
       const caller = resolveVoiceCaller(op);
-      const all = callsVisibleTo(caller, listVoiceCalls({ activeOnly: Boolean(activeOnly), limit: 5000 })).map(
+      const all = callsVisibleTo(caller, listVoiceCalls({ activeOnly: Boolean(activeOnly), limit: "all" })).map(
         publicCall,
       );
       const page = pageOf(all, ["ravi", "voice", "calls", "list"], limit, offset, [activeOnly ? "--active" : null]);
@@ -1344,7 +1343,7 @@ export class VoiceDevicesCommands {
       // The revoked record is durable: the door's sweep ends any call this
       // loop could not reach. Ask now so they end at once.
       const ended: string[] = [];
-      for (const call of listVoiceCalls({ activeOnly: true, limit: 500 })) {
+      for (const call of listVoiceCalls({ activeOnly: true, speakerId: device.id, limit: "all" })) {
         if (call.speaker.kind === "device" && call.speaker.id === device.id) {
           try {
             await sendVoiceControl({ op: "end", callId: call.id, reason: "device_revoked" });
