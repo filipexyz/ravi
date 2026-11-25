@@ -134,6 +134,18 @@ Required capability materializers:
   session called `Agent` is not the tool. The pairs live in
   `TOOL_NAME_EQUIVALENTS` (`src/cli/tool-registry.ts`); a runtime that renames
   another tool adds its pair there.
+- A governed chat composes a contact's turn from the agent ceiling and the
+  contact's chat grants (`buildEffectiveCapabilities`): it keeps a grant that no
+  deny overlaps and drops the whole grant that one does. The overlap MUST see
+  both names of the subagent tool: a deny of one name overlaps a grant of the
+  other, and two trailing patterns that each reach a different name of the tool
+  (`Ag*` and `Task*`) overlap. The rule stays the fail-closed one of every other
+  tool: a deny of the subagent drops a prefix grant that covers it (`Task*`),
+  the other `Task` tools with it, and a deny wins over an explicit grant of
+  either name. The composition proposes only the grants the branches hold, so a
+  prefix on each branch that reaches a different name (`Task*` for the agent,
+  `Ag*` for the contact) intersects to nothing and the contact has no subagent;
+  exact names intersect, so grant the exact name.
 - Spec mode MUST block the subagent tool under both of its names.
 - A tool call without a tool name MUST be denied.
 - The tool and Bash permission hooks MUST turn their own failure into a denial.

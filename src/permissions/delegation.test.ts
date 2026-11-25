@@ -260,4 +260,19 @@ describe("the subagent tool in a governed chat", () => {
 
     expect(allows(effective, "access", "session", "Agent-1")).toBe(true);
   });
+
+  it("does not reach between a tool and another object type that shares its permission", () => {
+    // A `use` on a session is not a tool: a deny of one does not overlap a grant of the other.
+    const denyOnSession = buildEffectiveCapabilities({
+      agentCapabilities: [use("*")],
+      actorCapabilities: [use("Ag*"), cap("deny_use", "session", "Task*")],
+    });
+    expect(reaches(denyOnSession, "Agent")).toBe(true);
+
+    const denyOnTool = buildEffectiveCapabilities({
+      agentCapabilities: [cap("use", "session", "*")],
+      actorCapabilities: [cap("use", "session", "Ag*"), deny("Task*")],
+    });
+    expect(allows(denyOnTool, "use", "session", "Agent-1")).toBe(true);
+  });
 });
