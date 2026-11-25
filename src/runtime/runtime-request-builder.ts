@@ -710,7 +710,7 @@ async function buildRuntimeStartRequestInternal(
       historyTruncated: recovery?.truncated ?? false,
     },
   });
-  const { specServer, hooks, remoteSpawn } = buildRuntimeHostAttachments({
+  const { mcpServers, hooks, remoteSpawn } = buildRuntimeHostAttachments({
     runtimeCapabilities,
     agent,
     sessionName,
@@ -731,7 +731,7 @@ async function buildRuntimeStartRequestInternal(
   });
   const systemPromptSectionMetadata = buildRuntimeTracePromptSectionMetadata(systemPromptSections);
   const pluginNames = runtimePlugins.map((plugin) => plugin.path);
-  const mcpServerNames = specServer ? ["spec"] : [];
+  const mcpServerNames = Object.keys(mcpServers ?? {});
   const toolAccessMode = getRuntimeToolAccessMode(runtimeCapabilities, agent.id, runtimeContext);
   let initialModelBrokerAttemptAvailable = Boolean(modelBroker);
   let pendingModelBrokerTurnId = initialModelBrokerTurnId;
@@ -1290,7 +1290,8 @@ async function buildRuntimeStartRequestInternal(
       canUseTool,
       ...(providerBootstrap?.startRequest ?? {}),
       env: runtimeEnv,
-      ...(specServer ? { mcpServers: { spec: specServer } } : {}),
+      // Registered as built: the tool gate exempts exactly these keys.
+      ...(mcpServers ? { mcpServers } : {}),
       systemPromptAppend,
       settingSources: agent.settingSources ?? ["project"],
       ...(hooks ? { hooks } : {}),

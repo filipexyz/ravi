@@ -25,6 +25,7 @@ import { Readable, Writable } from "node:stream";
 import { randomUUID } from "node:crypto";
 import { StringCodec, type NatsConnection } from "nats";
 import { getNats } from "./nats.js";
+import { CLAUDE_REQUIRED_PROMPT_ENV } from "./runtime/claude-prompt-env.js";
 import { logger } from "./utils/logger.js";
 import type { SpawnOptions, SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
 
@@ -369,17 +370,22 @@ export function createNatsRemoteSpawn(
 
     // Credentials are NOT forwarded unless explicitly opted in: the spawn
     // payload travels over NATS, which is plaintext and unauthenticated by default.
-    const forwardedEnv: Record<string, string> = {};
+    // The values every Claude Code process must carry are constants, not
+    // credentials: they go to the worker with or without the opt-in.
+    const forwardedEnv: Record<string, string> = { ...CLAUDE_REQUIRED_PROMPT_ENV };
+    const forwardedCredentialKeys: string[] = [];
     if (resolveProcessEnv()[FORWARD_CREDENTIALS_ENV] === "1") {
       for (const key of FORWARDED_ENV_KEYS) {
         const val = env[key];
-        if (val !== undefined) forwardedEnv[key] = val;
+        if (val === undefined) continue;
+        forwardedEnv[key] = val;
+        forwardedCredentialKeys.push(key);
       }
-      if (Object.keys(forwardedEnv).length > 0) {
+      if (forwardedCredentialKeys.length > 0) {
         log.warn("Forwarding credentials to remote worker over NATS in cleartext", {
           workerId,
           spawnId,
-          keys: Object.keys(forwardedEnv),
+          keys: forwardedCredentialKeys,
           optIn: FORWARD_CREDENTIALS_ENV,
         });
       }

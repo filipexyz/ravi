@@ -134,6 +134,21 @@ Regras:
 - `ravi agents permissions` grava em `agent.defaults.runtimePermissions`.
   Use diretamente apenas para correção agent-only; para fluxos iniciados por
   humanos, prefira `ravi permissions allow/resolve`.
+- No Claude, toda chamada de ferramenta passa pelo teto pelo nome, inclusive
+  ferramentas de servidores MCP que o runtime carrega da própria configuração
+  (`.mcp.json`, plugins): `mcp__<servidor>__<ferramenta>`.
+  `use:tool:mcp__<servidor>__*` libera toda ferramenta cujo nome começa com
+  esse prefixo: vale para o servidor que o runtime carregar com esse nome. Um
+  agent `explicit-only` precisa também de `use:tool:ToolSearch` para carregar
+  a definição da ferramenta. Os leitores de recursos (`ListMcpResourcesTool`,
+  `ReadMcpResourceTool`, `ReadMcpResourceDirTool`) não são por servidor: um
+  deles lê os recursos de todos os servidores da sessão. O piso bootstrap já
+  tem `use:tool:*`. No Codex, ferramentas MCP da configuração do operador não
+  passam pelo teto, e qualquer `use:tool:` tira um agent `explicit-only` do
+  sandbox somente leitura.
+- No Claude, `@caminho` escrito numa mensagem fica como texto: o runtime não
+  lê o arquivo sozinho. O agent só chega ao arquivo por uma chamada de
+  ferramenta, que passa pelo teto.
 - Profiles de runtime: `bootstrap` (piso de nascimento), `chat-only`
   (conversation only; sentinel explícito `{ profile: "chat-only" }`),
   `explicit-only` (só as capabilities explícitas, sem piso bootstrap — para

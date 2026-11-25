@@ -43,3 +43,44 @@ the issued context's limits and live reductions, not just the agent profile.
 Syntax-policy failures need their own diagnostic so operators are not encouraged
 to add an executable grant that cannot resolve that policy refusal.
 
+## Every tool name is checked
+
+The Claude tool hook used to check only names from Ravi's own registry of
+built-in tools. Everything else passed: tools of MCP servers that Claude Code
+loads from `.mcp.json`, plugins or user configuration, the MCP resource readers,
+and built-in tools added after the registry was written (`Monitor`,
+`CronCreate`, `RemoteTrigger`, `Workflow` and others). A `chat-only` or
+`explicit-only` agent could call them, and so could a turn with no capabilities
+at all. A registry cannot keep up with a runtime that ships tools every
+release, so the check is by the reported name, with no registry in between.
+Turns that hold `use:tool:*` (a bootstrap agent at its full ceiling) see no
+change. Turns narrowed below it lose MCP tools and tools outside the registry
+unless granted: a sender with no contact, a request turn, a governed chat whose
+grants name specific tools.
+
+Host tools are exempt by provenance, not by name. A live session showed a
+project server named `spec` and the in-process `spec` server running side by
+side, both answering under `mcp__spec__`; only the `source` the runtime reports
+tells them apart.
+
+The same session showed that a PreToolUse hook that throws does not block: the
+tool ran. A permission hook that fails while reading state must therefore
+answer with a denial itself.
+
+A grant such as `use:tool:mcp__github__*` is a prefix on the tool name. Binding
+it to the reported server name was considered and left out: the name is
+whatever the runtime's configuration says, so a second server can take it, and
+the binding would promise an identity the runtime does not give. Choosing
+which servers exist belongs to the registry of servers Ravi loads itself.
+
+## A mention is not a tool call
+
+With every tool denied, a live Claude Code session still answered with the
+content of a file outside the agent's `cwd`, because the prompt held
+`@/abs/path`: Claude Code read the file while building the turn and no
+PreToolUse event fired. The same happened when the path sat inside chat-shaped
+text. `CLAUDE_CODE_DISABLE_FILE_MENTIONS=1` stopped it in the same session and
+left `@AGENTS.md` imports in `CLAUDE.md` working. `@server:uri` mentions of MCP
+resources did not resolve in three live runs on Claude Code 2.1.323 (also after
+the resource list was loaded in the same process); the switch does not cover
+them, so the live check repeats that run on every SDK upgrade.

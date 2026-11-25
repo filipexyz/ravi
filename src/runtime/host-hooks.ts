@@ -57,6 +57,8 @@ export interface RuntimeHostHooksOptions {
   streamingSession: RuntimeHostHookAttemptSafety["streamingSession"];
   crashRecovery: RuntimeHostHookAttemptSafety["crashRecovery"];
   approvalServices?: RuntimeHostHookApprovalServices;
+  /** In-process MCP servers this session attaches itself; see `createToolPermissionHook`. */
+  hostMcpServers?: readonly string[];
 }
 
 export function createRuntimeHostHooks({
@@ -73,6 +75,7 @@ export function createRuntimeHostHooks({
     requestPollAnswer,
     emitApprovalEvent: (topic, payload) => nats.emit(topic, payload),
   },
+  hostMcpServers,
 }: RuntimeHostHooksOptions): Record<string, RuntimeHookMatcher[]> {
   if (!runtimeCapabilities.supportsHostSessionHooks) {
     return {};
@@ -84,7 +87,7 @@ export function createRuntimeHostHooks({
     PreToolUse: [
       // Ravi Page links go to `ravi pages read`, not a browser or fetch.
       createPagesLinkGuardHook(),
-      createToolPermissionHook(hookOpts),
+      createToolPermissionHook({ ...hookOpts, hostMcpServers }),
       createBashPermissionHook(hookOpts),
       // No secret-stripping hook here: rewriting the command cannot remove
       // secrets (hooks' updatedInput does not compose, and the parent env stays

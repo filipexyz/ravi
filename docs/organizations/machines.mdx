@@ -169,7 +169,7 @@ The asked machine runs one turn of its agent per request, in a new session that 
 The turn acts as the person who asked, never with the operator's authority. Ravi gives it no contact, so it holds no capabilities, like a message from an unknown sender (see [What a turn may do](/guides/permissions#what-a-turn-may-do)). The agent answers in text, except for the gaps in the warning below.
 
 <Warning>
-Ravi does not check tools that a runtime loads from its own configuration, such as MCP servers in the agent's `.mcp.json`. Before you open an agent, remove any such server you would not let every member of the organization use. See [Agent ceilings](/guides/permissions#agent-ceilings).
+On Codex, Ravi does not check tools from MCP servers in the operator's Codex configuration. Before you open a Codex agent, remove any such server you would not let every member of the organization use. On Claude Code a request turn is refused every tool of a configured MCP server, like any other tool. See [Agent ceilings](/guides/permissions#agent-ceilings).
 
 On Codex, Ravi checks only shell commands per turn. A request turn can still edit files and search the web, unless the agent is `chat-only`, or `explicit-only` without tool or exec capabilities.
 </Warning>
