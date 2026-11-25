@@ -164,6 +164,15 @@ Regras:
   chat governado por grants de contato, `actorAuthorizationMode=user-overlay`
   e o efetivo é `agent_identity ∩ caps do contato no chat`. Ator desconhecido
   continua falhando fechado.
+- Contato cujo poder próprio (tags de permissão globais) tem acesso total
+  (`admin:system:*`, como a tag de admin do operador) não é reduzido num chat
+  governado, desde que nada no overlay dele o restrinja: nenhum `deny_*` num
+  grant daquele chat nem nas tags dele. Aí o overlay sai como
+  `userOverlay=lifted`, a automação dele não é recusada e as threads que ele
+  abre não ficam presas. Com um `deny_*` (por exemplo, sem shell naquele chat)
+  o overlay continua e a automação segue recusada. Grant de chat nunca levanta
+  o overlay, nem full-access concedido naquele chat, e tag global sem acesso
+  total também não.
 - O modelo antigo `agent ∩ actor ∩ surface ∩ turn` está aposentado na criação
   de contexto runtime; trate menções a ele como histórico/test fixture.
 - Tags são labels; elas não concedem autoridade sem provider explícito.
