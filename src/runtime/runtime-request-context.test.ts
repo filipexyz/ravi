@@ -13,7 +13,8 @@ import { authorizeContextCapabilities } from "../permissions/context-capabilitie
 import { canWithCapabilityContext } from "../permissions/capability-context.js";
 import { recordBridgeRuntimeEvent } from "../bridge/native.js";
 import { bridgeContextCapabilities, bridgeContextLive } from "../bridge/authority.js";
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import { nats } from "../nats.js";
 import { blockContact, createContact, removeContactTag } from "../contacts.js";
 import { accessActorFromTurn } from "../access/actor.js";
 import { resolveConnectorExecRoute, resolveConnectorTurn, resolveOperatorTurn } from "../link/connector-turn.js";
@@ -3566,6 +3567,17 @@ describe("verified human work handoffs", () => {
       // Review of #991 (B1, probes C6 to C8): binding a lifted turn's job to the chat made the store read it as
       // limited to the chat's grants, so a narrowed member's turn or held relay could enable or reschedule the
       // admin's job, which runs as the whole agent. A held turn may enable or reschedule only a job it owns.
+      // `cron add|set|enable` publish `ravi.cron.refresh`: a test never reaches a NATS server (CI has none, and
+      // on the daemon's machine the default URL is the live one).
+      let restoreEmit: (() => void) | undefined;
+      beforeEach(() => {
+        const emit = spyOn(nats, "emit").mockResolvedValue(undefined);
+        restoreEmit = () => emit.mockRestore();
+      });
+      afterEach(() => {
+        restoreEmit?.();
+        restoreEmit = undefined;
+      });
       const toolCtx = (turn: Turn) => ({
         ...asTool(turn),
         transport: "tool" as const,
