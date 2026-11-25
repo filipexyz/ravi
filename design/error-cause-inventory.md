@@ -938,8 +938,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/update.ts | 1347 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:74bbfa2976253cbe237bad91 |
 | cli | src/cli/commands/update.ts | 1353 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:74bbfa2976253cbe237bad91 |
 | cli | src/cli/commands/update.ts | 1383 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:c33f18a27e6494675a063425 |
-| cli | src/cli/commands/voice.ts | 128 | fixed | binding retained / no recognized error surface | src/cli/commands/voice.ts:675f59d919cb8dc01396cb68 |
-| cli | src/cli/commands/voice.ts | 444 | fixed | binding retained / no recognized error surface | src/cli/commands/voice.ts:890091ec01b3a72d26f14364 |
+| cli | src/cli/commands/voice.ts | 133 | fixed | binding retained / no recognized error surface | src/cli/commands/voice.ts:675f59d919cb8dc01396cb68 |
+| cli | src/cli/commands/voice.ts | 476 | fixed | binding retained / no recognized error surface | src/cli/commands/voice.ts:890091ec01b3a72d26f14364 |
 | cli | src/cli/commands/watch.ts | 561 | fixed | binding retained / no recognized error surface | src/cli/commands/watch.ts:fbff794a5bddadc3ca9ea59f |
 | cli | src/cli/commands/widgets.ts | 68 | triaged-follow-up | catch-without-binding | src/cli/commands/widgets.ts:8c447b55c38f008aa381b929 |
 | cli | src/cli/commands/widgets.ts | 80 | triaged-follow-up | catch-without-binding | src/cli/commands/widgets.ts:13d9ce0b17bf6fda14a722e3 |
