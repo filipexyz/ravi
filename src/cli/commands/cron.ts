@@ -522,8 +522,10 @@ function assertCronCreatorBindable(op: string): void {
 }
 
 /**
- * A turn held below the agent (a contact's chat grants, a held relay) may enable or reschedule only a job it
- * owns: a bound job of another owner can run as the agent (a lifted owner), so the chat binding does not bound it.
+ * A turn held below the agent (a contact's chat grants, a held relay) may enable, reschedule, run now or delete
+ * only a job it owns: a bound job of another owner can run as the agent (a lifted owner), so the chat binding
+ * does not bound it. `cron run` fires the job now even when it is disabled; deleting it cannot be undone by its
+ * owner. Disabling stays open to any turn: it only reduces, and the owner can enable it again.
  */
 function assertHeldTurnOwnsJob(op: string, job: CronJob): void {
   if (automationHoldCause() === null) return;
@@ -1412,6 +1414,7 @@ export class CronCommands {
     const job = dbGetCronJob(id);
     if (!job) failCronJobNotFound("cron run", id, asJson);
     assertCronJobMutable("cron run", id, job, asJson);
+    assertHeldTurnOwnsJob("cron run", job);
 
     if (execute !== true) {
       // Write brake (Manual v2 7.8): `cron run` fires the REAL job right now,
@@ -1480,6 +1483,8 @@ export class CronCommands {
     const job = dbGetCronJob(id);
     if (!job) failCronJobNotFound("cron rm", id, asJson);
     assertCronJobMutable("cron rm", id, job, asJson);
+    // Deleting another owner's job cannot be undone by that owner, unlike disabling it.
+    assertHeldTurnOwnsJob("cron rm", job);
 
     if (execute !== true) {
       // Write brake (Manual v2 7.8): deleting a job is destructive (schedule

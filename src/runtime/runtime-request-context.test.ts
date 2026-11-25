@@ -3569,21 +3569,26 @@ describe("verified human work handoffs", () => {
       // admin's job, which runs as the whole agent. A held turn may enable or reschedule only a job it owns.
       // `cron add|set|enable` publish `ravi.cron.refresh`: a test never reaches a NATS server (CI has none, and
       // on the daemon's machine the default URL is the live one).
-      let restoreEmit: (() => void) | undefined;
+      let emitSpy: { mock: { calls: unknown[][] }; mockRestore: () => void } | undefined;
       beforeEach(() => {
-        const emit = spyOn(nats, "emit").mockResolvedValue(undefined);
-        restoreEmit = () => emit.mockRestore();
+        emitSpy = spyOn(nats, "emit").mockResolvedValue(undefined);
       });
       afterEach(() => {
-        restoreEmit?.();
-        restoreEmit = undefined;
+        emitSpy?.mockRestore();
+        emitSpy = undefined;
       });
+      // `cron run --execute` fires the job through `ravi.cron.trigger`.
+      const triggered = (id: string) =>
+        (emitSpy?.mock.calls ?? []).some(
+          ([subject, data]) => subject === "ravi.cron.trigger" && (data as { jobId?: string })?.jobId === id,
+        );
       const toolCtx = (turn: Turn) => ({
         ...asTool(turn),
         transport: "tool" as const,
         sessionKey: turn.sessionKey,
         sessionName: turn.sessionName,
       });
+      // "ok", or the code with the automation hold that refused it (the REBAC refusal shares the code).
       async function runAs(turn: Turn, fn: () => unknown): Promise<string> {
         const original = console.log;
         console.log = () => {};
@@ -3591,7 +3596,9 @@ describe("verified human work handoffs", () => {
           await runWithContext(toolCtx(turn) as never, fn as never);
           return "ok";
         } catch (error) {
-          return String((error as { code?: string })?.code);
+          const failure = error as { code?: string; details?: { automationHold?: string } };
+          const hold = failure?.details?.automationHold;
+          return hold ? `${String(failure?.code)}/${hold}` : String(failure?.code);
         } finally {
           console.log = original;
         }
@@ -3617,7 +3624,7 @@ describe("verified human work handoffs", () => {
       ];
       const job = (name: string) => dbListCronJobs().find((candidate) => candidate.name === name);
 
-      it("a narrowed member's turn and held relay cannot enable or reschedule an admin's lifted-turn job", async () => {
+      it("a narrowed member's turn and held relay cannot enable, reschedule, run or delete an admin's lifted-turn job", async () => {
         const member = person("Member C7", { status: "allowed" });
         grantHere(member.id, "permission-reader");
         const admin = person("Cron admin C7", { tags: ["permission-owner"], status: "allowed" });
@@ -3631,17 +3638,36 @@ describe("verified human work handoffs", () => {
         expect(memberTurn.metadata?.actorAuthorizationMode).toBe("user-overlay");
         const relay = handoff(memberTurn, "execute", {}, originAgent);
         expect(isRelayHeldBelowAgent(relay.metadata)).toBe(true);
-        const attempts = {
-          "member enable": await runAs(memberTurn, () => new CronCommands().enable(written.id, true)),
-          "relay enable": await runAs(relay, () => new CronCommands().enable(written.id, true)),
-          "relay every 1m": await runAs(relay, () => new CronCommands().set(written.id, "every", "1m", true)),
-          "relay delete-after": await runAs(relay, () =>
-            new CronCommands().set(written.id, "delete-after", "true", true),
-          ),
-        };
-        for (const [label, result] of Object.entries(attempts)) {
-          expect(`${label}:${result}`).toBe(`${label}:PERMISSION_DENIED`);
+        // Every key that keeps the job's owner (`CRON_OWNER_KEEP_KEYS`), enable, run now and delete (review of
+        // #991, N6 and N7). `run --execute` fires the job even while it is disabled.
+        const keepKeys = [
+          ["description", "touched"],
+          ["cron", "*/5 * * * *"],
+          ["every", "1m"],
+          ["tz", "UTC"],
+          ["timezone", "UTC"],
+          ["timeout", "60"],
+          ["delete-after", "true"],
+        ] as const;
+        const held = [
+          ["member", memberTurn, "contact-chat-grants"],
+          ["relay", relay, "held-relay"],
+        ] as const;
+        for (const [who, turn, hold] of held) {
+          const attempts: Array<[string, () => unknown]> = [
+            ...keepKeys.map(
+              ([key, value]) =>
+                [`set ${key}`, () => new CronCommands().set(written.id, key, value, true)] as [string, () => unknown],
+            ),
+            ["enable", () => new CronCommands().enable(written.id, true)],
+            ["run", () => new CronCommands().run(written.id, true, true)],
+            ["rm", () => new CronCommands().rm(written.id, true, true)],
+          ];
+          for (const [label, attempt] of attempts) {
+            expect(`${who} ${label}:${await runAs(turn, attempt)}`).toBe(`${who} ${label}:PERMISSION_DENIED/${hold}`);
+          }
         }
+        expect(triggered(written.id)).toBe(false);
         expect(job("c7-job")).toMatchObject({
           enabled: false,
           schedule: written.schedule,
@@ -3649,6 +3675,7 @@ describe("verified human work handoffs", () => {
           message: "hello",
           ownerPrincipal: `contact:${admin.id}`,
         });
+        expect(job("c7-job")?.description).toBe(written.description);
       });
 
       it("a held relay acting for the job's own owner still may: ownership decides, not the hold", async () => {
@@ -3668,6 +3695,10 @@ describe("verified human work handoffs", () => {
         expect(isRelayHeldBelowAgent(held.metadata)).toBe(true);
         expect(await runAs(held, () => new CronCommands().enable(written.id, true))).toBe("ok");
         expect(await runAs(held, () => new CronCommands().set(written.id, "every", "1m", true))).toBe("ok");
+        expect(await runAs(held, () => new CronCommands().run(written.id, true, true))).toBe("ok");
+        expect(triggered(written.id)).toBe(true);
+        expect(await runAs(held, () => new CronCommands().rm(written.id, true, true))).toBe("ok");
+        expect(job("c6-job")).toBeUndefined();
       });
 
       it("a member's own bound job and an admin's own lifted job stay editable by their owners", async () => {
@@ -3694,8 +3725,15 @@ describe("verified human work handoffs", () => {
           "admin every": await runAs(adminTurn, () => new CronCommands().set(adminJob.id, "every", "5m", true)),
           "admin thread enable": await runAs(thread, () => new CronCommands().enable(adminJob.id, true)),
           "admin thread every": await runAs(thread, () => new CronCommands().set(adminJob.id, "every", "6m", true)),
+          "admin run": await runAs(adminTurn, () => new CronCommands().run(adminJob.id, true, true)),
+          "member relay run": await runAs(relay, () => new CronCommands().run(own.id, true, true)),
+          "member rm": await runAs(memberTurn, () => new CronCommands().rm(own.id, true, true)),
+          "admin thread rm": await runAs(thread, () => new CronCommands().rm(adminJob.id, true, true)),
         };
         for (const [label, result] of Object.entries(attempts)) expect(`${label}:${result}`).toBe(`${label}:ok`);
+        expect(triggered(adminJob.id) && triggered(own.id)).toBe(true);
+        expect(job("c8-job")).toBeUndefined();
+        expect(job("c8-admin-job")).toBeUndefined();
       });
     });
   });

@@ -60,11 +60,13 @@
   whose own overlay is lifted it MUST refuse; in an ungoverned chat
   (`userOverlay=inactive`) it MUST NOT bind (`cron-commands.test.ts`, "binds a
   job from an overlay turn or a lifted overlay to its chat…").
-- A narrowed member's turn and held relay MUST NOT enable, reschedule or set
-  `delete-after` on an admin's lifted-turn job; a held relay acting for the
-  job's own owner, a member on their own bound job and an admin on their own
-  job MUST still succeed (`runtime-request-context.test.ts`, "cron jobs a turn
-  held below the agent may touch").
+- A narrowed member's turn and held relay MUST NOT, on an admin's lifted-turn
+  job, set any of the 7 keys that keep the owner, enable it, run it now (no
+  `ravi.cron.trigger` published) or delete it; each refusal MUST carry its
+  `automationHold` cause. A held relay acting for the job's own owner, a
+  member on their own bound job and an admin on their own job MUST still
+  succeed, `cron run` and `cron rm` included (`runtime-request-context.test.ts`,
+  "cron jobs a turn held below the agent may touch").
 - A global (`--force`) grant MUST apply only inside governed chats and MUST NOT
   govern a chat by itself.
 - Blocked contacts MUST receive zero overlay capabilities.

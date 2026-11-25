@@ -165,8 +165,11 @@ speaking in a chat where another person had a grant.
   overlay is lifted binds nothing and writes no job. Since a bound job may now
   run as the agent (a lifted owner), the binding no longer proves the job is
   limited: a turn held below the agent (`automationHoldCause` not null) MAY
-  enable it or change a key that keeps its owner (schedule, timeout,
-  delete-after, description) only when it owns the job (review of #991, B1).
+  enable it, change a key that keeps its owner (`description`, `cron`,
+  `every`, `tz`, `timezone`, `timeout`, `delete-after`), run it now
+  (`cron run`, which fires even a disabled job) or delete it (`cron rm`) only
+  when it owns the job (review of #991, B1 and N7). Disabling stays open to
+  any turn: it only reduces, and the owner can enable it again.
 - The lift is decided on every turn, from the grants and tags as they are at
   that turn, also for a cron job bound to the chat (`creatorChat`): the job of
   an owner with full access runs as the agent, and is narrowed to the owner's
