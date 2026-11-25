@@ -60,7 +60,8 @@ The official Dart SDK sends `Authorization: Bearer rctx_*`, so
 - SSE `GET /api/v1/_stream/*` MUST receive the same CORS headers via the
   shared `withCorsHeaders` wrapper. Do not add a second CORS path for streams.
 - When an `OPTIONS` preflight carries `Access-Control-Request-Private-Network: true`
-  (Chrome Private Network Access, sent when an HTTPS page calls `127.0.0.1`),
+  (the older Private Network Access preflight; Chrome 142+ replaced it with a
+  Local Network Access user permission that the gateway cannot grant),
   the gateway MUST answer `Access-Control-Allow-Private-Network: true` only if
   the origin already passes the allowlist above. It MUST NOT grant private
   network access to an origin that is not allowed, and MUST NOT add the header

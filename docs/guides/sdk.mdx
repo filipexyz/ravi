@@ -74,7 +74,12 @@ If `RAVI_HTTP_HOST` is not a loopback address and `RAVI_GATEWAY_NETWORK_AUTHORIZ
 
 CORS is closed by default and never answers with `Access-Control-Allow-Origin: *`. `chrome-extension://` origins are always allowed.
 
-A page served over HTTPS that calls the gateway on `127.0.0.1` (for example a Ravi Page that uses `@ravi-os/voice`) needs two things: its exact origin in `RAVI_CORS_ORIGINS`, and the Private Network Access preflight, which Chrome sends as `Access-Control-Request-Private-Network: true`. The gateway answers `Access-Control-Allow-Private-Network: true` only for an origin that is already allowed. Each call still needs a context key.
+A page served over HTTPS that calls the gateway on `127.0.0.1` (for example a Ravi Page that uses `@ravi-os/voice`) needs its exact origin in `RAVI_CORS_ORIGINS`, and each call still needs a context key.
+
+The browser adds its own gate for public pages that reach loopback:
+
+- Chrome 142 and later ask the user for Local Network Access permission the first time the page calls `127.0.0.1`. Allow it. If it was denied, open the site settings from the lock icon in the address bar, set **Local network access** to Allow, and reload the page. The gateway cannot grant or bypass this permission.
+- Browsers that still use the older Private Network Access preflight send `Access-Control-Request-Private-Network: true`. For compatibility, the gateway answers `Access-Control-Allow-Private-Network: true`, but only for an origin that is already allowed.
 
 Keep one `RAVI_CORS_ORIGINS` line in `~/.ravi/.env`. The daemon keeps the last assignment, so a second line replaces the first instead of adding to it. Add the new origin to the existing comma-separated list, then restart:
 

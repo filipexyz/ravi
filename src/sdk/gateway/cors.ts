@@ -12,9 +12,10 @@
  * Preflight and actual responses share {@link corsHeaders} so SSE
  * `GET /api/v1/_stream/*` gets the same headers as command POSTs.
  *
- * Private Network Access: a public HTTPS page that calls the gateway on
- * 127.0.0.1 makes Chrome send `Access-Control-Request-Private-Network: true`
- * in the preflight. {@link preflightHeaders} answers
+ * Private Network Access (compatibility): browsers that still use the older
+ * PNA preflight send `Access-Control-Request-Private-Network: true` when a
+ * public HTTPS page calls 127.0.0.1. Chrome 142+ asks the user for Local
+ * Network Access permission instead, which the gateway cannot grant. {@link preflightHeaders} answers
  * `Access-Control-Allow-Private-Network: true` only when the origin is
  * already allowed above; it never widens the allowlist.
  */
