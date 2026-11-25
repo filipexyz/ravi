@@ -72,7 +72,8 @@
 - A held relay that acts as the agent (a thread's return, `agent:<id>`) MUST
   NOT enable, reschedule, run or delete a job owned by `agent:<id>`, while
   the unrestricted return that wrote it still may. A held turn whose actor
-  cannot be resolved (`unknown`) MUST NOT touch a legacy job without an owner
+  cannot be resolved (`unknown`) MUST NOT enable, reschedule, run or delete a
+  legacy job without an owner; disabling stays open to it as to any turn
   (same block, "a held relay that acts as the agent…", "a held turn whose
   actor cannot be resolved…").
 - A global (`--force`) grant MUST apply only inside governed chats and MUST NOT
