@@ -8,12 +8,13 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { semver } from "bun";
 import packageInfo from "../../../package.json" with { type: "json" };
 import { isExactVersion, satisfiesRange } from "../composition.js";
-import { discoverAppManifests, readAppManifestFile } from "../service.js";
+import { DIRECTORY_SKIPLIST, discoverAppManifests, readAppManifestFile } from "../service.js";
 import { classifyAppManifest, type ClassifyOptions } from "./classify.js";
 import {
   type AppPackageFile,
@@ -245,7 +246,9 @@ export function inspectPackage(
   ctx: StoreOperationContext = {},
 ): { id: string; version: string; class: RaviAppClass; reasons: string[]; grants: AppGrants; treeHash: string } {
   const sorted = checkPackageFiles(files);
-  const staging = join(appStoreRoot(ctx.env), "staging", randomUUID());
+  // Planning never writes store state: the manifest check runs in a throwaway folder outside it.
+  const scratch = mkdtempSync(join(tmpdir(), "ravi-app-inspect-"));
+  const staging = join(scratch, "app");
   try {
     writePackageDir(staging, sorted);
     const record = readAppManifestFile(join(staging, "ravi.app.json"), dirname(staging));
@@ -276,28 +279,55 @@ export function inspectPackage(
       treeHash: packageTreeHash(sorted),
     };
   } finally {
-    rmSync(staging, { recursive: true, force: true });
+    rmSync(scratch, { recursive: true, force: true });
   }
 }
 
-/** An app with this id that the store does not own blocks the install (spec: an id is never shadowed). */
+/** Deepest folder discovery reads under the state apps root (see findManifestFiles). */
+const MAX_ID_SEGMENTS = 5;
+
+function nested(left: string, right: string): boolean {
+  return left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
+}
+
+/**
+ * The app's folder must be one discovery reads, and no other app may own the
+ * same id, a parent folder or a child folder (spec: an id is never shadowed).
+ */
 function assertNoForeignApp(id: string, ctx: StoreOperationContext): void {
-  if (readReceipt(id, ctx.env)) return;
-  const clash = discoverAppManifests({ cwd: ctx.cwd, env: ctx.env }).find(
-    (record) => (record.manifest?.id ?? record.id) === id,
-  );
-  if (clash) {
-    throw new AppStoreError("APP_ID_CONFLICT", `An app named ${id} already exists at ${clash.path}.`, 1, {
+  const segments = appIdToPath(id);
+  if (segments.length > MAX_ID_SEGMENTS || segments.some((segment) => DIRECTORY_SKIPLIST.has(segment))) {
+    throw new AppStoreError(
+      "APP_ID_UNSUPPORTED",
+      `${id} cannot be installed: discovery skips that folder name or depth.`,
+      1,
+      { id },
+    );
+  }
+  const owned = !!readReceipt(id, ctx.env);
+  const records = discoverAppManifests({ cwd: ctx.cwd, env: ctx.env });
+  const clash = records.find((record) => {
+    const other = record.manifest?.id ?? record.id;
+    return (other === id && !owned) || nested(other, id);
+  });
+  const receiptClash = listReceipts(ctx.env).find((receipt) => nested(receipt.id, id));
+  const conflict = clash
+    ? { id: clash.manifest?.id ?? clash.id, path: clash.path }
+    : receiptClash
+      ? { id: receiptClash.id, path: activeDirFor(receiptClash.id, ctx) }
+      : null;
+  if (conflict) {
+    throw new AppStoreError("APP_ID_CONFLICT", `${id} conflicts with the app ${conflict.id} at ${conflict.path}.`, 1, {
       id,
-      path: clash.path,
-      source: clash.source,
+      conflictsWith: conflict.id,
+      path: conflict.path,
     });
   }
 }
 
 export async function prepareOfficialInstall(
   id: string,
-  options: { version?: string },
+  options: { version?: string; persist?: boolean },
   ctx: StoreOperationContext = {},
 ): Promise<PreparedChange> {
   const existing = readReceipt(id, ctx.env);
@@ -313,7 +343,8 @@ export async function prepareOfficialInstall(
     );
   }
   assertNoForeignApp(id, ctx);
-  const verified = await refreshSource(ctx);
+  // A plan verifies the source without saving it; only an install that goes ahead updates the cache.
+  const verified = await refreshSource(ctx, { persist: options.persist !== false });
   const raviVersion = ctx.raviVersion ?? packageInfo.version;
   const version = pickVersion(verified, id, options.version, raviVersion);
   if (version.class !== "compose") {
@@ -384,7 +415,7 @@ export function prepareLocalInstall(
     );
   }
   const existing = readReceipt(inspected.id, ctx.env);
-  if (!existing) assertNoForeignApp(inspected.id, ctx);
+  assertNoForeignApp(inspected.id, ctx);
   if (existing && existing.source !== "local") {
     throw new AppStoreError(
       "APP_SOURCE_CONFLICT",
@@ -420,7 +451,7 @@ export function prepareLocalInstall(
 
 export async function prepareOfficialUpdate(
   id: string,
-  options: { version?: string; skipCooldown?: boolean },
+  options: { version?: string; skipCooldown?: boolean; persist?: boolean },
   ctx: StoreOperationContext = {},
 ): Promise<PreparedChange | { upToDate: true; id: string; version: string }> {
   const receipt = readReceipt(id, ctx.env);
@@ -430,7 +461,8 @@ export async function prepareOfficialUpdate(
       id,
     });
   }
-  const verified = await refreshSource(ctx);
+  // A plan verifies the source without saving it; only an install that goes ahead updates the cache.
+  const verified = await refreshSource(ctx, { persist: options.persist !== false });
   const raviVersion = ctx.raviVersion ?? packageInfo.version;
   const version = pickVersion(verified, id, options.version, raviVersion);
   if (version.treeHash === receipt.treeHash && version.version === receipt.version) {
@@ -498,6 +530,9 @@ function activate(id: string, packageDir: string, ctx: StoreOperationContext): v
   mkdirSync(dirname(incoming), { recursive: true });
   cpSync(packageDir, incoming, { recursive: true, errorOnExist: true });
   if (existsSync(active)) {
+    if (!readReceipt(id, ctx.env)) {
+      throw new AppStoreError("APP_ID_CONFLICT", `${active} exists and was not installed by the store.`, 1, { id });
+    }
     const trash = join(root, "trash", `${appIdFileName(id)}-${stampForPath(now(ctx))}-${randomUUID().slice(0, 8)}`);
     mkdirSync(dirname(trash), { recursive: true });
     renameSync(active, trash);
@@ -527,9 +562,7 @@ function pruneOldPackages(receipt: AppReceipt, ctx: StoreOperationContext): void
 }
 
 function initializeBaseline(ctx: StoreOperationContext): void {
-  const ids = discoverAppManifests({ cwd: ctx.cwd, env: ctx.env, source: "state" }).map(
-    (record) => record.manifest?.id?.trim().toLowerCase() || record.id,
-  );
+  const ids = discoverAppManifests({ cwd: ctx.cwd, env: ctx.env, source: "state" }).map((record) => record.id);
   ensureStoreInitialized(ids, ctx.env);
 }
 

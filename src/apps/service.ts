@@ -82,7 +82,7 @@ const SECRET_VALUE_PATTERNS = [
   /\bsk-[A-Za-z0-9_-]{16,}/,
 ];
 
-const DIRECTORY_SKIPLIST = new Set([".git", "node_modules", "dist", "coverage", ".next"]);
+export const DIRECTORY_SKIPLIST = new Set([".git", "node_modules", "dist", "coverage", ".next"]);
 const STATIC_APP_ROOT_EXCEPTIONS = new Set(["apps"]);
 
 export function normalizeAppId(value: string): string {

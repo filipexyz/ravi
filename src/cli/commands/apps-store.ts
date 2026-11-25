@@ -34,7 +34,7 @@ import {
   contractFail,
   errorDiagnostic,
 } from "../agent-contract.js";
-import { hasRuntimeInvocationContext } from "../context.js";
+import { getContext, hasRuntimeInvocationContext } from "../context.js";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 
 function printJson(payload: unknown): void {
@@ -210,8 +210,20 @@ export class AppsStoreCommands {
   ) {
     const op = "apps verify";
     try {
-      const apps = verifyInstalled(id ? appId(op, id, asJson) : undefined);
+      const all = verifyInstalled(id ? appId(op, id, asJson) : undefined);
+      // An agent sees only the store apps exposed to it, and never who else sees them.
+      const caller = hasRuntimeInvocationContext() ? (getContext()?.agentId ?? null) : undefined;
+      const apps =
+        caller === undefined
+          ? all
+          : all
+              .filter((app) => caller !== null && app.exposedTo.includes(caller))
+              .map((app) => ({ ...app, exposedTo: [] }));
+      if (id && caller !== undefined && apps.length === 0) {
+        throw new AppStoreError("APP_NOT_INSTALLED", `${id} is not installed from the store.`, 1);
+      }
       const payload = { ok: apps.every((app) => app.ok), apps };
+      if (!payload.ok && getContext({ localOnly: true })?.suppressCliOutput !== true) process.exitCode = 1;
       if (asJson) printJson(payload);
       else if (apps.length === 0) console.log("No app was installed from the store.");
       else {
@@ -254,7 +266,7 @@ export class AppsStoreCommands {
     try {
       const prepared = from
         ? prepareLocalInstall(resolve(from), { allowCode })
-        : await prepareOfficialInstall(appId(op, id!, asJson), { version });
+        : await prepareOfficialInstall(appId(op, id!, asJson), { version, persist: execute === true });
       if (from && id && prepared.plan.id !== appId(op, id, asJson)) {
         throw new AppStoreError("APP_PACKAGE_INVALID", `The folder holds app ${prepared.plan.id}, not ${id}.`, 2);
       }
@@ -290,7 +302,11 @@ export class AppsStoreCommands {
     const op = "apps update";
     requireOperatorTerminal(op, asJson);
     try {
-      const prepared = await prepareOfficialUpdate(appId(op, id, asJson), { version, skipCooldown: now });
+      const prepared = await prepareOfficialUpdate(appId(op, id, asJson), {
+        version,
+        skipCooldown: now,
+        persist: execute === true,
+      });
       if ("upToDate" in prepared) {
         const payload = { updated: false, id: prepared.id, version: prepared.version };
         if (asJson) printJson(payload);
@@ -582,18 +598,16 @@ export class AppsIndexCommands {
   ) {
     const rootKeys = root ? list(root) : [...OFFICIAL_APP_SOURCE.rootKeys];
     const report = verifyRepo(resolve(dir ?? "."), rootKeys);
-    if (asJson) printJson(report);
-    else {
-      console.log(report.ok ? `OK: ${report.apps} apps, index serial ${report.indexSerial}.` : "Problems:");
-      for (const problem of report.problems) console.log(`- ${problem}`);
-    }
     if (!report.ok) {
+      if (!asJson) for (const problem of report.problems) console.log(`- ${problem}`);
       contractFail("apps index verify", "APP_INDEX_INVALID", report.problems.join("; "), {
         asJson,
         details: { problems: report.problems },
         diagnostic: errorDiagnostic("The index folder does not verify.", { operation: "apps index verify" }),
       });
     }
+    if (asJson) printJson(report);
+    else console.log(`OK: ${report.apps} apps, index serial ${report.indexSerial}.`);
     return report;
   }
 }

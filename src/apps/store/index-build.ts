@@ -64,8 +64,9 @@ function readJson<T>(path: string, parse: (value: unknown) => T, label: string):
   }
 }
 
+/** Ids never hold ".", so "/" -> "." keeps every (id, version) pair on its own path. */
 export function bundlePathFor(id: string, version: string): string {
-  return `bundles/${id.replaceAll("/", "--")}-${version}.json`;
+  return `bundles/${id.replaceAll("/", ".")}-${version}.json`;
 }
 
 function findAppDirs(appsDir: string): string[] {
@@ -199,6 +200,19 @@ export function buildIndex(options: BuildIndexOptions): BuildIndexResult {
     expires: new Date(now.getTime() + (options.expiresDays ?? 30) * DAY_MS).toISOString(),
     apps: Object.fromEntries(Object.entries(apps).sort(([left], [right]) => left.localeCompare(right))),
   });
+  const owners = new Map<string, string>();
+  for (const [id, entry] of Object.entries(index.apps)) {
+    for (const version of entry.versions) {
+      const owner = owners.get(version.bundle.path);
+      if (owner) {
+        throw new AppStoreError(
+          "APP_INDEX_INVALID",
+          `${id}@${version.version} and ${owner} would share ${version.bundle.path}.`,
+        );
+      }
+      owners.set(version.bundle.path, `${id}@${version.version}`);
+    }
+  }
   if (!options.dryRun) {
     for (const bundle of bundles) writeFileAtomic(join(options.repoDir, bundle.path), bundle.content);
     writeFileAtomic(indexPath, stableJson(index));

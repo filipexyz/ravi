@@ -180,6 +180,21 @@ describe("signed source", () => {
     await expectStoreError(refreshSource(ctx), "APP_STORE_ROLLBACK");
   });
 
+  it("refuses other signed bytes under a serial already accepted", async () => {
+    await refreshSource(ctx);
+    const index = JSON.parse(readFileSync(join(repo, "index.json"), "utf8"));
+    index.apps.blog.description = "same serial, other bytes";
+    writeFileSync(join(repo, "index.json"), `${JSON.stringify(index, null, 2)}\n`);
+    signFile(join(repo, "index.json"), keys.publish.pem);
+    await expectStoreError(refreshSource(ctx), "APP_STORE_ROLLBACK");
+  });
+
+  it("verifies without saving when asked not to persist", async () => {
+    await refreshSource(ctx, { persist: false });
+    expect(loadCachedSource(ctx)).toBeNull();
+    expect(existsSync(join(ctx.env!.RAVI_STATE_DIR!, "app-store"))).toBe(false);
+  });
+
   it("refuses an expired index", async () => {
     clock = new Date(clock.getTime() + 31 * 24 * 60 * 60 * 1000);
     await expectStoreError(refreshSource(ctx), "APP_STORE_SOURCE_EXPIRED");
@@ -278,6 +293,48 @@ describe("install lifecycle", () => {
     commitChange(prepared, ctx);
     expect(uninstallApp("local-code", ctx).id).toBe("local-code");
     expect(readReceipt("local-code", ctx.env)).toBeNull();
+  });
+
+  it("keeps listing apps when a state manifest has a non-string id", async () => {
+    commitChange(await prepareOfficialInstall("blog", {}, ctx), ctx);
+    const broken = join(ctx.env!.RAVI_STATE_DIR!, "apps", "broken");
+    mkdirSync(broken, { recursive: true });
+    writeFileSync(join(broken, "ravi.app.json"), JSON.stringify({ ...BLOG_MANIFEST, id: 42 }));
+    const records = discoverAppManifests({ env: ctx.env });
+    expect(records.find((record) => record.id === "blog")?.valid).toBe(true);
+    expect(records.find((record) => record.path.startsWith(broken))?.valid).toBe(false);
+  });
+
+  it("plans an install without writing store state", async () => {
+    await prepareOfficialInstall("blog", { persist: false }, ctx);
+    expect(existsSync(join(ctx.env!.RAVI_STATE_DIR!, "app-store"))).toBe(false);
+  });
+
+  it("refuses ids nested under or above another app, and folders discovery skips", () => {
+    const parent = join(work, "music");
+    writeApp(parent, {
+      ...BLOG_MANIFEST,
+      id: "music",
+      operations: {},
+      permissions: { required: [], optional: [], mutating: [] },
+    });
+    commitChange(prepareLocalInstall(parent, {}, ctx), ctx);
+    const child = join(work, "player");
+    writeApp(child, {
+      ...BLOG_MANIFEST,
+      id: "music/player",
+      operations: {},
+      permissions: { required: [], optional: [], mutating: [] },
+    });
+    expect(() => prepareLocalInstall(child, {}, ctx)).toThrow(/conflicts with the app music/);
+    const skipped = join(work, "coverage");
+    writeApp(skipped, {
+      ...BLOG_MANIFEST,
+      id: "coverage",
+      operations: {},
+      permissions: { required: [], optional: [], mutating: [] },
+    });
+    expect(() => prepareLocalInstall(skipped, {}, ctx)).toThrow(/discovery skips/);
   });
 
   it("refuses an id another source already declares", async () => {

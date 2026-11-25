@@ -7,6 +7,7 @@
  * cannot replay an older index that still lists a version blocked since.
  */
 
+import { mkdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { appStoreRoot, readFileIfExists, writeFileAtomic } from "./paths.js";
 import { OFFICIAL_APP_SOURCE, type AppStoreSourceConfig, verifyDetachedSignature } from "./trust.js";
@@ -82,9 +83,28 @@ export const defaultAppStoreFetcher: AppStoreFetcher = async (url, maxBytes) => 
   if (declared > maxBytes) {
     throw new AppStoreError("APP_STORE_FETCH_FAILED", `${url} is larger than ${maxBytes} bytes.`);
   }
-  const body = new Uint8Array(await response.arrayBuffer());
-  if (body.byteLength > maxBytes) {
-    throw new AppStoreError("APP_STORE_FETCH_FAILED", `${url} is larger than ${maxBytes} bytes.`);
+  // Read the stream with the cap applied as bytes arrive, so a missing or false length cannot buffer more.
+  const reader = response.body?.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  if (reader) {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        // no-cause: the size error below is the failure; a cancel that fails changes nothing.
+        await reader.cancel().catch(() => undefined);
+        throw new AppStoreError("APP_STORE_FETCH_FAILED", `${url} is larger than ${maxBytes} bytes.`);
+      }
+      chunks.push(value);
+    }
+  }
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
   }
   return body;
 };
@@ -227,14 +247,53 @@ function requireConfigured(source: AppStoreSourceConfig): void {
   }
 }
 
-/** Fetch, verify and cache the source. Returns what is now trusted. */
-export async function refreshSource(ctx: AppStoreContext = {}): Promise<VerifiedSource & { changed: boolean }> {
+const LOCK_WAIT_MS = 15_000;
+const LOCK_STALE_MS = 120_000;
+
+/** One refresh at a time per source: serials are compared and written under the same lock. */
+function withSourceLock<T>(dir: string, fn: () => T): T {
+  mkdirSync(dir, { recursive: true, mode: 0o755 });
+  const lock = join(dir, ".refresh.lock");
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  while (true) {
+    try {
+      mkdirSync(lock);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      try {
+        if (Date.now() - statSync(lock).mtimeMs > LOCK_STALE_MS) rmSync(lock, { recursive: true, force: true });
+      } catch {
+        // no-cause: the holder released the lock between the two calls; try again.
+      }
+      if (Date.now() > deadline) {
+        throw new AppStoreError("APP_STORE_BUSY", "Another refresh of the app source is running.", 1, {
+          cause: (error as Error).message,
+        });
+      }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    rmSync(lock, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Fetch and verify the source. With `persist` (the default) the verified
+ * files become the cache; without it nothing is written (install plans).
+ */
+export async function refreshSource(
+  ctx: AppStoreContext = {},
+  options: { persist?: boolean } = {},
+): Promise<VerifiedSource & { changed: boolean }> {
   const source = resolveSource(ctx);
   requireConfigured(source);
   const fetcher = ctx.fetcher ?? defaultAppStoreFetcher;
   const now = (ctx.now ?? (() => new Date()))();
   const dir = sourceCacheDir(ctx);
-  const state = readSourceState(ctx);
 
   const fetched = {} as Record<SignedKind, { bytes: Uint8Array; sig: Uint8Array }>;
   for (const kind of ["keys", "index", "blocklist"] as const) {
@@ -244,30 +303,41 @@ export async function refreshSource(ctx: AppStoreContext = {}): Promise<Verified
       sig: await fetcher(`${source.baseUrl}${name}.sig`, SIGNATURE_MAX_BYTES),
     };
   }
-  const cached = {
-    keys: readFileIfExists(join(dir, FILE_NAMES.keys)),
-    index: readFileIfExists(join(dir, FILE_NAMES.index)),
-    blocklist: readFileIfExists(join(dir, FILE_NAMES.blocklist)),
+  // The serials are read after the fetch, under the lock: a slower refresh cannot write back older files.
+  const check = () => {
+    const state = readSourceState(ctx);
+    const cached = {
+      keys: readFileIfExists(join(dir, FILE_NAMES.keys)),
+      index: readFileIfExists(join(dir, FILE_NAMES.index)),
+      blocklist: readFileIfExists(join(dir, FILE_NAMES.blocklist)),
+    };
+    const verified = verifySet(source, fetched, state, cached, now, { checkExpiry: true, checkSerials: true });
+    const changed =
+      verified.keys.serial !== state.keysSerial ||
+      verified.index.serial !== state.indexSerial ||
+      verified.blocklist.serial !== state.blockSerial;
+    const nextState = appStoreSourceStateSchema.parse({
+      schema: APP_STORE_STATE_SCHEMA,
+      keysSerial: verified.keys.serial,
+      indexSerial: verified.index.serial,
+      blockSerial: verified.blocklist.serial,
+      refreshedAt: now.toISOString(),
+    });
+    return { verified, changed, nextState };
   };
-  const verified = verifySet(source, fetched, state, cached, now, { checkExpiry: true, checkSerials: true });
-
-  const changed =
-    verified.keys.serial !== state.keysSerial ||
-    verified.index.serial !== state.indexSerial ||
-    verified.blocklist.serial !== state.blockSerial;
-  for (const kind of ["keys", "index", "blocklist"] as const) {
-    writeFileAtomic(join(dir, FILE_NAMES[kind]), fetched[kind].bytes);
-    writeFileAtomic(join(dir, `${FILE_NAMES[kind]}.sig`), fetched[kind].sig);
+  if (options.persist === false) {
+    const { verified, changed, nextState } = check();
+    return { source, ...verified, state: nextState, changed };
   }
-  const nextState = appStoreSourceStateSchema.parse({
-    schema: APP_STORE_STATE_SCHEMA,
-    keysSerial: verified.keys.serial,
-    indexSerial: verified.index.serial,
-    blockSerial: verified.blocklist.serial,
-    refreshedAt: now.toISOString(),
+  return withSourceLock(dir, () => {
+    const { verified, changed, nextState } = check();
+    for (const kind of ["keys", "index", "blocklist"] as const) {
+      writeFileAtomic(join(dir, FILE_NAMES[kind]), fetched[kind].bytes);
+      writeFileAtomic(join(dir, `${FILE_NAMES[kind]}.sig`), fetched[kind].sig);
+    }
+    writeFileAtomic(join(dir, "state.json"), `${JSON.stringify(nextState, null, 2)}\n`);
+    return { source, ...verified, state: nextState, changed };
   });
-  writeFileAtomic(join(dir, "state.json"), `${JSON.stringify(nextState, null, 2)}\n`);
-  return { source, ...verified, state: nextState, changed };
 }
 
 /**

@@ -24,7 +24,7 @@ export function markStoreOwnership(records: RaviAppManifestRecord[], env: NodeJS
     return;
   }
   for (const record of stateRecords) {
-    const id = record.manifest?.id?.trim().toLowerCase() || record.id;
+    const id = record.id;
     let receipt: ReturnType<typeof readReceipt> = null;
     try {
       receipt = readReceipt(id, env);
