@@ -870,10 +870,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/signals.ts | 700 | fixed | binding retained / no recognized error surface | src/cli/commands/signals.ts:603f37fd18d9117515774eae |
 | cli | src/cli/commands/signals.ts | 720 | fixed | binding retained / no recognized error surface | src/cli/commands/signals.ts:223a5dc4b0f566498b9e6e81 |
 | cli | src/cli/commands/signals.ts | 805 | fixed | binding retained / no recognized error surface | src/cli/commands/signals.ts:e3050a6b0d6af56d9acae045 |
-| cli | src/cli/commands/skills.ts | 399 | fixed | binding retained / no recognized error surface | src/cli/commands/skills.ts:8a4f862163432fd05a57f443 |
-| cli | src/cli/commands/skills.ts | 602 | triaged-follow-up | surface-bypasses-constructor | src/cli/commands/skills.ts:91561788503f4ec039ff70e4 |
-| cli | src/cli/commands/skills.ts | 2333 | fixed | binding retained / no recognized error surface | src/cli/commands/skills.ts:8a9f0453330a52261d46eb59 |
-| cli | src/cli/commands/skills.ts | 2388 | fixed | binding retained / no recognized error surface | src/cli/commands/skills.ts:920bb9fc0b0ebd544d4fce27 |
+| cli | src/cli/commands/skills.ts | 403 | fixed | binding retained / no recognized error surface | src/cli/commands/skills.ts:8a4f862163432fd05a57f443 |
+| cli | src/cli/commands/skills.ts | 606 | triaged-follow-up | surface-bypasses-constructor | src/cli/commands/skills.ts:91561788503f4ec039ff70e4 |
+| cli | src/cli/commands/skills.ts | 2339 | fixed | binding retained / no recognized error surface | src/cli/commands/skills.ts:8a9f0453330a52261d46eb59 |
+| cli | src/cli/commands/skills.ts | 2394 | fixed | binding retained / no recognized error surface | src/cli/commands/skills.ts:920bb9fc0b0ebd544d4fce27 |
 | channels-slack | src/cli/commands/slack.ts | 340 | fixed | binding retained / no recognized error surface | src/cli/commands/slack.ts:0788acaba0330c98747ac78d |
 | channels-slack | src/cli/commands/slack.ts | 476 | fixed | binding retained / no recognized error surface | src/cli/commands/slack.ts:d99046dd6a6e969b9e90eb63 |
 | channels-slack | src/cli/commands/slack.ts | 487 | triaged-follow-up | catch-without-binding | src/cli/commands/slack.ts:8f52890620905e69730b310f |

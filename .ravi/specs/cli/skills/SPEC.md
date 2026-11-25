@@ -81,7 +81,10 @@ the global envelope, exit taxonomy, authorization or transport behavior.
    separate `--execute`; their helpAfter text is the teaching surface for this
    equivalence.
 8. `skills list` and `skills who` MUST accept `--fields a,b,c` for compact
-   output.
+   output. `skills list` without `--limit` MUST use a page of 500 (the CLI
+   maximum), so the whole catalog shows on its default page; `--limit` and
+   `--offset` still page, and `pagination.nextCommand` (and the human "Next
+   page" line) appears only when more matching skills remain.
 9. When invoked from an agent context (`RAVI_*` envs present), a thrown
    `ContractError` MUST preserve its exit code through the registry dispatcher.
 10. Unbraked writes (`sync`, `grant`, `revoke`, `grant-batch`, `revoke-batch`

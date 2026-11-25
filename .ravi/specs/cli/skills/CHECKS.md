@@ -86,6 +86,9 @@ required for success or change its semantics.
   `--dry-run` flag (exit 0 preview, no write). No `--execute` may be added.
 - `skills list --fields a,b,c --json` and `skills who --fields a,b,c --json`
   MUST return items containing only the requested fields.
+- `skills list --json` with no `--limit` MUST return every catalog skill
+  (`total` equals the item count) with no `pagination.nextCommand`; with
+  `--limit 10` it MUST return 10 items and a `nextCommand` with `--offset 10`.
 - Immediate writes (`sync`, `grant`, `revoke`, and additive catalog/local
   install) MUST remain immediate, and the shipped `skill-creator` guidance
   MUST not teach a redundant confirmation call.

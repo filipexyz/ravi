@@ -40,7 +40,11 @@ import {
 } from "../../library/pins.js";
 import type { LibraryProposal, LibraryProposalComment } from "../../library/types.js";
 import { fail, getContext, hasRuntimeInvocationContext } from "../context.js";
-import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
+import { buildCliOffsetPagination, MAX_CLI_LIST_LIMIT, paginateCliItems } from "../pagination.js";
+
+// The catalog is small and agents list it to find help: a default page must hold all of it,
+// or the skills with the latest names silently fall off the end.
+const SKILLS_LIST_DEFAULT_LIMIT = MAX_CLI_LIST_LIMIT;
 import { syncCodexSkills } from "../../plugins/codex-skills.js";
 import { discoverPlugins } from "../../plugins/index.js";
 import { libraryUnionPlugins } from "../../library/session-plugins.js";
@@ -629,7 +633,8 @@ function failInstallSelection(
 
 const SKILLS_LIST_HELP_AFTER = `
 LEITURA — descobre skills. Três universos: catálogo (default), instaladas (--installed)
-e uma fonte externa (--source GitHub/git/path). Paginado (default 50, máx 500).
+e uma fonte externa (--source GitHub/git/path). Página padrão de 500 (o máximo), então
+o catálogo inteiro aparece; --limit/--offset paginam e, passando de 500, siga a próxima página.
 
 USE
   ✓ descobrir o nome canônico de uma skill antes de grant/show/install
@@ -640,11 +645,11 @@ NÃO USE
   ✗ ver quem tem um grant → \`ravi skills who <skill>\`
 
 EXAMPLES
-  ravi skills list                              # catálogo (primeira página)
+  ravi skills list                              # catálogo inteiro (até 500)
   ravi skills list --installed --json           # instaladas, JSON
   ravi skills list --tag da/gtm --limit 100     # filtra por tag canônica
   ravi skills list --source org/repo            # skills de uma fonte externa
-  ravi skills list --json --limit 50 --offset 50  # próxima página
+  ravi skills list --json --limit 20 --offset 20  # segunda página de 20
 
 FORMATO
   Saída humana: "<nome> — <1ª linha da descrição>" + source/path. --json traz
@@ -1273,7 +1278,8 @@ export class SkillsCommands {
     @Option({ flags: "--codex", description: "Include materialized Codex skills" }) includeCodex?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical skill tag" }) tagSlug?: string,
-    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default and max: 500; past that, follow the next page)" })
+    limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching skills to skip (default: 0)" }) offset?: string,
     @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
     fields?: string,
@@ -1287,7 +1293,7 @@ export class SkillsCommands {
         : listCatalogSkills();
     const tagFilter = tagSlug?.trim() || null;
     const skills = filterItemsByCanonicalTag(discovered, "skill", tagFilter ?? undefined, (skill) => skill.name);
-    const page = paginateCliItems(skills, { limit, offset });
+    const page = paginateCliItems(skills, { limit, offset }, { defaultLimit: SKILLS_LIST_DEFAULT_LIMIT });
     const pageSkills = page.items;
     const pagination = buildCliOffsetPagination({
       fields,
