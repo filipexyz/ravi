@@ -307,9 +307,9 @@ export interface PromptMessage {
    */
   _cliDestination?: boolean;
   /**
-   * Opaque id of the producer waiting on this prompt. The dispatcher echoes it
-   * on the `dispatch.queued` runtime event, so a waiter can tell its own queued
-   * prompt from any other prompt that queued on the same session.
+   * Opaque id of the producer waiting on this prompt. The host stamps every
+   * runtime event of the physical turn that consumed it with `_correlationIds`,
+   * so a waiter knows which turn is its own.
    */
   _correlationId?: string;
   /** Provider-neutral identity for prompts accepted through a channel backend. */

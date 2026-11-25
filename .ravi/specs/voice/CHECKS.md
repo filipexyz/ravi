@@ -21,8 +21,9 @@ normative: false
 - The SDK and OpenAPI drift checks in `bun run test` cover the generated `voice` surface.
 - A voice prompt never carries `source`, always carries `deliveryBarrier: "after_response"`,
   `_cliDestination: true`, `_correlationId` (the turn id) and `_approvalSource.channel === "voice"`.
-- `src/voice/door.test.ts` ends a turn queued behind another on a provider without `turn.started`
-  while an unrelated prompt queues, and frees a pending turn when its call ends;
-  `src/runtime/dispatch-queued-correlation.test.ts` checks the echo on `dispatch.queued`.
+- `src/voice/door.test.ts` ends a turn queued behind two others on a provider without
+  `turn.started`, never aborts another turn for a queued cancel, and frees a pending turn when its
+  call ends; `src/runtime/session-trace.test.ts` ("queues a second sessions.send…") checks that each
+  terminal carries only its own turn's `_correlationIds`.
 - The live sideband handler never emits `session.input_audio.append` or `session.output_audio.delta`
   payloads to NATS or the event store.

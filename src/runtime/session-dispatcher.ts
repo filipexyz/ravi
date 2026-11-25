@@ -1569,7 +1569,6 @@ export class RuntimeSessionDispatcher {
             this.options
               .safeEmit(`ravi.session.${sessionName}.runtime`, {
                 type: "dispatch.queued",
-                correlationId: prompt._correlationId ?? null,
                 provider: existing.queryHandle.provider,
                 reason: "waiting_for_barrier",
                 barrier: describeDeliveryBarrier(barrier),
@@ -1623,7 +1622,6 @@ export class RuntimeSessionDispatcher {
             this.options
               .safeEmit(`ravi.session.${sessionName}.runtime`, {
                 type: "dispatch.queued",
-                correlationId: prompt._correlationId ?? null,
                 provider: existing.queryHandle.provider,
                 reason: decision.reason,
                 barrier: describeDeliveryBarrier(barrier),
@@ -1733,7 +1731,6 @@ export class RuntimeSessionDispatcher {
       this.options
         .safeEmit(`ravi.session.${sessionName}.runtime`, {
           type: "dispatch.queued",
-          correlationId: prompt._correlationId ?? null,
           provider: requestedProvider,
           reason: "pending_start_backpressure",
           lane,
@@ -1796,7 +1793,6 @@ export class RuntimeSessionDispatcher {
       this.options
         .safeEmit(`ravi.session.${sessionName}.runtime`, {
           type: "dispatch.queued",
-          correlationId: prompt._correlationId ?? null,
           provider: requestedProvider,
           reason: "cold_start_inflight",
           queueSize: queued.length,
@@ -3268,7 +3264,6 @@ export class RuntimeSessionDispatcher {
         this.options
           .safeEmit(`ravi.session.${sessionName}.runtime`, {
             type: "dispatch.queued",
-            correlationId: prompt._correlationId ?? null,
             provider: existing.queryHandle.provider,
             reason: "waiting_for_barrier",
             barrier: describeDeliveryBarrier(barrier),
@@ -3340,7 +3335,6 @@ export class RuntimeSessionDispatcher {
     this.options
       .safeEmit(`ravi.session.${sessionName}.runtime`, {
         type: "dispatch.queued",
-        correlationId: prompt._correlationId ?? null,
         provider: existing.queryHandle.provider,
         reason: decision.reason,
         barrier: describeDeliveryBarrier(barrier),

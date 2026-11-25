@@ -31,12 +31,7 @@ import { getVoiceEngine } from "./engines/index.js";
 import type { ClipSpeechEngine } from "./engines/types.js";
 import { emitVoiceEvent, type VoiceControlMessage, type VoiceEventSink } from "./events.js";
 import { revokeVoiceDeviceContext } from "./authority.js";
-import {
-  createVoiceTurnOwnership,
-  noteVoiceTurnRuntimeEvent,
-  voiceTurnHasTurnAhead,
-  type VoiceTurnOwnership,
-} from "./turn-ownership.js";
+import { createVoiceTurnOwnership, noteVoiceTurnRuntimeEvent, type VoiceTurnOwnership } from "./turn-ownership.js";
 import { buildVoicePrompt, classifySpokenControl, extractSpokenLead } from "./speech.js";
 import {
   addVoiceDailyUsage,
@@ -403,26 +398,25 @@ export class VoiceDoorService {
           { signal: watch.signal },
         )) {
           const type = event.data.type;
-          if (event.topic.endsWith(".claude")) {
-            // A provider result is only this turn's once no turn is ahead of it.
-            if (type === "result" && running.wait.started && !voiceTurnHasTurnAhead(running.wait)) {
-              resolveTerminal("turn.complete");
+          // The legacy provider topic carries no ownership; the runtime terminal decides.
+          if (event.topic.endsWith(".claude")) continue;
+          const noted = noteVoiceTurnRuntimeEvent(running.wait, event.data);
+          const firstOwn = noted.verdict === "own_event" && !running.wait.started;
+          running.wait = noted.state;
+          if (noted.verdict === "other_terminal") {
+            // Another turn's reply is stored before its terminal, so it is never read as this one's.
+            if (!running.wait.started) {
+              cursor = Math.max(cursor, snapshotTranscriptCursor(this.deps.readHistory(sessionName, 1)));
             }
             continue;
           }
-          const noted = noteVoiceTurnRuntimeEvent(running.wait, event.data);
-          running.wait = noted.state;
-          if (noted.verdict === "ahead_terminal") {
-            // The reply of the turn ahead is stored before its terminal, so it is never read as this one's.
-            cursor = Math.max(cursor, snapshotTranscriptCursor(this.deps.readHistory(sessionName, 1)));
-            if (running.cancelRequested) await this.sendAbort(call, running);
-            continue;
-          }
+          if (noted.verdict === "other") continue;
           const open = this.isOpen(call.id);
-          if (type === "turn.started" && running.wait.started) {
+          if (firstOwn) {
             if (open) await this.emitOpen(call.id, "work.state", { turnId: turn.id, state: "running" }, this.sink);
             if (running.cancelRequested) await this.sendAbort(call, running);
-          } else if (open && (type === "tool.started" || type === "tool.completed")) {
+          }
+          if (open && (type === "tool.started" || type === "tool.completed")) {
             const name = typeof event.data.toolName === "string" ? event.data.toolName : event.data.name;
             await this.emitOpen(
               call.id,
@@ -490,19 +484,20 @@ export class VoiceDoorService {
       return;
     }
 
-    const fullText = (await this.readReply(sessionName, cursor)) ?? "";
+    const fullText = (await this.readReply(call.id, sessionName, cursor)) ?? "";
     const { spokenText, screenText } = extractSpokenLead(fullText);
     await this.finishTurn(call, running, "done", spokenText, screenText);
     await this.speak(call, running, spokenText, screenText, profile);
   }
 
-  private async readReply(sessionName: string, cursor: number): Promise<string | null> {
+  private async readReply(callId: string, sessionName: string, cursor: number): Promise<string | null> {
     const deadline = this.now() + (this.deps.transcriptWaitMs ?? 10_000);
     const sleep = this.deps.sleep ?? defaultSleep;
     for (;;) {
       const found = readThisTurnAssistantText(this.deps.readHistory(sessionName, 50), cursor);
       if (found) return found.text;
-      if (this.now() >= deadline) return null;
+      // An ended call speaks nothing more; do not hold the session's next voice turn.
+      if (this.now() >= deadline || !this.isOpen(callId)) return null;
       await sleep(250);
     }
   }
@@ -599,8 +594,8 @@ export class VoiceDoorService {
     const running = runtime.running;
     if (!running || running.turn.id !== turnId) return;
     running.cancelRequested = true;
-    // Only this call's own turn: abort when no turn is ahead of it, else once that turn ends.
-    if (!voiceTurnHasTurnAhead(running.wait)) {
+    // Only this call's own turn: abort once it is running; until then the first own event sends it.
+    if (running.wait.started) {
       await this.sendAbort(call, running, actor);
     }
   }

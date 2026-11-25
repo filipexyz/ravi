@@ -437,6 +437,12 @@ function retainsAttemptInput(message: RuntimeUserMessage): boolean {
   return message.replay === true || message.providerCapacityRetry !== undefined || message.retainsInputCohort === true;
 }
 
+function collectCorrelationIds(messages: RuntimeUserMessage[]): string[] {
+  return messages
+    .map((message) => message.launchPrompt?._correlationId)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+}
+
 export function getDeliverableRuntimeMessages(
   sessionName: string,
   session: RuntimeHostStreamingSession,
@@ -987,6 +993,7 @@ export async function* createRuntimeMessageGenerator({
       message.clientMessageId = clientMessageId;
     }
     session.currentTurnPendingIds = [...yieldedIds];
+    session.currentTurnCorrelationIds = collectCorrelationIds(deliverable);
     session.currentTurnSuperseded = false;
     session.currentTurnYieldContinuationId = undefined;
     const combined = combineSessionSurfacePromptContents(deliverable.map((message) => message.message.content));
