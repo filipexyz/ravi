@@ -61,6 +61,7 @@ status: active
 - Two consecutive CI attempts on the same commit MUST pass `Test Swift SDK` and log the pinned Swift version; a missing toolchain MUST fail rather than skip.
 - `bun test src/ci/pre-push.test.ts` executes both workflows' early isolation steps in a temporary runner directory, loads the resulting `$GITHUB_ENV`, and executes the real pre-push hook with a checker that asserts every check inherits that state. Missing/late setup or a shell export without persistence fails the regression.
 - `actionlint .github/workflows/*.yml` exits zero with no diagnostics. YAML parsing alone is not validation of GitHub Actions expression contexts.
+- `grep -nE "runs-on|timeout-minutes" .github/workflows/sdk-release.yml .github/workflows/release.yml .github/workflows/version.yml` shows `ubuntu-24.04` on every job and `timeout-minutes: 45` on the SDK Release job. A completed SDK Release run on `dev` is read from the jobs API: the bump step is `success`, not `cancelled`, and the package version appears in `npm view @ravi-os/sdk version`.
 - A release run after the final `dev` CI succeeds must push its version tag, finish Version And Publish successfully, and expose that version as `ravi.bot@next` in the npm registry.
 - `bun test --preload ./src/test/isolated-runtime-preload.ts src/tasks/` passes
   with observer, checkpoint and thread-core suites in the same process.
