@@ -129,6 +129,7 @@ export async function closeLiveSession(input: {
     await fetchImpl(`${LIVE_API_BASE}/${encodeURIComponent(input.sessionId)}/close`, {
       method: "POST",
       headers: { authorization: `Bearer ${input.apiKey}` },
+      signal: AbortSignal.timeout(5000),
     });
   } catch {
     // no-cause: best effort; the sideband close below ends the session too.

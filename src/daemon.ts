@@ -704,8 +704,13 @@ export async function startDaemon() {
   log.info("Slack thread controls started");
   await startSlackThreadShortcuts();
   log.info("Slack thread shortcuts started");
-  await startVoiceDoor();
-  log.info("Voice door started");
+  // Voice is optional: a failure here must never keep the daemon from serving chats.
+  try {
+    await startVoiceDoor();
+    log.info("Voice door started");
+  } catch (error) {
+    log.error("Voice door failed to start; voice calls are unavailable", { error });
+  }
 
   sessionAdapterBus = createSessionAdapterBus();
   await sessionAdapterBus.start();
