@@ -22,6 +22,11 @@
 - Bootstrap agent and automation contexts can run the read-only Codex Bash
   policy hook without receiving the broader context command group.
 - Contact permission tags materialize through `contact-policy-permissions`.
+- A fresh process whose first import is `contact-policy-permissions-provider`,
+  `provider-registry` or `provider-runtime` loads without a temporal-dead-zone
+  error and `getConfiguredCapabilityMaterializers()` lists
+  `contact-policy-permissions` (`src/permissions/provider-runtime.test.ts`,
+  "Permission provider registry load order").
 - External resolved contact turns use `authorityMode=agent-identity` and do
   not require contact/surface capabilities for bootstrap tool authority.
 - Agent-identity denials resolve to `agent:<executorAgentId>` as the recurring
