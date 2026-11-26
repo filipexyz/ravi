@@ -578,12 +578,14 @@ Decision (26/11/2026, owner): "se eu escrevo eu quero que esse dado venha,
 independente de onde estar", and "compartilhar com alguém em um grupo pode
 ser a minha escolha". The owner's own verified message (a resolved contact
 linked to the login's Console user) is the operator's turn in any chat: their
-direct chat in any session, shared (`agent:<id>:main`) or not, and a group.
+direct chat in any session, shared (`agent:<id>:main`) or not, a thread inside
+it (`agent:<id>:main:thread:<ts>`), and a group.
 No confirmation is asked. Anyone else's message never starts a private read.
 
 - Residual risk, accepted by the owner: what a read returns stays in that
-  session's context, so another participant (in the same chat, or in another
-  chat attached or routed to that session) can ask about it later.
+  session's context, so anyone who can write into that session (another
+  participant of the chat, another chat attached or routed to it, or a relay
+  with `access session:<name>`) can ask about it later.
 - Where it applies: `pages read` of a private route, `ravi knowledge`,
   meeting transcripts and the Library's operator-only items. The calendar
   keeps its own group refusal (spec `calendar/meeting-assistant`). The

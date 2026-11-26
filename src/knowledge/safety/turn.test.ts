@@ -164,6 +164,19 @@ describe("classifyKnowledgeTurn", () => {
     expect(classify(context).ok).toBe(true);
   });
 
+  it("lets the owner in from a thread of their DM", () => {
+    const context = turnContext(
+      {
+        actorPrincipal: "contact:c_luis",
+        consoleUserId: "user_luis",
+        consoleOrgId: "org_1",
+        agentIdentityCompartment: "dm:chat_09f6e6ef7a0d28fc0bcca02f",
+      },
+      { sessionKey: "agent:main:main:thread:1795096374.846999", sessionName: "main-t-1795096374846999" },
+    );
+    expect(classify(context).ok).toBe(true);
+  });
+
   it("refuses a contact other than the owner in a group and in the shared session", () => {
     const group = turnContext({
       actorPrincipal: "contact:c_ana",

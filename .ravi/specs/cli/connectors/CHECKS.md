@@ -45,8 +45,8 @@
   of a revoked one, MUST block.
 - A resolved contact whose `consoleUserId` is the active session's user MUST
   be allowed as speaker `owner` in any session, shared (`agent:<id>:main`) or
-  not (conversation `dm`), and in a group (conversation `group`), with no
-  confirmation. The same contact with a different `consoleOrgId` MUST be
+  not, a thread of their DM included (conversation `dm`), and in a group
+  (conversation `group`), with no confirmation. The same contact with a different `consoleOrgId` MUST be
   blocked. That turn MUST still change a mode (`connectors mode`) from a
   direct chat and own the crons it creates (`operator`). A contact other than
   the owner MUST stay refused in the shared session and in a group.
