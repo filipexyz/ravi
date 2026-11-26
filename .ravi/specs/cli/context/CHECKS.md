@@ -42,3 +42,10 @@
   401/403, malformed/inactive replies and unavailability MUST leave stores
   unchanged. Runtime authority, explicit remote configuration and forged
   transport metadata MUST never activate the local operator path.
+
+- `bun test src/cli/command-access.test.ts` MUST deny the local operator to a
+  `cli` call carrying `RAVI_AUTOMATION_PRINCIPAL=automation:job:*` or a
+  malformed marker, and MUST keep it for `automation:cron:*` and
+  `automation:trigger:*`. Removing the job check, dropping trigger from the
+  operator-owned set, or treating a malformed marker as operator-owned MUST
+  each fail a test.

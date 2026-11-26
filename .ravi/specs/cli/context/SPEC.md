@@ -93,6 +93,24 @@ invariant stronger than most: context keys (`rctx_*`) ARE credentials.
     runtime and explicit remote invocations MUST NOT gain a local operator
     fallback. No arbitrary environment or client file path is forwarded.
 
+## Local operator is not a boundary
+
+- A local `cli` invocation without `RAVI_CONTEXT_KEY` and without an explicit
+  remote gateway (`RAVI_GATEWAY_URL`) resolves to the local operator. Every agent process runs as the same OS user as the daemon, so any
+  agent that can execute code (a script, `bun <file>`, a git hook) can start a
+  child without the key and act as the operator. Profiles, the Bash guard and
+  approvals decide what is offered to the agent; they are not a boundary
+  against code it already runs. Only OS isolation of the agent runtime closes
+  this, and until it exists an agent reachable by third parties SHOULD stay
+  `chat-only`.
+- A process the daemon spawned for `ravi jobs run` (`RAVI_AUTOMATION_PRINCIPAL`
+  = `automation:job:*`) MUST NOT resolve to the local operator: jobs are open to
+  agents. A present marker (including a blank one) that is not a well-formed
+  cron or trigger principal MUST also be denied. Shell cron and shell triggers keep the local operator
+  because they run only when their owner acts as the operator
+  (`CRON_SHELL_NOT_OPERATOR`, `TRIGGER_SHELL_NOT_OPERATOR`). This check closes
+  the easy path only; a process can drop the marker.
+
 ## Write classification (brake decision per op)
 
 | op | class | brake |

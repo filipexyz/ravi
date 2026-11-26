@@ -12,6 +12,7 @@ import {
   redactCommandAccessInput,
 } from "./command-access.js";
 import type { CommandAccessOptions } from "./decorators.js";
+import { buildJobEnv } from "../jobs/runner.js";
 import { createRuntimeContext } from "../runtime/context-registry.js";
 import { emptyCredentialsFile, upsertCredentialsEntry, writeCredentialsFile } from "../runtime/credentials-store.js";
 import {
@@ -427,6 +428,80 @@ describe("CLI command access enforcement", () => {
     expect(result.decision?.permission).toBe("mutate");
     expect(result.decision?.objectType).toBe("demo.items");
     expect(result.decision?.objectId).toBe("create");
+  });
+
+  it("denies the local operator to a process the daemon spawned for a job", () => {
+    process.env.RAVI_AUTOMATION_PRINCIPAL = "automation:job:job_abc123";
+
+    const result = enforceCliCommandAccess({
+      group: "demo",
+      command: "create",
+      access: ACCESS,
+      source: "cli",
+    });
+
+    expect(result.allowed).toBe(false);
+    expect(result.errorMessage).toContain("automation:job:job_abc123 is not the local operator");
+  });
+
+  it("denies the local operator when the automation marker is present but blank", () => {
+    process.env.RAVI_AUTOMATION_PRINCIPAL = "  ";
+
+    const result = enforceCliCommandAccess({
+      group: "demo",
+      command: "create",
+      access: ACCESS,
+      source: "cli",
+    });
+
+    expect(result.allowed).toBe(false);
+    expect(result.errorMessage).toContain("an automation process is not the local operator");
+  });
+
+  it("denies the local operator in the exact env a job process receives", () => {
+    const jobEnv = buildJobEnv({ id: "job_env_check" }, {});
+    process.env.RAVI_AUTOMATION_PRINCIPAL = jobEnv.RAVI_AUTOMATION_PRINCIPAL;
+
+    const result = enforceCliCommandAccess({
+      group: "demo",
+      command: "create",
+      access: ACCESS,
+      source: "cli",
+    });
+
+    expect(jobEnv.RAVI_CONTEXT_KEY).toBeUndefined();
+    expect(result.allowed).toBe(false);
+    expect(result.errorMessage).toContain("automation:job:job_env_check is not the local operator");
+  });
+
+  it("keeps the local operator for shell cron and shell triggers, which only run for the operator", () => {
+    for (const principal of ["automation:cron:c1", "automation:trigger:t1"]) {
+      process.env.RAVI_AUTOMATION_PRINCIPAL = principal;
+
+      const result = enforceCliCommandAccess({
+        group: "demo",
+        command: "create",
+        access: ACCESS,
+        source: "cli",
+      });
+
+      expect(result.allowed).toBe(true);
+      expect(result.decision?.providerId).toBe("operator-control");
+    }
+  });
+
+  it("denies the local operator even when the automation marker is malformed", () => {
+    process.env.RAVI_AUTOMATION_PRINCIPAL = "not-a-principal";
+
+    const result = enforceCliCommandAccess({
+      group: "demo",
+      command: "create",
+      access: ACCESS,
+      source: "cli",
+    });
+
+    expect(result.allowed).toBe(false);
+    expect(result.errorMessage).toContain("an automation process is not the local operator");
   });
 
   it("does not let env force local operator execution when a context key is present", () => {
