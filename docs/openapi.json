@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "7f8e015a376e87d1"
+    "version": "d315e2e0fd38fa53"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -76022,6 +76022,10 @@
                     "description": "Decision id from ask/list",
                     "type": "string"
                   },
+                  "sourceMessage": {
+                    "description": "The person's message that holds this answer (internal or provider message id). Recorded as provenance; it must be a message written by a person, and by the decision's owner when it names one",
+                    "type": "string"
+                  },
                   "text": {
                     "description": "Explicit outcome",
                     "type": "string"
@@ -123468,9 +123472,15 @@
                           "const": "thread.report",
                           "type": "string"
                         },
+                        "decisionError": {
+                          "type": "string"
+                        },
                         "handoff": {
                           "additionalProperties": false,
                           "properties": {
+                            "decisionId": {
+                              "type": "string"
+                            },
                             "id": {
                               "type": "string"
                             },

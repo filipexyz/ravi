@@ -68400,6 +68400,10 @@ export const DecisionsAnswerInputSchema = {
       "description": "Decision id from ask/list",
       "type": "string"
     },
+    "sourceMessage": {
+      "description": "The person's message that holds this answer (internal or provider message id). Recorded as provenance; it must be a message written by a person, and by the decision's owner when it names one",
+      "type": "string"
+    },
     "text": {
       "description": "Explicit outcome",
       "type": "string"
@@ -107851,9 +107855,15 @@ export const SessionsReportReturnSchema = {
           "const": "thread.report",
           "type": "string"
         },
+        "decisionError": {
+          "type": "string"
+        },
         "handoff": {
           "additionalProperties": false,
           "properties": {
+            "decisionId": {
+              "type": "string"
+            },
             "id": {
               "type": "string"
             },

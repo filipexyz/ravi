@@ -18,12 +18,21 @@ export const LIVE_DEFAULT_MODEL = "gpt-live-1.1";
 export const LIVE_DEFAULT_VOICE = "marin";
 /** US$ 0.05 per active minute (standby is US$ 0.02). */
 export const LIVE_USD_PER_ACTIVE_MINUTE = 0.05;
-/** Appends are capped at 500 tokens; keep each chunk well under it. */
-const APPEND_CHUNK_CHARS = 1500;
+/**
+ * Appends are capped at 500 tokens. Portuguese with numbers, ids and acronyms
+ * can pass 2 characters per token, so chunks stay at 900 characters.
+ */
+export const APPEND_CHUNK_CHARS = 900;
 /** Wait this long after a delegation for the transcript that triggered it to settle. */
 export const DELEGATION_SETTLE_MS = 900;
 /** A pause longer than this between transcript deltas starts a new utterance. */
 export const UTTERANCE_GAP_MS = 1200;
+/**
+ * Speech the model answered on its own is shown as conversation only after
+ * this long without a delegation: the model may start talking ("deixa eu
+ * ver") before it delegates, and the request must still reach the session.
+ */
+export const CONVERSATION_SETTLE_MS = 3000;
 /** Events that carry reflected audio. They are dropped on arrival, never stored or published. */
 const AUDIO_EVENTS = new Set(["session.input_audio.append", "session.output_audio.delta"]);
 
@@ -211,14 +220,20 @@ export interface LiveSidebandOptions {
 export class LiveSideband {
   private socket: LiveSocket | null = null;
   private userBuffer = "";
+  /** Deltas of the utterance being heard, so a delegation offset can split it. */
+  private userParts: Array<{ text: string; startMs: number | null }> = [];
   /** End of the last user transcript delta, when the provider sent it. */
   private userLastEndMs: number | null = null;
+  /** Start of the utterance being heard, when the provider sent it. */
+  private userStartMs: number | null = null;
   /**
-   * Finished utterances since the voice model last answered on its own. A
-   * delegation takes all of them (nothing the person said is dropped); the
-   * model answering means they were conversation, so they are shown then.
+   * Finished utterances nobody took yet. A delegation takes them (nothing the
+   * person said is dropped). Ones the model answered on its own are shown as
+   * conversation after CONVERSATION_SETTLE_MS without a delegation.
    */
-  private pendingUtterances: string[] = [];
+  private pendingUtterances: Array<{ text: string; startMs: number | null; answeredBy: number | null }> = [];
+  /** Counts model replies; each conversation timer only shows what its own reply answered. */
+  private replySeq = 0;
   /** Delegations created but not yet settled. */
   private pendingDelegations = 0;
   /** A model reply is being transcribed (timestamps decide when one ends). */
@@ -305,7 +320,10 @@ export class LiveSideband {
         if (this.userBuffer.trim() && startMs !== null && this.userLastEndMs !== null) {
           if (startMs - this.userLastEndMs > UTTERANCE_GAP_MS) this.finishUtterance();
         }
-        this.userBuffer += stringField(event, "delta");
+        if (!this.userBuffer.trim() && startMs !== null) this.userStartMs = startMs;
+        const delta = stringField(event, "delta");
+        this.userBuffer += delta;
+        this.userParts.push({ text: delta, startMs });
         const endMs = numberField(event, "end_ms");
         if (endMs !== null) this.userLastEndMs = endMs;
         return;
@@ -325,8 +343,18 @@ export class LiveSideband {
             : !this.replyOpen;
         if (replyStarts) {
           this.finishUtterance();
-          // If no delegation is waiting for it, what was said was conversation.
-          if (this.pendingDelegations === 0) this.emitConversation();
+          // What was said may be conversation, or the model may delegate it
+          // next. Keep it; show it as conversation only if no delegation
+          // takes it within CONVERSATION_SETTLE_MS.
+          const reply = ++this.replySeq;
+          let answeredNow = false;
+          for (const item of this.pendingUtterances) {
+            if (item.answeredBy === null) {
+              item.answeredBy = reply;
+              answeredNow = true;
+            }
+          }
+          if (answeredNow) this.timer(() => this.emitAnswered(reply), CONVERSATION_SETTLE_MS);
         }
         this.replyOpen = true;
         const endMs = numberField(event, "end_ms");
@@ -346,13 +374,15 @@ export class LiveSideband {
         if (!id || this.seenDelegations.has(id)) return;
         this.seenDelegations.add(id);
         this.pendingDelegations += 1;
-        const setTimer = this.options.setTimer ?? ((fn: () => void, ms: number) => setTimeout(fn, ms));
+        // Where the delegation sits on the session timeline: speech that
+        // started after it belongs to the next request.
+        const offsetMs = numberField(delegation, "offset_ms") ?? numberField(event, "offset_ms");
         // Cancel the automatic "I'm checking" with an empty thinking append; the
         // door speaks its own acknowledgement from real session events.
         this.thinking("", id);
-        setTimer(() => {
+        this.timer(() => {
           this.pendingDelegations = Math.max(0, this.pendingDelegations - 1);
-          const text = this.takeUserText();
+          const text = this.takeUserText(offsetMs);
           this.options.handlers.onDelegation({ delegationId: id, text });
         }, this.options.settleMs ?? DELEGATION_SETTLE_MS);
         return;
@@ -377,29 +407,78 @@ export class LiveSideband {
     }
   }
 
-  private takeUserText(): string {
-    // Everything said since the model last answered goes to the session, in
-    // order, including words still streaming. The door records it as the
+  private timer(fn: () => void, ms: number): void {
+    const setTimer = this.options.setTimer ?? ((cb: () => void, delay: number) => setTimeout(cb, delay));
+    setTimer(fn, ms);
+  }
+
+  private takeUserText(offsetMs: number | null = null): string {
+    // Everything not yet taken goes to the session, in order, including
+    // words still streaming; only speech that started after the delegation's
+    // offset stays for the next request. The door records the text as the
     // turn's transcript, so it is not published here (it would show twice).
+    // Words of the open utterance said after the offset are the next request.
+    let later: typeof this.userParts = [];
+    if (offsetMs !== null) {
+      const cut = this.userParts.findIndex((part) => part.startMs !== null && part.startMs > offsetMs);
+      if (cut > 0) {
+        later = this.userParts.slice(cut);
+        this.userBuffer = this.userParts
+          .slice(0, cut)
+          .map((part) => part.text)
+          .join("");
+        this.userParts = this.userParts.slice(0, cut);
+      } else if (cut === 0) {
+        later = this.userParts;
+        this.userBuffer = "";
+        this.userParts = [];
+      }
+    }
+    const laterLastEndMs = later.length ? this.userLastEndMs : null;
     this.finishUtterance();
-    const text = this.pendingUtterances.join(" ").trim();
-    this.pendingUtterances = [];
-    return text;
+    if (later.length) {
+      this.userParts = later;
+      this.userBuffer = later.map((part) => part.text).join("");
+      this.userStartMs = later[0]?.startMs ?? null;
+      this.userLastEndMs = laterLastEndMs;
+    }
+    const taken: string[] = [];
+    const kept: typeof this.pendingUtterances = [];
+    for (const item of this.pendingUtterances) {
+      if (offsetMs !== null && item.startMs !== null && item.startMs > offsetMs) kept.push(item);
+      else taken.push(item.text);
+    }
+    this.pendingUtterances = kept;
+    return taken.join(" ").trim();
   }
 
   /** Close the utterance being heard and keep it until a delegation or an answer takes it. */
   private finishUtterance(): void {
     const text = this.userBuffer.trim();
+    const startMs = this.userStartMs;
     this.userBuffer = "";
+    this.userParts = [];
     this.userLastEndMs = null;
-    if (text) this.pendingUtterances.push(text);
+    this.userStartMs = null;
+    if (text) this.pendingUtterances.push({ text, startMs, answeredBy: null });
   }
 
-  /** The model answered on its own: what was pending was conversation; show each once. */
+  /**
+   * Speech this reply answered that no delegation took within the window was
+   * conversation: show it once. A delegation still settling takes it instead.
+   */
+  private emitAnswered(reply: number): void {
+    if (this.pendingDelegations > 0) return;
+    const shown = this.pendingUtterances.filter((item) => item.answeredBy === reply);
+    this.pendingUtterances = this.pendingUtterances.filter((item) => item.answeredBy !== reply);
+    for (const item of shown) this.options.handlers.onUserTranscript(item.text);
+  }
+
+  /** Show everything nobody took (hangup or close). */
   private emitConversation(): void {
     const pending = this.pendingUtterances;
     this.pendingUtterances = [];
-    for (const text of pending) this.options.handlers.onUserTranscript(text);
+    for (const item of pending) this.options.handlers.onUserTranscript(item.text);
   }
 
   private flushAgent(): void {
@@ -430,9 +509,10 @@ export function chunkText(text: string, max: number): string[] {
   const out: string[] = [];
   let rest = text.trim();
   while (rest.length > max) {
-    let cut = rest.lastIndexOf(". ", max);
-    if (cut < max / 2) cut = rest.lastIndexOf(" ", max);
-    if (cut < max / 2) cut = max;
+    // A chunk is rest.slice(0, cut + 1): cut must stay below max.
+    let cut = rest.lastIndexOf(". ", max - 1);
+    if (cut < max / 2) cut = rest.lastIndexOf(" ", max - 1);
+    if (cut < max / 2) cut = max - 1;
     out.push(rest.slice(0, cut + 1).trim());
     rest = rest.slice(cut + 1).trim();
   }

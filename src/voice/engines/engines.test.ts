@@ -3,6 +3,7 @@ import { decodeJwt } from "jose";
 import { checkVoiceEngines } from "./index.js";
 import { mintLiveKitRoomToken } from "./handsfree.js";
 import {
+  APPEND_CHUNK_CHARS,
   buildLiveInstructions,
   chunkText,
   createLiveSession,
@@ -247,8 +248,10 @@ describe("voice engines", () => {
     h.send({ type: "session.input_transcript.delta", delta: "oi cara", start_ms: 0, end_ms: 800 });
     h.send({ type: "session.output_transcript.delta", delta: "Oi! " });
     h.send({ type: "session.input_transcript.delta", delta: "quais ferramentas tu tem", start_ms: 5000, end_ms: 6500 });
-    h.send({ type: "session.delegation.created", delegation: { id: "d1" } });
+    // More than CONVERSATION_SETTLE_MS after the reply started: "oi cara" was conversation.
     h.timers[0]?.();
+    h.send({ type: "session.delegation.created", delegation: { id: "d1" } });
+    h.timers[1]?.();
     expect(h.users).toEqual(["oi cara"]);
     expect(h.delegations).toEqual([{ delegationId: "d1", text: "quais ferramentas tu tem" }]);
   });
@@ -267,6 +270,8 @@ describe("voice engines", () => {
     h.send({ type: "session.input_transcript.delta", delta: "e aí", start_ms: 0, end_ms: 500 });
     h.send({ type: "session.output_transcript.delta", delta: "Oi! " });
     h.send({ type: "session.output_transcript.delta", delta: "Tudo certo." });
+    expect(h.users).toEqual([]);
+    h.timers[0]?.();
     expect(h.users).toEqual(["e aí"]);
   });
 
@@ -299,6 +304,81 @@ describe("voice engines", () => {
     h.sideband.drain();
     h.sideband.close();
     expect(h.users).toEqual(["até amanhã"]);
+  });
+
+  it("the model talking before it delegates does not lose the request", () => {
+    const h = harness();
+    h.send({ type: "session.input_transcript.delta", delta: "quais ferramentas tu tem", start_ms: 0, end_ms: 1500 });
+    h.send({ type: "session.output_transcript.delta", delta: "Deixa eu ver", start_ms: 1700, end_ms: 2400 });
+    h.send({ type: "session.delegation.created", delegation: { id: "d1", offset_ms: 2500 } });
+    // The delegation settles (900 ms) before the conversation window (3 s).
+    h.timers[1]?.();
+    h.timers[0]?.();
+    expect(h.delegations).toEqual([{ delegationId: "d1", text: "quais ferramentas tu tem" }]);
+    expect(h.users).toEqual([]);
+  });
+
+  it("speech that started after the delegation offset stays for the next request", () => {
+    const h = harness();
+    h.send({ type: "session.input_transcript.delta", delta: "olha a #1020", start_ms: 0, end_ms: 900 });
+    h.send({ type: "session.delegation.created", delegation: { id: "d1", offset_ms: 1000 } });
+    h.send({ type: "session.input_transcript.delta", delta: "outra coisa", start_ms: 3000, end_ms: 3800 });
+    h.timers[0]?.();
+    expect(h.delegations).toEqual([{ delegationId: "d1", text: "olha a #1020" }]);
+    h.send({ type: "session.delegation.created", delegation: { id: "d2", offset_ms: 4000 } });
+    h.timers[1]?.();
+    expect(h.delegations.at(-1)).toEqual({ delegationId: "d2", text: "outra coisa" });
+  });
+
+  it("append chunks never pass APPEND_CHUNK_CHARS, even when a sentence ends at the limit", () => {
+    expect(APPEND_CHUNK_CHARS).toBeLessThanOrEqual(900);
+    // Pessimistic 2 characters per token keeps 900 characters under the 500-token cap.
+    expect(APPEND_CHUNK_CHARS / 2).toBeLessThanOrEqual(500);
+    const boundary = `${"a".repeat(APPEND_CHUNK_CHARS)}. ${"b".repeat(200)}`;
+    const chunks = [
+      ...chunkText(boundary, APPEND_CHUNK_CHARS),
+      ...chunkText("Pedido 1234-ABCD confirmado. ".repeat(200), APPEND_CHUNK_CHARS),
+      ...chunkText("x".repeat(3000), APPEND_CHUNK_CHARS),
+    ];
+    expect(chunks.every((chunk) => chunk.length <= APPEND_CHUNK_CHARS)).toBe(true);
+  });
+
+  it("a conversation window ending while a delegation settles does not erase its request", () => {
+    const h = harness();
+    h.send({ type: "session.input_transcript.delta", delta: "quais ferramentas tu tem", start_ms: 0, end_ms: 1500 });
+    h.send({ type: "session.output_transcript.delta", delta: "Deixa eu ver", start_ms: 1700, end_ms: 2400 });
+    h.send({ type: "session.delegation.created", delegation: { id: "d1", offset_ms: 2500 } });
+    // The conversation window ends first (delegation created in its last 900 ms).
+    h.timers[0]?.();
+    h.timers[1]?.();
+    expect(h.delegations).toEqual([{ delegationId: "d1", text: "quais ferramentas tu tem" }]);
+    expect(h.users).toEqual([]);
+  });
+
+  it("each reply's window shows only what that reply answered", () => {
+    const h = harness();
+    h.send({ type: "session.input_transcript.delta", delta: "oi", start_ms: 0, end_ms: 400 });
+    h.send({ type: "session.output_transcript.delta", delta: "Oi!", start_ms: 600, end_ms: 900 });
+    h.send({ type: "session.input_transcript.delta", delta: "manda o resumo", start_ms: 3000, end_ms: 4000 });
+    h.send({ type: "session.output_transcript.delta", delta: "Claro,", start_ms: 4200, end_ms: 4600 });
+    // The first reply's window ends: only "oi" is conversation.
+    h.timers[0]?.();
+    expect(h.users).toEqual(["oi"]);
+    h.send({ type: "session.delegation.created", delegation: { id: "d1", offset_ms: 4700 } });
+    h.timers[2]?.();
+    expect(h.delegations).toEqual([{ delegationId: "d1", text: "manda o resumo" }]);
+  });
+
+  it("the delegation offset splits one utterance without a pause", () => {
+    const h = harness();
+    h.send({ type: "session.input_transcript.delta", delta: "olha a #1020", start_ms: 0, end_ms: 900 });
+    h.send({ type: "session.delegation.created", delegation: { id: "d1", offset_ms: 1000 } });
+    h.send({ type: "session.input_transcript.delta", delta: " e outra coisa", start_ms: 1200, end_ms: 2000 });
+    h.timers[0]?.();
+    expect(h.delegations).toEqual([{ delegationId: "d1", text: "olha a #1020" }]);
+    h.send({ type: "session.delegation.created", delegation: { id: "d2", offset_ms: 2500 } });
+    h.timers[1]?.();
+    expect(h.delegations.at(-1)).toEqual({ delegationId: "d2", text: "e outra coisa" });
   });
 
   it("reads the provider error nested under error", () => {

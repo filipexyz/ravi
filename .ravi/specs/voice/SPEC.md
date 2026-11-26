@@ -68,8 +68,14 @@ entered the session, and the feature spec `runtime/providers/realtime-voice` (ar
 - GPT-Live transcripts stream as deltas with no done event. A pause longer than 1.2 s between user
   deltas, or the voice model starting to answer, ends an utterance. A delegation MUST take every
   utterance said since the voice model last answered on its own, in order (nothing the person said is
-  dropped); utterances the model answered are shown as conversation. Each utterance is published once
-  (the delegated text with its turn id).
+  dropped); utterances the model answered are shown as conversation only after 3 s without a
+  delegation, because the model may start talking before it delegates. A delegation's `offset_ms`
+  leaves speech that started after it for the next request. Each utterance is published once (the
+  delegated text with its turn id).
+- Appends are capped at 500 tokens; the sideband splits text into chunks of at most 900 characters.
+- Open point (unverified): the docs show an empty `session.thinking.append` cancelling the automatic
+  acknowledgement, but do not state that `content: ""` is accepted. If the first delegation of a
+  call produces a `VOICE_LIVE_ERROR`, this is the place to look.
 - GPT-Live usage reports billable seconds only. In `live`, `audioInSeconds`, `audioOutSeconds` and
   `charactersSpoken` stay 0 by design; cost comes from `engineSeconds`.
 - The `handsfree` worker is a stateless media worker. It has no database access, joins rooms with a

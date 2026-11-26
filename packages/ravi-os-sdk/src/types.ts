@@ -12947,6 +12947,7 @@ export type DecisionsAnswerInput = {
   by?: string;
   execute?: boolean;
   id: string;
+  sourceMessage?: string;
   text?: string;
 };
 
@@ -20969,7 +20970,9 @@ export type SessionsReportInput = {
 /** Return shape for `sessions.report`. */
 export type SessionsReportReturn = ({
   actionId: "thread.report";
+  decisionError?: string;
   handoff?: {
+    decisionId?: string;
     id: string;
     kind: "review" | "decision" | "merge" | "dispatch" | "instruction";
     ref: string | null;

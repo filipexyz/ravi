@@ -29,6 +29,7 @@ import {
   dbUpsertChat,
   dbFindChatMessage,
   dbListChatMessages,
+  dbListChatMessagesByProviderId,
   dbListChatMessagesPage,
   dbListChatMessagesPageByContactId,
   dbMarkChatMessageDeleted,
@@ -385,6 +386,35 @@ describe("identity chat schema", () => {
       })?.id,
     ).toBe(first.message.id);
     expect(dbListChatMessages(chat.id)).toHaveLength(1);
+  });
+
+  it("finds stored messages by provider id across chats, and the decision column exists on waits", () => {
+    const first = dbUpsertChat({ channel: "slack", instanceId: "i1", platformChatId: "D1", chatType: "dm" });
+    const second = dbUpsertChat({ channel: "slack", instanceId: "i1", platformChatId: "D2", chatType: "dm" });
+    const one = dbUpsertChatMessage({
+      chatId: first.id,
+      channel: "slack",
+      instanceId: "i1",
+      providerMessageId: "1795720122.922989",
+      rawChatId: "D1",
+      actorType: "contact",
+      contactId: "contact_owner",
+    }).message;
+    expect(dbListChatMessagesByProviderId("1795720122.922989").map((m) => m.id)).toEqual([one.id]);
+    // A provider id is unique only within a chat: the same id in another chat is a second match.
+    dbUpsertChatMessage({
+      chatId: second.id,
+      channel: "slack",
+      instanceId: "i1",
+      providerMessageId: "1795720122.922989",
+      rawChatId: "D2",
+      actorType: "agent",
+      agentId: "main",
+    });
+    expect(dbListChatMessagesByProviderId("1795720122.922989")).toHaveLength(2);
+    expect(dbListChatMessagesByProviderId("missing")).toEqual([]);
+    const columns = getDb().prepare("PRAGMA table_info(session_handoffs)").all() as Array<{ name: string }>;
+    expect(columns.map((c) => c.name)).toContain("decision_id");
   });
 
   it("ensures one durable chat per actor and agent across retries and restarts", () => {

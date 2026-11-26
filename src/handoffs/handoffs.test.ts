@@ -43,6 +43,7 @@ function handoff(overrides: Partial<Handoff> = {}): Handoff {
     childSessionKey: CHILD_A,
     parentSessionKey: PARENT,
     kind: "review",
+    decisionId: null,
     ref: null,
     note: null,
     callerContextId: null,

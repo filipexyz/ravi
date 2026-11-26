@@ -13906,10 +13906,11 @@ class DaemonUninstallReturn {
 DaemonUninstallReturn daemonUninstallReturnFromJson(Object? json) => DaemonUninstallReturn.fromJsonValue(json);
 
 class DecisionsAnswerOptions {
-  const DecisionsAnswerOptions({this.by, this.execute, this.text});
+  const DecisionsAnswerOptions({this.by, this.execute, this.sourceMessage, this.text});
 
   final String? by;
   final bool? execute;
+  final String? sourceMessage;
   final String? text;
 
   void encodeBody(Map<String, RaviJson> into) {
@@ -13918,6 +13919,9 @@ class DecisionsAnswerOptions {
     }
     if (execute != null) {
       into["execute"] = RaviJson.from(execute);
+    }
+    if (sourceMessage != null) {
+      into["sourceMessage"] = RaviJson.from(sourceMessage);
     }
     if (text != null) {
       into["text"] = RaviJson.from(text);
