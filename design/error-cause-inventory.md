@@ -1929,10 +1929,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/codex-provider.ts | 2025 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:16dd551a12874b9a36ed0288 |
 | runtime-chat | src/runtime/codex-provider.ts | 2047 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:e62f41bdaba0c7973a1c1ff3 |
 | runtime-chat | src/runtime/codex-provider.ts | 2359 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:a139093505d2216adc8223b3 |
-| runtime-chat | src/runtime/codex-provider.ts | 2460 | triaged-follow-up | catch-without-binding | src/runtime/codex-provider.ts:86e9a14dac9083d34117850a |
-| runtime-chat | src/runtime/codex-provider.ts | 2743 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:003ac36e802ea5850a841c8b |
-| runtime-chat | src/runtime/codex-provider.ts | 2766 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:2fad53d8be968a590e2bcd5e |
-| runtime-chat | src/runtime/codex-provider.ts | 2916 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:00be2cb462ea22c18490ef96 |
+| runtime-chat | src/runtime/codex-provider.ts | 2467 | triaged-follow-up | catch-without-binding | src/runtime/codex-provider.ts:86e9a14dac9083d34117850a |
+| runtime-chat | src/runtime/codex-provider.ts | 2750 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:003ac36e802ea5850a841c8b |
+| runtime-chat | src/runtime/codex-provider.ts | 2773 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:2fad53d8be968a590e2bcd5e |
+| runtime-chat | src/runtime/codex-provider.ts | 2923 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:00be2cb462ea22c18490ef96 |
 | runtime-chat | src/runtime/codex-transport.ts | 66 | fixed | binding retained / no recognized error surface | src/runtime/codex-transport.ts:b8ee64f214c096573f410e53 |
 | runtime-chat | src/runtime/codex-transport.ts | 75 | triaged-follow-up | catch-without-binding | src/runtime/codex-transport.ts:4930ce420f33d2ecd70704ea |
 | runtime-chat | src/runtime/codex-transport.ts | 137 | fixed | binding retained / no recognized error surface | src/runtime/codex-transport.ts:8caa560b4417cdab0ac8dd9a |

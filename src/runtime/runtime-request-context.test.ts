@@ -52,6 +52,7 @@ import { pickRuntimeTurnAuthorityEnvelope } from "./delivery-queue.js";
 import {
   buildRuntimeRequestContext,
   refreshRuntimeRequestContextForTurn,
+  turnRunsBelowAgentExecution,
   startActiveRuntimeRequestContextLease,
 } from "./runtime-request-context.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
@@ -2220,6 +2221,20 @@ describe("runtime request context chat-scoped user overlay", () => {
       expect(queued.capabilities).toEqual([]);
       expect(queued.metadata).toMatchObject({ relayNarrowing: true, relayCallerContactId: ana.id });
     }
+  });
+
+  it("keeps the agent's sandbox for a chat grant only when it runs every executable", () => {
+    const overlay = (objectId: string) => ({
+      metadata: { userOverlay: "active" },
+      capabilities: [{ permission: "execute", objectType: "executable", objectId, source: "test" }],
+    });
+    // A grant for named executables is still held: the provider's own tools are not limited to them.
+    expect(turnRunsBelowAgentExecution(overlay("ravi"))).toBe(true);
+    expect(turnRunsBelowAgentExecution(overlay("ra*"))).toBe(true);
+    expect(turnRunsBelowAgentExecution(overlay("*"))).toBe(false);
+    expect(turnRunsBelowAgentExecution({ metadata: { userOverlay: "active" }, capabilities: [] })).toBe(true);
+    // Outside an active overlay, a turn without a held marker keeps the agent's sandbox.
+    expect(turnRunsBelowAgentExecution({ metadata: { userOverlay: "lifted" }, capabilities: [] })).toBe(false);
   });
 
   it("marks the runtime env of a held person's turn and clears it on the next turn", () => {

@@ -139,14 +139,20 @@ invariant stronger than most: context keys (`rctx_*`) ARE credentials.
   sandbox; a per-session temp directory is the follow-up.
 - A Codex turn of a person held below the agent (no grant in an ungoverned
   chat, a held relay, or a contact narrowed to a governed chat's grants that do
-  not run any executable) runs in Codex's `read-only` sandbox, sent on every `turn/start`
-  and on the thread it opens, never in `danger-full-access`. The Bash hook
-  gates `shell`, but `apply_patch` and the sandbox are Codex's own, so the
-  sandbox is what stops that person from writing files or reaching the network.
+  not run every executable) runs in Codex's `read-only` sandbox, sent on every
+  `turn/start` and on the thread it opens, never in `danger-full-access`. The
+  Bash hook gates `shell`, but `apply_patch` and the sandbox are Codex's own, so
+  the sandbox is what stops that person from writing files or reaching the
+  network from the shell. Codex's native `web_search` and `view_image` run
+  outside that sandbox, so the thread a held turn opens also turns them off
+  (the restricted switches); the next operator turn reopens the thread without
+  them. Only a grant of `execute:executable:*` (or break-glass) keeps the
+  agent's sandbox: a grant for named executables is still held, failing closed.
   The daemon marks such a turn with `RAVI_TURN_HELD_BELOW_AGENT` in the runtime
-  env it refreshes before the turn; the provider reads it in the daemon. A
-  person granted full access in the chat is not held and keeps the agent's
-  sandbox.
+  env it refreshes before the turn; the provider reads it in the daemon, and a
+  change of the mark respawns the app-server, so each thread opens with its
+  turn's config. A person granted full access in the chat is not held and
+  keeps the agent's sandbox. Reads stay possible until the OS sandbox.
 - Shell cron and shell triggers run as the operator. `ravi doctor` warns
   (`permissions.shell_automation_in_agent_workspace`) when one runs code from
   an agent's workspace, because that agent can change what the operator runs.
