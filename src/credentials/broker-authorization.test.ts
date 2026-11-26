@@ -755,7 +755,10 @@ describe("credential approval origin and caller lifetime", () => {
             .prepare("UPDATE contexts SET expires_at = ? WHERE context_id = ?")
             .run(context.expiresAt, context.contextId);
         }
-        expect(context.source).toEqual(source);
+        // The borrowed origin is approval-only: commands, follows and deliveries never see it as this turn's source.
+        expect(context.source).toBeUndefined();
+        expect(context.metadata?.approvalSource).toEqual(source);
+        expect(context.metadata?.approvalSourceOnly).toBe(true);
         expect(context.metadata?.actorPrincipal).toBe(`agent:${agentId}`);
         let requestId = "";
         let delivered!: () => void;

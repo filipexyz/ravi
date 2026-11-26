@@ -1,4 +1,4 @@
-import { runtimeCommandSource } from "../runtime/context-source.js";
+import { approvalOrigin, runtimeCommandSource } from "../runtime/context-source.js";
 import { randomUUID } from "node:crypto";
 import { authorizeBridgeAction } from "../bridge/native.js";
 import { nats as runtimeNats } from "../nats.js";
@@ -613,9 +613,7 @@ export async function authorizeRuntimeContext(opts: ContextAuthorizationOptions)
   }
 
   const resolvedSource = toApprovalTarget(runtimeCommandSource(context));
-  const approvalSource = resolvedSource
-    ? undefined
-    : (toApprovalTarget(context.source) ?? getApprovalSourceFromMetadata(context));
+  const approvalSource = resolvedSource ? undefined : toApprovalTarget(approvalOrigin(context));
 
   // An approval that is not routed privately to grantors is posted into the turn's own
   // conversation. In a direct chat the only person there is the one who asked: when that
@@ -1400,27 +1398,6 @@ function toApprovalTarget(source: ContextRecord["source"]): ApprovalTarget | und
     accountId: source.accountId,
     chatId: source.chatId,
     ...(source.threadId ? { threadId: source.threadId } : {}),
-  };
-}
-
-function getApprovalSourceFromMetadata(context: ContextRecord): ApprovalTarget | undefined {
-  const approvalSource = context.metadata?.approvalSource;
-  if (!approvalSource || typeof approvalSource !== "object") return undefined;
-  const candidate = approvalSource as Record<string, unknown>;
-  if (
-    typeof candidate.channel !== "string" ||
-    typeof candidate.accountId !== "string" ||
-    typeof candidate.chatId !== "string"
-  ) {
-    return undefined;
-  }
-
-  return {
-    channel: candidate.channel,
-    accountId: candidate.accountId,
-    chatId: candidate.chatId,
-    ...(typeof candidate.threadId === "string" ? { threadId: candidate.threadId } : {}),
-    ...(typeof candidate.instanceId === "string" ? { instanceId: candidate.instanceId } : {}),
   };
 }
 

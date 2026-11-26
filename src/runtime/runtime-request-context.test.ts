@@ -1352,7 +1352,9 @@ describe("runtime request context authority", () => {
       approvalSource: source,
     };
     const built = buildRuntimeRequestContext(options);
-    expect(dbGetContext(built.runtimeContext.contextId)?.source).toEqual(source);
+    // Approval-only: the borrowed origin routes cards and never becomes this turn's source.
+    expect(dbGetContext(built.runtimeContext.contextId)?.source).toBeUndefined();
+    expect(dbGetContext(built.runtimeContext.contextId)?.metadata?.approvalSource).toEqual(source);
     expect(built.runtimeContext.metadata?.actorPrincipal).toBe("agent:origin-agent");
     const rotated = refreshRuntimeRequestContextForTurn({
       ...options,
@@ -1361,7 +1363,8 @@ describe("runtime request context authority", () => {
       approvalSource: source, // captured launch value must not govern this turn
       prompt: { ...prompt, _approvalSource: { ...source, chatId: "next-origin" } },
     });
-    expect(dbGetContext(rotated.contextId)?.source?.chatId).toBe("next-origin");
+    expect(dbGetContext(rotated.contextId)?.source).toBeUndefined();
+    expect(dbGetContext(rotated.contextId)?.metadata?.approvalSource).toMatchObject({ chatId: "next-origin" });
     expect(rotated.metadata?.actorPrincipal).toBe("agent:origin-agent");
     const plain = refreshRuntimeRequestContextForTurn({
       ...options,
@@ -1371,6 +1374,8 @@ describe("runtime request context authority", () => {
       approvalSource: source, // even a retained launch hint must be cleared
     });
     expect(plain.source).toBeUndefined();
+    expect(plain.metadata?.approvalSource).toBeUndefined();
+    expect(plain.metadata?.approvalSourceOnly).toBeUndefined();
   });
 
   it("does not substitute a historical hint when the exact caller has no origin", () => {

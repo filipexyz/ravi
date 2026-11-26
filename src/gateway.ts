@@ -2118,6 +2118,11 @@ export class Gateway {
       request.chatId !== data.to ||
       (request.threadId ?? undefined) !== data.threadId
     ) {
+      // The card is already out: leave both ids so an operator can find and close it.
+      log.warn("Delivered approval card does not match its request and was not recorded", {
+        requestId: data.approvalRequestId,
+        messageId,
+      });
       throw new Error("Approval delivery target does not match its request.");
     }
     if (deliveries?.length)
@@ -2245,14 +2250,16 @@ export class Gateway {
           await new Promise((resolve) => setTimeout(resolve, typingDelayMs));
           const res = await this.omniSender.send(instanceId, to, prepared.text, {
             mentions: prepared.mentions,
-            ...(data.threadId ? { threadId: data.threadId } : {}),
+            // Only an approval card routes to a thread here; other producers keep their previous delivery.
+            ...(data.approvalRequestId && data.threadId ? { threadId: data.threadId } : {}),
           });
           messageId = res.messageId;
           await this.omniSender.sendTyping(instanceId, to, false);
         } else {
           const res = await this.omniSender.send(instanceId, to, prepared.text, {
             mentions: prepared.mentions,
-            ...(data.threadId ? { threadId: data.threadId } : {}),
+            // Only an approval card routes to a thread here; other producers keep their previous delivery.
+            ...(data.approvalRequestId && data.threadId ? { threadId: data.threadId } : {}),
           });
           messageId = res.messageId;
         }

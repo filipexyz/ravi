@@ -834,6 +834,28 @@ describe("Gateway native channel account actions", () => {
     expect(emitted[0]).toEqual(["ravi.reply.omni-send", { success: true, messageId: "omni-1" }]);
   });
 
+  it("routes a thread id on Omni direct send only for approval cards", async () => {
+    seedOmniWhatsApp();
+    const { gateway, omniSend } = await createGateway();
+
+    await handleDirectSend(gateway, {
+      channel: "whatsapp",
+      accountId: "main",
+      to: "group:120363407390920496",
+      text: "not an approval",
+      threadId: "topic",
+      replyTopic: "ravi.reply.omni-thread",
+    });
+
+    // Producers other than approval cards keep the delivery they had before this change.
+    expect(omniSend).toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      "120363407390920496@g.us",
+      "not an approval",
+      { mentions: undefined },
+    );
+  });
+
   it("records and closes an Omni approval delivered after its caller stopped waiting, retaining its topic", async () => {
     seedOmniWhatsApp();
     const { gateway, omniSend, omniEditMessage } = await createGateway();

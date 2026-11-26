@@ -1,4 +1,5 @@
 import { getContext } from "../cli/context.js";
+import { approvalOrigin, runtimeCommandSource } from "../runtime/context-source.js";
 import { actorHoldsCredentialAction, authorizeCredentialUse, type CredentialBrokerAuthority } from "./authorization.js";
 export type { CredentialBrokerAuthority } from "./authorization.js";
 import { readSecret, redactSecretRef } from "./backends.js";
@@ -94,7 +95,9 @@ export async function resolveCredentialSecret(input: {
       );
       const context = authorization.context;
       const result = await requestCascadingApproval({
-        resolvedSource: context.source,
+        // A relayed turn has no origin of its own; its card goes to the caller's origin, marked as delegated.
+        resolvedSource: runtimeCommandSource(context),
+        approvalSource: runtimeCommandSource(context) ? undefined : approvalOrigin(context),
         callerContextId: context.contextId,
         type: "permission",
         sessionName: context.sessionName ?? context.contextId,

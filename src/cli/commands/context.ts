@@ -1,3 +1,4 @@
+import { runtimeCommandSource } from "../../runtime/context-source.js";
 import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { pagesLinkGuardReason } from "../../hooks/pages-link-guard.js";
@@ -774,7 +775,7 @@ export class ContextCommands {
         kind: context.kind,
         sessionKey: context.sessionKey,
         sessionName: context.sessionName,
-        source: context.source,
+        source: runtimeCommandSource(context),
         capabilities: context.capabilities,
         metadata: context.metadata,
       };
@@ -805,7 +806,7 @@ export class ContextCommands {
           agentId: context.agentId,
           sessionKey: context.sessionKey,
           sessionName: context.sessionName,
-          source: context.source,
+          source: runtimeCommandSource(context),
         });
       }
 

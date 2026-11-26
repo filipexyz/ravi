@@ -4,6 +4,10 @@ import { getDb } from "../router/router-db.js";
 import { fromSubjectColumns, resolveSubjectForChat, toSubjectColumns, type SubjectRef } from "../identity/subject.js";
 import type { PermissionGrantMetadata } from "./grant-metadata.js";
 
+/** Current time in epoch milliseconds, in SQL any SQLite version runs (seconds from %s, milliseconds from %f). */
+const SQLITE_NOW_MS =
+  "(CAST(strftime('%s','now') AS INTEGER) * 1000 + CAST(substr(strftime('%f','now'), 4) AS INTEGER))";
+
 export const APPROVAL_CALLER_INVALID_REASON =
   "O chamador da aprovação expirou ou foi revogado. Inicie uma nova tentativa.";
 
@@ -430,17 +434,21 @@ export function ensureApprovalRequestTable(db: Database = getDb()): void {
     );
     // Cancel in the same transaction as revocation, even if the waiter died.
     // Every context revocation path (including cascades) updates this table.
-    db.exec(`CREATE TRIGGER IF NOT EXISTS approval_caller_revoked AFTER UPDATE OF revoked_at ON contexts
-    WHEN NEW.revoked_at > 0 AND NEW.revoked_at <= unixepoch('subsec') * 1000
+    // The clock is portable SQL: a function newer SQLite builds add would fail only when a trigger fires,
+    // that is, during a revocation. Dropped first so a body from an earlier build is replaced.
+    db.exec("DROP TRIGGER IF EXISTS approval_caller_revoked");
+    db.exec("DROP TRIGGER IF EXISTS approval_caller_deleted");
+    db.exec(`CREATE TRIGGER approval_caller_revoked AFTER UPDATE OF revoked_at ON contexts
+    WHEN NEW.revoked_at > 0 AND NEW.revoked_at <= ${SQLITE_NOW_MS}
     BEGIN
       UPDATE approval_requests SET status = 'expired', reason = '${APPROVAL_CALLER_INVALID_REASON}',
         decided_at = NEW.revoked_at
       WHERE caller_context_id = NEW.context_id AND status = 'pending';
     END`);
-    db.exec(`CREATE TRIGGER IF NOT EXISTS approval_caller_deleted AFTER DELETE ON contexts
+    db.exec(`CREATE TRIGGER approval_caller_deleted AFTER DELETE ON contexts
     BEGIN
       UPDATE approval_requests SET status = 'expired', reason = '${APPROVAL_CALLER_INVALID_REASON}',
-        decided_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
+        decided_at = ${SQLITE_NOW_MS}
       WHERE caller_context_id = OLD.context_id AND status = 'pending';
     END`);
     db.exec(
