@@ -228,8 +228,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | bash | src/bash/executable-path.ts | 253 | no-cause | an unreadable file cannot be compared; the caller treats it as unidentified, not as trusted | src/bash/executable-path.ts:307506ff22dc226e7a23ea4a |
 | bash | src/bash/hook.ts | 295 | no-cause | unanalyzable text is checked whole, here-doc data included, which only refuses more | src/bash/hook.ts:b654ee92365f4c706a1fd69b |
 | bash | src/bash/hook.ts | 342 | fixed | binding retained / no recognized error surface | src/bash/hook.ts:b1f79d33fcd6e588c463f16a |
-| bash | src/bash/hook.ts | 824 | fixed | binding retained / no recognized error surface | src/bash/hook.ts:b21c9ce8dfe00bd7169b9c1a |
-| bash | src/bash/hook.ts | 1014 | fixed | binding retained / no recognized error surface | src/bash/hook.ts:7e03a7087d67033e4dc89c20 |
+| bash | src/bash/hook.ts | 827 | fixed | binding retained / no recognized error surface | src/bash/hook.ts:b21c9ce8dfe00bd7169b9c1a |
+| bash | src/bash/hook.ts | 1017 | fixed | binding retained / no recognized error surface | src/bash/hook.ts:7e03a7087d67033e4dc89c20 |
 | bash | src/bash/parser.ts | 124 | fixed | binding retained / no recognized error surface | src/bash/parser.ts:e337326684f08167ed5c281d |
 | bash | src/bash/parser.ts | 160 | fixed | binding retained / no recognized error surface | src/bash/parser.ts:f7fddc1ded126c0cda52b2f6 |
 | bash | src/bash/parser.ts | 833 | fixed | binding retained / no recognized error surface | src/bash/parser.ts:6dcaeabe2d97e908cf41481b |
@@ -2207,10 +2207,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/runtime-request-builder.ts | 1417 | triaged-follow-up | rejection-without-binding | src/runtime/runtime-request-builder.ts:97f069feec77376de9ce4cfe |
 | runtime-chat | src/runtime/runtime-request-builder.ts | 1433 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:fceed3ce3c4bcb1014946096 |
 | runtime-chat | src/runtime/runtime-request-builder.ts | 1443 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:e11eb49a2511c5a3e84172db |
-| runtime-chat | src/runtime/runtime-request-context.ts | 125 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-context.ts:9c19b85e67a579c3b18fc384 |
-| runtime-chat | src/runtime/runtime-request-context.ts | 230 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-context.ts:fb0b243ac337da14f0ac5365 |
-| runtime-chat | src/runtime/runtime-request-context.ts | 520 | triaged-follow-up | catch-without-binding | src/runtime/runtime-request-context.ts:7206346edd25c13ff4d8a8d8 |
-| runtime-chat | src/runtime/runtime-request-context.ts | 877 | triaged-follow-up | catch-without-binding | src/runtime/runtime-request-context.ts:f5a91420c25bdfe230c4347d |
+| runtime-chat | src/runtime/runtime-request-context.ts | 126 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-context.ts:9c19b85e67a579c3b18fc384 |
+| runtime-chat | src/runtime/runtime-request-context.ts | 231 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-context.ts:fb0b243ac337da14f0ac5365 |
+| runtime-chat | src/runtime/runtime-request-context.ts | 521 | triaged-follow-up | catch-without-binding | src/runtime/runtime-request-context.ts:7206346edd25c13ff4d8a8d8 |
+| runtime-chat | src/runtime/runtime-request-context.ts | 918 | triaged-follow-up | catch-without-binding | src/runtime/runtime-request-context.ts:f5a91420c25bdfe230c4347d |
 | sessions | src/runtime/session-dispatcher.ts | 604 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:f62a129921ede3d5cf54be0f |
 | sessions | src/runtime/session-dispatcher.ts | 613 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:083324775001a686ec7a5875 |
 | sessions | src/runtime/session-dispatcher.ts | 748 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:4e182c47be33a9110d382f81 |
