@@ -238,7 +238,7 @@ export function pageReadTurnBlock(deps: PageReadDeps = {}): { turn: PageReadTurn
   if (result.sharedSession) {
     return {
       turn: "shared_session",
-      why: "the owner's direct chat runs in a session other people's chats share (dmScope main, a route that names the session, or another chat attached to it)",
+      why: "the owner's direct chat runs in a session other people's chats can reach (another person's chat attached to it, a route that sends a group, a thread or several chats into it, or a second contact tagged as owner)",
     };
   }
   if (result.relay) {
