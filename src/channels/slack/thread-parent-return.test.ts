@@ -582,6 +582,8 @@ describe.each(["claude", "codex", "pi"])("thread parent return through the gatew
       ["ci11", null],
       ["ci11b", "ravi.watch.github.workflow_run.requested"],
       ["ci11c", "ravi.watch.github.workflow_run.in_progress"],
+      ["ci11d", "ravi.watch.github.workflow_run.cancelled"],
+      ["ci11e", "ravi.watch.github.workflow_run.skipped"],
     ];
     for (const [i, [turnId, topic]] of quiet.entries()) {
       ghFollowWake(turnId, "silent", topic, null, i * 1_000);
