@@ -72,6 +72,8 @@ const SETTLED_EVENTS = new Set([
   "cron.failure.aggregated",
   "cron.failure.undeliverable",
   "cron.failure.stale",
+  // The job ran fine after this failure: a notice about it would describe a state that no longer holds.
+  "cron.failure.resolved",
 ]);
 
 /** When this job last messaged its owner about a failure, from the inbox ledger; null if never. */
