@@ -35,4 +35,7 @@ normative: false
   from the screen text); ending a live call drains pending speech while the call is still `active`.
 - Live delegation order (`engines.test.ts`): the model talking before it delegates does not lose the
   request; speech after the delegation's `offset_ms` stays for the next request; answered speech is
-  shown as conversation only after the window; append chunks stay at or under 900 characters.
+  shown as conversation only after the window; append chunks stay at or under 900 characters (also
+  when a sentence ends exactly at the limit); a window ending while a delegation settles does not
+  erase its request; each reply's window shows only what that reply answered; the offset splits an
+  utterance without a pause.
