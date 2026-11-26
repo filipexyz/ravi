@@ -479,22 +479,22 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | channels-slack | src/channels/slack/thread-instruction-delivery.ts | 55 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-instruction-delivery.ts:86caa88fda886e9f1d90ef1c |
 | channels-slack | src/channels/slack/thread-instruction-delivery.ts | 88 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-instruction-delivery.ts:f47d4f934b5335fdb1dc0240 |
 | channels-slack | src/channels/slack/thread-lifecycle-store.ts | 1045 | no-cause | A malformed origin only loses the WhatsApp return; the completion then stays in Slack, as before origins existed. | src/channels/slack/thread-lifecycle-store.ts:4698d4a028fe7f5e71a7700a |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 240 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:b911f7b0646fdb37c1036be1 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 248 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:bbcb0b19d6335b4ca2ed97d9 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 259 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3931e436098dcef7fb8f6040 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 280 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:0c07e521d00e171ade1709c5 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 293 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:b1f7078520b6527d71c97b7f |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 351 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:0badece10f83ff4d3d5ba9ac |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 410 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:7045053794e752ba9469e452 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 507 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:ff35a488b1d608b91dcc7f92 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 567 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:2c6a661603d61cec45ee5b83 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 682 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3480b77cb404aa4d76ef5053 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 723 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:b7a227b58d5b81458560c6ae |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 734 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:e7d3ca9c40c49e14573fc48b |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 745 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:79070e050ee994049ecf949b |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 759 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3830479576acbc9a4faf42e7 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 812 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3128594da318c7d29f0f5eb0 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 1256 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:168c889a92f9cf70994d3983 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 242 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:b911f7b0646fdb37c1036be1 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 250 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:bbcb0b19d6335b4ca2ed97d9 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 261 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3931e436098dcef7fb8f6040 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 282 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:0c07e521d00e171ade1709c5 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 295 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:b1f7078520b6527d71c97b7f |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 353 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:0badece10f83ff4d3d5ba9ac |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 412 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:7045053794e752ba9469e452 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 514 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:ff35a488b1d608b91dcc7f92 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 579 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:2c6a661603d61cec45ee5b83 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 707 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3480b77cb404aa4d76ef5053 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 748 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:b7a227b58d5b81458560c6ae |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 759 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:e7d3ca9c40c49e14573fc48b |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 770 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:79070e050ee994049ecf949b |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 784 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3830479576acbc9a4faf42e7 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 837 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3128594da318c7d29f0f5eb0 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 1281 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:168c889a92f9cf70994d3983 |
 | channels-slack | src/channels/slack/thread-requester.ts | 34 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-requester.ts:906a166dfda93a7451e16429 |
 | channels-slack | src/channels/slack/thread-requester.ts | 64 | triaged-follow-up | catch-without-binding | src/channels/slack/thread-requester.ts:518fbe45995656bbf2c7b34e |
 | channels-slack | src/channels/slack/thread-requester.ts | 73 | triaged-follow-up | catch-without-binding | src/channels/slack/thread-requester.ts:4e96a74ec3eda3554d5b7d4b |

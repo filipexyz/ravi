@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { openHandoff } from "../../handoffs/store.js";
 import { closeSessionStore, getOrCreateSession } from "../../router/sessions.js";
 import { createRuntimeContext } from "../../runtime/context-registry.js";
 import { recordSessionEvent, upsertSessionTurn } from "../../session-trace/session-trace-db.js";
 import { recordTerminalTurnTrace } from "../../session-trace/runtime-trace.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
+import { dbCreateTrigger } from "../../triggers/triggers-db.js";
 import { reconcileSlackThreadLifecycle } from "./thread-lifecycle.js";
 import { registerInboundSlackThread } from "./thread-lifecycle-store.js";
 import {
@@ -155,6 +157,66 @@ describe("decideThreadParentReturn", () => {
   });
 });
 
+describe("decideThreadParentReturn: a silent PR follow wake", () => {
+  const silent = turn({ outputState: "silent" });
+  const ciInput = (overrides: Partial<ThreadReturnInput> = {}) =>
+    input({ turn: silent, turnOrigin: "trigger", turnReplied: false, turnCiWake: true, ...overrides });
+
+  it("asks the thread for a return, and says why", () => {
+    expect(decideThreadParentReturn(ciInput())).toEqual({
+      kind: "nudge",
+      turnId: "t1",
+      turnStartedAt: NOW - 5 * 60_000,
+      silentCiWake: true,
+    });
+  });
+
+  it("leaves every other silent turn alone", () => {
+    // Not a PR follow wake: silence stays a valid answer.
+    expect(decideThreadParentReturn(ciInput({ turnCiWake: false })).kind).toBe("none");
+    expect(decideThreadParentReturn(ciInput({ turnCiWake: undefined })).kind).toBe("none");
+    // A PR follow wake that did reply keeps the ordinary nudge, without the CI wording.
+    const replied = decideThreadParentReturn(
+      ciInput({ turn: turn({ outputState: "final" }), turnReplied: true, turnCiWake: false }),
+    );
+    expect(replied).toEqual({ kind: "nudge", turnId: "t1", turnStartedAt: NOW - 5 * 60_000 });
+  });
+
+  it("does nothing when the thread already said where the PR is", () => {
+    expect(decideThreadParentReturn(ciInput({ returnedSince: () => true })).kind).toBe("none");
+    expect(decideThreadParentReturn(ciInput({ openDecision: true })).kind).toBe("none");
+    expect(decideThreadParentReturn(ciInput({ openHandoff: true })).kind).toBe("none");
+  });
+
+  it("still ignores a closed thread, an unfinished turn and backlog", () => {
+    expect(decideThreadParentReturn(ciInput({ threadOpen: false })).kind).toBe("none");
+    expect(
+      decideThreadParentReturn(ciInput({ turn: turn({ outputState: "silent", completedAt: null, status: "running" }) }))
+        .kind,
+    ).toBe("none");
+    const old = turn({ outputState: "silent", completedAt: NOW - THREAD_RETURN_WATCH_WINDOW_MS - 1 });
+    expect(decideThreadParentReturn(ciInput({ turn: old })).kind).toBe("none");
+  });
+
+  it("tells the parent when the follow-up is silent too, instead of reading it as waiting on a person", () => {
+    const followup = turn({ turnId: "t2", startedAt: NOW - 20_000, completedAt: NOW - 5_000, outputState: "silent" });
+    expect(decideThreadParentReturn(input({ turn: followup, watch: watch(), watchedTurnCiWake: true }))).toEqual({
+      kind: "inform",
+      turnId: "t1",
+      followupTurnId: "t2",
+      reason: "ci_wake_silent",
+    });
+    // Same silent follow-up for an ordinary nudge keeps meaning "waiting on a person".
+    expect(decideThreadParentReturn(input({ turn: followup, watch: watch() })).kind).toBe("settle");
+    // A follow-up that reports still settles.
+    expect(
+      decideThreadParentReturn(
+        input({ turn: followup, watch: watch(), watchedTurnCiWake: true, returnedSince: () => true }),
+      ),
+    ).toMatchObject({ kind: "settle", stage: "returned" });
+  });
+});
+
 // The rule reads only Ravi's own turn records, so the same sequence must hold for any provider runtime.
 describe.each(["claude", "codex", "pi"])("thread parent return through the gateway reconciliation (%s)", (provider) => {
   let stateDir: string | null = null;
@@ -196,6 +258,7 @@ describe.each(["claude", "codex", "pi"])("thread parent return through the gatew
     startedAt: number;
     completedAt: number;
     origin: string;
+    automationId?: string;
     reply: string | null;
     outputState: "final" | "silent";
   }) {
@@ -224,7 +287,11 @@ describe.each(["claude", "codex", "pi"])("thread parent return through the gatew
       eventType: "adapter.request",
       eventGroup: "runtime",
       timestamp: input.startedAt,
-      payloadJson: { context_id: context.contextId, provider, turn_provenance: { origin: input.origin } },
+      payloadJson: {
+        context_id: context.contextId,
+        provider,
+        turn_provenance: { origin: input.origin, ...(input.automationId ? { automationId: input.automationId } : {}) },
+      },
     });
     if (input.reply) {
       recordSessionEvent({
@@ -366,6 +433,150 @@ describe.each(["claude", "codex", "pi"])("thread parent return through the gatew
       origin: "human",
       reply: "Respondendo você aqui.",
       outputState: "final",
+    });
+    await tick();
+    expect(calls()).toHaveLength(0);
+  });
+  function ghFollowWake(turnId: string, outputState: "final" | "silent" = "silent") {
+    const trigger = dbCreateTrigger({
+      name: "gh-follow:filipexyz/ravi#1013",
+      topic: "ravi.github.pull_request",
+      message: "ci",
+    });
+    seedTurn({
+      turnId,
+      startedAt: now - 10 * 60_000,
+      completedAt: now - 2 * 60_000,
+      origin: "trigger",
+      automationId: `trigger:${trigger.id}`,
+      reply: null,
+      outputState,
+    });
+    return trigger;
+  }
+
+  it("asks a thread whose PR follow wake ended silent, once per wake", async () => {
+    ghFollowWake("ci1");
+    await tick();
+    expect(calls()).toHaveLength(1);
+    const nudge = calls()[0]!;
+    expect(nudge.session).toBe(childName);
+    expect(nudge.payload._slackThreadLifecycle).toMatchObject({ eventType: "thread.return_nudge", turnId: "ci1" });
+    expect(nudge.payload.prompt).toContain("A PR/CI event woke you");
+    expect(nudge.payload.prompt).not.toContain("do nothing");
+    expect(nudge.options.messageId).toBe(`slack-thread-return-nudge:${requestId}:ci1`);
+    await tick();
+    await tick(now + 60_000);
+    expect(calls()).toHaveLength(1);
+  });
+
+  it("tells the parent when the thread is silent again after being asked", async () => {
+    ghFollowWake("ci2");
+    await tick();
+    seedTurn({
+      turnId: "ci2-f",
+      startedAt: now + 61_000,
+      completedAt: now + 90_000,
+      origin: "system",
+      reply: null,
+      outputState: "silent",
+    });
+    await tick(now + 120_000);
+    expect(calls()).toHaveLength(2);
+    const inform = calls()[1]!;
+    expect(inform.session).toBe(parentKey);
+    expect(inform.payload._slackThreadLifecycle).toMatchObject({
+      eventType: "thread.unreturned",
+      turnId: "ci2",
+      followupTurnId: "ci2-f",
+      reason: "ci_wake_silent",
+    });
+    expect(inform.payload.prompt).toContain("evento de PR/CI");
+    expect(getThreadReturnWatch(requestId)).toMatchObject({ stage: "informed", turnId: "ci2" });
+    await tick(now + 180_000);
+    expect(calls()).toHaveLength(2);
+  });
+
+  it("settles without an Inform when the follow-up reports where the PR is", async () => {
+    ghFollowWake("ci3");
+    await tick();
+    seedTurn({
+      turnId: "ci3-f",
+      startedAt: now + 61_000,
+      completedAt: now + 90_000,
+      origin: "system",
+      reply: null,
+      outputState: "silent",
+    });
+    markThreadParentReturn(requestId, now + 80_000);
+    await tick(now + 120_000);
+    expect(calls()).toHaveLength(1);
+    expect(getThreadReturnWatch(requestId)).toMatchObject({ stage: "returned", followupTurnId: "ci3-f" });
+  });
+
+  it("does not ask when the silent wake was reported, or the thread waits on the parent with --awaiting", async () => {
+    ghFollowWake("ci4");
+    markThreadParentReturn(requestId, now - 3 * 60_000);
+    await tick();
+    expect(calls()).toHaveLength(0);
+  });
+
+  it("does not ask while a handoff is open", async () => {
+    ghFollowWake("ci5");
+    openHandoff({
+      childSessionKey: childKey,
+      parentSessionKey: parentKey,
+      kind: "merge",
+      ref: "filipexyz/ravi#1013",
+      now: now - 9 * 60_000,
+    });
+    await tick();
+    expect(calls()).toHaveLength(0);
+  });
+
+  it("keeps silence valid for triggers that are not PR follows", async () => {
+    const other = dbCreateTrigger({ name: "page-comments:xyz", topic: "ravi.pages.comment", message: "c" });
+    seedTurn({
+      turnId: "ci6",
+      startedAt: now - 10 * 60_000,
+      completedAt: now - 2 * 60_000,
+      origin: "trigger",
+      automationId: `trigger:${other.id}`,
+      reply: null,
+      outputState: "silent",
+    });
+    await tick();
+    expect(calls()).toHaveLength(0);
+  });
+
+  it("only a turn whose recorded origin is trigger counts as a PR follow wake", async () => {
+    const follow = dbCreateTrigger({
+      name: "gh-follow:filipexyz/ravi#1013",
+      topic: "ravi.github.pull_request",
+      message: "ci",
+    });
+    seedTurn({
+      turnId: "ci8",
+      startedAt: now - 10 * 60_000,
+      completedAt: now - 2 * 60_000,
+      origin: "system",
+      automationId: `trigger:${follow.id}`,
+      reply: null,
+      outputState: "silent",
+    });
+    await tick();
+    expect(calls()).toHaveLength(0);
+  });
+
+  it("does not read a deleted trigger or a bare trigger origin as a PR follow", async () => {
+    seedTurn({
+      turnId: "ci7",
+      startedAt: now - 10 * 60_000,
+      completedAt: now - 2 * 60_000,
+      origin: "trigger",
+      automationId: "trigger:gone0000",
+      reply: null,
+      outputState: "silent",
     });
     await tick();
     expect(calls()).toHaveLength(0);
