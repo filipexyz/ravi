@@ -126,6 +126,8 @@ async function fixture() {
     currentToolSafety: null,
     pendingAbort: false,
     agentMode: "active",
+    // claude + ravi-host permissions, as resolveRuntimeToolEffectFence gives in production.
+    toolEffectFence: "host_write_ahead",
   };
   dispatcher.streamingSessions.set(session.name!, streaming);
 

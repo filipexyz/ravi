@@ -326,9 +326,12 @@ export function stashPendingRuntimeMessages(
   options: RuntimeMessageStashOptions = {},
 ): number {
   const safety = getRuntimeTurnReplaySafety(session, options.crashRecovery);
+  // Only a provider with a durable pre-tool acknowledgement can prove "no tool ran": Codex and Pi report
+  // tool starts asynchronously, so a missing marker there is not evidence of no effect.
   const keepSupersededTurn =
     options.keepSupersededTurnWithoutEffects === true &&
     session.currentTurnSuperseded === true &&
+    session.toolEffectFence === "host_write_ahead" &&
     session.currentCrashRecoveryTerminal?.status !== "complete" &&
     !safety.startedTool &&
     !safety.materializedOutput &&
@@ -345,9 +348,17 @@ export function stashPendingRuntimeMessages(
   }
   const reconciliationIds = options.reconcileCurrentTurn ? new Set(session.currentTurnPendingIds ?? []) : undefined;
 
+  const keptTurnIds = keepSupersededTurn ? new Set(session.currentTurnPendingIds ?? []) : undefined;
   stashedMessages.set(
     sessionName,
-    replayableMessages.map((message) => cloneRuntimeMessageForStash(message, reconciliationIds, safety.replayable)),
+    replayableMessages.map((message) => {
+      const stashed = cloneRuntimeMessageForStash(message, reconciliationIds, safety.replayable);
+      // The recovered turn runs as its own turn: without the cohort marker an idle restored runtime would
+      // fold a compatible follow-up from the same chat into it.
+      return message.pendingId && keptTurnIds?.has(message.pendingId)
+        ? { ...stashed, retainsInputCohort: true }
+        : stashed;
+    }),
   );
   return replayableMessages.length;
 }

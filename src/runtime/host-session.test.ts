@@ -102,6 +102,7 @@ describe("stashPendingRuntimeMessages after a superseded turn is interrupted", (
       pendingMessages: [current, successor],
       currentTurnPendingIds: [current.pendingId!],
       currentTurnSuperseded: true,
+      toolEffectFence: "host_write_ahead",
       ...overrides,
     } as RuntimeHostStreamingSession;
     return { session, current, successor };
@@ -117,6 +118,17 @@ describe("stashPendingRuntimeMessages after a superseded turn is interrupted", (
 
     expect(count).toBe(2);
     expect(contents(stash)).toEqual(["dava pra usar isso de quais formas aqui?", "estuda mais a documentação"]);
+    // The recovered turn stays its own cohort; the follow-up does not fold into it.
+    expect((stash.get("main") ?? []).map((message) => message.retainsInputCohort === true)).toEqual([true, false]);
+  });
+
+  it("drops the superseded turn when the provider has no durable pre-tool acknowledgement", () => {
+    const { session } = supersededSession({ toolEffectFence: "provider_event_only" });
+    const stash = new Map<string, RuntimeUserMessage[]>();
+
+    stashPendingRuntimeMessages("main", session, stash, { keepSupersededTurnWithoutEffects: true });
+
+    expect(contents(stash)).toEqual(["estuda mais a documentação"]);
   });
 
   it("still drops the superseded turn when the caller does not ask to keep it", () => {
