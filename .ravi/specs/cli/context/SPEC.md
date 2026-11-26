@@ -145,8 +145,8 @@ invariant stronger than most: context keys (`rctx_*`) ARE credentials.
   the sandbox is what stops that person from writing files or reaching the
   network from the shell. Codex's native `web_search` and `view_image` run
   outside that sandbox, so the thread a held turn opens also turns them off
-  (the restricted switches); the next operator turn reopens the thread without
-  them. Only a grant of `execute:executable:*` (or break-glass) keeps the
+  (the restricted switches); the next turn without the mark reopens the thread
+  with the agent's own config (a restricted agent profile keeps them off). Only a grant of `execute:executable:*` (or break-glass) keeps the
   agent's sandbox: a grant for named executables is still held, failing closed.
   The daemon marks such a turn with `RAVI_TURN_HELD_BELOW_AGENT` in the runtime
   env it refreshes before the turn; the provider reads it in the daemon, and a
