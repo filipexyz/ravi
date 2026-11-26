@@ -159,7 +159,7 @@ export class DecisionsCommands {
       const current = requireVisibleDecision(id);
       validateDecisionMutation(current.origin, "answer", current);
       // Checked before the dry-run so a wrong source fails the preview too.
-      if (sourceMessage?.trim()) resolveDecisionAnswerSource(current, sourceMessage);
+      if (sourceMessage !== undefined) resolveDecisionAnswerSource(current, sourceMessage);
       if (current.origin.type === "thread" && !execute)
         contractDryRun(
           "decisions answer",

@@ -107855,9 +107855,15 @@ export const SessionsReportReturnSchema = {
           "const": "thread.report",
           "type": "string"
         },
+        "decisionError": {
+          "type": "string"
+        },
         "handoff": {
           "additionalProperties": false,
           "properties": {
+            "decisionId": {
+              "type": "string"
+            },
             "id": {
               "type": "string"
             },

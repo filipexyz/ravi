@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { executeWrite } from "../db/write-retry.js";
 import { getDb } from "../router/router-db.js";
+import { retireDecisionForWait } from "../decisions/store.js";
 
 /**
  * Handoffs: the structured "this child session waits for its parent to act".
@@ -134,6 +135,10 @@ export function openHandoff(input: {
         input.decisionId ?? null,
       );
       const row = db.prepare("SELECT * FROM session_handoffs WHERE id = ?").get(id) as HandoffRow;
+      // A replaced decision wait retires its question, unless the new wait asks the same decision again.
+      for (const old of previous)
+        if (old.decisionId && old.decisionId !== (input.decisionId ?? null))
+          retireDecisionForWait(old.decisionId, `wait superseded by ${id}`, input.now);
       return { handoff: fromRow(row), superseded: previous };
     },
     { label: "handoff-open" },
@@ -168,7 +173,10 @@ export function acknowledgeHandoffsForChild(
         `UPDATE session_handoffs SET status = 'acknowledged', acknowledged_at = ?, ack_reason = ?, updated_at = ?
          WHERE id = ? AND status = 'open'`,
       );
-      for (const h of open) stmt.run(now, reason, now, h.id);
+      for (const h of open) {
+        stmt.run(now, reason, now, h.id);
+        if (h.decisionId) retireDecisionForWait(h.decisionId, `wait closed: ${reason}`, now);
+      }
       return open.map((h) => ({ ...h, status: "acknowledged" as const, acknowledgedAt: now, ackReason: reason }));
     },
     { label: "handoff-ack-child" },
@@ -188,6 +196,8 @@ export function acknowledgeHandoff(id: string, reason: string, now: number): Han
         `UPDATE session_handoffs SET status = 'acknowledged', acknowledged_at = ?, ack_reason = ?, updated_at = ?
          WHERE id = ? AND status = 'open'`,
       ).run(now, reason, now, id);
+      // An explicit acknowledgement without an answer retires the question so it stops blocking the thread.
+      if (row.decision_id) retireDecisionForWait(row.decision_id, `wait acknowledged: ${reason}`, now);
       return { ...fromRow(row), status: "acknowledged" as const, acknowledgedAt: now, ackReason: reason };
     },
     { label: "handoff-ack" },

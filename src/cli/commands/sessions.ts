@@ -124,6 +124,7 @@ import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
 import { enforceCliCommandAccess, listCliCommandAccessCandidates } from "../command-access.js";
 import { canWithCapabilities } from "../../permissions/capability-snapshot.js";
 import { askDecisionForWait } from "../../decisions/service.js";
+import { redactText } from "../../session-trace/session-trace-db.js";
 import { CliExpectedError } from "../expected-error.js";
 import { resolveEffectiveSessionRuntime } from "../../runtime/runtime-selection.js";
 import type {
@@ -697,11 +698,15 @@ const slackThreadReportReturnSchema = z
         kind: z.enum(HANDOFF_KINDS),
         ref: z.string().nullable(),
         status: z.enum(["open", "acknowledged", "superseded"]),
+        // A decision wait records its question as a decision; answer it with `ravi decisions answer <id>`.
+        decisionId: z.string().optional(),
       })
       .strict()
       .optional(),
     // The report was delivered but its wait could not be written: do not send the report again.
     handoffError: z.string().optional(),
+    // The decision could not be recorded: the wait opened without one (redacted text).
+    decisionError: z.string().optional(),
     reviewDispatch: z
       .discriminatedUnion("status", [
         z
@@ -8512,9 +8517,15 @@ export class SessionCommands {
       // A decision wait records its question as a decision, so the answer is recorded (not just a message) and
       // closes the wait. A decision that cannot be recorded leaves an ordinary wait, as before.
       try {
-        pendingHandoff.decisionId = (await askDecisionForWait(session.sessionKey, pendingHandoff.ref, message)).id;
+        // The question is the decoded report, as the parent read it, without the appended wait line.
+        pendingHandoff.decisionId = (
+          await askDecisionForWait(session.sessionKey, pendingHandoff.ref, decodeLiteralLineBreaks(message))
+        ).id;
       } catch (error) {
-        decisionError = error instanceof Error ? error.message : String(error);
+        logger.child("cli:sessions").warn("Decision wait not recorded as a decision; the wait opens without one", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        decisionError = redactText(error instanceof Error ? error.message : String(error)).value;
       }
     }
     if (pendingHandoff) {

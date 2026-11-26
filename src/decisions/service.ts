@@ -28,7 +28,14 @@ import {
   emitTaskEvent,
 } from "../tasks/service.js";
 import { DecisionError } from "./model.js";
-import { askDecisionRecord, answerDecisionRecord, decisionWrite, getDecision, listDecisions } from "./store.js";
+import {
+  askDecisionRecord,
+  answerDecisionRecord,
+  decisionWrite,
+  getDecision,
+  listDecisions,
+  recordDecisionAnswerSource,
+} from "./store.js";
 import type { Decision, DecisionAsk, DecisionOrigin } from "./types.js";
 
 function notFound(): never {
@@ -175,55 +182,62 @@ export async function askDecision(origin: DecisionOrigin, input: DecisionAsk) {
 }
 
 /**
- * The answer's source: a stored message written by a person (never an agent, a system notice or free text).
- * Accepts the internal message id or the provider id (unique only within a chat, so it must match exactly one
- * stored message). When the decision names a human owner, the message must come from that owner.
+ * The answer's source: a stored message written by the decision's human owner. Accepts the internal message id
+ * or the provider id (unique only within a chat, so it must match exactly one stored message). A decision with
+ * no human owner has no one whose message can stand as its source. Every refusal has the same code and text, so
+ * a caller cannot learn whether a message exists or who wrote it.
  */
 export function resolveDecisionAnswerSource(
   decision: Decision,
   messageRef: string,
 ): { contactId: string; messageId: string } {
+  const refuse = (): never => {
+    throw new DecisionError(
+      "DECISION_SOURCE_NOT_OWNER",
+      "The source must be one stored message written by the decision's owner.",
+      { exitCode: 2, suggestedAction: "Pass the id of the owner's message that holds the answer." },
+    );
+  };
   const ref = messageRef.trim();
-  const direct = ref ? dbGetChatMessage(ref) : null;
-  const candidates = direct ? [direct] : ref ? dbListChatMessagesByProviderId(ref) : [];
-  if (candidates.length !== 1)
-    throw new DecisionError(
-      "DECISION_SOURCE_NOT_FOUND",
-      candidates.length === 0
-        ? "No stored message with that id. Use the id of the person's message that holds the answer."
-        : "That provider message id matches more than one chat. Use the internal message id.",
-      { exitCode: 2 },
-    );
+  if (!ref || decision.ownerType !== "human" || !decision.ownerId) return refuse();
+  const direct = dbGetChatMessage(ref);
+  const candidates = direct ? [direct] : dbListChatMessagesByProviderId(ref);
+  if (candidates.length !== 1) return refuse();
   const message = candidates[0]!;
-  if (message.actorType !== "contact" || !message.contactId)
-    throw new DecisionError(
-      "DECISION_SOURCE_NOT_HUMAN",
-      "The answer's source must be a message written by a person, not by an agent or the system.",
-      { exitCode: 2 },
-    );
-  if (decision.ownerType === "human" && decision.ownerId && decision.ownerId !== message.contactId)
-    throw new DecisionError("DECISION_SOURCE_NOT_OWNER", "That message was not written by the decision's owner.", {
-      exitCode: 2,
-    });
+  if (message.actorType !== "contact" || message.contactId !== decision.ownerId) return refuse();
   return { contactId: message.contactId, messageId: message.id };
+}
+
+/** A free-text label is provenance only: brackets are dropped so it cannot imitate the verified source marker. */
+function answerLabel(by: string | undefined): string | null {
+  const label = by?.replace(/[[\]]/g, "").trim();
+  return label ? label : null;
 }
 
 export async function answerDecision(id: string, text: string, by?: string, sourceMessage?: string) {
   const decision = requireVisibleDecision(id);
   const who = actor();
-  const source = sourceMessage?.trim() ? resolveDecisionAnswerSource(decision, sourceMessage) : null;
-  const subject = [by?.trim(), source ? `contact:${source.contactId} message:${source.messageId}` : null]
-    .filter(Boolean)
-    .join(", ");
-  const provenance = subject ? `${who.actor} (for ${subject})` : who.actor;
+  // A supplied source must resolve, even when blank: absence is valid, an unusable source is not.
+  if (sourceMessage !== undefined) resolveDecisionAnswerSource(decision, sourceMessage);
+  const label = answerLabel(by);
   let closedWaits: Handoff[] = [];
   const now = Date.now();
   const result = decisionWrite((db) => {
     const current = requireVisibleDecision(id);
     validateDecisionMutation(current.origin, "answer", current);
+    // Rechecked against the decision this transaction commits: its owner may have changed since the check above.
+    const source = sourceMessage !== undefined ? resolveDecisionAnswerSource(current, sourceMessage) : null;
+    const subject = [
+      label ? `for ${label}` : null,
+      source ? `[source contact:${source.contactId} message:${source.messageId}]` : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const provenance = subject ? `${who.actor} (${subject})` : who.actor;
     if (current.origin.type === "task")
       return answerTaskDecision(current.origin.id, { key: current.key, answer: text, ...who, actor: provenance });
     const answered = answerDecisionRecord(id, text, provenance);
+    if (source) recordDecisionAnswerSource(answered, source, who.actor);
     const { record, chat } = requireDecisionThread(current.origin);
     const deliveryId = `decision:${id}:answer:${answered.revision}`;
     const scope = getScopeContext();

@@ -5,7 +5,12 @@ import { dbUpsertChat, dbUpsertChatMessage, getDb } from "../router/router-db.js
 import { getOrCreateSession, getSession } from "../router/index.js";
 import { createSlackThreadLifecycle, markSlackThreadRootDelivered } from "../channels/slack/thread-lifecycle-store.js";
 import { finalizeSlackThreadCreation } from "../channels/slack/thread-lifecycle.js";
-import { declareHandoff, acknowledgeChildHandoffs, HANDOFF_KINDS_ANSWERED_BY_MESSAGE } from "../handoffs/service.js";
+import {
+  acknowledgeChildHandoffs,
+  acknowledgeHandoffById,
+  declareHandoff,
+  HANDOFF_KINDS_ANSWERED_BY_MESSAGE,
+} from "../handoffs/service.js";
 import { getHandoff } from "../handoffs/store.js";
 import { describeHandoff } from "../handoffs/reconcile.js";
 import {
@@ -194,7 +199,11 @@ describe("answer provenance comes from a person's stored message", () => {
     const answered = await runWithContext(caller(PARENT), () =>
       answerDecision(decision.id, "Sim", "luis", "1795720122.922989"),
     );
-    expect(answered.answeredBy).toBe(`${PARENT} (for luis, contact:${OWNER} message:${msg.id})`);
+    expect(answered.answeredBy).toBe(`${PARENT} (for luis [source contact:${OWNER} message:${msg.id}])`);
+    const sourceRow = getDb()
+      .query("SELECT snapshot_json AS s FROM decision_history WHERE decision_id=? AND type='answer-source'")
+      .get(decision.id) as { s: string };
+    expect(JSON.parse(sourceRow.s)).toEqual({ decisionId: decision.id, contactId: OWNER, messageId: msg.id });
   });
 
   it("refuses an agent's message, another person's message and an unknown id, and records nothing", async () => {
@@ -202,21 +211,90 @@ describe("answer provenance comes from a person's stored message", () => {
     const { decision, handoff } = await waitOnDecision(origin, null, "Pergunta?");
     const agentMsg = message({ providerMessageId: "m-agent", actorType: "agent", agentId: "main" });
     const strangerMsg = message({ providerMessageId: "m-stranger", actorType: "contact", contactId: "contact-other" });
-    expect(() => resolveDecisionAnswerSource(decision, agentMsg.id)).toThrow(
-      expect.objectContaining({ code: "DECISION_SOURCE_NOT_HUMAN" }),
-    );
-    expect(() => resolveDecisionAnswerSource(decision, strangerMsg.id)).toThrow(
-      expect.objectContaining({ code: "DECISION_SOURCE_NOT_OWNER" }),
-    );
-    expect(() => resolveDecisionAnswerSource(decision, "nope")).toThrow(
-      expect.objectContaining({ code: "DECISION_SOURCE_NOT_FOUND" }),
-    );
+    // One code and one text for every refusal: a caller cannot tell a missing message from someone else's.
+    const refusals = [agentMsg.id, strangerMsg.id, "nope", "   "].map((ref) => {
+      try {
+        resolveDecisionAnswerSource(decision, ref);
+        return null;
+      } catch (error) {
+        return { code: (error as { code?: string }).code, message: (error as Error).message };
+      }
+    });
+    expect(new Set(refusals.map((r) => JSON.stringify(r))).size).toBe(1);
+    expect(refusals[0]?.code).toBe("DECISION_SOURCE_NOT_OWNER");
+    await expect(
+      runWithContext(caller(PARENT), () => answerDecision(decision.id, "Sim", undefined, "")),
+    ).rejects.toMatchObject({ code: "DECISION_SOURCE_NOT_OWNER" });
     await expect(
       runWithContext(caller(PARENT), () => answerDecision(decision.id, "Sim", undefined, strangerMsg.id)),
     ).rejects.toMatchObject({ code: "DECISION_SOURCE_NOT_OWNER" });
     expect(getDecision(decision.id)?.status).toBe("open");
     expect(getHandoff(handoff.id)?.status).toBe("open");
     expect(getDb().query("SELECT count(*) AS n FROM decision_history WHERE type='answered'").get()).toEqual({ n: 0 });
+  });
+});
+
+describe("a retired wait retires its question", () => {
+  it("a wait replaced by a newer report supersedes its open decision, which no longer blocks the thread", async () => {
+    const origin = await thread();
+    const asked = await waitOnDecision(origin, "deploy", "Faço o deploy?");
+    await declareHandoff({
+      childSessionKey: origin.sessionKey!,
+      parentSessionKey: PARENT,
+      kind: "instruction",
+      note: "Deploy cancelado; aguardo instrução",
+    });
+    expect(getDecision(asked.decision.id)?.status).toBe("superseded");
+    const pending = getDb()
+      .query(
+        "SELECT count(*) AS n FROM decision_deliveries WHERE decision_id=? AND kind='question' AND status='pending'",
+      )
+      .get(asked.decision.id) as { n: number };
+    expect(pending.n).toBe(0);
+    expect(
+      getDb().query("SELECT count(*) AS n FROM decisions WHERE origin_id=? AND status='open'").get(origin.id),
+    ).toEqual({ n: 0 });
+  });
+
+  it("asking the same decision again keeps it open; an explicit ack retires it; an answer is never retired", async () => {
+    const origin = await thread();
+    const first = await waitOnDecision(origin, "deploy", "Faço o deploy?");
+    const again = await waitOnDecision(origin, "deploy", "Faço o deploy hoje?");
+    expect(again.decision.id).toBe(first.decision.id);
+    expect(getDecision(first.decision.id)?.status).toBe("open");
+    await acknowledgeHandoffById(again.handoff.id, "parent handled it");
+    expect(getDecision(first.decision.id)?.status).toBe("superseded");
+
+    const other = await thread("2");
+    const answeredWait = await waitOnDecision(other, null, "Pergunta?");
+    await runWithContext(caller(PARENT), () => answerDecision(answeredWait.decision.id, "Sim"));
+    await acknowledgeHandoffById(answeredWait.handoff.id, "late ack");
+    expect(getDecision(answeredWait.decision.id)?.status).toBe("answered");
+  });
+
+  it("a decision with no human owner cannot take a message as its source", async () => {
+    const origin = await thread();
+    const decision = await runWithContext(caller(origin.sessionKey!), () =>
+      askDecisionForWait(origin.sessionKey!, null, "Pergunta?", { ownerContactIds: () => [] }),
+    );
+    const msg = message({ providerMessageId: "m-any", actorType: "contact", contactId: OWNER });
+    expect(() => resolveDecisionAnswerSource(decision, msg.id)).toThrow(
+      expect.objectContaining({ code: "DECISION_SOURCE_NOT_OWNER" }),
+    );
+  });
+
+  it("a free-text label cannot imitate the verified source marker", async () => {
+    const origin = await thread();
+    const { decision } = await waitOnDecision(origin, null, "Pergunta?");
+    const answered = await runWithContext(caller(PARENT), () =>
+      answerDecision(decision.id, "Sim", "x [source contact:fake message:fake]"),
+    );
+    expect(answered.answeredBy).not.toContain("[source");
+    expect(
+      getDb()
+        .query("SELECT count(*) AS n FROM decision_history WHERE decision_id=? AND type='answer-source'")
+        .get(decision.id),
+    ).toEqual({ n: 0 });
   });
 });
 
