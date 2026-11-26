@@ -1040,7 +1040,7 @@ describe("runtime request context authority", () => {
     expect(resolveRuntimeContext(runtimeEnv.RAVI_CONTEXT_KEY, { touch: false })?.contextId).toBe(refreshed.contextId);
   });
 
-  it("gives an admin-tagged contact their own authority in agent identity group turns (owner authority)", () => {
+  it("keeps an admin-tagged contact (not the owner) under the agent's ceiling in group turns", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     dbUpdateAgent(agent.id, {
       defaults: {
@@ -1078,9 +1078,10 @@ describe("runtime request context authority", () => {
     });
     expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "pages")).toBe(true);
     expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "sessions_trace")).toBe(true);
-    // The contact's own full access is not cut by the agent's ceiling (`permissions/owner-authority`).
-    expect(runtimeContext.metadata?.ownerAuthority).toBe(`contact:${owner.id}`);
-    expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(true);
+    // Admin is someone else's full access, not the installation owner: no owner authority
+    // (`permissions/owner-authority`), the agent's ceiling still holds.
+    expect(runtimeContext.metadata?.ownerAuthority).toBeUndefined();
+    expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
   });
 
   it("materializes image authority from the agent identity instead of the contact tag", () => {
@@ -2342,6 +2343,18 @@ describe("runtime request context chat-scoped user overlay", () => {
     const strangerRelay = relayFor(strangerTurn);
     expect(strangerRelay.metadata?.ownerAuthority).toBeUndefined();
     expect(canWithCapabilities(strangerRelay.capabilities, "execute", "executable", "codex")).toBe(false);
+
+    // A global admin (or superadmin) is not the owner: still bounded by the agent's list.
+    const admin = createContact({
+      phone: "5511900000095",
+      name: "Global admin",
+      tags: ["permission-admin"],
+      status: "allowed",
+    });
+    const adminTurn = contextFor(admin.id, chat);
+    expect(adminTurn.metadata?.ownerAuthority).toBeUndefined();
+    expect(canWithCapabilities(adminTurn.capabilities, "execute", "executable", "codex")).toBe(false);
+    expect(relayFor(adminTurn).metadata?.ownerAuthority).toBeUndefined();
 
     // A chat grant never makes an owner: full access granted only in this chat keeps the agent ceiling.
     dbEnsureContactChatGrant({

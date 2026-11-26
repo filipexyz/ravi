@@ -28,15 +28,17 @@ normative: true
 
 ## Rule
 
-A verified person whose own power holds full access acts with that power, not
-with the agent's ceiling. Everyone else acts as the agent ∩ the person.
+The installation's verified owner acts with their own power, not with the
+agent's ceiling. Everyone else acts as the agent ∩ the person.
 
 ## Contract
 
 - A turn carries owner authority when its actor is a contact whose identity
-  resolved and whose own global power (permission tags, never a chat grant)
-  holds `admin:system:*` (`permission-owner|admin|superadmin`), and nothing in
-  that chat narrows them (a chat grant with a `deny_*` keeps the user overlay).
+  resolved and who carries the installation owner's global `permission-owner`
+  tag (never a chat grant), and nothing in that chat narrows them (a chat grant
+  with a `deny_*` keeps the user overlay). `permission-admin` and
+  `permission-superadmin` are other people's full access: they MUST NOT give
+  owner authority, and those turns keep agent ∩ person.
 - Such a turn MUST be issued with the contact's own capabilities as its
   bound (the agent identity's capabilities are kept alongside); the agent's
   closed ceiling (for example a named list of executables) MUST NOT cut it.

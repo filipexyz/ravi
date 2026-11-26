@@ -13,6 +13,8 @@
   relay of that turn MUST NOT either ("an admin narrowed by a grant in that
   chat keeps the overlay").
 - Full access granted only in a chat MUST NOT give owner authority.
+- A contact with global `permission-admin` (or superadmin) MUST stay at the
+  agent's list, and a relay of their turn MUST NOT carry owner authority.
 - After the owner tag is removed, the next turn MUST be back under the agent's
   ceiling.
 - The Bash hook MUST allow an owner-authority turn's command outside the

@@ -37,6 +37,9 @@ import {
   type ContactChatOverlay,
 } from "../permissions/contact-policy-permissions-provider.js";
 import { canWithCapabilities } from "../permissions/capability-snapshot.js";
+import { normalizePermissionTag } from "../permissions/permission-tags.js";
+
+const OWNER_PERMISSION_TAG = "permission-owner";
 import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
 import {
   isRelayHeldBelowAgent,
@@ -653,8 +656,8 @@ function buildAgentIdentityRuntimeContextInput(options: {
   const relayNarrowing = relayCaller.narrowing;
   const turnCapabilities =
     relayNarrowing ?? (hasAnyCapability(observationCapabilities) ? observationCapabilities : undefined);
-  // Owner authority (`permissions/owner-authority`): a verified person whose own global power holds
-  // full access acts with that power, not with the agent's ceiling. Same for a relay whose caller
+  // Owner authority (`permissions/owner-authority`): the installation's verified owner acts with
+  // their own power, not with the agent's ceiling. Same for a relay whose caller
   // was such a person acting unrestricted. Anyone else keeps the agent ∩ person rule.
   const ownerAuthorityContactId = resolveOwnerAuthorityContact({
     actorPrincipal: options.actorPrincipal,
@@ -823,8 +826,8 @@ function resolveRelayCaller(prompt: RuntimeLaunchPrompt): {
 
 /**
  * The contact whose own authority this turn carries, or null. A person holds owner authority when
- * their identity resolved and their own global power (permission tags, never a chat grant) holds
- * `admin:system:*`, and nothing in this chat narrows them (a chat `deny_*` keeps the overlay). A
+ * their identity resolved, they carry the installation owner's global `permission-owner` tag (never
+ * a chat grant, never `admin`/`superadmin`), and nothing in this chat narrows them (a chat `deny_*` keeps the overlay). A
  * relay carries it when its caller acted unrestricted for such a person. The owner's own power is
  * re-read now, so an untag or `permissions deny` takes effect on the next turn.
  */
@@ -834,8 +837,13 @@ function resolveOwnerAuthorityContact(input: {
   chatNarrowsActor: boolean;
   relayCaller: { contactId?: string; unrestricted?: boolean; narrowing?: ContextCapability[] };
 }): string | null {
-  const holdsFullAccess = (contactId: string): boolean =>
-    canWithCapabilities(materializeContactPolicyCapabilities(contactId), "admin", "system", "*");
+  // The installation's owner only: the global `permission-owner` tag. `admin`/`superadmin` are other
+  // people's full access and keep the agent ∩ person rule.
+  const holdsFullAccess = (contactId: string): boolean => {
+    const policy = getContactDetails(contactId)?.policy;
+    if (!policy || policy.status !== "allowed" || policy.optOut) return false;
+    return policy.tags.some((tag) => normalizePermissionTag(tag) === OWNER_PERMISSION_TAG);
+  };
   if (input.relayCaller.narrowing !== undefined || input.relayCaller.contactId) {
     // The caller lends its owner's authority only when it was not held: not narrowed at all, or
     // narrowed only as a verified handoff of someone holding the agent's whole authority.
