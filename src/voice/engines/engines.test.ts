@@ -231,15 +231,26 @@ describe("voice engines", () => {
     return { sideband, send, timers, delegations, users, errors };
   }
 
-  it("a pause between transcript deltas splits utterances; only the last one is delegated", () => {
+  it("nothing said before a delegation is dropped: every utterance since the last answer goes, in order", () => {
+    const h = harness();
+    h.send({ type: "session.input_transcript.delta", delta: "olha a #1020", start_ms: 0, end_ms: 900 });
+    h.send({ type: "session.input_transcript.delta", delta: "e me diz se mergeou", start_ms: 4000, end_ms: 5200 });
+    h.send({ type: "session.delegation.created", delegation: { id: "d1" } });
+    h.timers[0]?.();
+    expect(h.delegations).toEqual([{ delegationId: "d1", text: "olha a #1020 e me diz se mergeou" }]);
+    // The door publishes the delegated text with the turn id; nothing is shown twice.
+    expect(h.users).toEqual([]);
+  });
+
+  it("speech the model already answered is not sent again with the next delegation", () => {
     const h = harness();
     h.send({ type: "session.input_transcript.delta", delta: "oi cara", start_ms: 0, end_ms: 800 });
+    h.send({ type: "session.output_transcript.delta", delta: "Oi! " });
     h.send({ type: "session.input_transcript.delta", delta: "quais ferramentas tu tem", start_ms: 5000, end_ms: 6500 });
     h.send({ type: "session.delegation.created", delegation: { id: "d1" } });
     h.timers[0]?.();
-    expect(h.delegations).toEqual([{ delegationId: "d1", text: "quais ferramentas tu tem" }]);
-    // The earlier utterance nobody delegated shows once, as conversation.
     expect(h.users).toEqual(["oi cara"]);
+    expect(h.delegations).toEqual([{ delegationId: "d1", text: "quais ferramentas tu tem" }]);
   });
 
   it("deltas close together stay one utterance", () => {

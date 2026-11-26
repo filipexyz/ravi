@@ -213,8 +213,12 @@ export class LiveSideband {
   private userBuffer = "";
   /** End of the last user transcript delta, when the provider sent it. */
   private userLastEndMs: number | null = null;
-  /** The last finished utterance, kept until a delegation takes it. */
-  private completedUtterance = "";
+  /**
+   * Finished utterances since the voice model last answered on its own. A
+   * delegation takes all of them (nothing the person said is dropped); the
+   * model answering means they were conversation, so they are shown then.
+   */
+  private pendingUtterances: string[] = [];
   /** Delegations created but not yet settled. */
   private pendingDelegations = 0;
   private agentBuffer = "";
@@ -346,34 +350,28 @@ export class LiveSideband {
   }
 
   private takeUserText(): string {
-    // Words still streaming win; otherwise the utterance that finished before
-    // (or while) the delegation settled. Either is consumed once. The door
-    // records the delegated text as the turn's transcript, so it is not
-    // published here (it would show twice).
-    const open = this.userBuffer.trim();
-    this.userBuffer = "";
-    this.userLastEndMs = null;
-    if (open) this.emitConversation();
-    const text = open || this.completedUtterance;
-    this.completedUtterance = "";
+    // Everything said since the model last answered goes to the session, in
+    // order, including words still streaming. The door records it as the
+    // turn's transcript, so it is not published here (it would show twice).
+    this.finishUtterance();
+    const text = this.pendingUtterances.join(" ").trim();
+    this.pendingUtterances = [];
     return text;
   }
 
-  /** Close the utterance being heard; an older one nobody delegated is shown as conversation. */
+  /** Close the utterance being heard and keep it until a delegation or an answer takes it. */
   private finishUtterance(): void {
     const text = this.userBuffer.trim();
     this.userBuffer = "";
     this.userLastEndMs = null;
-    if (!text) return;
-    this.emitConversation();
-    this.completedUtterance = text;
+    if (text) this.pendingUtterances.push(text);
   }
 
-  /** Publish the finished utterance that no delegation took. */
+  /** The model answered on its own: what was pending was conversation; show each once. */
   private emitConversation(): void {
-    const text = this.completedUtterance;
-    this.completedUtterance = "";
-    if (text) this.options.handlers.onUserTranscript(text);
+    const pending = this.pendingUtterances;
+    this.pendingUtterances = [];
+    for (const text of pending) this.options.handlers.onUserTranscript(text);
   }
 
   private flushAgent(): void {
