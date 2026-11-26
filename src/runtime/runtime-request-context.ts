@@ -31,6 +31,7 @@ import {
 } from "../permissions/agent-identity-permissions-provider.js";
 import {
   formatContactGrantScope,
+  materializeContactPolicyCapabilities,
   resolveContactChatOverlay,
   USER_OVERLAY_AUTHORIZATION_MODE,
   type ContactChatOverlay,
@@ -652,10 +653,22 @@ function buildAgentIdentityRuntimeContextInput(options: {
   const relayNarrowing = relayCaller.narrowing;
   const turnCapabilities =
     relayNarrowing ?? (hasAnyCapability(observationCapabilities) ? observationCapabilities : undefined);
+  // Owner authority (`permissions/owner-authority`): a verified person whose own global power holds
+  // full access acts with that power, not with the agent's ceiling. Same for a relay whose caller
+  // was such a person acting unrestricted. Anyone else keeps the agent ∩ person rule.
+  const ownerAuthorityContactId = resolveOwnerAuthorityContact({
+    actorPrincipal: options.actorPrincipal,
+    actorResolution: options.actorResolution,
+    chatNarrowsActor: userOverlay !== null,
+    relayCaller,
+  });
+  const ownerAuthority = ownerAuthorityContactId
+    ? [...materializeContactPolicyCapabilities(ownerAuthorityContactId), ...agentIdentityCapabilities]
+    : null;
   const effectiveCapabilities = buildEffectiveCapabilities({
-    agentCapabilities: agentIdentityCapabilities,
-    actorCapabilities: userOverlay ? userOverlay.capabilities : agentIdentityCapabilities,
-    ...(userOverlay ? { actorOverrideCapabilities: taskSelfCapabilities } : {}),
+    agentCapabilities: ownerAuthority ?? agentIdentityCapabilities,
+    actorCapabilities: ownerAuthority ?? (userOverlay ? userOverlay.capabilities : agentIdentityCapabilities),
+    ...(userOverlay && !ownerAuthority ? { actorOverrideCapabilities: taskSelfCapabilities } : {}),
     turnCapabilities,
   });
 
@@ -712,6 +725,7 @@ function buildAgentIdentityRuntimeContextInput(options: {
       surfaceCapabilityCount: 0,
       turnCapabilityCount: turnCapabilities?.length ?? 0,
       ...(turnCapabilities && turnCapabilities.length > 0 ? { turnCapabilities } : {}),
+      ...(ownerAuthorityContactId ? { ownerAuthority: `contact:${ownerAuthorityContactId}` } : {}),
       ...(relayNarrowing ? { relayNarrowing: true } : {}),
       ...(relayNarrowing && relayCaller.unrestricted && !relayReducesAgent ? { relayCallerUnrestricted: true } : {}),
       ...(relayCaller.contactId ? { relayCallerContactId: relayCaller.contactId } : {}),
@@ -805,6 +819,33 @@ function resolveRelayCaller(prompt: RuntimeLaunchPrompt): {
     ...(breakGlassDenies.length > 0 ? { breakGlassDenies } : {}),
     ...(contactId ? { contactId } : {}),
   };
+}
+
+/**
+ * The contact whose own authority this turn carries, or null. A person holds owner authority when
+ * their identity resolved and their own global power (permission tags, never a chat grant) holds
+ * `admin:system:*`, and nothing in this chat narrows them (a chat `deny_*` keeps the overlay). A
+ * relay carries it when its caller acted unrestricted for such a person. The owner's own power is
+ * re-read now, so an untag or `permissions deny` takes effect on the next turn.
+ */
+function resolveOwnerAuthorityContact(input: {
+  actorPrincipal: AuthorityPrincipal | null;
+  actorResolution: "resolved" | "missing_contact" | "not_applicable";
+  chatNarrowsActor: boolean;
+  relayCaller: { contactId?: string; unrestricted?: boolean; narrowing?: ContextCapability[] };
+}): string | null {
+  const holdsFullAccess = (contactId: string): boolean =>
+    canWithCapabilities(materializeContactPolicyCapabilities(contactId), "admin", "system", "*");
+  if (input.relayCaller.narrowing !== undefined || input.relayCaller.contactId) {
+    // The caller lends its owner's authority only when it was not held: not narrowed at all, or
+    // narrowed only as a verified handoff of someone holding the agent's whole authority.
+    const caller = input.relayCaller.contactId;
+    const callerNotHeld = input.relayCaller.narrowing === undefined || input.relayCaller.unrestricted === true;
+    return caller && callerNotHeld && holdsFullAccess(caller) ? caller : null;
+  }
+  if (input.actorPrincipal?.subjectType !== "contact" || input.actorResolution !== "resolved") return null;
+  if (input.chatNarrowsActor) return null;
+  return holdsFullAccess(input.actorPrincipal.subjectId) ? input.actorPrincipal.subjectId : null;
 }
 
 /**

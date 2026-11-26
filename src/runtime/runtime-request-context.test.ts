@@ -1040,7 +1040,7 @@ describe("runtime request context authority", () => {
     expect(resolveRuntimeContext(runtimeEnv.RAVI_CONTEXT_KEY, { touch: false })?.contextId).toBe(refreshed.contextId);
   });
 
-  it("does not require admin-tagged contact authority for agent identity group turns", () => {
+  it("gives an admin-tagged contact their own authority in agent identity group turns (owner authority)", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     dbUpdateAgent(agent.id, {
       defaults: {
@@ -1078,7 +1078,9 @@ describe("runtime request context authority", () => {
     });
     expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "pages")).toBe(true);
     expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "sessions_trace")).toBe(true);
-    expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
+    // The contact's own full access is not cut by the agent's ceiling (`permissions/owner-authority`).
+    expect(runtimeContext.metadata?.ownerAuthority).toBe(`contact:${owner.id}`);
+    expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(true);
   });
 
   it("materializes image authority from the agent identity instead of the contact tag", () => {
@@ -2305,6 +2307,56 @@ describe("runtime request context chat-scoped user overlay", () => {
     expect(governed.metadata?.userOverlay).toBe("active");
     expect(governed.metadata?.actorBreakGlassWithheld).toBeUndefined();
     expect(runtimeEnv.RAVI_TURN_HELD_BELOW_AGENT).toBe("1");
+  });
+
+  it("acts with the owner's own authority, not the agent's ceiling (owner authority)", () => {
+    // An agent with a closed list of executables, like a client agent in a group.
+    dbUpdateAgent(agent.id, {
+      defaults: { runtimePermissions: { capabilities: ["execute:executable:git", "mutate:image:generate"] } },
+    });
+    const chat = groupChat("120363400000000093@g.us");
+    const stranger = createContact({ phone: "5511900000093", name: "Stranger" });
+    const owner = createContact({
+      phone: "5511900000094",
+      name: "Owner",
+      tags: ["permission-owner"],
+      status: "allowed",
+    });
+
+    const ownerTurn = contextFor(owner.id, chat);
+    expect(ownerTurn.metadata?.ownerAuthority).toBe(`contact:${owner.id}`);
+    expect(canWithCapabilities(ownerTurn.capabilities, "execute", "executable", "codex")).toBe(true);
+    expect(canWithCapabilities(ownerTurn.capabilities, "execute", "executable", "curl")).toBe(true);
+    expect(ownerTurn.metadata?.actorBreakGlassWithheld).toBeUndefined();
+
+    const strangerTurn = contextFor(stranger.id, chat);
+    expect(strangerTurn.metadata?.ownerAuthority).toBeUndefined();
+    expect(canWithCapabilities(strangerTurn.capabilities, "execute", "executable", "git")).toBe(true);
+    expect(canWithCapabilities(strangerTurn.capabilities, "execute", "executable", "codex")).toBe(false);
+    expect(canWithCapabilities(strangerTurn.capabilities, "admin", "system", "*")).toBe(false);
+
+    // A relay from the owner's turn carries the owner's authority; one from the stranger's does not.
+    const ownerRelay = relayFor(ownerTurn);
+    expect(ownerRelay.metadata?.ownerAuthority).toBe(`contact:${owner.id}`);
+    expect(canWithCapabilities(ownerRelay.capabilities, "execute", "executable", "codex")).toBe(true);
+    const strangerRelay = relayFor(strangerTurn);
+    expect(strangerRelay.metadata?.ownerAuthority).toBeUndefined();
+    expect(canWithCapabilities(strangerRelay.capabilities, "execute", "executable", "codex")).toBe(false);
+
+    // A chat grant never makes an owner: full access granted only in this chat keeps the agent ceiling.
+    dbEnsureContactChatGrant({
+      contactId: stranger.id,
+      profileSlug: "permission-full-access",
+      scopeType: "chat",
+      scopeId: chat.id,
+    });
+    expect(contextFor(stranger.id, chat).metadata?.ownerAuthority).toBeUndefined();
+
+    // The owner's power is read on each turn: untagged, the next turn is back under the agent ceiling.
+    removeContactTag("5511900000094", "permission-owner");
+    const afterUntag = contextFor(owner.id, chat);
+    expect(afterUntag.metadata?.ownerAuthority).toBeUndefined();
+    expect(canWithCapabilities(afterUntag.capabilities, "execute", "executable", "codex")).toBe(false);
   });
 
   it("never lets a person's turn in an ungoverned chat inherit the agent's break-glass", () => {
