@@ -1202,11 +1202,11 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cron | src/cron/automation-notice.ts | 144 | fixed | binding retained / no recognized error surface | src/cron/automation-notice.ts:d154d5d261162fbd60b1fd73 |
 | cron | src/cron/automation-notice.ts | 154 | fixed | binding retained / no recognized error surface | src/cron/automation-notice.ts:a95b6dd11f31a709f9f4d9c0 |
 | cron | src/cron/failure-ack.ts | 41 | fixed | binding retained / no recognized error surface | src/cron/failure-ack.ts:b37b4f870b6889fac9a7567e |
-| cron | src/cron/failure-notification.ts | 148 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:4cb6e58727fdbb4445ff76f1 |
-| cron | src/cron/failure-notification.ts | 312 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:9f4862c94ad1cdce954f6824 |
-| cron | src/cron/failure-notification.ts | 354 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:98c131f44f660ecbd2faaadd |
-| cron | src/cron/failure-notification.ts | 421 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:872eccb90cc73e208afc46cb |
-| cron | src/cron/failure-notification.ts | 526 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:cf7e5fa6a76d578e3ee226d1 |
+| cron | src/cron/failure-notification.ts | 150 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:4cb6e58727fdbb4445ff76f1 |
+| cron | src/cron/failure-notification.ts | 314 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:9f4862c94ad1cdce954f6824 |
+| cron | src/cron/failure-notification.ts | 356 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:98c131f44f660ecbd2faaadd |
+| cron | src/cron/failure-notification.ts | 423 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:872eccb90cc73e208afc46cb |
+| cron | src/cron/failure-notification.ts | 528 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:cf7e5fa6a76d578e3ee226d1 |
 | cron | src/cron/runner.ts | 165 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:a67e22487d87b0d4e3fabe92 |
 | cron | src/cron/runner.ts | 222 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:e319db265d99dc0086b354de |
 | cron | src/cron/runner.ts | 214 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:4ebc8da0b22c5db05a579b9f |

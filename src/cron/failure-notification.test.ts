@@ -657,3 +657,26 @@ describe("cron failure alerts resolve when the job runs fine again", () => {
     expect(failureItems().every((item) => item.status === "done")).toBe(true);
   });
 });
+
+describe("a failure resolved before its notice went out", () => {
+  it("sends nothing at start for a failure the job already recovered from", async () => {
+    const current = job();
+    // The owner's chat was unreachable: the failure is recorded but owed a message.
+    const pending = prepareCronFailureReport({ ...current, runId: "offline" }, "timeout", { owners: () => [target] });
+    expect(pending).not.toBeNull();
+    resolveCronFailureAlerts(current.id, (current.lastRunAt as number) + 1);
+
+    // The next start rebuilds the report for the same run: it is settled, no message is owed.
+    expect(
+      prepareCronFailureReport({ ...current, runId: "offline" }, "timeout", { owners: () => [target] }),
+    ).toBeNull();
+  });
+
+  it("still sends for a failure that was not resolved", async () => {
+    const current = job();
+    prepareCronFailureReport({ ...current, runId: "offline" }, "timeout", { owners: () => [target] });
+    expect(
+      prepareCronFailureReport({ ...current, runId: "offline" }, "timeout", { owners: () => [target] }),
+    ).not.toBeNull();
+  });
+});
