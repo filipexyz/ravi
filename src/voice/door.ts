@@ -269,6 +269,9 @@ export class VoiceDoorService {
     const shown = displayText === undefined ? text : displayText.trim();
     if (shown)
       await this.emitOpen(call.id, "user.transcript", { text: shown, speaker, turnId: message.turnId }, this.sink);
+    // The sideband may have been replaced while the transcript was published:
+    // a retired sideband neither cancels nor starts work.
+    if (stillCurrent && !stillCurrent()) return;
 
     const profile = this.profileFor(call);
     if (speaker.kind === "guest" && !profile.allowGuests) {
@@ -298,7 +301,6 @@ export class VoiceDoorService {
       }
     }
 
-    // The sideband may have been replaced while the transcript was published.
     if (stillCurrent && !stillCurrent()) return;
     const turn = insertVoiceTurn({
       id: message.turnId || newTurnId(),

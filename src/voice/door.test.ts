@@ -853,6 +853,51 @@ describe("voice door", () => {
     expect(prompts).toHaveLength(0);
   });
 
+  it("a spoken cancel from a sideband replaced while the transcript is published cancels nothing", async () => {
+    const all: any[] = [];
+    const hub = new Hub();
+    let door: VoiceDoorService | null = null;
+    let replaceOnTranscript = false;
+    const emit: VoiceDoorDeps["emit"] = async (topic, data) => {
+      await hub.emit(topic, data);
+      if (replaceOnTranscript && (data as any)?.type === "user.transcript") {
+        replaceOnTranscript = false;
+        await door?.handleControl({ op: "live-attach", callId: call.id, providerSessionId: "ls_new" });
+      }
+    };
+    door = new VoiceDoorService({
+      subscribe: hub.subscribe as VoiceDoorDeps["subscribe"],
+      emit,
+      publishPrompt: async (sessionName, payload) => {
+        setTimeout(
+          () =>
+            hub.emit(`ravi.session.${sessionName}.runtime`, {
+              type: "turn.started",
+              _correlationIds: [payload._correlationId],
+            }),
+          5,
+        );
+      },
+      readHistory: () => [],
+      env: { RAVI_VOICE_OPENAI_API_KEY: "k" },
+      createSideband: (input) => {
+        all.push(input.handlers);
+        return { connect: () => {}, commentary: () => {}, thinking: () => {}, close: () => {} };
+      },
+      closeLiveProviderSession: async () => {},
+      transcriptWaitMs: 50,
+    });
+    const call = makeCall("live", { state: "starting" });
+    await door.handleControl({ op: "live-attach", callId: call.id, providerSessionId: "ls_old" });
+    all[0].onDelegation({ delegationId: "d1", text: "faz o relatório", displayText: "faz o relatório" });
+    await until(() => listVoiceEvents(call.id).some((event) => event.data.state === "running"), "running");
+    replaceOnTranscript = true;
+    all[0].onDelegation({ delegationId: "d2", text: "para", displayText: "para", lastUtterance: "para" });
+    await tick();
+    await tick();
+    expect(hub.published.some((message) => message.topic === "ravi.session.abort")).toBe(false);
+  });
+
   it("a turn that throws does not stall the turns queued behind it", async () => {
     const { door, prompts } = harness();
     const call = makeCall("push");
