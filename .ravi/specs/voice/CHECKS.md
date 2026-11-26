@@ -33,3 +33,6 @@ normative: false
   over a reply stays one request (with and without timestamps); `drain` publishes pending speech once.
 - `src/voice/door.test.ts`: live gets sanitized context (no secret-looking tokens, paths or links
   from the screen text); ending a live call drains pending speech while the call is still `active`.
+- Live delegation order (`engines.test.ts`): the model talking before it delegates does not lose the
+  request; speech after the delegation's `offset_ms` stays for the next request; answered speech is
+  shown as conversation only after the window; append chunks stay at or under 900 characters.
