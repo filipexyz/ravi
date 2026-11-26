@@ -3,7 +3,7 @@ import { createBashPermissionHook, evaluateBashPermission } from "../bash/hook.j
 import { runWithContext, type ToolContext } from "../cli/context.js";
 import { getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { ASK_GRANT_TTL_MS, findOpenAskGrant, recordAskGrant } from "./ask-grants.js";
+import { ASK_GRANT_TTL_MS, findOpenAskGrant, recordAskGrant, revokeAskGrant } from "./ask-grants.js";
 
 // 26/11: an agent asked by a WhatsApp group session ran the exact `ravi sessions answer <origin>`
 // the Ask told it to, and the hook refused it ("cannot access session"). The asker never heard back.
@@ -14,22 +14,25 @@ const THIRD = "agent:dev:main";
 
 let stateDir: string | null = null;
 
+function storeSession(key: string, name: string | null = null, createdAt = 1): void {
+  getDb()
+    .prepare(
+      "INSERT INTO sessions (session_key, name, agent_id, agent_cwd, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+    )
+    .run(key, name, key.split(":")[1] ?? "x", "/tmp", createdAt, createdAt);
+}
+
 beforeEach(async () => {
   stateDir = await createIsolatedRaviState("ravi-ask-grants-test-");
+  storeSession(ORIGIN, "cassia-omie");
+  storeSession(ASKED, "main-asked");
+  storeSession(THIRD, "dev-third");
 });
 
 afterEach(async () => {
   await cleanupIsolatedRaviState(stateDir);
   stateDir = null;
 });
-
-function namedSession(key: string, name: string): void {
-  getDb()
-    .prepare(
-      "INSERT INTO sessions (session_key, name, agent_id, agent_cwd, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-    )
-    .run(key, name, key.split(":")[1] ?? "x", "/tmp", Date.now(), Date.now());
-}
 
 describe("ask grants store", () => {
   it("lets the asked session, and only it, answer the asker while the Ask is open", () => {
@@ -47,14 +50,38 @@ describe("ask grants store", () => {
     expect(findOpenAskGrant(ORIGIN, ASKED, now + ASK_GRANT_TTL_MS)).toBeNull();
   });
 
-  it("finds a session named in the command by its key", () => {
-    namedSession(ORIGIN, "cassia-omie");
+  it("finds the asker by name, including a name shaped like a key that is not one", () => {
+    storeSession("agent:ops:main", "agent:ops:review");
     recordAskGrant({ originSessionKey: ORIGIN, targetSessionKey: ASKED });
+    recordAskGrant({ originSessionKey: "agent:ops:main", targetSessionKey: ASKED });
     expect(findOpenAskGrant("cassia-omie", ASKED)).not.toBeNull();
+    expect(findOpenAskGrant("agent:ops:review", ASKED)).not.toBeNull();
     expect(findOpenAskGrant("other-name", ASKED)).toBeNull();
   });
 
   it("has no grant for an Ask that was never made", () => {
+    expect(findOpenAskGrant(ORIGIN, ASKED)).toBeNull();
+  });
+
+  it("records nothing for a session that does not exist", () => {
+    expect(recordAskGrant({ originSessionKey: "agent:ghost:main", targetSessionKey: ASKED })).toBeNull();
+    expect(recordAskGrant({ originSessionKey: ORIGIN, targetSessionKey: "agent:ghost:main" })).toBeNull();
+  });
+
+  it.each([
+    ["asker", ORIGIN],
+    ["asked", ASKED],
+  ])("does not pass the grant to a %s session deleted and recreated under the same key", (_label, key) => {
+    recordAskGrant({ originSessionKey: ORIGIN, targetSessionKey: ASKED });
+    getDb().prepare("DELETE FROM sessions WHERE session_key = ?").run(key);
+    expect(findOpenAskGrant(ORIGIN, ASKED)).toBeNull();
+    storeSession(key, null, 2);
+    expect(findOpenAskGrant(ORIGIN, ASKED)).toBeNull();
+  });
+
+  it("withdraws a grant whose Ask was not delivered", () => {
+    const grant = recordAskGrant({ originSessionKey: ORIGIN, targetSessionKey: ASKED });
+    revokeAskGrant(grant!.id);
     expect(findOpenAskGrant(ORIGIN, ASKED)).toBeNull();
   });
 });
@@ -78,10 +105,24 @@ describe("bash hook: answering an open Ask", () => {
   });
 
   it("allows the answer the Ask asked for, by key and by name", async () => {
-    namedSession(ORIGIN, "cassia-omie");
     recordAskGrant({ originSessionKey: ORIGIN, targetSessionKey: ASKED, sender: "Luís Filipe" });
     expect(await hookDenies(`ravi sessions answer ${ORIGIN} "ok" "Luís Filipe"`)).toBe(false);
     expect(await hookDenies(`ravi sessions answer cassia-omie "ok" "Luís Filipe"`)).toBe(false);
+  });
+
+  it.each([
+    `ravi sessions answer --json ${ORIGIN} "ok"`,
+    `ravi sessions answer --barrier followup ${ORIGIN} "ok"`,
+    `ravi sessions answer --steer --json "${ORIGIN}" "ok"`,
+  ])("reads the asker after leading options: %s", async (command) => {
+    recordAskGrant({ originSessionKey: ORIGIN, targetSessionKey: ASKED });
+    expect(await hookDenies(command)).toBe(false);
+  });
+
+  it("does not take an option value for the asker", async () => {
+    recordAskGrant({ originSessionKey: ORIGIN, targetSessionKey: ASKED });
+    // `--barrier` consumes the next token: the asker read here is the session after it.
+    expect(await hookDenies(`ravi sessions answer --barrier ${ORIGIN} dev-third "ok"`)).toBe(true);
   });
 
   it.each(["read", "info", "send", "ask", "execute", "inform", "reset"])(

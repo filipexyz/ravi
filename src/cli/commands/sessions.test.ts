@@ -598,12 +598,18 @@ mock.module("../../adapters/index.js", () => ({
 // Open Asks, keyed "<asked session key>|<asker session key>": the real store is a DB table.
 const openAsks = new Set<string>();
 const recordedAsks: Array<{ originSessionKey: string; targetSessionKey: string; sender: string | null }> = [];
+const revokedAsks: string[] = [];
 mock.module("../../sessions/ask-grants.js", () => ({
   ASK_GRANT_TTL_MS: 1,
   recordAskGrant: (input: { originSessionKey: string; targetSessionKey: string; sender?: string | null }) => {
     recordedAsks.push({ ...input, sender: input.sender ?? null });
-    openAsks.add(`${input.targetSessionKey}|${input.originSessionKey}`);
-    return { id: "ask_test", ...input };
+    const id = `${input.targetSessionKey}|${input.originSessionKey}`;
+    openAsks.add(id);
+    return { id, ...input };
+  },
+  revokeAskGrant: (id: string) => {
+    revokedAsks.push(id);
+    openAsks.delete(id);
   },
   findOpenAskGrant: (originRef: string, caller: string | undefined) =>
     caller && openAsks.has(`${caller}|${originRef}`) ? { id: "ask_test" } : null,
@@ -1575,6 +1581,7 @@ describe("SessionCommands answer through an open Ask", () => {
     publishedPrompts.length = 0;
     openAsks.clear();
     recordedAsks.length = 0;
+    revokedAsks.length = 0;
     resolvedSession = { sessionKey: ASKER, name: "cassia-omie", agentId: "convit-omie", agentCwd: "/tmp/c" };
     toolContext = { suppressCliOutput: true, agentId: "main", sessionKey: ASKED, sessionName: "main" };
     scopeEnforced = true;
@@ -1587,6 +1594,53 @@ describe("SessionCommands answer through an open Ask", () => {
     canAccess = true;
     await new SessionCommands().ask("main", "pergunta", "Luís Filipe");
     expect(recordedAsks).toEqual([{ originSessionKey: ASKER, targetSessionKey: ASKED, sender: "Luís Filipe" }]);
+  });
+
+  it("withdraws the grant of an Ask that could not be delivered", async () => {
+    resolvedSession = { sessionKey: ASKED, name: "main", agentId: "main", agentCwd: "/tmp/m" };
+    toolContext = { suppressCliOutput: true, agentId: "convit-omie", sessionKey: ASKER };
+    canAccess = true;
+    publishSessionPromptError = new Error("NATS connection refused");
+    await expect(
+      new SessionCommands().ask(
+        "main",
+        "pergunta",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
+    ).rejects.toThrow();
+    expect(revokedAsks).toEqual([`${ASKED}|${ASKER}`]);
+    expect(openAsks.size).toBe(0);
+  });
+
+  it("gives no grant to an Ask from a trigger's own session, which takes no answers", async () => {
+    resolvedSession = { sessionKey: ASKED, name: "main", agentId: "main", agentCwd: "/tmp/m" };
+    toolContext = { suppressCliOutput: true, agentId: "main", sessionKey: "agent:main:trigger:abc123:own" };
+    canAccess = true;
+    await new SessionCommands().ask("main", "pergunta");
+    expect(recordedAsks).toEqual([]);
+  });
+
+  it("answers with a receipt that shows nothing of the asker beyond its key", async () => {
+    openAsks.add(`${ASKED}|${ASKER}`);
+    resolvedSession = {
+      sessionKey: ASKER,
+      name: "cassia-omie",
+      agentId: "convit-omie",
+      agentCwd: "/srv/convit/private",
+      lastTo: "120363431846316920@g.us",
+    };
+    const receipt = (await new SessionCommands().answer(ASKER, "resposta")) as Record<string, unknown>;
+    expect(receipt.session).toEqual({ sessionKey: ASKER });
+    // Delivery names the barrier only: no chat, channel or account of the asker.
+    expect(Object.keys(receipt.delivery as Record<string, unknown>).sort()).toEqual(["barrier", "barrierSource"]);
+    expect(JSON.stringify(receipt)).not.toContain("/srv/convit/private");
+    expect(JSON.stringify(receipt)).not.toContain("120363431846316920@g.us");
   });
 
   it("delivers the answer to the asker while the Ask is open", async () => {

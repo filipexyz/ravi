@@ -2050,7 +2050,10 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
       target_session_key TEXT NOT NULL,
       sender TEXT,
       created_at INTEGER NOT NULL,
-      expires_at INTEGER NOT NULL
+      expires_at INTEGER NOT NULL,
+      -- The incarnation of each session: a session recreated under the same key does not inherit the grant.
+      origin_session_created_at INTEGER NOT NULL,
+      target_session_created_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_session_asks_pair ON session_asks(target_session_key, origin_session_key, expires_at);
 

@@ -18,6 +18,10 @@ import { getDb } from "../router/router-db.js";
  *
  * An Ask stays open for a window rather than until the first answer: the Ask
  * text asks for one answer per follow-up of the person being asked.
+ *
+ * A grant belongs to the two sessions as they were when the Ask was made: it
+ * records each session's creation time, and a session deleted and recreated
+ * under the same key has a new one, so the old grant authorizes nothing there.
  */
 
 export const ASK_GRANT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -51,14 +55,28 @@ function fromRow(row: AskGrantRow): AskGrant {
   };
 }
 
-/** Record that `originSessionKey` asked `targetSessionKey`. Only a real session can be answered. */
+/** When the session stored under `key` was created, or null when no such session exists. */
+function sessionCreatedAt(key: string): number | null {
+  const row = getDb().prepare("SELECT created_at FROM sessions WHERE session_key = ?").get(key) as {
+    created_at: number;
+  } | null;
+  return row ? row.created_at : null;
+}
+
+/**
+ * Record that `originSessionKey` asked `targetSessionKey`. Only two existing sessions can make
+ * an Ask: the grant is bound to their current incarnation.
+ */
 export function recordAskGrant(input: {
   originSessionKey: string;
   targetSessionKey: string;
   sender?: string | null;
   now?: number;
-}): AskGrant {
+}): AskGrant | null {
   const now = input.now ?? Date.now();
+  const originCreatedAt = sessionCreatedAt(input.originSessionKey);
+  const targetCreatedAt = sessionCreatedAt(input.targetSessionKey);
+  if (originCreatedAt === null || targetCreatedAt === null) return null;
   const grant: AskGrant = {
     id: `ask_${randomUUID()}`,
     originSessionKey: input.originSessionKey,
@@ -69,19 +87,39 @@ export function recordAskGrant(input: {
   };
   executeWrite(getDb(), (db) => {
     db.prepare(
-      `INSERT INTO session_asks (id, origin_session_key, target_session_key, sender, created_at, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run(grant.id, grant.originSessionKey, grant.targetSessionKey, grant.sender, grant.createdAt, grant.expiresAt);
+      `INSERT INTO session_asks (id, origin_session_key, target_session_key, sender, created_at, expires_at,
+         origin_session_created_at, target_session_created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      grant.id,
+      grant.originSessionKey,
+      grant.targetSessionKey,
+      grant.sender,
+      grant.createdAt,
+      grant.expiresAt,
+      originCreatedAt,
+      targetCreatedAt,
+    );
     // Expired rows authorize nothing; drop them so the table does not grow.
     db.prepare("DELETE FROM session_asks WHERE expires_at <= ?").run(now);
   });
   return grant;
 }
 
-/** The session key a reference names: a stored key, or the key of a session found by name. */
-function originKeyFor(originRef: string): string {
-  // Same order as resolveSession: a key-shaped ref is a key, otherwise a name, otherwise a key.
-  if (originRef.startsWith("agent:")) return originRef;
+/** Withdraw a grant whose Ask was never delivered. */
+export function revokeAskGrant(id: string): void {
+  executeWrite(getDb(), (db) => {
+    db.prepare("DELETE FROM session_asks WHERE id = ?").run(id);
+  });
+}
+
+/**
+ * The session key a reference names, in the order the CLI resolves a session
+ * (`resolveSession`): a stored key, then a name, then the reference itself as a key.
+ * Chat ids are not answer targets: the Ask hands out the session key.
+ */
+export function askOriginKeyFor(originRef: string): string {
+  if (originRef.startsWith("agent:") && sessionCreatedAt(originRef) !== null) return originRef;
   const row = getDb().prepare("SELECT session_key FROM sessions WHERE name = ? LIMIT 1").get(originRef) as {
     session_key: string;
   } | null;
@@ -90,8 +128,9 @@ function originKeyFor(originRef: string): string {
 
 /**
  * The open Ask that lets `callerSessionKey` answer `originRef`, or null.
- * Only the asked session holds it: a third session, a closed (expired) Ask or
- * a reversed pair (the asker answering itself into the asked) find nothing.
+ * Only the asked session holds it: a third session, a closed (expired) Ask, a
+ * reversed pair (the asker answering itself into the asked) or a session that
+ * was deleted and recreated since the Ask find nothing.
  */
 export function findOpenAskGrant(
   originRef: string,
@@ -99,12 +138,14 @@ export function findOpenAskGrant(
   now = Date.now(),
 ): AskGrant | null {
   if (!callerSessionKey || !originRef) return null;
-  const originKey = originKeyFor(originRef);
+  const originKey = askOriginKeyFor(originRef);
   const row = getDb()
     .prepare(
-      `SELECT * FROM session_asks
-       WHERE target_session_key = ? AND origin_session_key = ? AND expires_at > ?
-       ORDER BY created_at DESC LIMIT 1`,
+      `SELECT a.* FROM session_asks a
+       JOIN sessions o ON o.session_key = a.origin_session_key AND o.created_at = a.origin_session_created_at
+       JOIN sessions t ON t.session_key = a.target_session_key AND t.created_at = a.target_session_created_at
+       WHERE a.target_session_key = ? AND a.origin_session_key = ? AND a.expires_at > ?
+       ORDER BY a.created_at DESC LIMIT 1`,
     )
     .get(callerSessionKey, originKey, now) as AskGrantRow | null;
   return row ? fromRow(row) : null;
