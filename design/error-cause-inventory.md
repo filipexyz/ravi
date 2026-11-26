@@ -324,8 +324,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | channels | src/channels/outbound-stream.ts | 257 | fixed | binding retained / no recognized error surface | src/channels/outbound-stream.ts:11cbf7a1362b970ee99b0bf9 |
 | channels | src/channels/outbound-stream.ts | 487 | triaged-follow-up | catch-without-binding | src/channels/outbound-stream.ts:3ea26c872925cc655444c796 |
 | channels | src/channels/outbound-stream.ts | 496 | triaged-follow-up | catch-without-binding | src/channels/outbound-stream.ts:e6a84ba7eee880d3b37f6c67 |
-| channels | src/channels/owner-dm-guard.ts | 158 | fixed | binding retained / no recognized error surface | src/channels/owner-dm-guard.ts:d4ccd93b0c267ef187e994b0 |
-| channels | src/channels/owner-dm-guard.ts | 198 | fixed | binding retained / no recognized error surface | src/channels/owner-dm-guard.ts:897cc5c62aae03bbdc38f97a |
+| channels | src/channels/owner-dm-guard.ts | 154 | fixed | binding retained / no recognized error surface | src/channels/owner-dm-guard.ts:d4ccd93b0c267ef187e994b0 |
+| channels | src/channels/owner-dm-guard.ts | 203 | fixed | binding retained / no recognized error surface | src/channels/owner-dm-guard.ts:897cc5c62aae03bbdc38f97a |
 | channels | src/channels/pm2-env.ts | 32 | triaged-follow-up | catch-without-binding | src/channels/pm2-env.ts:1f603b8cf17e2d4057891128 |
 | channels | src/channels/presence-consumer.ts | 58 | fixed | binding retained / no recognized error surface | src/channels/presence-consumer.ts:fa2f1bc0316e863afcec00a7 |
 | channels | src/channels/presence-consumer.ts | 81 | fixed | binding retained / no recognized error surface | src/channels/presence-consumer.ts:9436df71cb84441f1d23a30b |
