@@ -2038,9 +2038,6 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
       UNIQUE(request_id, turn_id)
     );
 
-    -- One row per thread: the last return it sent its parent, and the single follow-up
-    -- (nudge, then Inform) owed for the last turn that ended without one. Written only by
-    -- this release (thread-parent-return.ts); no legacy writer, so it is outside the fence.
     -- Open asks: 'ravi sessions ask' records that one session asked another, so the asked
     -- session may send 'ravi sessions answer' back to the asker without general access to it.
     -- Channel-free: keyed by session keys. Written only by this release (src/sessions/ask-grants.ts).
@@ -2079,6 +2076,9 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
     CREATE INDEX IF NOT EXISTS idx_session_handoffs_open ON session_handoffs(status, parent_session_key);
     CREATE INDEX IF NOT EXISTS idx_session_handoffs_child ON session_handoffs(child_session_key, status);
 
+    -- One row per thread: the last return it sent its parent, and the single follow-up
+    -- (nudge, then Inform) owed for the last turn that ended without one. Written only by
+    -- this release (thread-parent-return.ts); no legacy writer, so it is outside the fence.
     CREATE TABLE IF NOT EXISTS slack_thread_return_watch (
       request_id TEXT PRIMARY KEY REFERENCES slack_thread_lifecycle(request_id) ON DELETE CASCADE,
       last_return_at INTEGER,
