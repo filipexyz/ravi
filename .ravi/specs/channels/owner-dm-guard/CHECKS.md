@@ -21,15 +21,11 @@
 - A cloud approval reply from a held colleague MUST reach the run.
 - With no owner tagged the shared session MUST keep its legacy behaviour.
 - An unreadable owner set MUST hold the DM.
-- The sole owner's verified DM in `agent:<id>:main` MUST count as the
-  operator's turn when only their own chats (their DMs and threads inside
-  them) are attached and every route naming the session reaches one direct
-  peer. It MUST be refused while another person's chat (or a thread of it) is
-  attached, while a `group:`, `thread:` or glob route names the session, and
-  while no owner or a second owner is tagged. A contact other than the owner
-  MUST stay refused there.
+- The owner's verified DM in `agent:<id>:main` MUST count as the operator's
+  turn whatever else the session holds; the guard MUST NOT be read as a
+  privacy check (`cli/connectors`, "The owner's own turn").
 - `bun test src/channels/owner-dm-guard.test.ts src/channels/owner-dm-guard.routing.test.ts`,
-  `bun test src/link/connector-turn.test.ts -t "shared session"`,
+  `bun test src/link/connector-turn.test.ts -t "counts in any session"`,
   `bun test src/channels/slack/socket-mode.test.ts -t "Slack owner DM guard"` and
   `bun test src/omni/consumer-context.test.ts -t "owner DM guard"` SHOULD pass
   after changing this behaviour.
