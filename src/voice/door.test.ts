@@ -754,10 +754,6 @@ describe("voice door", () => {
     const all: any[] = [];
     const prompts: string[] = [];
     const hub = new Hub();
-    const shown: string[] = [];
-    hub.subscribe("ravi.voice.>", async (_subject: string, data: any) => {
-      if (data?.type === "user.transcript") shown.push(data.payload?.text ?? data.text);
-    });
     const door = new VoiceDoorService({
       subscribe: hub.subscribe as VoiceDoorDeps["subscribe"],
       emit: hub.emit,
