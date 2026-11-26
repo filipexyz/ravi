@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import {
   getPendingRuntimeTurnSuccessors,
@@ -120,6 +121,29 @@ describe("stashPendingRuntimeMessages after a superseded turn is interrupted", (
     expect(contents(stash)).toEqual(["dava pra usar isso de quais formas aqui?", "estuda mais a documentação"]);
     // The recovered turn stays its own cohort; the follow-up does not fold into it.
     expect((stash.get("main") ?? []).map((message) => message.retainsInputCohort === true)).toEqual([true, false]);
+  });
+
+  it("drops the superseded turn when the crash-recovery coordinator is not accepting deliveries", () => {
+    const { session } = supersededSession();
+    const stash = new Map<string, RuntimeUserMessage[]>();
+    const crashRecovery = { acceptingDeliveries: false } as unknown as RuntimeCrashRecoveryCoordinator;
+
+    stashPendingRuntimeMessages("main", session, stash, { keepSupersededTurnWithoutEffects: true, crashRecovery });
+
+    expect(contents(stash)).toEqual(["estuda mais a documentação"]);
+  });
+
+  it("drops the superseded turn when its durable attempt record is missing", () => {
+    const { session } = supersededSession({ currentCrashRecoveryAttemptId: "attempt-missing" });
+    const stash = new Map<string, RuntimeUserMessage[]>();
+    const crashRecovery = {
+      acceptingDeliveries: true,
+      getActiveTurnAttempt: () => undefined,
+    } as unknown as RuntimeCrashRecoveryCoordinator;
+
+    stashPendingRuntimeMessages("main", session, stash, { keepSupersededTurnWithoutEffects: true, crashRecovery });
+
+    expect(contents(stash)).toEqual(["estuda mais a documentação"]);
   });
 
   it("drops the superseded turn when the provider has no durable pre-tool acknowledgement", () => {

@@ -332,6 +332,9 @@ export function stashPendingRuntimeMessages(
     options.keepSupersededTurnWithoutEffects === true &&
     session.currentTurnSuperseded === true &&
     session.toolEffectFence === "host_write_ahead" &&
+    // No durable binding (closed coordinator, missing attempt, open trace without attempt) means the
+    // absence of an effect marker is a missing record, not proof: keep the existing replay fence.
+    safety.replayable &&
     session.currentCrashRecoveryTerminal?.status !== "complete" &&
     !safety.startedTool &&
     !safety.materializedOutput &&
