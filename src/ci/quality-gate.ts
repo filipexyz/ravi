@@ -213,6 +213,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/session-goals.test.ts",
     "src/runtime/session-resolver.test.ts",
     "src/runtime/session-trace.test.ts",
+    // Turn provenance: the origin, the automation id and the fired event topic every trigger wake carries.
+    "src/runtime/turn-provenance.test.ts",
     "src/runtime/daemon-restart-resume.test.ts",
     "src/runtime/compaction-announcement.test.ts",
     "src/runtime/codex-transport.test.ts",
