@@ -66,13 +66,19 @@ entered the session, and the feature spec `runtime/providers/realtime-voice` (ar
   result). Provider `error` events nest their details under `error`; the door MUST publish the
   provider's `code` and `message`, never a generic text.
 - GPT-Live transcripts stream as deltas with no done event. A pause longer than 1.2 s between user
-  deltas, or the voice model starting to answer, ends an utterance. A delegation MUST take every
-  utterance said since the voice model last answered on its own, in order (nothing the person said is
-  dropped); utterances the model answered are shown as conversation only after 3 s without a
-  delegation, because the model may start talking before it delegates. A delegation's `offset_ms`
-  leaves speech that started after it for the next request. Each utterance is published once (the
-  delegated text with its turn id).
+  deltas, or the voice model starting to answer, ends an utterance. A delegation takes the last
+  utterance said before its `offset_ms`, plus the utterances right before it that belong to it: no
+  model reply started in between and the pause was at most 15 s (`REQUEST_GAP_MS`). Speech the model
+  already answered, or older than that, was conversation: it is shown once and never sent. Words
+  after the offset wait for the next delegation. No wall clock decides any of this; only the
+  provider's timeline and reply starts do. Spoken cancel and deny are read from the last utterance,
+  not from the whole request. Speech is shown on screen once; `turn.accepted` carries the full
+  request text so a turn can be matched to what was said. A sideband that was closed or replaced, or
+  a call that is ending, starts no work: a request said in the instant before hanging up is shown on
+  screen and does not become a turn.
 - Appends are capped at 500 tokens; the sideband splits text into chunks of at most 900 characters.
+  This is an estimate for Portuguese text (about 2 characters per token): text dense in symbols,
+  long links or base64 can pass the cap, and the provider then answers with a `VOICE_LIVE_ERROR`.
 - Open point (unverified): the docs show an empty `session.thinking.append` cancelling the automatic
   acknowledgement, but do not state that `content: ""` is accepted. If the first delegation of a
   call produces a `VOICE_LIVE_ERROR`, this is the place to look.
