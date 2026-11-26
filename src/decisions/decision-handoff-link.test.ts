@@ -369,6 +369,18 @@ describe("follow-ups of decision waits", () => {
     expect(await retireDecisionIfWaitFails(decision.id, async () => "ok")).toBe("ok");
   });
 
+  it("a failed same-ref replacement keeps the decision its original wait still points at", async () => {
+    const origin = await thread();
+    const { decision, handoff } = await waitOnDecision(origin, "deploy", "Faço o deploy?");
+    await expect(
+      retireDecisionIfWaitFails(decision.id, async () => {
+        throw new Error("replacement failed");
+      }),
+    ).rejects.toThrow("replacement failed");
+    expect(getHandoff(handoff.id)?.status).toBe("open");
+    expect(getDecision(decision.id)?.status).toBe("open");
+  });
+
   it("open decision waits of a child are listed so a message can say they stay open", async () => {
     const origin = await thread();
     const { handoff } = await waitOnDecision(origin, null, "Pergunta?");
@@ -379,10 +391,15 @@ describe("follow-ups of decision waits", () => {
 
   it("the thread notice of a wait's question does not repeat the report nor show the contact id", async () => {
     const origin = await thread();
-    const { decision } = await waitOnDecision(origin, null, "Relatório longo com a pergunta");
+    const { decision } = await waitOnDecision(
+      origin,
+      null,
+      "Faço o deploy hoje?\nContexto longo do relatório que não deve se repetir na thread.",
+    );
     const notice = decisionQuestionNotice(decision);
     expect(notice).toContain(`Decisão pendente: ${decision.key}`);
-    expect(notice).not.toContain("Relatório longo com a pergunta");
+    expect(notice).toContain("Faço o deploy hoje?");
+    expect(notice).not.toContain("Contexto longo do relatório");
     expect(notice).not.toContain(OWNER);
     const plain = await runWithContext(caller(origin.sessionKey!), () =>
       askDecision(origin, { key: "plain", ask: "Pergunta direta?", ownerType: "human", ownerId: OWNER }),

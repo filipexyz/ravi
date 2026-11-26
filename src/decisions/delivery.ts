@@ -316,8 +316,9 @@ export function resolveUncertainDecisionDelivery(decisionId: string, outcome: st
 }
 
 /**
- * The thread notice for an open question. A question asked by a wait was already posted as that report, so it
- * is not repeated; the owner is named by role, never by an internal contact id.
+ * The thread notice for an open question. A question asked by a wait is the wait's whole report, which reaches
+ * the parent session but is not necessarily posted in the thread: the notice keeps its first line (bounded)
+ * instead of repeating the full report. The owner is named by role, never by an internal contact id.
  */
 export function decisionQuestionNotice(decision: Decision): string {
   const askedByWait = Boolean(
@@ -329,6 +330,18 @@ export function decisionQuestionNotice(decision: Decision): string {
       : decision.ownerType === "agent"
         ? "um agente"
         : "ainda sem responsável";
-  const body = askedByWait ? "A pergunta é o relatório acima." : decision.ask;
+  const body = askedByWait ? summarizeWaitQuestion(decision.ask) : decision.ask;
   return `**Decisão pendente: ${decision.key}**\n\n${body}\n\nResponsável: ${owner}.\nPara registrar a resposta, peça à sessão que abriu esta thread ou use o CLI de decisões.\nReferência: ${decision.id}`;
+}
+
+const WAIT_QUESTION_MAX = 280;
+
+function summarizeWaitQuestion(ask: string): string {
+  const first =
+    ask
+      .split("\n")
+      .find((line) => line.trim())
+      ?.trim() ?? ask.trim();
+  const clipped = first.length > WAIT_QUESTION_MAX ? `${first.slice(0, WAIT_QUESTION_MAX - 1)}…` : first;
+  return clipped === ask.trim() ? clipped : `${clipped}\n(relatório completo enviado à sessão que abriu esta thread)`;
 }
