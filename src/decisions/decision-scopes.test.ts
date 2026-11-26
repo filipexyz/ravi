@@ -12,12 +12,13 @@ import {
   askDecision,
   askDecisionForWait,
   checkDecisionAnswer,
+  WIDE_DECISION_ANSWER_MAX,
   resolveDecisionAnswerSource,
   resolveDecisionOrigin,
   supersedeDecision,
 } from "./service.js";
 import { decisionWrite, getDecision, listDecisionsInForce } from "./store.js";
-import { buildDecisionsInForceSection } from "./prompt.js";
+import { buildDecisionsInForceSection, refreshDecisionsForTurn } from "./prompt.js";
 import { parseDecisionScope } from "./model.js";
 import type { Decision, DecisionOrigin } from "./types.js";
 
@@ -201,6 +202,25 @@ describe("a decision's scope", () => {
       ).rejects.toMatchObject({ code: "DECISION_SCOPE_NOT_AUTHORIZED" });
     expect(getDecision(decision.id)?.status).toBe("open");
 
+    const quoteOnly = ownerSays("sim, vale pra org");
+    await expect(
+      asParent(() =>
+        answerDecision(decision.id, "Sim", undefined, quoteOnly.id, {
+          scope: parseDecisionScope("org"),
+          sourceQuote: "vale pra org",
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "DECISION_SCOPE_NOT_AUTHORIZED" });
+    const noScope = ownerSays(`${decision.id}: sim`);
+    await expect(
+      asParent(() => answerDecision(decision.id, "Sim", undefined, noScope.id, { scope: parseDecisionScope("org") })),
+    ).rejects.toMatchObject({ code: "DECISION_SCOPE_NOT_AUTHORIZED" });
+    const otherScope = ownerSays(`${decision.id} agent:main`);
+    await expect(
+      asParent(() =>
+        answerDecision(decision.id, "Sim", undefined, otherScope.id, { scope: parseDecisionScope("org") }),
+      ),
+    ).rejects.toMatchObject({ code: "DECISION_SCOPE_NOT_AUTHORIZED" });
     const msg = ownerSays(`${decision.id}: sim, vale pra org`);
     const answered = await asParent(() =>
       answerDecision(decision.id, "Sim", undefined, msg.id, { scope: parseDecisionScope("org") }),
@@ -245,7 +265,7 @@ async function operatorAnswer(origin: DecisionOrigin, key: string, scope: string
 }
 
 describe("decisions in force for a turn", () => {
-  it("a turn carries org, its agent, its project and its own thread; not other agents, projects, threads or open questions", async () => {
+  it("a turn carries org, its agent and its own thread; not projects, other agents, threads or open questions", async () => {
     const origin = await thread();
     const other = await thread("2");
     const org = await operatorAnswer(origin, "org-rule", "org");
@@ -264,7 +284,9 @@ describe("decisions in force for a turn", () => {
     expect(new Set(ids)).toEqual(new Set([org.id, mine.id, project.id, ownThread.id]));
 
     const section = buildDecisionsInForceSection({ agentId: "main", sessionKey: origin.sessionKey! })!;
-    for (const d of [org, mine, project, ownThread]) expect(section).toContain(d.id);
+    for (const d of [org, mine, ownThread]) expect(section).toContain(d.id);
+    // The goal's project is a label the session can write itself: project decisions are not mounted in turns.
+    expect(section).not.toContain(project.id);
     expect(section).toContain('"answer":"Resposta org-rule"');
     expect(section).not.toContain("Resposta agent-other");
     expect(section).not.toContain("Resposta project-p2");
@@ -361,5 +383,88 @@ describe("decision waits keep the thread scope", () => {
       askDecisionForWait(origin.sessionKey!, null, "Pergunta?", { ownerContactIds: () => [OWNER] }),
     );
     expect(decision.scope).toEqual({ type: "origin", id: null });
+  });
+});
+
+describe("review follow-ups (#1030)", () => {
+  it("a daemon-spawned automation is not the local operator, even an operator-owned shell cron", async () => {
+    const decision = await ask(await thread(), "deploy");
+    process.env.RAVI_AUTOMATION_PRINCIPAL = "automation:cron:job-1";
+    try {
+      await expect(
+        answerDecision(decision.id, "Sim", undefined, undefined, { scope: parseDecisionScope("org") }),
+      ).rejects.toMatchObject({ code: "DECISION_SCOPE_NOT_AUTHORIZED" });
+    } finally {
+      delete process.env.RAVI_AUTOMATION_PRINCIPAL;
+    }
+  });
+
+  it("an answer beyond its thread must fit the turn context; a long thread answer is marked as cut", async () => {
+    const origin = await thread();
+    const decision = await ask(origin, "deploy");
+    await expect(
+      answerDecision(decision.id, "x".repeat(WIDE_DECISION_ANSWER_MAX + 1), undefined, undefined, {
+        scope: parseDecisionScope("org"),
+      }),
+    ).rejects.toMatchObject({ code: "DECISION_INVALID_ANSWER" });
+    await answerDecision(decision.id, "y".repeat(WIDE_DECISION_ANSWER_MAX + 50));
+    const section = buildDecisionsInForceSection({ agentId: "main", sessionKey: origin.sessionKey! })!;
+    expect(section).toContain(
+      "[the answer continues; its full text was delivered to this thread when it was answered]",
+    );
+  });
+
+  it("an older answer cannot replace a newer one", async () => {
+    const origin = await thread();
+    const older = await operatorAnswer(origin, "older", "thread");
+    const newer = await operatorAnswer(origin, "newer", "thread");
+    decisionWrite((db) => runThreadMutation(db, "UPDATE decisions SET answered_at=? WHERE id=?", 1_000, older.id));
+    decisionWrite((db) => runThreadMutation(db, "UPDATE decisions SET answered_at=? WHERE id=?", 2_000, newer.id));
+    expect(() => supersedeDecision(newer.id, older.id)).toThrow(
+      expect.objectContaining({ code: "DECISION_NOT_ANSWERED" }),
+    );
+    expect(getDecision(newer.id)?.status).toBe("answered");
+  });
+
+  it("a replaced answer not yet handed to its thread is withdrawn", async () => {
+    const origin = await thread();
+    const old = await operatorAnswer(origin, "old", "thread");
+    const deliveries = () =>
+      (
+        getDb()
+          .query("SELECT status FROM decision_deliveries WHERE decision_id=? AND kind='answer'")
+          .all(old.id) as Array<{ status: string }>
+      ).map((d) => d.status);
+    expect(deliveries()).toEqual(["pending"]);
+    const next = await operatorAnswer(origin, "next", "thread");
+    supersedeDecision(old.id, next.id);
+    expect(deliveries()).toEqual(["superseded"]);
+  });
+
+  it("the waiting worker cannot replace its own thread's decision", async () => {
+    const origin = await thread();
+    const old = await operatorAnswer(origin, "old", "thread");
+    const next = await operatorAnswer(origin, "next", "thread");
+    await expect(
+      runWithContext(caller(origin.sessionKey!), async () => supersedeDecision(old.id, next.id)),
+    ).rejects.toMatchObject({ code: "DECISION_SELF_ANSWER" });
+    expect(getDecision(old.id)?.status).toBe("answered");
+  });
+
+  it("a live runtime's next turn gets the current list only when it changed", async () => {
+    const origin = await thread();
+    const input = { agentId: "main", sessionKey: origin.sessionKey! };
+    const first = refreshDecisionsForTurn(input, null);
+    expect(first.block).toBeNull();
+    const org = await operatorAnswer(origin, "org-rule", "org");
+    const changed = refreshDecisionsForTurn(input, first.current);
+    expect(changed.block).toContain("Decisions in force changed");
+    expect(changed.block).toContain(org.id);
+    expect(refreshDecisionsForTurn(input, changed.current).block).toBeNull();
+    const next = await operatorAnswer(origin, "org-next", "org");
+    supersedeDecision(org.id, next.id);
+    const replaced = refreshDecisionsForTurn(input, changed.current);
+    expect(replaced.block).toContain(next.id);
+    expect(replaced.block).not.toContain(org.id);
   });
 });

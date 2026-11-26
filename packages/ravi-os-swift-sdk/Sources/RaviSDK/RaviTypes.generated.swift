@@ -16671,16 +16671,16 @@ public struct DecisionsSupersedeOptions: Codable, Sendable {
 }
 
 public struct DecisionsSupersedeReturn: Codable, Sendable {
-  public var decision: RaviJSON
+  public var replaced: RaviJSON
   public var replacement: RaviJSON
 
-  public init(decision: RaviJSON, replacement: RaviJSON) {
-    self.decision = decision
+  public init(replaced: RaviJSON, replacement: RaviJSON) {
+    self.replaced = replaced
     self.replacement = replacement
   }
 
   enum CodingKeys: String, CodingKey {
-    case decision = "decision"
+    case replaced = "replaced"
     case replacement = "replacement"
   }
 }

@@ -208,8 +208,8 @@ describe("answer provenance comes from a person's stored message", () => {
     const text = `${decision.id}: sim, pode seguir`;
     const msg = message({ providerMessageId: "1795720122.922989", actorType: "contact", contactId: OWNER, text });
     const expected = { contactId: OWNER, messageId: msg.id, excerpt: text };
-    expect(resolveDecisionAnswerSource(decision, msg.id)).toEqual(expected);
-    expect(resolveDecisionAnswerSource(decision, "1795720122.922989")).toEqual(expected);
+    expect(resolveDecisionAnswerSource(decision, msg.id)).toMatchObject(expected);
+    expect(resolveDecisionAnswerSource(decision, "1795720122.922989")).toMatchObject(expected);
     const answered = await runWithContext(caller(PARENT), () =>
       answerDecision(decision.id, "Sim", "luis", "1795720122.922989"),
     );

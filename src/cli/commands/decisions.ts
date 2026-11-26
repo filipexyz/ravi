@@ -208,7 +208,7 @@ export class DecisionsCommands {
         supersedes,
       };
       // Checked before the dry-run so a wrong source, scope or replacement fails the preview too.
-      const checked = checkDecisionAnswer(current, sourceMessage, options);
+      const checked = checkDecisionAnswer(current, sourceMessage, options, answer);
       if (current.origin.type === "thread" && !execute)
         contractDryRun(
           "decisions answer",
@@ -325,7 +325,12 @@ export class DecisionsCommands {
     risk: "medium",
     requiresConfirmation: true,
   })
-  @Returns(z.object({ decision: decisionSchema, replacement: decisionSchema }))
+  @Returns(
+    z.object({
+      replaced: z.object({ id: z.string(), status: z.literal("superseded"), supersededBy: z.string() }),
+      replacement: decisionSchema,
+    }),
+  )
   async supersede(
     @Arg("id", { description: "Answered decision to replace" }) id: string,
     @Option({ flags: "--by <id>", description: "Answered decision that replaces it" }) by?: string,
@@ -336,8 +341,10 @@ export class DecisionsCommands {
       if (!by?.trim()) throw new CliExpectedError("Pass --by <id> with the replacing decision.", "USAGE_ERROR", 2);
       const { old, replacement } = checkSupersede(id, by);
       if (!execute) contractDryRun("decisions supersede", { decisionId: old.id, by: replacement.id }, { asJson });
-      const decision = supersedeDecision(old.id, replacement.id);
-      return output({ decision, replacement }, asJson, `${decision.id} superseded by ${replacement.id}.`);
+      const superseded = supersedeDecision(old.id, replacement.id);
+      // The replaced decision may come from an origin the caller cannot read: only its id and new state return.
+      const replaced = { id: superseded.id, status: "superseded" as const, supersededBy: replacement.id };
+      return output({ replaced, replacement }, asJson, `${superseded.id} superseded by ${replacement.id}.`);
     });
   }
 

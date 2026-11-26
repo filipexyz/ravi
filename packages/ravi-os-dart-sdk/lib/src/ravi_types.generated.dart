@@ -14198,14 +14198,14 @@ class DecisionsSupersedeOptions {
 }
 
 class DecisionsSupersedeReturn {
-  const DecisionsSupersedeReturn({required this.decision, required this.replacement});
+  const DecisionsSupersedeReturn({required this.replaced, required this.replacement});
 
-  final RaviJson decision;
+  final RaviJson replaced;
   final RaviJson replacement;
 
   factory DecisionsSupersedeReturn.fromJson(Map<String, Object?> json) {
     return DecisionsSupersedeReturn(
-      decision: RaviJson.from(json["decision"]),
+      replaced: RaviJson.from(json["replaced"]),
       replacement: RaviJson.from(json["replacement"]),
     );
   }

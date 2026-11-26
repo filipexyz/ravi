@@ -13285,35 +13285,10 @@ export type DecisionsSupersedeInput = {
 
 /** Return shape for `decisions.supersede`. */
 export type DecisionsSupersedeReturn = {
-  decision: {
-    answer: string | null;
-    answeredAt: number | null;
-    answeredBy: string | null;
-    ask: string;
-    askedAt: number;
-    askedBy: string | null;
-    blocks: boolean;
-    createdAt: number;
+  replaced: {
     id: string;
-    key: string;
-    origin: {
-      chatId: string | null;
-      id: string;
-      sessionKey: string | null;
-      type: "task" | "thread";
-    };
-    ownerId: string | null;
-    ownerType: "human" | "agent" | "unassigned";
-    revision: number;
-    scope: {
-      id: string | null;
-      type: "origin" | "agent" | "project" | "org";
-    };
-    sourceExcerpt: string | null;
-    sourceMessageId: string | null;
-    status: "open" | "answered" | "superseded";
-    supersededBy: string | null;
-    updatedAt: number;
+    status: "superseded";
+    supersededBy: string;
   };
   replacement: {
     answer: string | null;

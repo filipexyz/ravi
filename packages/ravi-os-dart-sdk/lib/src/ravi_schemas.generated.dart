@@ -71130,222 +71130,24 @@ class RaviSchemas {
 {
   "additionalProperties": false,
   "properties": {
-    "decision": {
+    "replaced": {
       "additionalProperties": false,
       "properties": {
-        "answer": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "answeredAt": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "answeredBy": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "ask": {
-          "type": "string"
-        },
-        "askedAt": {
-          "type": "number"
-        },
-        "askedBy": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "blocks": {
-          "type": "boolean"
-        },
-        "createdAt": {
-          "type": "number"
-        },
         "id": {
           "type": "string"
         },
-        "key": {
-          "type": "string"
-        },
-        "origin": {
-          "additionalProperties": false,
-          "properties": {
-            "chatId": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "id": {
-              "type": "string"
-            },
-            "sessionKey": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "type": {
-              "enum": [
-                "task",
-                "thread"
-              ],
-              "type": "string"
-            }
-          },
-          "required": [
-            "type",
-            "id",
-            "chatId",
-            "sessionKey"
-          ],
-          "type": "object"
-        },
-        "ownerId": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "ownerType": {
-          "enum": [
-            "human",
-            "agent",
-            "unassigned"
-          ],
-          "type": "string"
-        },
-        "revision": {
-          "type": "number"
-        },
-        "scope": {
-          "additionalProperties": false,
-          "properties": {
-            "id": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "type": {
-              "enum": [
-                "origin",
-                "agent",
-                "project",
-                "org"
-              ],
-              "type": "string"
-            }
-          },
-          "required": [
-            "type",
-            "id"
-          ],
-          "type": "object"
-        },
-        "sourceExcerpt": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "sourceMessageId": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
         "status": {
-          "enum": [
-            "open",
-            "answered",
-            "superseded"
-          ],
+          "const": "superseded",
           "type": "string"
         },
         "supersededBy": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "updatedAt": {
-          "type": "number"
+          "type": "string"
         }
       },
       "required": [
         "id",
-        "origin",
-        "key",
-        "scope",
         "status",
-        "ownerType",
-        "ownerId",
-        "ask",
-        "askedBy",
-        "askedAt",
-        "answer",
-        "answeredBy",
-        "answeredAt",
-        "blocks",
-        "sourceMessageId",
-        "sourceExcerpt",
-        "supersededBy",
-        "revision",
-        "createdAt",
-        "updatedAt"
+        "supersededBy"
       ],
       "type": "object"
     },
@@ -71570,7 +71372,7 @@ class RaviSchemas {
     }
   },
   "required": [
-    "decision",
+    "replaced",
     "replacement"
   ],
   "type": "object"

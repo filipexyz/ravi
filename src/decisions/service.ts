@@ -4,6 +4,8 @@ import { CliExpectedError } from "../cli/expected-error.js";
 import { canAccessSession, canModifySession, getScopeContext, isScopeEnforced } from "../permissions/scope.js";
 import { assertNoUserOverlayAutomationWrite } from "../permissions/user-overlay-automation.js";
 import { resolveSession } from "../router/sessions.js";
+import { hasRuntimeInvocationContext } from "../cli/context.js";
+import { readSpawnedAutomationPrincipal } from "../runtime/turn-origin.js";
 import {
   dbGetChat,
   dbGetChatMessage,
@@ -158,6 +160,11 @@ export function validateDecisionMutation(
   }
   if (action !== "answer") return;
   if (decision?.status !== "open") throw new DecisionError("DECISION_NOT_OPEN", "Answered decisions are immutable.");
+  assertNotWaitingWorker(origin);
+}
+
+/** The worker waiting on an origin never answers, nor replaces, that origin's decisions. */
+function assertNotWaitingWorker(origin: DecisionOrigin): void {
   const ctx = getScopeContext();
   const waiting = origin.type === "thread" ? origin.sessionKey : dbGetActiveAssignment(origin.id)?.sessionName;
   const resolved = waiting ? resolveSession(waiting) : null;
@@ -203,6 +210,10 @@ export interface DecisionAnswerSource {
   messageId: string;
   /** What the owner wrote that binds the message to this decision; stored on the decision. */
   excerpt: string;
+  /** The owner's message names the decision id (not only a quoted passage). */
+  namesDecision: boolean;
+  /** The owner's whole message, for the scope check; never stored. */
+  text: string;
 }
 
 /**
@@ -260,25 +271,55 @@ export function resolveDecisionAnswerSource(
     if (!text.includes(decision.id)) return refuse();
     excerpt = text.replace(/\s+/g, " ").trim();
   }
-  return { contactId: message.contactId!, messageId: message.id, excerpt: excerpt.slice(0, SOURCE_EXCERPT_MAX) };
+  return {
+    contactId: message.contactId!,
+    messageId: message.id,
+    excerpt: excerpt.slice(0, SOURCE_EXCERPT_MAX),
+    namesDecision: text.includes(decision.id),
+    text,
+  };
 }
 
 /** The local operator at the terminal: no agent, no runtime context, and the operator's own authority. */
 export function isLocalOperatorCaller(): boolean {
   const ctx = getScopeContext();
-  return !ctx.agentId && !ctx.contextId && !ctx.sessionKey && !isScopeEnforced(ctx);
+  // Same bar as delivery recovery: a runtime invocation or a daemon-spawned automation (shell cron or trigger
+  // included) is never the operator at the terminal, whatever its owner.
+  if (hasRuntimeInvocationContext() || readSpawnedAutomationPrincipal()) return false;
+  return !ctx.agentId && !ctx.contextId && !ctx.sessionKey && !ctx.sessionName && !isScopeEnforced(ctx);
+}
+
+/** The literal the owner writes to approve a scope: `org`, `agent:<id>` or `project:<id>`. */
+export function decisionScopeLiteral(scope: DecisionScope): string {
+  return scope.type === "org" ? "org" : `${scope.type}:${scope.id}`;
+}
+
+function mentionsScope(text: string, scope: DecisionScope): boolean {
+  const literal = decisionScopeLiteral(scope).toLowerCase();
+  const escaped = literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^a-z0-9_:-])${escaped}($|[^a-z0-9_:-])`).test(text.toLowerCase());
 }
 
 /**
  * A decision beyond its thread or task reaches other agents' turns, so it needs the owner's verified word (a bound
  * source) or the local operator. An agent never widens a decision on its own authority, however broad its grants.
  */
-export function assertDecisionScopeAuthority(scope: DecisionScope, source: DecisionAnswerSource | null): void {
-  if (scope.type === "origin" || source || isLocalOperatorCaller()) return;
+export function assertDecisionScopeAuthority(
+  scope: DecisionScope,
+  source: DecisionAnswerSource | null,
+  decisionId: string,
+): void {
+  if (scope.type === "origin" || isLocalOperatorCaller()) return;
+  // The owner approves the audience, not only the answer: the message names this decision and the scope.
+  if (source?.namesDecision && mentionsScope(source.text, scope)) return;
+  const literal = decisionScopeLiteral(scope);
   throw new DecisionError(
     "DECISION_SCOPE_NOT_AUTHORIZED",
-    `A decision for ${scope.type === "org" ? "the org" : `${scope.type} ${scope.id}`} needs the owner's message as --source-message, or the local operator.`,
-    { exitCode: 2, suggestedAction: "Answer with --source-message <owner message>, or keep the default thread scope." },
+    `A decision for ${literal} needs the owner's message naming the decision id and "${literal}" as --source-message, or the local operator.`,
+    {
+      exitCode: 2,
+      suggestedAction: `Ask the owner to reply "${decisionId} ${literal}", or keep the default thread scope.`,
+    },
   );
 }
 
@@ -289,12 +330,19 @@ export function assertDecisionScopeAuthority(scope: DecisionScope, source: Decis
  */
 export function assertSupersedeAuthority(
   old: Decision,
-  replacement: { scope: DecisionScope; hasOwnerSource: boolean },
+  replacement: { scope: DecisionScope; hasOwnerSource: boolean; answeredAt: number | null },
 ): void {
   if (old.status !== "answered")
     throw new DecisionError("DECISION_NOT_ANSWERED", "Only an answered decision can be replaced.", { exitCode: 2 });
+  if (replacement.answeredAt === null || (old.answeredAt !== null && replacement.answeredAt < old.answeredAt))
+    throw new DecisionError(
+      "DECISION_NOT_ANSWERED",
+      "The replacement must be answered after the decision it replaces.",
+      { exitCode: 2 },
+    );
   if (old.scope.type === "origin") {
     assertDecisionOriginAuthorized(old.origin, "answer", old);
+    assertNotWaitingWorker(old.origin);
     return;
   }
   if (isLocalOperatorCaller()) return;
@@ -329,23 +377,33 @@ export interface DecisionAnswerOptions {
  * Every check the answer makes before writing, on the decision as it is now. The CLI runs it before the dry-run
  * so a preview fails the same way; `answerDecision` runs it again inside its transaction.
  */
+/** A decision read by turns beyond its thread stays whole in their context; longer text belongs in the thread. */
+export const WIDE_DECISION_ANSWER_MAX = 2000;
+
 export function checkDecisionAnswer(
   decision: Decision,
   sourceMessage: string | undefined,
   options: DecisionAnswerOptions = {},
+  text?: string,
 ): { source: DecisionAnswerSource | null; scope: DecisionScope; replaced: Decision | null } {
   // A supplied source must resolve, even when blank: absence is valid, an unusable source is not.
   const source =
     sourceMessage !== undefined ? resolveDecisionAnswerSource(decision, sourceMessage, options.sourceQuote) : null;
   const scope = options.scope ?? decision.scope;
-  assertDecisionScopeAuthority(scope, source);
+  assertDecisionScopeAuthority(scope, source, decision.id);
+  if (scope.type !== "origin" && text !== undefined && text.trim().length > WIDE_DECISION_ANSWER_MAX)
+    throw new DecisionError(
+      "DECISION_INVALID_ANSWER",
+      `An answer beyond its thread or task must fit ${WIDE_DECISION_ANSWER_MAX} characters: every turn in scope carries it whole.`,
+      { exitCode: 2 },
+    );
   let replaced: Decision | null = null;
   if (options.supersedes !== undefined) {
     replaced = getDecision(options.supersedes.trim());
     if (!replaced) notFound();
     if (replaced.id === decision.id)
       throw new DecisionError("DECISION_NOT_ANSWERED", "A decision cannot replace itself.", { exitCode: 2 });
-    assertSupersedeAuthority(replaced, { scope, hasOwnerSource: Boolean(source) });
+    assertSupersedeAuthority(replaced, { scope, hasOwnerSource: Boolean(source), answeredAt: Date.now() });
   }
   return { source, scope, replaced };
 }
@@ -359,7 +417,7 @@ export async function answerDecision(
 ) {
   const decision = requireVisibleDecision(id);
   const who = actor();
-  checkDecisionAnswer(decision, sourceMessage, options);
+  checkDecisionAnswer(decision, sourceMessage, options, text);
   const label = answerLabel(by);
   let closedWaits: Handoff[] = [];
   const now = Date.now();
@@ -367,7 +425,7 @@ export async function answerDecision(
     const current = requireVisibleDecision(id);
     validateDecisionMutation(current.origin, "answer", current);
     // Rechecked against the decision this transaction commits: its owner or scope may have changed since.
-    const { source, scope, replaced } = checkDecisionAnswer(current, sourceMessage, options);
+    const { source, scope, replaced } = checkDecisionAnswer(current, sourceMessage, options, text);
     const subject = [
       label ? `for ${label}` : null,
       source ? `[source contact:${source.contactId} message:${source.messageId}]` : null,
@@ -377,7 +435,12 @@ export async function answerDecision(
     const provenance = subject ? `${who.actor} (${subject})` : who.actor;
     setOpenDecisionScope(id, scope);
     const finish = () => {
-      if (source) recordDecisionAnswerSource(getDecision(id)!, source, who.actor);
+      if (source)
+        recordDecisionAnswerSource(
+          getDecision(id)!,
+          { contactId: source.contactId, messageId: source.messageId, excerpt: source.excerpt },
+          who.actor,
+        );
       if (replaced) supersedeDecisionRecord(replaced.id, id, who.actor, now);
     };
     if (current.origin.type === "task") {
@@ -440,7 +503,11 @@ export function checkSupersede(oldId: string, replacementId: string): { old: Dec
     throw new DecisionError("DECISION_NOT_ANSWERED", "A decision cannot replace itself.", { exitCode: 2 });
   if (replacement.status !== "answered")
     throw new DecisionError("DECISION_NOT_ANSWERED", "The replacement must be answered first.", { exitCode: 2 });
-  assertSupersedeAuthority(old, { scope: replacement.scope, hasOwnerSource: Boolean(replacement.sourceMessageId) });
+  assertSupersedeAuthority(old, {
+    scope: replacement.scope,
+    hasOwnerSource: Boolean(replacement.sourceMessageId),
+    answeredAt: replacement.answeredAt,
+  });
   return { old, replacement };
 }
 

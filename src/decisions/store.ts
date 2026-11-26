@@ -265,11 +265,25 @@ export function supersedeDecisionRecord(oldId: string, newId: string, actor: str
           exitCode: 2,
         },
       );
+    if ((replacement.answeredAt ?? 0) < (old.answeredAt ?? 0))
+      throw new DecisionError(
+        "DECISION_NOT_ANSWERED",
+        "The replacement must be answered after the decision it replaces.",
+        {
+          exitCode: 2,
+        },
+      );
     runThreadMutation(
       db,
       "UPDATE decisions SET status='superseded',superseded_by=?,updated_at=? WHERE id=? AND status='answered'",
       newId,
       now,
+      oldId,
+    );
+    // An answer not yet handed to its thread is withdrawn: the waiting work must not resume on a replaced outcome.
+    runThreadMutation(
+      db,
+      "UPDATE decision_deliveries SET status='superseded' WHERE decision_id=? AND kind='answer' AND status IN ('pending','failed')",
       oldId,
     );
     const superseded = getDecision(oldId)!;
