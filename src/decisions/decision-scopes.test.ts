@@ -750,6 +750,29 @@ describe("independent review of c67913f (#1030)", () => {
     expect(planAnswer.scope).toEqual({ type: "org", id: null });
   });
 
+  it("N7: a negation right after the scope, without a colon, never widens", async () => {
+    const decision = await ask(await thread(), "deploy");
+    for (const [text, answer] of [
+      [`${decision.id} org não, só desta thread`, "não, só desta thread"],
+      [`${decision.id} org? não`, "? não"],
+      [`${decision.id} org nunca`, "nunca"],
+    ] as const) {
+      const msg = ownerSays(text);
+      await expect(
+        asParent(() => answerDecision(decision.id, answer, undefined, msg.id, { scope: parseDecisionScope("org") })),
+      ).rejects.toMatchObject({ code: "DECISION_SCOPE_NOT_AUTHORIZED" });
+    }
+  });
+
+  it("N8: the answer is cut from the original text even when lowercasing changes its length", async () => {
+    const decision = await ask(await thread(), "city");
+    const msg = ownerSays(`İstanbul ok, ${decision.id} org: não use X`);
+    const answered = await asParent(() =>
+      answerDecision(decision.id, "İstanbul ok não use X", undefined, msg.id, { scope: parseDecisionScope("org") }),
+    );
+    expect(answered.scope).toEqual({ type: "org", id: null });
+  });
+
   it("N4: a wide answer is the owner's whole message, never a fragment of it", async () => {
     const decision = await ask(await thread(), "tool");
     const msg = ownerSays(`${decision.id} org sim, mas não deve usar X`);

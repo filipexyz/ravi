@@ -320,23 +320,28 @@ const NEGATION = "(?:não|nao|not|no|nunca|never)(?![\\p{L}\\p{N}_])";
 
 /**
  * Where the owner names the audience next to the decision: `<id> <scope>` (separated only by spaces or `:,;-`). A
- * negation word right before the id ("não dec_x org") never widens; whatever follows the scope is the answer itself
- * ("dec_x org: não use a api v1"). Returns the span of the approving pair, or null; in doubt, null.
+ * negation word right before the id ("não dec_x org") or right after the scope without a `:` between ("dec_x org
+ * não, só desta thread", "dec_x org? não") never widens; after a `:` the text is the answer itself ("dec_x org: não
+ * use a api v1"). Matched on the original text, case-insensitively, so the span cuts the same characters it measured.
+ * Returns the span of the approving pair, or null; in doubt, null.
  */
 export function findOwnerScopeApproval(
   text: string,
   decisionId: string,
   scope: DecisionScope,
 ): { start: number; end: number } | null {
-  const lower = text.toLowerCase();
   const pattern = new RegExp(
-    `(^|[^\\p{L}\\p{N}_])${escapeRegExp(decisionId.toLowerCase())}[\\s:,;-]*${escapeRegExp(decisionScopeLiteral(scope).toLowerCase())}(?![\\p{L}\\p{N}_]|[:.-][\\p{L}\\p{N}])`,
-    "gu",
+    `(^|[^\\p{L}\\p{N}_])${escapeRegExp(decisionId)}[\\s:,;-]*${escapeRegExp(decisionScopeLiteral(scope))}(?![\\p{L}\\p{N}_]|[:.-][\\p{L}\\p{N}])`,
+    "giu",
   );
-  for (const match of lower.matchAll(pattern)) {
+  const negatedBefore = new RegExp(`(^|[^\\p{L}\\p{N}_])${NEGATION}[\\s:,;-]*$`, "iu");
+  const negatedAfter = new RegExp(`^(?![\\s]*:)[\\s?!.,;-]*${NEGATION}`, "iu");
+  for (const match of text.matchAll(pattern)) {
     const start = match.index + match[1]!.length;
-    if (new RegExp(`(^|[^\\p{L}\\p{N}_])${NEGATION}[\\s:,;-]*$`, "u").test(lower.slice(0, start))) continue;
-    return { start, end: match.index + match[0].length };
+    const end = match.index + match[0].length;
+    if (negatedBefore.test(text.slice(0, start))) continue;
+    if (negatedAfter.test(text.slice(end))) continue;
+    return { start, end };
   }
   return null;
 }
