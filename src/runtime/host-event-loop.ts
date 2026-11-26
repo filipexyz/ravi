@@ -5077,7 +5077,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           let logicalRequestContinues = false;
           try {
             if (mayContinueInterruptedRequest()) {
-              stashedCount = stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
+              stashedCount = stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, {
+                crashRecovery,
+                keepSupersededTurnWithoutEffects: true,
+              });
               if (stashedCount > 0) {
                 // Selection, stash inspection and restart arming are synchronous.
                 // Successors alone do not continue the failed logical request.
