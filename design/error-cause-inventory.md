@@ -1025,12 +1025,12 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cloud-agents | src/cloud-agents/chat-routing.ts | 351 | fixed | binding retained / no recognized error surface | src/cloud-agents/chat-routing.ts:8bf907897d6ebf05ad71ccf2 |
 | cloud-agents | src/cloud-agents/client-product.ts | 457 | triaged-follow-up | catch-without-binding | src/cloud-agents/client-product.ts:8ce09c8548d3dd379735e366 |
 | cloud-agents | src/cloud-agents/client.ts | 242 | fixed | binding retained / no recognized error surface | src/cloud-agents/client.ts:c6c77121730704a9ccdc46e2 |
-| cloud-agents | src/cloud-agents/client.ts | 309 | fixed | binding retained / no recognized error surface | src/cloud-agents/client.ts:a5d76b20787fa9ef4c5f3d8e |
-| cloud-agents | src/cloud-agents/client.ts | 317 | fixed | binding retained / no recognized error surface | src/cloud-agents/client.ts:a5d76b20787fa9ef4c5f3d8e |
-| cloud-agents | src/cloud-agents/client.ts | 328 | fixed | binding retained / no recognized error surface | src/cloud-agents/client.ts:fd7ed71500ef7ed1f8bc8322 |
-| cloud-agents | src/cloud-agents/client.ts | 338 | triaged-follow-up | catch-without-binding | src/cloud-agents/client.ts:e43078d3994fcfa205131730 |
-| cloud-agents | src/cloud-agents/client.ts | 419 | triaged-follow-up | catch-without-binding | src/cloud-agents/client.ts:51d937a4a8db9587b7794b56 |
-| cloud-agents | src/cloud-agents/client.ts | 715 | triaged-follow-up | catch-without-binding | src/cloud-agents/client.ts:754231f8b070f9e254fb2d63 |
+| cloud-agents | src/cloud-agents/client.ts | 314 | fixed | binding retained / no recognized error surface | src/cloud-agents/client.ts:a5d76b20787fa9ef4c5f3d8e |
+| cloud-agents | src/cloud-agents/client.ts | 322 | fixed | binding retained / no recognized error surface | src/cloud-agents/client.ts:a5d76b20787fa9ef4c5f3d8e |
+| cloud-agents | src/cloud-agents/client.ts | 333 | fixed | binding retained / no recognized error surface | src/cloud-agents/client.ts:fd7ed71500ef7ed1f8bc8322 |
+| cloud-agents | src/cloud-agents/client.ts | 343 | triaged-follow-up | catch-without-binding | src/cloud-agents/client.ts:e43078d3994fcfa205131730 |
+| cloud-agents | src/cloud-agents/client.ts | 424 | triaged-follow-up | catch-without-binding | src/cloud-agents/client.ts:51d937a4a8db9587b7794b56 |
+| cloud-agents | src/cloud-agents/client.ts | 720 | triaged-follow-up | catch-without-binding | src/cloud-agents/client.ts:754231f8b070f9e254fb2d63 |
 | cloud-agents | src/cloud-agents/definition.ts | 122 | triaged-follow-up | catch-without-binding | src/cloud-agents/definition.ts:a3096350f5ae610dab9c839f |
 | cloud-agents | src/cloud-agents/definition.ts | 502 | triaged-follow-up | catch-without-binding | src/cloud-agents/definition.ts:2c369749788c56b8a3e1778c |
 | cloud-agents | src/cloud-agents/definition.ts | 518 | triaged-follow-up | catch-without-binding | src/cloud-agents/definition.ts:3dfb0619f2118c11b55a14db |

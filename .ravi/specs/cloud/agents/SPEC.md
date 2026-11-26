@@ -72,6 +72,13 @@ POST schedules/<id>                   { cron?, timezone?, prompt?, budgetUsd?, e
 POST schedules/<id>/delete            -> { deleted: true, id }
 ```
 
+One call goes outside `/api/cli/cloud-agents`: to find a run's person by
+their `ravi link`, `resolveLinkedContact` reads the identity-link route
+(spec `cli/ravi-link`), `GET /api/cli/link?consoleUserId=`, which answers in
+the plural, `{ version, bindings: [...] }`. A user linked from exactly one
+contact on this installation resolves to it; no link, or more than one
+contact, answers null.
+
 - Reads need the `console.projects.read` scope and writes also
   `console.projects.link`; a missing scope is `PROJECT_ACCESS_DENIED`.
 - `runs list --agent` resolves a slug or name to the cloud agent id the Console
