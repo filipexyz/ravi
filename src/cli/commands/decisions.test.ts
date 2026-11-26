@@ -44,10 +44,10 @@ describe("decisions CLI contract", () => {
         sessionKey: null,
       });
       expect(result.decision.key).toBe("window");
-      const answered = await command.answer(result.decision.id, "After 18h", "Display label", true);
+      const answered = await command.answer(result.decision.id, "After 18h", "Display label", undefined, true);
       expect(answered.decision.answeredBy).toBe("operator (for Display label)");
       expect(answered.deliveries).toEqual([]);
-      await expect(command.answer(result.decision.id, "Replace", undefined, true)).rejects.toMatchObject({
+      await expect(command.answer(result.decision.id, "Replace", undefined, undefined, true)).rejects.toMatchObject({
         code: "DECISION_NOT_OPEN",
         exitCode: 1,
       });
@@ -81,7 +81,7 @@ describe("decisions CLI contract", () => {
     dbDispatchTask(task.id, { agentId: "main", sessionName: "worker" });
     await runWithContext({ suppressCliOutput: true, sessionName: "worker" }, async () => {
       const result = await command.ask(task.id, undefined, "k", "Question");
-      await expect(command.answer(result.decision.id, "Yes", "human:owner", true)).rejects.toMatchObject({
+      await expect(command.answer(result.decision.id, "Yes", "human:owner", undefined, true)).rejects.toMatchObject({
         code: "DECISION_SELF_ANSWER",
       });
     });

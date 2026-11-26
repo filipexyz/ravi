@@ -4,7 +4,17 @@ import { CliExpectedError } from "../cli/expected-error.js";
 import { canAccessSession, canModifySession, getScopeContext, isScopeEnforced } from "../permissions/scope.js";
 import { assertNoUserOverlayAutomationWrite } from "../permissions/user-overlay-automation.js";
 import { resolveSession } from "../router/sessions.js";
-import { dbGetChat, dbListSessionChatSubscriptions, getDb } from "../router/router-db.js";
+import {
+  dbGetChat,
+  dbGetChatMessage,
+  dbListChatMessagesByProviderId,
+  dbListSessionChatSubscriptions,
+  getDb,
+} from "../router/router-db.js";
+import { acknowledgeHandoffsForDecision, type Handoff } from "../handoffs/store.js";
+import { publishHandoffEvent } from "../handoffs/events.js";
+import { findContactsByTag } from "../contacts.js";
+import { OWNER_CONTACT_TAG } from "../knowledge/owner.js";
 import {
   getSlackThreadLifecycle,
   findSlackThreadLifecycleByChildSession,
@@ -18,7 +28,14 @@ import {
   emitTaskEvent,
 } from "../tasks/service.js";
 import { DecisionError } from "./model.js";
-import { askDecisionRecord, answerDecisionRecord, decisionWrite, getDecision, listDecisions } from "./store.js";
+import {
+  askDecisionRecord,
+  answerDecisionRecord,
+  decisionWrite,
+  getDecision,
+  listDecisions,
+  recordDecisionAnswerSource,
+} from "./store.js";
 import type { Decision, DecisionAsk, DecisionOrigin } from "./types.js";
 
 function notFound(): never {
@@ -164,16 +181,63 @@ export async function askDecision(origin: DecisionOrigin, input: DecisionAsk) {
   return { decision: getDecision(result.decision.id)!, created: result.created };
 }
 
-export async function answerDecision(id: string, text: string, by?: string) {
+/**
+ * The answer's source: a stored message written by the decision's human owner. Accepts the internal message id
+ * or the provider id (unique only within a chat, so it must match exactly one stored message). A decision with
+ * no human owner has no one whose message can stand as its source. Every refusal has the same code and text, so
+ * a caller cannot learn whether a message exists or who wrote it.
+ */
+export function resolveDecisionAnswerSource(
+  decision: Decision,
+  messageRef: string,
+): { contactId: string; messageId: string } {
+  const refuse = (): never => {
+    throw new DecisionError(
+      "DECISION_SOURCE_NOT_OWNER",
+      "The source must be one stored message written by the decision's owner.",
+      { exitCode: 2, suggestedAction: "Pass the id of the owner's message that holds the answer." },
+    );
+  };
+  const ref = messageRef.trim();
+  if (!ref || decision.ownerType !== "human" || !decision.ownerId) return refuse();
+  const direct = dbGetChatMessage(ref);
+  const candidates = direct ? [direct] : dbListChatMessagesByProviderId(ref);
+  if (candidates.length !== 1) return refuse();
+  const message = candidates[0]!;
+  if (message.actorType !== "contact" || message.contactId !== decision.ownerId) return refuse();
+  return { contactId: message.contactId, messageId: message.id };
+}
+
+/** A free-text label is provenance only: brackets are dropped so it cannot imitate the verified source marker. */
+function answerLabel(by: string | undefined): string | null {
+  const label = by?.replace(/[[\]]/g, "").trim();
+  return label ? label : null;
+}
+
+export async function answerDecision(id: string, text: string, by?: string, sourceMessage?: string) {
   const decision = requireVisibleDecision(id);
   const who = actor();
-  const provenance = by?.trim() ? `${who.actor} (for ${by.trim()})` : who.actor;
-  const result = decisionWrite(() => {
+  // A supplied source must resolve, even when blank: absence is valid, an unusable source is not.
+  if (sourceMessage !== undefined) resolveDecisionAnswerSource(decision, sourceMessage);
+  const label = answerLabel(by);
+  let closedWaits: Handoff[] = [];
+  const now = Date.now();
+  const result = decisionWrite((db) => {
     const current = requireVisibleDecision(id);
     validateDecisionMutation(current.origin, "answer", current);
+    // Rechecked against the decision this transaction commits: its owner may have changed since the check above.
+    const source = sourceMessage !== undefined ? resolveDecisionAnswerSource(current, sourceMessage) : null;
+    const subject = [
+      label ? `for ${label}` : null,
+      source ? `[source contact:${source.contactId} message:${source.messageId}]` : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const provenance = subject ? `${who.actor} (${subject})` : who.actor;
     if (current.origin.type === "task")
       return answerTaskDecision(current.origin.id, { key: current.key, answer: text, ...who, actor: provenance });
     const answered = answerDecisionRecord(id, text, provenance);
+    if (source) recordDecisionAnswerSource(answered, source, who.actor);
     const { record, chat } = requireDecisionThread(current.origin);
     const deliveryId = `decision:${id}:answer:${answered.revision}`;
     const scope = getScopeContext();
@@ -204,9 +268,12 @@ export async function answerDecision(id: string, text: string, by?: string) {
       JSON.stringify(payload),
       deliveryId,
     );
+    // The wait that asked this question closes with the answer, in the same transaction.
+    closedWaits = acknowledgeHandoffsForDecision(db, id, `decision answered: ${id}`, now);
     return { decision: answered };
   });
   if ("event" in result) await emitTaskEvent(result.task, result.event);
+  for (const handoff of closedWaits) await publishHandoffEvent("acknowledged", handoff, now);
   return getDecision(decision.id)!;
 }
 
@@ -217,4 +284,43 @@ export function decisionHistory(id: string) {
       "SELECT id,type,actor,snapshot_json AS snapshot,created_at AS createdAt FROM decision_history WHERE decision_id=? ORDER BY id",
     )
     .all(id) as Array<{ id: number; type: string; actor: string | null; snapshot: string; createdAt: number }>;
+}
+
+/** A stable decision key from a wait's ref: lowercase slug, or `default` when the wait names nothing. */
+export function decisionKeyForWait(ref: string | null | undefined): string {
+  const slug = (ref ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^[-._]+|[-._]+$/g, "")
+    .slice(0, 64)
+    .replace(/[-._]+$/g, "");
+  return slug || "default";
+}
+
+/**
+ * `sessions report --awaiting decision` from a thread: record the question as a decision of that thread, owned
+ * by the installation's owner (the single `permission-owner` contact) when there is exactly one. Asked again
+ * with the same ref, it updates the same open decision instead of opening another.
+ */
+export async function askDecisionForWait(
+  childSessionKey: string,
+  ref: string | null | undefined,
+  question: string,
+  deps: { ownerContactIds?: () => string[] } = {},
+): Promise<Decision> {
+  const origin = resolveDecisionOrigin(undefined, childSessionKey);
+  const owners = [...new Set((deps.ownerContactIds ?? defaultOwnerContactIds)())];
+  const owner =
+    owners.length === 1 ? { ownerType: "human" as const, ownerId: owners[0]! } : { ownerType: "unassigned" as const };
+  const { decision } = await askDecision(origin, {
+    key: decisionKeyForWait(ref),
+    ask: question,
+    blocks: true,
+    ...owner,
+  });
+  return decision;
+}
+
+function defaultOwnerContactIds(): string[] {
+  return findContactsByTag(OWNER_CONTACT_TAG).map((contact) => contact.id);
 }

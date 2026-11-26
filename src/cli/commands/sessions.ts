@@ -123,6 +123,8 @@ import { DEFAULT_RUNTIME_PROBE_TIMEOUT_MS } from "../../runtime/runtime-probe.js
 import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
 import { enforceCliCommandAccess, listCliCommandAccessCandidates } from "../command-access.js";
 import { canWithCapabilities } from "../../permissions/capability-snapshot.js";
+import { askDecisionForWait } from "../../decisions/service.js";
+import { redactText } from "../../session-trace/session-trace-db.js";
 import { CliExpectedError } from "../expected-error.js";
 import { resolveEffectiveSessionRuntime } from "../../runtime/runtime-selection.js";
 import type {
@@ -696,11 +698,15 @@ const slackThreadReportReturnSchema = z
         kind: z.enum(HANDOFF_KINDS),
         ref: z.string().nullable(),
         status: z.enum(["open", "acknowledged", "superseded"]),
+        // A decision wait records its question as a decision; answer it with `ravi decisions answer <id>`.
+        decisionId: z.string().optional(),
       })
       .strict()
       .optional(),
     // The report was delivered but its wait could not be written: do not send the report again.
     handoffError: z.string().optional(),
+    // The decision could not be recorded: the wait opened without one (redacted text).
+    decisionError: z.string().optional(),
     reviewDispatch: z
       .discriminatedUnion("status", [
         z
@@ -8467,6 +8473,7 @@ export class SessionCommands {
         ownerEscalatedAt: null,
         acknowledgedAt: null,
         ackReason: null,
+        decisionId: null,
       };
       reportText = `${reportText}\nAguarda o pai: ${describeHandoff(preview, sessionDisplayName(session.sessionKey), now).replace(/^- /, "")}`;
     }
@@ -8505,6 +8512,22 @@ export class SessionCommands {
     // The report is out: a failed write of the wait must not turn into an error that makes the caller send it
     // again. It is returned instead, and the parent still has the report text.
     let handoffError: string | undefined;
+    let decisionError: string | undefined;
+    if (pendingHandoff?.kind === "decision") {
+      // A decision wait records its question as a decision, so the answer is recorded (not just a message) and
+      // closes the wait. A decision that cannot be recorded leaves an ordinary wait, as before.
+      try {
+        // The question is the decoded report, as the parent read it, without the appended wait line.
+        pendingHandoff.decisionId = (
+          await askDecisionForWait(session.sessionKey, pendingHandoff.ref, decodeLiteralLineBreaks(message))
+        ).id;
+      } catch (error) {
+        logger.child("cli:sessions").warn("Decision wait not recorded as a decision; the wait opens without one", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        decisionError = redactText(error instanceof Error ? error.message : String(error)).value;
+      }
+    }
     if (pendingHandoff) {
       try {
         // A dispatched review leaves nothing for the parent: the wait is recorded already closed, so observers
@@ -8530,14 +8553,27 @@ export class SessionCommands {
         sessionKey: result.record.parentSessionKey,
         sessionName: result.record.parentSessionName,
       },
-      ...(handoff ? { handoff: { id: handoff.id, kind: handoff.kind, ref: handoff.ref, status: handoff.status } } : {}),
+      ...(handoff
+        ? {
+            handoff: {
+              id: handoff.id,
+              kind: handoff.kind,
+              ref: handoff.ref,
+              status: handoff.status,
+              ...(handoff.decisionId ? { decisionId: handoff.decisionId } : {}),
+            },
+          }
+        : {}),
       ...(handoffError ? { handoffError } : {}),
+      ...(decisionError ? { decisionError } : {}),
       ...(reviewDispatch ? { reviewDispatch } : {}),
     };
     if (asJson) printJson(payload);
     else {
       console.log(`Reported to ${result.record.parentSessionName}`);
       if (handoffError) console.log(`The wait was not recorded: ${handoffError}`);
+      if (decisionError) console.log(`The decision was not recorded (ordinary wait): ${decisionError}`);
+      else if (handoff?.decisionId) console.log(`Decision ${handoff.decisionId}: answer with ravi decisions answer`);
     }
     return payload;
   }
