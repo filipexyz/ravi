@@ -199,7 +199,7 @@ describe("revalidateCachedBindings", () => {
 
     const result = await revalidateCachedBindings(linkDeps(fake, createMemoryCredentials(), messenger));
 
-    expect(result).toEqual({ kept: 1, removed: 1 });
+    expect(result).toEqual({ kept: 1, removed: 1, discovered: 0 });
     expect(readCachedActorBinding("contact_luis")).not.toBeNull();
     expect(readCachedActorBinding("contact_ana")).toBeNull();
     // Bindings of another installation are not this session's to check.
@@ -218,7 +218,7 @@ describe("revalidateCachedBindings", () => {
 
     const result = await revalidateCachedBindings(linkDeps(fake, createMemoryCredentials(), messenger));
 
-    expect(result).toEqual({ kept: 0, removed: 0 });
+    expect(result).toEqual({ kept: 0, removed: 0, discovered: 0 });
     expect(readCachedActorBinding("contact_luis")).toBeNull();
   });
 
@@ -235,7 +235,81 @@ describe("revalidateCachedBindings", () => {
 
     const result = await revalidateCachedBindings(linkDeps(fake, createMemoryCredentials(), messenger));
 
-    expect(result).toEqual({ kept: 0, removed: 0 });
+    expect(result).toEqual({ kept: 0, removed: 0, discovered: 0 });
     expect(readCachedActorBinding("contact_luis")?.id).toBe("bind_new");
+  });
+});
+
+describe("revalidateCachedBindings discovers the login owner's link", () => {
+  const ownerBinding = () =>
+    bindingPayload({ id: "bind_owner", contactId: "contact_owner", actorPrincipal: "contact:contact_owner" });
+  const ownerBindingBody = () => ({ version: 1, binding: { ...ownerBinding(), consoleUserId: "user_operator" } });
+
+  function answerOwner(fake: ReturnType<typeof createFakeConsole>, byContact: () => unknown = ownerBindingBody) {
+    fake.on((call) => {
+      if (call.path === "/api/cli/link?consoleUserId=user_operator") return { body: ownerBindingBody() };
+      if (call.path === "/api/cli/link?contactId=contact_owner") return { body: byContact() };
+      return undefined;
+    });
+  }
+
+  it("caches a Console link of the login owner that never reached this installation", async () => {
+    const fake = createFakeConsole();
+    answerOwner(fake);
+    const { messenger } = createFakeMessenger();
+
+    const result = await revalidateCachedBindings(linkDeps(fake, createMemoryCredentials(), messenger));
+
+    expect(result).toEqual({ kept: 0, removed: 0, discovered: 1 });
+    expect(readCachedActorBinding("contact_owner")?.consoleUserId).toBe("user_operator");
+  });
+
+  it("does not look the owner up again when their link is already cached", async () => {
+    writeCachedActorBinding({ ...ownerBinding(), consoleUserId: "user_operator", platformIdentity: null });
+    const fake = createFakeConsole();
+    answerOwner(fake);
+    const { messenger } = createFakeMessenger();
+
+    const result = await revalidateCachedBindings(linkDeps(fake, createMemoryCredentials(), messenger));
+
+    expect(result).toEqual({ kept: 1, removed: 0, discovered: 0 });
+    expect(fake.linkCalls()).toEqual(["GET /api/cli/link?contactId=contact_owner"]);
+  });
+
+  it("caches nothing when the owner has no link, or a link of another installation", async () => {
+    const none = createFakeConsole();
+    none.on((call) =>
+      call.path === "/api/cli/link?consoleUserId=user_operator" ? { body: { version: 1, binding: null } } : undefined,
+    );
+    const elsewhere = createFakeConsole();
+    elsewhere.on((call) =>
+      call.path === "/api/cli/link?consoleUserId=user_operator"
+        ? { body: { version: 1, binding: { ...ownerBindingBody().binding, installationId: "ins_other" } } }
+        : undefined,
+    );
+    const { messenger } = createFakeMessenger();
+
+    expect(await revalidateCachedBindings(linkDeps(none, createMemoryCredentials(), messenger))).toEqual({
+      kept: 0,
+      removed: 0,
+      discovered: 0,
+    });
+    expect(await revalidateCachedBindings(linkDeps(elsewhere, createMemoryCredentials(), messenger))).toEqual({
+      kept: 0,
+      removed: 0,
+      discovered: 0,
+    });
+    expect(readCachedActorBinding("contact_owner")).toBeNull();
+  });
+
+  it("does not cache a link the Console stopped confirming for the contact (unlinked in flight)", async () => {
+    const fake = createFakeConsole();
+    answerOwner(fake, () => ({ version: 1, binding: null }));
+    const { messenger } = createFakeMessenger();
+
+    const result = await revalidateCachedBindings(linkDeps(fake, createMemoryCredentials(), messenger));
+
+    expect(result).toEqual({ kept: 0, removed: 0, discovered: 0 });
+    expect(readCachedActorBinding("contact_owner")).toBeNull();
   });
 });

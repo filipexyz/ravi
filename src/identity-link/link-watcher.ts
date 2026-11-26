@@ -21,7 +21,8 @@ import {
   writeCachedActorBinding,
 } from "../cloud-auth/actor-bindings.js";
 import { isCloudAuthError } from "../cloud-auth/errors.js";
-import type { ActorBinding } from "../cloud-auth/types.js";
+import type { ConsoleApiClient } from "../cloud-auth/client.js";
+import type { ActorBinding, CloudCredentials } from "../cloud-auth/types.js";
 import { logger } from "../utils/logger.js";
 import {
   createChannelLinkMessenger,
@@ -149,15 +150,23 @@ function isSameBinding(current: ActorBinding | null, expected: ActorBinding): bo
  * Re-check cached bindings of the active installation against the Console.
  * A binding the Console no longer reports is removed; a live one gets a fresh
  * cache TTL. Bindings of other installations are left to expire.
+ *
+ * It also brings in the login owner's own binding when this installation has
+ * none cached for them: a binding approved on the Console (or cached on a
+ * machine whose cache was lost) otherwise only reached this install through a
+ * manual `ravi link`, and until then the owner's turns ran as an unknown
+ * contact.
  */
-export async function revalidateCachedBindings(deps: LinkWatcherDeps = {}): Promise<{ kept: number; removed: number }> {
+export async function revalidateCachedBindings(
+  deps: LinkWatcherDeps = {},
+): Promise<{ kept: number; removed: number; discovered: number }> {
   const env = deps.env ?? process.env;
   const cached = listCachedActorBindings(env);
-  const result = { kept: 0, removed: 0 };
-  if (cached.length === 0) return result;
+  const result = { kept: 0, removed: 0, discovered: 0 };
 
   try {
     await withCloudSession(deps, async (client, credentials) => {
+      if (await discoverOwnerBinding(client, credentials, cached, env)) result.discovered += 1;
       for (const binding of cached) {
         if (binding.installationId !== credentials.installationId) continue;
         try {
@@ -181,6 +190,44 @@ export async function revalidateCachedBindings(deps: LinkWatcherDeps = {}): Prom
     log.debug("Cached binding check skipped", { error: errorText(error) });
   }
   return result;
+}
+
+/**
+ * Cache the login owner's binding on this installation when none is cached.
+ * Only the active login's own Console user is looked up, so nothing is
+ * granted that the Console did not already bind to this installation. The
+ * binding is confirmed a second time by contact before it is written, so a
+ * `ravi unlink` that lands between the two calls is not undone.
+ */
+async function discoverOwnerBinding(
+  client: ConsoleApiClient,
+  credentials: CloudCredentials,
+  cached: ActorBinding[],
+  env: NodeJS.ProcessEnv,
+): Promise<boolean> {
+  const ownerUserId = credentials.user?.id?.trim();
+  const installationId = credentials.installationId;
+  if (!ownerUserId || !installationId) return false;
+  if (cached.some((binding) => binding.installationId === installationId && binding.consoleUserId === ownerUserId)) {
+    return false;
+  }
+  try {
+    const found = await client.resolveActorBinding({ consoleUserId: ownerUserId }, credentials.accessToken);
+    if (!found || found.consoleUserId !== ownerUserId || found.installationId !== installationId) return false;
+    if (readCachedActorBinding(found.contactId, env) !== null) return false;
+    const confirmed = await client.resolveActorBinding({ contactId: found.contactId }, credentials.accessToken);
+    if (!confirmed || confirmed.id !== found.id || confirmed.consoleUserId !== ownerUserId) return false;
+    // A link or unlink for this contact may have written the cache while the calls were in flight.
+    if (readCachedActorBinding(found.contactId, env) !== null) return false;
+    writeCachedActorBinding(confirmed, env);
+    log.info("Cached the login owner's Console link", { contactId: confirmed.contactId });
+    return true;
+  } catch (error) {
+    if (isCloudAuthError(error) && error.code === "AUTH_EXPIRED") throw error;
+    if (isCloudAuthError(error) && error.code === "NOT_FOUND") return false;
+    log.warn("Owner link discovery failed", { error: errorText(error) });
+    return false;
+  }
 }
 
 /** The linking state this request belongs to, if it was sent by the private-chat flow. */
