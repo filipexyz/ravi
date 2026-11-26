@@ -252,11 +252,16 @@ export class CloudAgentsClient {
 
   /**
    * The local contact a Console user linked on this installation (`ravi link`),
-   * or null. The Console answers only for this login's installation.
+   * or null. The Console answers only for this login's installation, and for a
+   * user (no contact) in the plural, `{ version, bindings: [...] }`. A user
+   * linked from more than one contact here is ambiguous: null, never a guess.
    */
   async resolveLinkedContact(consoleUserId: string): Promise<string | null> {
-    const binding = await this.withAuth((token) => this.session.client.resolveActorBinding({ consoleUserId }, token));
-    return binding?.consoleUserId === consoleUserId ? binding.contactId : null;
+    const bindings = await this.withAuth((token) => this.session.client.listActorBindingsForUser(consoleUserId, token));
+    const contacts = new Set(
+      bindings.filter((binding) => binding.consoleUserId === consoleUserId).map((binding) => binding.contactId),
+    );
+    return contacts.size === 1 ? [...contacts][0]! : null;
   }
 
   // -------------------------------------------------------------------------
