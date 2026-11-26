@@ -33,11 +33,29 @@ ravi decisions retry <decision-id> --execute --json
 
 `--key` é slug minúsculo de até 64 caracteres (`a-z`, números, `.`, `_`, `-`). `--owner` é `human:<contact-id>`, `agent:<agent-id>` ou `unassigned`. Repasse dono e blocks ao reabrir uma pergunta aberta: omissões usam defaults. Re-ask altera a pergunta aberta preservando id, askedBy e askedAt; repetição idêntica não publica novamente. Após answer, usar a mesma chave cria outro id.
 
-A resposta referencia **id**, é imutável e não pode ser substituída. `--by` acrescenta proveniência e não muda a autoridade. O dono também não prova aprovação humana autenticada. Não invente a resposta: a filha/assignment ativa recebe `DECISION_SELF_ANSWER`, mesmo com `--by`. Registre explicitamente pela sessão pai autorizada ou pelo operador. Texto normal no chat não encerra decisões.
+A resposta referencia **id** e é imutável: uma decisão nova pode substituir a antiga (ver Escopo), mas o texto respondido nunca muda. `--by` acrescenta proveniência e não muda a autoridade. O dono também não prova aprovação humana autenticada. Não invente a resposta: a filha/assignment ativa recebe `DECISION_SELF_ANSWER`, mesmo com `--by`. Registre explicitamente pela sessão pai autorizada ou pelo operador. Texto normal no chat não encerra decisões.
 
 `ask` e `answer` de thread precisam de `--execute`, pois publicam ou retomam trabalho. Para task, ambos gravam imediatamente; não há retomada ou notificação automática de task. `list` e `show` são leituras. `list` pagina com `--limit` (50 por padrão, máximo 500) e `--offset`; `pagination.nextCommand` preserva filtros. Erros: exit 1 entidade/autoridade/lifecycle, 2 uso, 3 preview sem executar. Preview valida antes e não grava.
 
 Task mantém `parked` derivado de pergunta aberta, blocking, dona human, em task não terminal/não arquivada. Use `tasks attention` para esse agrupamento. Eventos `task.decision.open|answered` continuam nas automações existentes.
+
+## Escopo, fonte e substituição
+
+Toda decisão tem escopo: `thread` (a origem, padrão), `agent:<id>`, `project:<id>` ou `org`. Quem pergunta propõe (`ask --scope`); a resposta fixa (`answer --scope`), ampliando ou estreitando. Respondida, a decisão entra no contexto de todo turno que ela cobre (org, o agent do turno, o projeto da meta da sessão, a própria thread), das mais novas para as mais antigas, no máximo 20.
+
+Ampliar além da thread exige a palavra verificada do dono: `--source-message <id da mensagem dele>`, ou o operador local no terminal. Agent nenhum amplia por conta própria, por maior que seja o grant (`DECISION_SCOPE_NOT_AUTHORIZED`). A fonte precisa ser uma mensagem do dono depois da pergunta, no chat da decisão ou numa DM, e amarrada a esta decisão: cita o id da decisão ou contém o trecho passado em `--source-quote`. O trecho fica gravado na decisão.
+
+```bash
+ravi decisions answer <id> --text "Sem confirmação em grupos" --scope org \
+  --source-message <msg-do-dono> --source-quote "sem confirmação em grupo" --execute --json
+# Substitui uma decisão respondida; a antiga sai do contexto e mantém o histórico
+ravi decisions answer <id-novo> --text "..." --supersedes <id-antigo> --execute --json
+ravi decisions supersede <id-antigo> --by <id-novo> --execute --json
+# Decisões da org respondidas hoje (digest e status do dia)
+ravi decisions list --scope org --answered-since 2026-11-26T00:00:00-03:00 --json
+```
+
+Substituir uma decisão de thread pede a mesma autoridade de responder nela; substituir uma mais ampla pede o operador ou uma substituta com fonte do dono no mesmo escopo ou na org.
 
 ## Thread e entrega
 
