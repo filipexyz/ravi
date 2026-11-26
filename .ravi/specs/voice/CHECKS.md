@@ -42,3 +42,6 @@ normative: false
   only "para", and the door cancels the running turn from the last utterance; an answered "não"
   never flips a later request; speech before a pause over `REQUEST_GAP_MS` is conversation; answered
   speech is dropped from the pending parts.
+- Review of #1026 @6621657: new speech while a delegation settles never erases its request (pruning
+  waits for pending delegations); words kept after the offset never reopen a closed utterance; a
+  sideband replaced while the transcript is published starts no turn (`door.test.ts`).

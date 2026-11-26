@@ -816,6 +816,43 @@ describe("voice door", () => {
     expect(prompts[0]).toContain("oi manda o resumo");
   });
 
+  it("a sideband replaced while the transcript is published starts no turn", async () => {
+    const all: any[] = [];
+    const prompts: string[] = [];
+    const hub = new Hub();
+    let door: VoiceDoorService | null = null;
+    let replaceOnce = true;
+    const emit: VoiceDoorDeps["emit"] = async (topic, data) => {
+      await hub.emit(topic, data);
+      if (replaceOnce && (data as any)?.type === "user.transcript") {
+        replaceOnce = false;
+        await door?.handleControl({ op: "live-attach", callId: call.id, providerSessionId: "ls_new" });
+      }
+    };
+    door = new VoiceDoorService({
+      subscribe: hub.subscribe as VoiceDoorDeps["subscribe"],
+      emit,
+      publishPrompt: async (_session, payload: any) => {
+        prompts.push(String(payload.prompt ?? ""));
+      },
+      readHistory: () => [],
+      env: { RAVI_VOICE_OPENAI_API_KEY: "k" },
+      createSideband: (input) => {
+        all.push(input.handlers);
+        return { connect: () => {}, commentary: () => {}, thinking: () => {}, close: () => {} };
+      },
+      closeLiveProviderSession: async () => {},
+      transcriptWaitMs: 50,
+    });
+    const call = makeCall("live", { state: "starting" });
+    await door.handleControl({ op: "live-attach", callId: call.id, providerSessionId: "ls_old" });
+    all[0].onDelegation({ delegationId: "d1", text: "faz o relatório", displayText: "faz o relatório" });
+    await tick();
+    await tick();
+    expect(listVoiceTurns(call.id)).toHaveLength(0);
+    expect(prompts).toHaveLength(0);
+  });
+
   it("a turn that throws does not stall the turns queued behind it", async () => {
     const { door, prompts } = harness();
     const call = makeCall("push");

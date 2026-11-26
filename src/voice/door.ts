@@ -254,6 +254,8 @@ export class VoiceDoorService {
     displayText?: string,
     /** Live: the last utterance; spoken cancel and deny are read from it, not from the whole request. */
     controlText?: string,
+    /** Live: false once the sideband that delegated was replaced; checked again after every await. */
+    stillCurrent?: () => boolean,
   ): Promise<void> {
     const text = message.text.trim();
     const speaker = normalizeSpeaker(message.speaker, call.speaker);
@@ -296,6 +298,8 @@ export class VoiceDoorService {
       }
     }
 
+    // The sideband may have been replaced while the transcript was published.
+    if (stillCurrent && !stillCurrent()) return;
     const turn = insertVoiceTurn({
       id: message.turnId || newTurnId(),
       callId: call.id,
@@ -674,6 +678,10 @@ export class VoiceDoorService {
           delegationId,
           displayText,
           lastUtterance,
+          () => {
+            const state = getVoiceCall(call.id)?.state;
+            return !!self.sideband && runtime.sideband === self.sideband && state !== "ending" && state !== "ended";
+          },
         );
       },
       onUserTranscript: (text) => {

@@ -410,6 +410,39 @@ describe("voice engines", () => {
     expect(h.users).toHaveLength(50);
   });
 
+  it("review #1026 @6621657 C: new speech while a delegation settles never erases its request", () => {
+    const h = harness();
+    h.send(inp("manda o resumo do dia", 0, 2000));
+    h.send(out("Deixa eu ver.", 2100, 3000));
+    h.send(del("d1", 2200));
+    h.send(inp("e também o status", 2800, 3800));
+    h.timers[0]?.();
+    expect(h.delegations).toEqual([{ delegationId: "d1", text: "manda o resumo do dia" }]);
+    // The new speech waits for the next delegation.
+    h.send(del("d2", 4000));
+    h.timers[1]?.();
+    expect(h.delegations.at(-1)).toEqual({ delegationId: "d2", text: "e também o status" });
+  });
+
+  it("review #1026 @6621657 N1: a closed utterance is not reopened by words kept after the offset", () => {
+    const h = harness();
+    const last: string[] = [];
+    h.sideband["options"].handlers.onDelegation = (input: any) => {
+      h.delegations.push({ delegationId: input.delegationId, text: input.text });
+      last.push(input.lastUtterance);
+    };
+    h.send(inp("manda o resumo", 0, 600));
+    h.send(inp(" e outra coisa", 700, 1500));
+    h.send(out("Certo.", 1700, 2000));
+    h.send(del("d1", 650));
+    h.timers[0]?.();
+    h.send(inp("para", 4000, 4300));
+    h.send(del("d2", 4400));
+    h.timers[1]?.();
+    expect(last.at(-1)).toBe("para");
+    expect(h.delegations.at(-1)?.text).not.toContain("coisapara");
+  });
+
   it("S2/S3: the model talking first never loses the request, however late the delegation comes", () => {
     const h = harness();
     h.send(inp("quais ferramentas tu tem", 0, 1500));

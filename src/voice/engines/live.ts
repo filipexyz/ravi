@@ -453,8 +453,12 @@ export class LiveSideband {
       if (text) this.options.handlers.onUserTranscript(text);
     }
     // Words after the offset start the next request as a new utterance.
-    if (this.parts.length) this.utteranceOpen = this.parts.every((part) => part.utterance === this.utteranceSeq);
-    else this.closeUtterance();
+    // Keep a closed utterance closed: words kept after the offset never reopen it.
+    if (this.parts.length) {
+      this.utteranceOpen = this.utteranceOpen && this.parts.every((part) => part.utterance === this.utteranceSeq);
+    } else {
+      this.closeUtterance();
+    }
     const taken = eligible.filter((part) => included.has(part.utterance));
     const last = order[order.length - 1];
     return {
@@ -470,6 +474,8 @@ export class LiveSideband {
    * pending speech stays small.
    */
   private dropAnswered(): void {
+    // A delegation still settling may select any of this speech: keep it until it settles.
+    if (this.pendingDelegations > 0) return;
     const current = this.repliesBefore.get(this.utteranceSeq) ?? 0;
     const stale = new Set<number>();
     for (const part of this.parts) {
