@@ -750,6 +750,42 @@ describe("voice door", () => {
     await until(() => getVoiceCall(call.id)?.state === "ended", "ended by current sideband");
   });
 
+  it("a replaced live sideband starts no work; displayText decides what shows", async () => {
+    const all: any[] = [];
+    const prompts: string[] = [];
+    const hub = new Hub();
+    const shown: string[] = [];
+    hub.subscribe("ravi.voice.>", async (_subject: string, data: any) => {
+      if (data?.type === "user.transcript") shown.push(data.payload?.text ?? data.text);
+    });
+    const door = new VoiceDoorService({
+      subscribe: hub.subscribe as VoiceDoorDeps["subscribe"],
+      emit: hub.emit,
+      publishPrompt: async (_session, payload: any) => {
+        prompts.push(String(payload.prompt ?? payload.text ?? ""));
+      },
+      readHistory: () => [],
+      env: { RAVI_VOICE_OPENAI_API_KEY: "k" },
+      createSideband: (input) => {
+        all.push(input.handlers);
+        return { connect: () => {}, commentary: () => {}, thinking: () => {}, close: () => {} };
+      },
+      closeLiveProviderSession: async () => {},
+      transcriptWaitMs: 50,
+    });
+    const call = makeCall("live", { state: "starting" });
+    await door.handleControl({ op: "live-attach", callId: call.id, providerSessionId: "ls_1" });
+    await door.handleControl({ op: "live-attach", callId: call.id, providerSessionId: "ls_2" });
+    // The retired sideband's late delegation is ignored.
+    all[0].onDelegation({ delegationId: "d0", text: "não faz nada", displayText: "não faz nada" });
+    await tick();
+    expect(prompts).toHaveLength(0);
+    // The current one delegates; the text already on screen is not shown again.
+    all[1].onDelegation({ delegationId: "d1", text: "oi manda o resumo", displayText: "manda o resumo" });
+    await until(() => prompts.length === 1, "prompt published");
+    expect(prompts[0]).toContain("oi manda o resumo");
+  });
+
   it("a turn that throws does not stall the turns queued behind it", async () => {
     const { door, prompts } = harness();
     const call = makeCall("push");

@@ -33,13 +33,8 @@ normative: false
   over a reply stays one request (with and without timestamps); `drain` publishes pending speech once.
 - `src/voice/door.test.ts`: live gets sanitized context (no secret-looking tokens, paths or links
   from the screen text); ending a live call drains pending speech while the call is still `active`.
-- Live delegation order (`engines.test.ts`): the model talking before it delegates does not lose the
-  request; speech after the delegation's `offset_ms` stays for the next request; answered speech is
-  shown as conversation only after the window; append chunks stay at or under 900 characters (also
-  when a sentence ends exactly at the limit); a window ending while a delegation settles does not
-  erase its request; each reply's window shows only what that reply answered; the offset splits an
-  utterance without a pause.
-- Review repro of #1023 (`engines.test.ts`, S1-S3): a greeting the model answered does not ride along
-  with the next request; a delegation after the conversation window still gets the request; inside
-  the window nothing shows as conversation; a late delegation never takes speech that started after
-  its offset.
+- Append chunks stay at or under 900 characters, also when a sentence ends exactly at the limit.
+- Live delegation (`engines.test.ts`): everything since the previous delegation reaches it, split at
+  `offset_ms` (also inside one utterance); review repro S1-S3 at any delay; a paused request the
+  model acknowledged arrives whole; speech shows once (`displayText` excludes what is on screen); a
+  closed sideband starts no work. `door.test.ts`: a replaced sideband's late delegation is ignored.

@@ -128,7 +128,7 @@ describe("voice engines", () => {
       socketFactory: () => socket,
       setTimer: (fn) => timers.push(fn),
       handlers: {
-        onDelegation: (input) => delegations.push(input),
+        onDelegation: (input) => delegations.push({ delegationId: input.delegationId, text: input.text }),
         onUserTranscript: (text) => users.push(text),
         onAgentTranscript: () => {},
         onUsage: () => {},
@@ -174,7 +174,7 @@ describe("voice engines", () => {
       socketFactory: () => socket,
       setTimer: (fn) => timers.push(fn),
       handlers: {
-        onDelegation: (input) => delegations.push(input),
+        onDelegation: (input) => delegations.push({ delegationId: input.delegationId, text: input.text }),
         onUserTranscript: (text) => users.push(text),
         onAgentTranscript: () => {},
         onUsage: () => {},
@@ -213,13 +213,17 @@ describe("voice engines", () => {
     const delegations: Array<{ delegationId: string; text: string }> = [];
     const users: string[] = [];
     const errors: LiveProviderError[] = [];
+    const displays: string[] = [];
     const sideband = new LiveSideband({
       apiKey: "k",
       sessionId: "ls_h",
       socketFactory: () => socket,
       setTimer: (fn) => timers.push(fn),
       handlers: {
-        onDelegation: (input) => delegations.push(input),
+        onDelegation: (input) => {
+          delegations.push({ delegationId: input.delegationId, text: input.text });
+          displays.push(input.displayText);
+        },
         onUserTranscript: (text) => users.push(text),
         onAgentTranscript: () => {},
         onUsage: () => {},
@@ -229,58 +233,64 @@ describe("voice engines", () => {
     });
     sideband.connect();
     const send = (event: Record<string, unknown>) => listeners.message?.(JSON.stringify(event));
-    return { sideband, send, timers, delegations, users, errors };
+    return { sideband, send, timers, delegations, users, errors, displays };
   }
 
-  it("nothing said before a delegation is dropped: every utterance since the last answer goes, in order", () => {
-    const h = harness();
-    h.send({ type: "session.input_transcript.delta", delta: "olha a #1020", start_ms: 0, end_ms: 900 });
-    h.send({ type: "session.input_transcript.delta", delta: "e me diz se mergeou", start_ms: 4000, end_ms: 5200 });
-    h.send({ type: "session.delegation.created", delegation: { id: "d1" } });
-    h.timers[0]?.();
-    expect(h.delegations).toEqual([{ delegationId: "d1", text: "olha a #1020 e me diz se mergeou" }]);
-    // The door publishes the delegated text with the turn id; nothing is shown twice.
-    expect(h.users).toEqual([]);
+  const inp = (delta: string, start_ms: number, end_ms: number) => ({
+    type: "session.input_transcript.delta",
+    delta,
+    start_ms,
+    end_ms,
+  });
+  const out = (delta: string, start_ms: number, end_ms: number) => ({
+    type: "session.output_transcript.delta",
+    delta,
+    start_ms,
+    end_ms,
+  });
+  const del = (id: string, offset_ms?: number) => ({
+    type: "session.delegation.created",
+    delegation: offset_ms === undefined ? { id } : { id, offset_ms },
   });
 
-  it("speech the model already answered is not sent again with the next delegation", () => {
+  it("nothing said before a delegation is dropped: every utterance goes, in order", () => {
     const h = harness();
-    h.send({ type: "session.input_transcript.delta", delta: "oi cara", start_ms: 0, end_ms: 800 });
-    h.send({ type: "session.output_transcript.delta", delta: "Oi! " });
-    h.send({ type: "session.input_transcript.delta", delta: "quais ferramentas tu tem", start_ms: 5000, end_ms: 6500 });
-    // The delegation comes inside the reply's window: still, only the new speech is the request.
-    h.send({ type: "session.delegation.created", delegation: { id: "d1" } });
-    h.timers[1]?.();
-    expect(h.users).toEqual(["oi cara"]);
-    expect(h.delegations).toEqual([{ delegationId: "d1", text: "quais ferramentas tu tem" }]);
+    h.send(inp("olha a #1020", 0, 900));
+    h.send(inp("e me diz se mergeou", 4000, 5200));
+    h.send(del("d1"));
+    h.timers[0]?.();
+    expect(h.delegations).toEqual([{ delegationId: "d1", text: "olha a #1020 e me diz se mergeou" }]);
+    // Nothing was on screen yet: the door shows all of it with the turn id.
+    expect(h.displays).toEqual(["olha a #1020 e me diz se mergeou"]);
+    expect(h.users).toEqual([]);
   });
 
   it("deltas close together stay one utterance", () => {
     const h = harness();
-    h.send({ type: "session.input_transcript.delta", delta: "manda o resumo ", start_ms: 0, end_ms: 900 });
-    h.send({ type: "session.input_transcript.delta", delta: "pra Ana", start_ms: 1300, end_ms: 1900 });
-    h.send({ type: "session.delegation.created", delegation: { id: "d1" } });
+    h.send(inp("manda o resumo ", 0, 900));
+    h.send(inp("pra Ana", 1300, 1900));
+    h.send(del("d1"));
     h.timers[0]?.();
     expect(h.delegations).toEqual([{ delegationId: "d1", text: "manda o resumo pra Ana" }]);
   });
 
-  it("speech the model answers on its own is shown once as conversation", () => {
+  it("speech the model answers on its own is shown at once, once", () => {
     const h = harness();
-    h.send({ type: "session.input_transcript.delta", delta: "e aí", start_ms: 0, end_ms: 500 });
-    h.send({ type: "session.output_transcript.delta", delta: "Oi! " });
-    h.send({ type: "session.output_transcript.delta", delta: "Tudo certo." });
-    expect(h.users).toEqual([]);
-    h.timers[0]?.();
+    h.send(inp("e aí", 0, 500));
+    h.send(out("Oi! ", 700, 900));
+    h.send(out("Tudo certo.", 950, 1300));
+    expect(h.users).toEqual(["e aí"]);
+    h.sideband.close();
     expect(h.users).toEqual(["e aí"]);
   });
 
   it("a barge-in over a reply stays one request (later reply deltas are not boundaries)", () => {
     const h = harness();
-    h.send({ type: "session.output_transcript.delta", delta: "Vou mandar o ", start_ms: 0, end_ms: 600 });
-    h.send({ type: "session.input_transcript.delta", delta: "não ", start_ms: 650, end_ms: 900 });
-    h.send({ type: "session.output_transcript.delta", delta: "relatório", start_ms: 700, end_ms: 1100 });
-    h.send({ type: "session.input_transcript.delta", delta: "manda o relatório", start_ms: 1000, end_ms: 1800 });
-    h.send({ type: "session.delegation.created", delegation: { id: "d1" } });
+    h.send(out("Vou mandar o ", 0, 600));
+    h.send(inp("não ", 650, 900));
+    h.send(out("relatório", 700, 1100));
+    h.send(inp("manda o relatório", 1000, 1800));
+    h.send(del("d1"));
     h.timers[0]?.();
     expect(h.delegations).toEqual([{ delegationId: "d1", text: "não manda o relatório" }]);
     expect(h.users).toEqual([]);
@@ -292,47 +302,45 @@ describe("voice engines", () => {
     h.send({ type: "session.input_transcript.delta", delta: "não " });
     h.send({ type: "session.output_transcript.delta", delta: "relatório" });
     h.send({ type: "session.input_transcript.delta", delta: "manda o relatório" });
-    h.send({ type: "session.delegation.created", delegation: { id: "d1" } });
+    h.send(del("d1"));
     h.timers[0]?.();
     expect(h.delegations).toEqual([{ delegationId: "d1", text: "não manda o relatório" }]);
   });
 
   it("drain publishes speech nobody took yet, once", () => {
     const h = harness();
-    h.send({ type: "session.input_transcript.delta", delta: "até amanhã", start_ms: 0, end_ms: 700 });
+    h.send(inp("até amanhã", 0, 700));
     h.sideband.drain();
     h.sideband.close();
     expect(h.users).toEqual(["até amanhã"]);
   });
 
-  it("the model talking before it delegates does not lose the request", () => {
-    const h = harness();
-    h.send({ type: "session.input_transcript.delta", delta: "quais ferramentas tu tem", start_ms: 0, end_ms: 1500 });
-    h.send({ type: "session.output_transcript.delta", delta: "Deixa eu ver", start_ms: 1700, end_ms: 2400 });
-    h.send({ type: "session.delegation.created", delegation: { id: "d1", offset_ms: 2500 } });
-    // The delegation settles (900 ms) before the conversation window (3 s).
-    h.timers[1]?.();
-    h.timers[0]?.();
-    expect(h.delegations).toEqual([{ delegationId: "d1", text: "quais ferramentas tu tem" }]);
-    expect(h.users).toEqual([]);
-  });
-
   it("speech that started after the delegation offset stays for the next request", () => {
     const h = harness();
-    h.send({ type: "session.input_transcript.delta", delta: "olha a #1020", start_ms: 0, end_ms: 900 });
-    h.send({ type: "session.delegation.created", delegation: { id: "d1", offset_ms: 1000 } });
-    h.send({ type: "session.input_transcript.delta", delta: "outra coisa", start_ms: 3000, end_ms: 3800 });
+    h.send(inp("olha a #1020", 0, 900));
+    h.send(del("d1", 1000));
+    h.send(inp("outra coisa", 3000, 3800));
     h.timers[0]?.();
     expect(h.delegations).toEqual([{ delegationId: "d1", text: "olha a #1020" }]);
-    h.send({ type: "session.delegation.created", delegation: { id: "d2", offset_ms: 4000 } });
+    h.send(del("d2", 4000));
     h.timers[1]?.();
     expect(h.delegations.at(-1)).toEqual({ delegationId: "d2", text: "outra coisa" });
   });
 
+  it("the delegation offset splits one utterance without a pause", () => {
+    const h = harness();
+    h.send(inp("olha a #1020", 0, 900));
+    h.send(del("d1", 1000));
+    h.send(inp(" e outra coisa", 1200, 2000));
+    h.timers[0]?.();
+    expect(h.delegations).toEqual([{ delegationId: "d1", text: "olha a #1020" }]);
+    h.send(del("d2", 2500));
+    h.timers[1]?.();
+    expect(h.delegations.at(-1)).toEqual({ delegationId: "d2", text: "e outra coisa" });
+  });
+
   it("append chunks never pass APPEND_CHUNK_CHARS, even when a sentence ends at the limit", () => {
     expect(APPEND_CHUNK_CHARS).toBeLessThanOrEqual(900);
-    // Pessimistic 2 characters per token keeps 900 characters under the 500-token cap.
-    expect(APPEND_CHUNK_CHARS / 2).toBeLessThanOrEqual(500);
     const boundary = `${"a".repeat(APPEND_CHUNK_CHARS)}. ${"b".repeat(200)}`;
     const chunks = [
       ...chunkText(boundary, APPEND_CHUNK_CHARS),
@@ -342,86 +350,59 @@ describe("voice engines", () => {
     expect(chunks.every((chunk) => chunk.length <= APPEND_CHUNK_CHARS)).toBe(true);
   });
 
-  it("a conversation window ending while a delegation settles does not erase its request", () => {
+  // Repro from the review of #1023 (reviews/repro-live-1023.ts), S1-S3, at any delay.
+  it("S1: a greeting the model answered is shown once and still reaches the session with the request", () => {
     const h = harness();
-    h.send({ type: "session.input_transcript.delta", delta: "quais ferramentas tu tem", start_ms: 0, end_ms: 1500 });
-    h.send({ type: "session.output_transcript.delta", delta: "Deixa eu ver", start_ms: 1700, end_ms: 2400 });
-    h.send({ type: "session.delegation.created", delegation: { id: "d1", offset_ms: 2500 } });
-    // The conversation window ends first (delegation created in its last 900 ms).
-    h.timers[0]?.();
-    h.timers[1]?.();
-    expect(h.delegations).toEqual([{ delegationId: "d1", text: "quais ferramentas tu tem" }]);
-    expect(h.users).toEqual([]);
-  });
-
-  it("each reply's window shows only what that reply answered", () => {
-    const h = harness();
-    h.send({ type: "session.input_transcript.delta", delta: "oi", start_ms: 0, end_ms: 400 });
-    h.send({ type: "session.output_transcript.delta", delta: "Oi!", start_ms: 600, end_ms: 900 });
-    h.send({ type: "session.input_transcript.delta", delta: "manda o resumo", start_ms: 3000, end_ms: 4000 });
-    h.send({ type: "session.output_transcript.delta", delta: "Claro,", start_ms: 4200, end_ms: 4600 });
-    // The first reply's window ends: only "oi" is conversation.
+    h.send(inp("oi", 0, 400));
+    h.send(out("Oi!", 600, 900));
+    h.send(inp("manda o resumo", 2000, 3000));
+    h.send(del("d1", 3200));
     h.timers[0]?.();
     expect(h.users).toEqual(["oi"]);
-    h.send({ type: "session.delegation.created", delegation: { id: "d1", offset_ms: 4700 } });
-    h.timers[2]?.();
-    expect(h.delegations).toEqual([{ delegationId: "d1", text: "manda o resumo" }]);
+    expect(h.delegations).toEqual([{ delegationId: "d1", text: "oi manda o resumo" }]);
+    // The door shows only what was not on screen: no line the person did not say.
+    expect(h.displays).toEqual(["manda o resumo"]);
   });
 
-  it("the delegation offset splits one utterance without a pause", () => {
+  it("S2/S3: the model talking first never loses the request, however late the delegation comes", () => {
     const h = harness();
-    h.send({ type: "session.input_transcript.delta", delta: "olha a #1020", start_ms: 0, end_ms: 900 });
-    h.send({ type: "session.delegation.created", delegation: { id: "d1", offset_ms: 1000 } });
-    h.send({ type: "session.input_transcript.delta", delta: " e outra coisa", start_ms: 1200, end_ms: 2000 });
-    h.timers[0]?.();
-    expect(h.delegations).toEqual([{ delegationId: "d1", text: "olha a #1020" }]);
-    h.send({ type: "session.delegation.created", delegation: { id: "d2", offset_ms: 2500 } });
-    h.timers[1]?.();
-    expect(h.delegations.at(-1)).toEqual({ delegationId: "d2", text: "e outra coisa" });
-  });
-
-  // Repro from the review of #1023 (reviews/repro-live-1023.ts), scenarios S1-S3.
-  it("S1: a greeting the model answered does not ride along with the next request", () => {
-    const h = harness();
-    h.send({ type: "session.input_transcript.delta", delta: "oi", start_ms: 0, end_ms: 400 });
-    h.send({ type: "session.output_transcript.delta", delta: "Oi!", start_ms: 600, end_ms: 900 });
-    h.send({ type: "session.input_transcript.delta", delta: "manda o resumo", start_ms: 2000, end_ms: 3000 });
-    h.send({ type: "session.delegation.created", delegation: { id: "d1", offset_ms: 3200 } });
-    h.timers.at(-1)?.();
-    h.timers[0]?.();
-    expect(h.delegations).toEqual([{ delegationId: "d1", text: "manda o resumo" }]);
-    expect(h.users).toEqual(["oi"]);
-  });
-
-  it("S2: a delegation after the conversation window still gets the request", () => {
-    const h = harness();
-    h.send({ type: "session.input_transcript.delta", delta: "quais ferramentas tu tem", start_ms: 0, end_ms: 1500 });
-    h.send({ type: "session.output_transcript.delta", delta: "Deixa eu ver", start_ms: 1700, end_ms: 2400 });
-    h.timers[0]?.();
-    h.send({ type: "session.delegation.created", delegation: { id: "d1", offset_ms: 1500 } });
-    h.timers.at(-1)?.();
-    expect(h.delegations).toEqual([{ delegationId: "d1", text: "quais ferramentas tu tem" }]);
-  });
-
-  it("S3: a delegation inside the window gets the request and nothing shows as conversation", () => {
-    const h = harness();
-    h.send({ type: "session.input_transcript.delta", delta: "quais ferramentas tu tem", start_ms: 0, end_ms: 1500 });
-    h.send({ type: "session.output_transcript.delta", delta: "Deixa eu ver", start_ms: 1700, end_ms: 2400 });
-    h.send({ type: "session.delegation.created", delegation: { id: "d1", offset_ms: 1500 } });
-    h.timers.at(-1)?.();
+    h.send(inp("quais ferramentas tu tem", 0, 1500));
+    h.send(out("Deixa eu ver", 1700, 2400));
+    // No timer decides anything: the delegation can come at any time.
+    h.send(del("d1", 1500));
     h.timers[0]?.();
     expect(h.delegations).toEqual([{ delegationId: "d1", text: "quais ferramentas tu tem" }]);
-    expect(h.users).toEqual([]);
+    expect(h.users).toEqual(["quais ferramentas tu tem"]);
+    expect(h.displays).toEqual([""]);
   });
 
-  it("a late delegation does not take shown speech that started after its offset", () => {
+  it("Devin #1026: a paused request acknowledged by the model is delivered whole", () => {
     const h = harness();
-    h.send({ type: "session.input_transcript.delta", delta: "depois", start_ms: 5000, end_ms: 5500 });
-    h.send({ type: "session.output_transcript.delta", delta: "Ok.", start_ms: 5700, end_ms: 6000 });
+    h.send(inp("manda o relatório", 0, 1000));
+    h.send(inp("pra Ana", 3000, 3800));
+    h.send(out("Certo,", 4000, 4400));
+    h.send(del("d1", 4500));
     h.timers[0]?.();
-    h.send({ type: "session.delegation.created", delegation: { id: "d1", offset_ms: 1000 } });
-    h.timers.at(-1)?.();
-    expect(h.delegations).toEqual([{ delegationId: "d1", text: "" }]);
+    expect(h.delegations).toEqual([{ delegationId: "d1", text: "manda o relatório pra Ana" }]);
+  });
+
+  it("Devin #1026: a late delegation never takes speech said after its offset", () => {
+    const h = harness();
+    h.send(inp("cancela", 0, 600));
+    h.send(inp(" isso e faz outra", 700, 1800));
+    h.send(out("Ok.", 2000, 2300));
+    h.send(del("d1", 650));
+    h.timers[0]?.();
+    expect(h.delegations).toEqual([{ delegationId: "d1", text: "cancela" }]);
+  });
+
+  it("Devin #1026: a closed sideband starts no work when a delegation settles", () => {
+    const h = harness();
+    h.send(inp("oi", 0, 400));
+    h.send(del("d1"));
+    h.sideband.close();
+    h.timers[0]?.();
+    expect(h.delegations).toEqual([]);
   });
 
   it("reads the provider error nested under error", () => {

@@ -250,6 +250,8 @@ export class VoiceDoorService {
     call: VoiceCall,
     message: Extract<VoiceControlMessage, { op: "utterance" }>,
     delegationId?: string,
+    /** Live: the part of `text` not already on screen; "" shows nothing new. */
+    displayText?: string,
   ): Promise<void> {
     const text = message.text.trim();
     const speaker = normalizeSpeaker(message.speaker, call.speaker);
@@ -260,7 +262,9 @@ export class VoiceDoorService {
       });
     }
     if (!text) return;
-    await this.emitOpen(call.id, "user.transcript", { text, speaker, turnId: message.turnId }, this.sink);
+    const shown = displayText === undefined ? text : displayText.trim();
+    if (shown)
+      await this.emitOpen(call.id, "user.transcript", { text: shown, speaker, turnId: message.turnId }, this.sink);
 
     const profile = this.profileFor(call);
     if (speaker.kind === "guest" && !profile.allowGuests) {
@@ -646,9 +650,11 @@ export class VoiceDoorService {
     runtime.providerSessionId = providerSessionId;
     const self: { sideband: SidebandLike | null } = { sideband: null };
     const handlers: LiveSidebandHandlers = {
-      onDelegation: ({ delegationId, text }) => {
+      onDelegation: ({ delegationId, text, displayText }) => {
+        // A sideband that was replaced, or a call that is ending, starts no work.
+        if (!self.sideband || runtime.sideband !== self.sideband) return;
         const current = getVoiceCall(call.id);
-        if (!current || current.state === "ended") return;
+        if (!current || current.state === "ended" || current.state === "ending") return;
         if (!text) {
           runtime.sideband?.thinking("The request was not heard clearly. Ask the person to repeat it.", delegationId);
           return;
@@ -657,6 +663,7 @@ export class VoiceDoorService {
           current,
           { op: "utterance", callId: call.id, turnId: newTurnId(), text, speaker: current.speaker as never },
           delegationId,
+          displayText,
         );
       },
       onUserTranscript: (text) => {
