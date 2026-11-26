@@ -1115,12 +1115,28 @@ rl.on("line", (line) => {
       ["thread/resume", "read-only"],
       ["thread/resume", "danger-full-access"],
     ]);
+    // web_search and view_image run outside the sandbox: off for the held turn only.
+    expect(
+      threadOpens.map((request) => [
+        request.params.config?.web_search ?? null,
+        request.params.config?.["tools.view_image"] ?? null,
+      ]),
+    ).toEqual([
+      [null, null],
+      ["disabled", false],
+      [null, null],
+    ]);
   }, 20_000);
 
   it("opens the thread read-only when its first turn is held below the agent", async () => {
     const requests = await runSandboxTurns([true]);
 
     expect(requests[0]?.params.sandbox).toBe("read-only");
+    expect(requests[0]?.params.config).toMatchObject({
+      web_search: "disabled",
+      "tools.web_search": false,
+      "tools.view_image": false,
+    });
     expect(requests[1]?.params.sandboxPolicy).toEqual({ type: "readOnly" });
   }, 20_000);
 

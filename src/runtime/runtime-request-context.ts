@@ -1456,9 +1456,12 @@ export function buildRuntimeRequestEnv(options: {
 /**
  * A turn that must not get the provider's own execution power: a person held
  * below the agent's break-glass, a held relay, or a contact narrowed to the
- * chat's grants (an active overlay) whose grants do not run any executable.
+ * chat's grants (an active overlay) whose grants do not run every executable.
  * The overlay case carries no break-glass deny, so it is checked by what the
- * turn may execute, not by the deny marker.
+ * turn may execute, not by the deny marker. Only `execute:executable:*` (or
+ * break-glass) keeps the agent's sandbox: a grant for named executables
+ * (`execute:executable:ravi`) is still held, because the provider's own tools
+ * are not limited to those names. This fails closed.
  */
 export function turnRunsBelowAgentExecution(context: {
   metadata?: Record<string, unknown> | null;

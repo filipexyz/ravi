@@ -2369,7 +2369,14 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     currentSecurity = security;
     // A thread opened by a held turn never starts in full access, not even before turn/start.
     const threadSandbox = resolveCodexTurnSandbox(security, input.heldBelowAgent);
-    const config: Record<string, unknown> = { model_reasoning_effort: effort, ...security.config };
+    // Codex's native web_search and view_image run outside its sandbox: a held turn gets the
+    // restricted switches too. A change of the held mark respawns the app-server
+    // (`RAVI_*` is in the env signature), so the thread reopens here with the turn's config.
+    const config: Record<string, unknown> = {
+      model_reasoning_effort: effort,
+      ...security.config,
+      ...(input.heldBelowAgent ? RESTRICTED_CODEX_THREAD_SECURITY.config : {}),
+    };
     if (input.allowedSkills?.length || input.hiddenSkills?.length) {
       const inventory = await sendRequest("skills/list", { cwds: [input.cwd], forceReload: true });
       config["skills.config"] = buildCodexDisabledSkillConfig(

@@ -49,3 +49,9 @@
 - For live validation, compare native rollout physical turn ids with Ravi provider raw/item/tool events across a goal continuation. Do not publish production rollout contents or identifiers.
 
 Protocol reference: https://learn.chatgpt.com/docs/app-server (thread goals and turn events). Validate generated bindings with the installed Codex version via `codex app-server generate-ts --experimental --out <temporary-directory>`.
+
+## Held turns
+
+- `bun test src/runtime/codex-provider.test.ts -t "held|sandbox"`
+- Assert a held turn sends `sandboxPolicy: {type: "readOnly"}` and an operator turn after it `dangerFullAccess`.
+- Assert the thread a held turn opens or resumes has `sandbox: "read-only"` and the restricted native switches, and the operator's next thread has the agent's own config.

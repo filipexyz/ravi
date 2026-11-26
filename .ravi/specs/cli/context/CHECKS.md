@@ -79,3 +79,11 @@
   MUST show `RAVI_TURN_HELD_BELOW_AGENT=1` on a held person's turn, the key
   cleared when the next turn is the owner's, and the key set again for a
   contact narrowed to a governed chat's grants (no break-glass deny there).
+
+- `bun test src/runtime/codex-provider.test.ts -t "held|sandbox"` MUST show the
+  thread a held turn opens (or resumes) with `web_search: "disabled"` and
+  `tools.view_image: false`, and the next operator thread without them.
+
+- `bun test src/runtime/runtime-request-context.test.ts -t "every executable"`
+  MUST show a governed-chat grant for named executables (`ravi`, `ra*`) held
+  and only `execute:executable:*` keeping the agent's sandbox.
