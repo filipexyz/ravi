@@ -21633,6 +21633,10 @@ export type SessionsThreadSendReturn = {
     barrierSource: "explicit" | "default" | "inferred";
   };
   messageId: string;
+  openDecisionWaits?: Array<{
+    decisionId: string;
+    handoffId: string;
+  }>;
   reopened: boolean;
   requestId: string;
   status: "published";

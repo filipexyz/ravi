@@ -7,6 +7,7 @@ import { resolveSession } from "../router/sessions.js";
 import {
   dbGetChat,
   dbGetChatMessage,
+  type ChatMessageRecord,
   dbListChatMessagesByProviderId,
   dbListSessionChatSubscriptions,
   getDb,
@@ -182,10 +183,11 @@ export async function askDecision(origin: DecisionOrigin, input: DecisionAsk) {
 }
 
 /**
- * The answer's source: a stored message written by the decision's human owner. Accepts the internal message id
- * or the provider id (unique only within a chat, so it must match exactly one stored message). A decision with
- * no human owner has no one whose message can stand as its source. Every refusal has the same code and text, so
- * a caller cannot learn whether a message exists or who wrote it.
+ * The answer's source: one stored message written by the decision's human owner, after the question was asked,
+ * in the decision's own chat or in a direct chat (the owner talking to the agent). Accepts the internal message
+ * id or the provider id (looked up only among those chats). A decision with no human owner has no valid source.
+ * Every refusal has the same code and text, so a caller cannot learn whether a message exists or who wrote it.
+ * The answer text itself is still written by whoever records it: the source proves who decided, not the wording.
  */
 export function resolveDecisionAnswerSource(
   decision: Decision,
@@ -194,18 +196,23 @@ export function resolveDecisionAnswerSource(
   const refuse = (): never => {
     throw new DecisionError(
       "DECISION_SOURCE_NOT_OWNER",
-      "The source must be one stored message written by the decision's owner.",
+      "The source must be one message the decision's owner wrote after the question, in its chat or a direct chat.",
       { exitCode: 2, suggestedAction: "Pass the id of the owner's message that holds the answer." },
     );
   };
   const ref = messageRef.trim();
   if (!ref || decision.ownerType !== "human" || !decision.ownerId) return refuse();
+  const eligible = (message: ChatMessageRecord): boolean => {
+    if (message.actorType !== "contact" || message.contactId !== decision.ownerId) return false;
+    if ((message.providerTimestamp ?? message.createdAt) < decision.askedAt) return false;
+    if (decision.origin.chatId && message.chatId === decision.origin.chatId) return true;
+    return dbGetChat(message.chatId)?.chatType === "dm";
+  };
   const direct = dbGetChatMessage(ref);
-  const candidates = direct ? [direct] : dbListChatMessagesByProviderId(ref);
+  const candidates = (direct ? [direct] : dbListChatMessagesByProviderId(ref)).filter(eligible);
   if (candidates.length !== 1) return refuse();
   const message = candidates[0]!;
-  if (message.actorType !== "contact" || message.contactId !== decision.ownerId) return refuse();
-  return { contactId: message.contactId, messageId: message.id };
+  return { contactId: message.contactId!, messageId: message.id };
 }
 
 /** A free-text label is provenance only: brackets are dropped so it cannot imitate the verified source marker. */

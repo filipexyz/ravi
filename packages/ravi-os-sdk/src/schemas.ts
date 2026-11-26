@@ -111386,6 +111386,25 @@ export const SessionsThreadSendReturnSchema = {
     "messageId": {
       "type": "string"
     },
+    "openDecisionWaits": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "decisionId": {
+            "type": "string"
+          },
+          "handoffId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "handoffId",
+          "decisionId"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
     "reopened": {
       "type": "boolean"
     },

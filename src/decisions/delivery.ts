@@ -11,6 +11,7 @@ import type { RuntimeLaunchPrompt } from "../runtime/message-types.js";
 import { buildChannelTextOutboundJob } from "../channels/outbound-stream.js";
 import { publishChannelOutboundJobDurably } from "../channels/outbound-publish-outbox.js";
 import { getDecision, decisionWrite } from "./store.js";
+import type { Decision } from "./types.js";
 import { requireDecisionThread } from "./service.js";
 import { DecisionError, DecisionDispatchRejectedError } from "./model.js";
 import { logger } from "../utils/logger.js";
@@ -103,7 +104,7 @@ async function deliver(candidate: DeliveryRow, deps: DecisionDeliveryDeps): Prom
       threadId: record.providerThreadId,
     };
     if (row.kind === "question") {
-      const text = `**Decisão pendente: ${decision.key}**\n\n${decision.ask}\n\nResponsável: ${decision.ownerType}${decision.ownerId ? `:${decision.ownerId}` : ""}.\nPara registrar a resposta, peça à sessão que abriu esta thread ou use o CLI de decisões.\nReferência: ${decision.id}`;
+      const text = decisionQuestionNotice(decision);
       const job = row.payload
         ? (JSON.parse(row.payload) as ReturnType<typeof buildChannelTextOutboundJob>)
         : buildChannelTextOutboundJob({
@@ -312,4 +313,22 @@ export function resolveUncertainDecisionDelivery(decisionId: string, outcome: st
       Date.now(),
     );
   });
+}
+
+/**
+ * The thread notice for an open question. A question asked by a wait was already posted as that report, so it
+ * is not repeated; the owner is named by role, never by an internal contact id.
+ */
+export function decisionQuestionNotice(decision: Decision): string {
+  const askedByWait = Boolean(
+    getDb().query("SELECT 1 FROM session_handoffs WHERE decision_id = ? LIMIT 1").get(decision.id),
+  );
+  const owner =
+    decision.ownerType === "human"
+      ? "uma pessoa"
+      : decision.ownerType === "agent"
+        ? "um agente"
+        : "ainda sem responsável";
+  const body = askedByWait ? "A pergunta é o relatório acima." : decision.ask;
+  return `**Decisão pendente: ${decision.key}**\n\n${body}\n\nResponsável: ${owner}.\nPara registrar a resposta, peça à sessão que abriu esta thread ou use o CLI de decisões.\nReferência: ${decision.id}`;
 }

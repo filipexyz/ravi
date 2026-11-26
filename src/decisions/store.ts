@@ -255,3 +255,16 @@ export function decisionWrite<T>(fn: (db: ReturnType<typeof getDb>) => T): T {
   const db = getDb();
   return db.inTransaction ? fn(db) : executeWrite(db, fn);
 }
+
+/** Run the write that records a decision's wait; if it fails, retire the decision so it never blocks alone. */
+export async function retireDecisionIfWaitFails<T>(
+  decisionId: string | null | undefined,
+  write: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await write();
+  } catch (error) {
+    if (decisionId) retireDecisionForWait(decisionId, "wait not recorded");
+    throw error;
+  }
+}

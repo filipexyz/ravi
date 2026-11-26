@@ -8404,7 +8404,7 @@ export function dbGetChatMessage(id: string): ChatMessageRecord | null {
 /** Every stored message with this provider message id (a provider id is unique only within its chat). */
 export function dbListChatMessagesByProviderId(providerMessageId: string): ChatMessageRecord[] {
   const rows = getDb()
-    .prepare("SELECT * FROM chat_messages WHERE provider_message_id = ? LIMIT 3")
+    .prepare("SELECT * FROM chat_messages WHERE provider_message_id = ? LIMIT 20")
     .all(providerMessageId) as ChatMessageRow[];
   return rows.map(rowToChatMessage);
 }
