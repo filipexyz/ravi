@@ -10,13 +10,6 @@
  */
 import { randomUUID } from "node:crypto";
 import { readThisTurnAssistantText, snapshotTranscriptCursor } from "../cli/session-cli-surface.js";
-import {
-  createSessionSendWaitState,
-  isSessionSendWaitTerminal,
-  noteSessionSendWaitRuntimeEvent,
-  SESSION_SEND_TERMINAL_TYPES,
-  type SessionSendWaitState,
-} from "../cli/session-send-wait.js";
 import { logger } from "../utils/logger.js";
 import {
   listOpenVoiceApprovals,
@@ -38,6 +31,7 @@ import { getVoiceEngine } from "./engines/index.js";
 import type { ClipSpeechEngine } from "./engines/types.js";
 import { emitVoiceEvent, type VoiceControlMessage, type VoiceEventSink } from "./events.js";
 import { revokeVoiceDeviceContext } from "./authority.js";
+import { createVoiceTurnOwnership, noteVoiceTurnRuntimeEvent, type VoiceTurnOwnership } from "./turn-ownership.js";
 import { buildVoicePrompt, classifySpokenControl, extractSpokenLead } from "./speech.js";
 import {
   addVoiceDailyUsage,
@@ -70,7 +64,8 @@ import {
 
 const log = logger.child("voice:door");
 
-const DEFAULT_TURN_TIMEOUT_MS = 30 * 60 * 1000;
+/** A voice turn that outlives this ends with a spoken failure and frees the call. */
+const DEFAULT_TURN_TIMEOUT_MS = 10 * 60 * 1000;
 const LIMIT_SWEEP_MS = 15_000;
 const FAILURE_LINE = "Não consegui terminar isso. Os detalhes estão na sessão.";
 const CANCELLED_LINE = "Cancelado.";
@@ -105,9 +100,11 @@ export interface VoiceDoorDeps {
 interface RunningTurn {
   turn: VoiceTurn;
   delegationId?: string;
-  wait: SessionSendWaitState;
+  wait: VoiceTurnOwnership;
   cancelRequested: boolean;
   abortSent: boolean;
+  /** Ends the wait for this turn's terminal (the call ended under it). */
+  release: (kind: string) => void;
 }
 
 interface CallRuntime {
@@ -367,10 +364,17 @@ export class VoiceDoorService {
     const running: RunningTurn = {
       turn,
       ...(delegationId ? { delegationId } : {}),
-      wait: createSessionSendWaitState(),
+      wait: createVoiceTurnOwnership(turn.id),
       cancelRequested: false,
       abortSent: false,
+      release: () => {},
     };
+    // Settable before any await: the call can end while this turn is being announced.
+    let resolveTerminal: (kind: string) => void = () => {};
+    const terminal = new Promise<string>((resolve) => {
+      resolveTerminal = resolve;
+    });
+    running.release = (kind) => resolveTerminal(kind);
     runtime.running = running;
     updateVoiceTurnState(turn.id, "running", this.now());
     await this.emitOpen(call.id, "turn.accepted", { turnId: turn.id, sessionName: call.sessionName }, this.sink);
@@ -385,10 +389,6 @@ export class VoiceDoorService {
     const watch = new AbortController();
     const stopWatch = () => watch.abort();
     this.abort.signal.addEventListener("abort", stopWatch, { once: true });
-    let resolveTerminal: (kind: string) => void = () => {};
-    const terminal = new Promise<string>((resolve) => {
-      resolveTerminal = resolve;
-    });
 
     const watcher = (async () => {
       try {
@@ -398,24 +398,25 @@ export class VoiceDoorService {
           { signal: watch.signal },
         )) {
           const type = event.data.type;
-          if (event.topic.endsWith(".claude")) {
-            if (type === "result" && running.wait.seenOwnTurnStarted) resolveTerminal("turn.complete");
+          // The legacy provider topic carries no ownership; the runtime terminal decides.
+          if (event.topic.endsWith(".claude")) continue;
+          const noted = noteVoiceTurnRuntimeEvent(running.wait, event.data);
+          const firstOwn = noted.verdict === "own_event" && !running.wait.started;
+          running.wait = noted.state;
+          if (noted.verdict === "other_terminal") {
+            // Another turn's reply is stored before its terminal, so it is never read as this one's.
+            if (!running.wait.started) {
+              cursor = Math.max(cursor, snapshotTranscriptCursor(this.deps.readHistory(sessionName, 1)));
+            }
             continue;
           }
-          running.wait = noteSessionSendWaitRuntimeEvent(running.wait, type);
-          if (
-            running.wait.queuedBehindActiveTurn &&
-            !running.wait.seenOwnTurnStarted &&
-            typeof type === "string" &&
-            SESSION_SEND_TERMINAL_TYPES.has(type)
-          ) {
-            cursor = Math.max(cursor, snapshotTranscriptCursor(this.deps.readHistory(sessionName, 1)));
-          }
+          if (noted.verdict === "other") continue;
           const open = this.isOpen(call.id);
-          if (type === "turn.started" && running.wait.seenOwnTurnStarted) {
+          if (firstOwn) {
             if (open) await this.emitOpen(call.id, "work.state", { turnId: turn.id, state: "running" }, this.sink);
             if (running.cancelRequested) await this.sendAbort(call, running);
-          } else if (open && (type === "tool.started" || type === "tool.completed")) {
+          }
+          if (open && (type === "tool.started" || type === "tool.completed")) {
             const name = typeof event.data.toolName === "string" ? event.data.toolName : event.data.name;
             await this.emitOpen(
               call.id,
@@ -428,7 +429,7 @@ export class VoiceDoorService {
               this.sink,
             );
           }
-          if (isSessionSendWaitTerminal(running.wait, type)) {
+          if (noted.verdict === "own_terminal") {
             resolveTerminal(String(type));
             return;
           }
@@ -445,6 +446,7 @@ export class VoiceDoorService {
         deliveryBarrier: "after_response",
         deliveryBarrierSource: "default",
         _cliDestination: true,
+        _correlationId: turn.id,
         _approvalSource: { channel: VOICE_CHANNEL, accountId: VOICE_ACCOUNT_ID, chatId: call.id },
         ...(call.turnOrigin ? { _turnOrigin: call.turnOrigin } : {}),
       });
@@ -460,6 +462,11 @@ export class VoiceDoorService {
     await watcher.catch(() => {});
     if (this.abort.signal.aborted) return;
 
+    if (outcome === "call_ended") {
+      // The call is gone; the session turn may still finish, and its reply stays in the session.
+      await this.finishTurn(call, running, "cancelled", "", "");
+      return;
+    }
     if (running.cancelRequested || outcome === "turn.interrupted") {
       await this.finishTurn(call, running, "cancelled", "", "");
       if (running.cancelRequested) await this.speak(call, running, CANCELLED_LINE, CANCELLED_LINE, profile);
@@ -477,19 +484,20 @@ export class VoiceDoorService {
       return;
     }
 
-    const fullText = (await this.readReply(sessionName, cursor)) ?? "";
+    const fullText = (await this.readReply(call.id, sessionName, cursor)) ?? "";
     const { spokenText, screenText } = extractSpokenLead(fullText);
     await this.finishTurn(call, running, "done", spokenText, screenText);
     await this.speak(call, running, spokenText, screenText, profile);
   }
 
-  private async readReply(sessionName: string, cursor: number): Promise<string | null> {
+  private async readReply(callId: string, sessionName: string, cursor: number): Promise<string | null> {
     const deadline = this.now() + (this.deps.transcriptWaitMs ?? 10_000);
     const sleep = this.deps.sleep ?? defaultSleep;
     for (;;) {
       const found = readThisTurnAssistantText(this.deps.readHistory(sessionName, 50), cursor);
       if (found) return found.text;
-      if (this.now() >= deadline) return null;
+      // An ended call speaks nothing more; do not hold the session's next voice turn.
+      if (this.now() >= deadline || !this.isOpen(callId)) return null;
       await sleep(250);
     }
   }
@@ -502,8 +510,9 @@ export class VoiceDoorService {
     fullText: string,
   ): Promise<void> {
     updateVoiceTurnState(running.turn.id, state, this.now());
-    const runtime = this.runtime(call.id);
-    if (runtime.running === running) runtime.running = null;
+    // An ended call already dropped its runtime; do not recreate it.
+    const runtime = this.calls.get(call.id);
+    if (runtime?.running === running) runtime.running = null;
     // The reply stays in the session; an ended call gets no more output.
     if (!this.isOpen(call.id)) return;
     await this.emitOpen(call.id, "work.state", { turnId: running.turn.id, state }, this.sink);
@@ -585,8 +594,8 @@ export class VoiceDoorService {
     const running = runtime.running;
     if (!running || running.turn.id !== turnId) return;
     running.cancelRequested = true;
-    // Only this call's own turn: abort when it is the one running, else when it starts.
-    if (running.wait.seenOwnTurnStarted || !running.wait.queuedBehindActiveTurn) {
+    // Only this call's own turn: abort once it is running; until then the first own event sends it.
+    if (running.wait.started) {
       await this.sendAbort(call, running, actor);
     }
   }
@@ -693,6 +702,8 @@ export class VoiceDoorService {
     if (runtime) {
       for (const queued of runtime.queue) updateVoiceTurnState(queued.turn.id, "cancelled", this.now());
       runtime.queue = [];
+      // A turn still waiting on the session would hold every later turn of that session.
+      runtime.running?.release("call_ended");
       const sideband = runtime.sideband;
       runtime.sideband = undefined;
       sideband?.close();

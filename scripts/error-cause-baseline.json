@@ -3566,13 +3566,6 @@
       "count": 1
     },
     {
-      "id": "src/omni/consumer.ts:0a59ad0dd07833b1a237797d",
-      "file": "src/omni/consumer.ts",
-      "boundary": "omni",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
       "id": "src/omni/consumer.ts:5c4f266950372136184e2b9e",
       "file": "src/omni/consumer.ts",
       "boundary": "omni",
@@ -5737,7 +5730,7 @@
     }
   ],
   "totals": {
-    "violations": 858,
+    "violations": 857,
     "byDirectory": {
       "src/access": 2,
       "src/adapters": 2,
@@ -5794,7 +5787,7 @@
       "src/mailbox": 2,
       "src/meetings": 4,
       "src/meetings/google-meet": 2,
-      "src/omni": 13,
+      "src/omni": 12,
       "src/pages": 14,
       "src/permissions": 20,
       "src/plugins": 1,

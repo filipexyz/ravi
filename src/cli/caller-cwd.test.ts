@@ -102,6 +102,18 @@ describe("resolveCallerPath file authority", () => {
           resolveCallerPath(join(homedir(), "ravi-daemon-side-test", "daemon-side.txt"), "write"),
         ),
       ).toThrow(denied);
+      // Reads by the daemon for this person stay in the same place as writes.
+      const limitedReader = (cwd: string): ToolContext => {
+        const base = agentContext("use:tool:Read", "deny_execute:executable:*");
+        return { ...base, cwd, context: { ...base.context!, sessionKey: "agent:reporter:limited" } };
+      };
+      expect(runWithContext(limitedReader(workspace), () => resolveCallerPath("page.html"))).toBe(
+        join(workspace, "page.html"),
+      );
+      expect(() =>
+        runWithContext(limitedReader(workspace), () => resolveCallerPath(join(homedir(), ".ravi", ".env"))),
+      ).toThrow(denied);
+      expect(() => runWithContext(limitedReader(elsewhere), () => resolveCallerPath("AGENTS.md"))).toThrow(denied);
       // No session on the context: only temp stays writable.
       const sessionless = { ...agentContext("use:tool:Write", "deny_execute:executable:*"), cwd: workspace };
       expect(() => runWithContext(sessionless, () => resolveCallerPath("notes.md", "write"))).toThrow(denied);

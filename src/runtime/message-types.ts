@@ -306,6 +306,12 @@ export interface PromptMessage {
    * the reply destination via this turn's assistant transcript.
    */
   _cliDestination?: boolean;
+  /**
+   * Opaque id of the producer waiting on this prompt. The host stamps every
+   * runtime event of the physical turn that consumed it with `_correlationIds`,
+   * so a waiter knows which turn is its own.
+   */
+  _correlationId?: string;
   /** Provider-neutral identity for prompts accepted through a channel backend. */
   _channelBackend?: ChannelBackendPromptMetadata;
   /** Validated provenance asserted by a trusted internal producer; not a credential. */
