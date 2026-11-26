@@ -110,7 +110,7 @@ instead of inventing local suggestions that would require extra remote calls.
 | `automation:cron:<jobId>` (agent turn or the job's shell command) | allowed only with a valid admission snapshot eligible for operator authority, whose captured owner is `operator` (a NULL owner is nobody) or an existing, unblocked contact still linked to the active Console user and org: speaker `automation`, routine `cron`; missing snapshots and revoked owners block. Live ownership transfers never reclassify the run (see `cron`) |
 | `automation:heartbeat` | allowed: speaker `automation`, routine `heartbeat` |
 | `automation:trigger:*`, `automation:job:*`, `automation:observer:*`, `session-followup`, `daemon-restart`, any other principal | blocked `CONNECTOR_SPEAKER_NOT_OWNER`. A trigger turn stays blocked whoever owns the trigger; the blocked result only carries the owner the runner admitted, whether the turn runs in the trigger's own session and whether its answer stays with that owner (`triggerOwner`), which Bases alone reads (cli/bases 6b) |
-| Compartment `chat:<id>` (group) for a contact turn, the owner included | blocked `CONNECTOR_GROUP_BLOCKED` |
+| Compartment `chat:<id>` (group) for a contact other than the owner | blocked `CONNECTOR_GROUP_BLOCKED` (the owner's own message there is allowed, see above) |
 | An allowed routine or relay that answers into a chat: its compartment is `chat:<id>` or `dm:<id>`, or its recorded `turnReplyTarget` is a chat, or (a relay) the target was `unresolved` and the session now has an output attachment | allowed with conversation `dm` only when every `chats` row for that chat is a `dm` that resolves to one contact linked to the active Console user and org; otherwise blocked `CONNECTOR_GROUP_BLOCKED` (a relay keeps `speakerIsOwner`) |
 | An operator relay with no chat compartment and no readable `turnReplyTarget`, or an `unresolved` one without a session to read | blocked `CONNECTOR_GROUP_BLOCKED`: Ravi cannot tell who reads the answer |
 
@@ -150,9 +150,6 @@ MUST revalidate the human caller chain and contact before each protected call.
    step says to answer in the group) carries its own
    `details.suggestedAction`, which the envelope keeps
    (`src/cli/cloud-error-contract.ts`); the others get the catalog one:
-   - group, owner speaking: "I'll send this to you privately." /
-     "Vou te mandar isso no privado." and ask the owner to repeat the request
-     in their direct chat;
    - a relay or routine answering into a chat that is not the owner's: no
      chat line; for a relay (also one whose answer Ravi could not place) the
      message says the owner can run the command in their terminal or ask in
@@ -496,7 +493,7 @@ MUST revalidate the human caller chain and contact before each protected call.
 | Terminal, operator relay (`ravi sessions send\|ask`) answering to no chat | own connection | own connection | own connection (`--shared`: `PAYLOAD_INVALID`) |
 | The owner's own direct chat (any session), or an operator relay answering into it | own connection | own connection | own connection; agent exec `shared`, conversation `dm`, with `gmail --shared` |
 | An operator relay answering into a group or another person's chat | `CONNECTOR_GROUP_BLOCKED` | `CONNECTOR_GROUP_BLOCKED` | `CONNECTOR_GROUP_BLOCKED`; agent exec `shared` with that conversation, with `--shared` |
-| The owner in a group | `CONNECTOR_GROUP_BLOCKED` | `CONNECTOR_GROUP_BLOCKED` | `CONNECTOR_GROUP_BLOCKED`; agent exec `shared`, conversation `group`, with `--shared` |
+| The owner in a group | own connection | own connection | own connection; agent exec `shared`, conversation `group`, with `--shared` |
 | A resolved contact (linked to another user, or not linked) in a direct chat with a session of their own | `CONNECTOR_SPEAKER_NOT_OWNER` | agent exec `person_asking` | agent exec `shared`, conversation `dm` |
 | A resolved contact in a direct chat whose session other people share | `CONNECTOR_SPEAKER_NOT_OWNER` | `CONNECTOR_GROUP_BLOCKED` ("I can't use your Gmail in this conversation.") | agent exec `shared`, conversation `dm` |
 | A resolved contact in a group | `CONNECTOR_GROUP_BLOCKED` | `CONNECTOR_GROUP_BLOCKED` ("I can only use your Gmail in a direct chat with me. Ask me there.") | agent exec `shared`, conversation `group` |
@@ -585,12 +582,13 @@ direct chat in any session, shared (`agent:<id>:main`) or not, and a group.
 No confirmation is asked. Anyone else's message never starts a private read.
 
 - Residual risk, accepted by the owner: what a read returns stays in that
-  session's context, so another participant of the chat can ask about it
-  later.
+  session's context, so another participant (in the same chat, or in another
+  chat attached or routed to that session) can ask about it later.
 - Where it applies: `pages read` of a private route, `ravi knowledge`,
   meeting transcripts and the Library's operator-only items. The calendar
-  keeps its own group refusal (spec `calendar/meeting-assistant`), and the
-  connected accounts in a group follow the mode table below.
+  keeps its own group refusal (spec `calendar/meeting-assistant`). The
+  owner's own connected accounts answer there too (mode table below); a
+  mode change still needs the terminal or a direct chat.
 - Channel-free: contacts and the turn's actor, never a channel name.
 
 ## Write classification (brake decision per op)
@@ -607,7 +605,7 @@ No confirmation is asked. Anyone else's message never starts a private read.
 | case | code | exit |
 |---|---|---|
 | braked revoke without `--yes`/`--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
-| group chat (any speaker) | `CONNECTOR_GROUP_BLOCKED` | 3 |
+| group chat (a speaker other than the owner) | `CONNECTOR_GROUP_BLOCKED` | 3 |
 | someone other than the owner, or an unknown turn | `CONNECTOR_SPEAKER_NOT_OWNER` | 3 |
 | organization turned the connector off | `CONNECTOR_DISABLED_BY_ORG` | 3 |
 | tool blocked by the owner or the organization | `CONNECTOR_TOOL_BLOCKED` | 3 |

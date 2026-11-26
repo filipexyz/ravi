@@ -70,10 +70,10 @@
   `CONNECTOR_GROUP_BLOCKED`.
 - A revoked or expired context anywhere on the walk, or a projected actor
   whose source context is not live, MUST block.
-- Any contact turn in a `chat:` compartment MUST exit 3 `CONNECTOR_GROUP_BLOCKED`: the
-  owner gets "I'll send this to you privately.", anyone else "I can't use
-  <owner>'s Gmail for your request." (with the Portuguese line in
-  `chatLinePt`).
+- A contact turn other than the owner's in a `chat:` compartment MUST exit 3
+  `CONNECTOR_GROUP_BLOCKED` with "I can't use <owner>'s Gmail for your
+  request." (with the Portuguese line in `chatLinePt`); the owner's own
+  message there MUST be allowed (conversation `group`).
 - A derived child context MUST classify by its nearest ancestor that carries
   `actorPrincipal`; a chain with no actor MUST be blocked. A projected actor
   MUST take its compartment from its source context.
