@@ -14,6 +14,7 @@ import {
   validateDecisionMutation,
   askDecision,
   answerDecision,
+  resolveDecisionAnswerSource,
   decisionHistory,
 } from "../../decisions/service.js";
 import {
@@ -146,18 +147,26 @@ export class DecisionsCommands {
     @Option({ flags: "--json", description: "Print JSON" }) asJson?: boolean,
     @Option({ flags: "--execute", description: "Required for a thread: queues work in the waiting session" })
     execute?: boolean,
+    @Option({
+      flags: "--source-message <id>",
+      description:
+        "The person's message that holds this answer (internal or provider message id). Recorded as provenance; it must be a message written by a person, and by the decision's owner when it names one",
+    })
+    sourceMessage?: string,
   ) {
     return run(async () => {
       const answer = validateDecisionAnswer(text ?? "");
       const current = requireVisibleDecision(id);
       validateDecisionMutation(current.origin, "answer", current);
+      // Checked before the dry-run so a wrong source fails the preview too.
+      if (sourceMessage?.trim()) resolveDecisionAnswerSource(current, sourceMessage);
       if (current.origin.type === "thread" && !execute)
         contractDryRun(
           "decisions answer",
           { decisionId: id, originType: current.origin.type, originId: current.origin.id },
           { asJson },
         );
-      const decision = await answerDecision(id, answer, by);
+      const decision = await answerDecision(id, answer, by, sourceMessage);
       if (decision.origin.type === "thread") await reconcileDecisionDeliveries(undefined, id);
       return output(
         { decision, deliveries: decisionDeliveries(id) },

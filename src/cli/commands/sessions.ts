@@ -123,6 +123,7 @@ import { DEFAULT_RUNTIME_PROBE_TIMEOUT_MS } from "../../runtime/runtime-probe.js
 import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
 import { enforceCliCommandAccess, listCliCommandAccessCandidates } from "../command-access.js";
 import { canWithCapabilities } from "../../permissions/capability-snapshot.js";
+import { askDecisionForWait } from "../../decisions/service.js";
 import { CliExpectedError } from "../expected-error.js";
 import { resolveEffectiveSessionRuntime } from "../../runtime/runtime-selection.js";
 import type {
@@ -8467,6 +8468,7 @@ export class SessionCommands {
         ownerEscalatedAt: null,
         acknowledgedAt: null,
         ackReason: null,
+        decisionId: null,
       };
       reportText = `${reportText}\nAguarda o pai: ${describeHandoff(preview, sessionDisplayName(session.sessionKey), now).replace(/^- /, "")}`;
     }
@@ -8505,6 +8507,16 @@ export class SessionCommands {
     // The report is out: a failed write of the wait must not turn into an error that makes the caller send it
     // again. It is returned instead, and the parent still has the report text.
     let handoffError: string | undefined;
+    let decisionError: string | undefined;
+    if (pendingHandoff?.kind === "decision") {
+      // A decision wait records its question as a decision, so the answer is recorded (not just a message) and
+      // closes the wait. A decision that cannot be recorded leaves an ordinary wait, as before.
+      try {
+        pendingHandoff.decisionId = (await askDecisionForWait(session.sessionKey, pendingHandoff.ref, message)).id;
+      } catch (error) {
+        decisionError = error instanceof Error ? error.message : String(error);
+      }
+    }
     if (pendingHandoff) {
       try {
         // A dispatched review leaves nothing for the parent: the wait is recorded already closed, so observers
@@ -8530,14 +8542,27 @@ export class SessionCommands {
         sessionKey: result.record.parentSessionKey,
         sessionName: result.record.parentSessionName,
       },
-      ...(handoff ? { handoff: { id: handoff.id, kind: handoff.kind, ref: handoff.ref, status: handoff.status } } : {}),
+      ...(handoff
+        ? {
+            handoff: {
+              id: handoff.id,
+              kind: handoff.kind,
+              ref: handoff.ref,
+              status: handoff.status,
+              ...(handoff.decisionId ? { decisionId: handoff.decisionId } : {}),
+            },
+          }
+        : {}),
       ...(handoffError ? { handoffError } : {}),
+      ...(decisionError ? { decisionError } : {}),
       ...(reviewDispatch ? { reviewDispatch } : {}),
     };
     if (asJson) printJson(payload);
     else {
       console.log(`Reported to ${result.record.parentSessionName}`);
       if (handoffError) console.log(`The wait was not recorded: ${handoffError}`);
+      if (decisionError) console.log(`The decision was not recorded (ordinary wait): ${decisionError}`);
+      else if (handoff?.decisionId) console.log(`Decision ${handoff.decisionId}: answer with ravi decisions answer`);
     }
     return payload;
   }

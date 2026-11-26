@@ -3537,6 +3537,8 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
   migrateTriggerSessionCheck(db);
   migrateTriggerOwner(db);
   ensureColumn(db, "triggers", "thread_visible", "INTEGER NOT NULL DEFAULT 0");
+  // Additive and nullable: a decision wait points at the decision that holds its question and answer.
+  ensureColumn(db, "session_handoffs", "decision_id", "TEXT");
 
   // Migration: add account_id column to cron_jobs
   const cronColumns = db.prepare("PRAGMA table_info(cron_jobs)").all() as Array<{ name: string }>;
@@ -8397,6 +8399,14 @@ export function dbReleaseChannelBackendIngressPublication(input: {
 export function dbGetChatMessage(id: string): ChatMessageRecord | null {
   const row = getDb().prepare("SELECT * FROM chat_messages WHERE id = ?").get(id) as ChatMessageRow | undefined;
   return row ? rowToChatMessage(row) : null;
+}
+
+/** Every stored message with this provider message id (a provider id is unique only within its chat). */
+export function dbListChatMessagesByProviderId(providerMessageId: string): ChatMessageRecord[] {
+  const rows = getDb()
+    .prepare("SELECT * FROM chat_messages WHERE provider_message_id = ? LIMIT 3")
+    .all(providerMessageId) as ChatMessageRow[];
+  return rows.map(rowToChatMessage);
 }
 
 export function dbGetChatMessageWithSortKey(id: string): ChatMessageWithSortKey | null {

@@ -31,6 +31,8 @@ export interface Handoff {
   ownerEscalatedAt: number | null;
   acknowledgedAt: number | null;
   ackReason: string | null;
+  /** A decision wait points at the decision that holds its question and, later, the recorded answer. */
+  decisionId: string | null;
 }
 
 interface HandoffRow {
@@ -47,6 +49,7 @@ interface HandoffRow {
   owner_escalated_at: number | null;
   acknowledged_at: number | null;
   ack_reason: string | null;
+  decision_id?: string | null;
 }
 
 function fromRow(row: HandoffRow): Handoff {
@@ -64,6 +67,7 @@ function fromRow(row: HandoffRow): Handoff {
     ownerEscalatedAt: row.owner_escalated_at,
     acknowledgedAt: row.acknowledged_at,
     ackReason: row.ack_reason,
+    decisionId: row.decision_id ?? null,
   };
 }
 
@@ -89,6 +93,7 @@ export function openHandoff(input: {
   ref?: string | null;
   note?: string | null;
   callerContextId?: string | null;
+  decisionId?: string | null;
   /** Record the wait already handled (for example a review the runtime dispatched itself). */
   closedReason?: string | null;
   now: number;
@@ -111,8 +116,8 @@ export function openHandoff(input: {
       db.prepare(
         `INSERT INTO session_handoffs
           (id, child_session_key, parent_session_key, kind, ref, note, caller_context_id, status, created_at,
-           acknowledged_at, ack_reason, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           acknowledged_at, ack_reason, updated_at, decision_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         id,
         input.childSessionKey,
@@ -126,6 +131,7 @@ export function openHandoff(input: {
         input.closedReason ? input.now : null,
         input.closedReason ?? null,
         input.now,
+        input.decisionId ?? null,
       );
       const row = db.prepare("SELECT * FROM session_handoffs WHERE id = ?").get(id) as HandoffRow;
       return { handoff: fromRow(row), superseded: previous };
@@ -154,7 +160,9 @@ export function acknowledgeHandoffsForChild(
           .all(childSessionKey) as HandoffRow[]
       )
         .map(fromRow)
-        .filter((h) => !kinds || kinds.includes(h.kind));
+        .filter((h) => !kinds || kinds.includes(h.kind))
+        // A message to the thread does not answer a recorded decision: only `decisions answer` closes that wait.
+        .filter((h) => !(kinds && h.kind === "decision" && h.decisionId));
       if (open.length === 0) return [];
       const stmt = db.prepare(
         `UPDATE session_handoffs SET status = 'acknowledged', acknowledged_at = ?, ack_reason = ?, updated_at = ?
@@ -288,4 +296,27 @@ export function acknowledgeHandoffsForPullRequest(repo: string, pr: number, reas
     },
     { label: "handoff-ack-pr" },
   );
+}
+
+/**
+ * Close the open waits that point at this decision. Runs inside the answering transaction (the caller passes
+ * its database handle) so the recorded answer and the closed wait commit together.
+ */
+export function acknowledgeHandoffsForDecision(
+  db: ReturnType<typeof getDb>,
+  decisionId: string,
+  reason: string,
+  now: number,
+): Handoff[] {
+  const open = (
+    db
+      .prepare("SELECT * FROM session_handoffs WHERE decision_id = ? AND status = 'open'")
+      .all(decisionId) as HandoffRow[]
+  ).map(fromRow);
+  const stmt = db.prepare(
+    `UPDATE session_handoffs SET status = 'acknowledged', acknowledged_at = ?, ack_reason = ?, updated_at = ?
+     WHERE id = ? AND status = 'open'`,
+  );
+  for (const h of open) stmt.run(now, reason, now, h.id);
+  return open.map((h) => ({ ...h, status: "acknowledged" as const, acknowledgedAt: now, ackReason: reason }));
 }

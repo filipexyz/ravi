@@ -17,7 +17,10 @@ export type DecisionErrorCode =
   | "DECISION_INVALID_KEY"
   | "DECISION_INVALID_OWNER"
   | "DECISION_INVALID_ASK"
-  | "DECISION_INVALID_ANSWER";
+  | "DECISION_INVALID_ANSWER"
+  | "DECISION_SOURCE_NOT_FOUND"
+  | "DECISION_SOURCE_NOT_HUMAN"
+  | "DECISION_SOURCE_NOT_OWNER";
 
 export class DecisionError extends Error {
   readonly code: DecisionErrorCode;

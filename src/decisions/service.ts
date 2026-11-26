@@ -4,7 +4,17 @@ import { CliExpectedError } from "../cli/expected-error.js";
 import { canAccessSession, canModifySession, getScopeContext, isScopeEnforced } from "../permissions/scope.js";
 import { assertNoUserOverlayAutomationWrite } from "../permissions/user-overlay-automation.js";
 import { resolveSession } from "../router/sessions.js";
-import { dbGetChat, dbListSessionChatSubscriptions, getDb } from "../router/router-db.js";
+import {
+  dbGetChat,
+  dbGetChatMessage,
+  dbListChatMessagesByProviderId,
+  dbListSessionChatSubscriptions,
+  getDb,
+} from "../router/router-db.js";
+import { acknowledgeHandoffsForDecision, type Handoff } from "../handoffs/store.js";
+import { publishHandoffEvent } from "../handoffs/events.js";
+import { findContactsByTag } from "../contacts.js";
+import { OWNER_CONTACT_TAG } from "../knowledge/owner.js";
 import {
   getSlackThreadLifecycle,
   findSlackThreadLifecycleByChildSession,
@@ -164,11 +174,51 @@ export async function askDecision(origin: DecisionOrigin, input: DecisionAsk) {
   return { decision: getDecision(result.decision.id)!, created: result.created };
 }
 
-export async function answerDecision(id: string, text: string, by?: string) {
+/**
+ * The answer's source: a stored message written by a person (never an agent, a system notice or free text).
+ * Accepts the internal message id or the provider id (unique only within a chat, so it must match exactly one
+ * stored message). When the decision names a human owner, the message must come from that owner.
+ */
+export function resolveDecisionAnswerSource(
+  decision: Decision,
+  messageRef: string,
+): { contactId: string; messageId: string } {
+  const ref = messageRef.trim();
+  const direct = ref ? dbGetChatMessage(ref) : null;
+  const candidates = direct ? [direct] : ref ? dbListChatMessagesByProviderId(ref) : [];
+  if (candidates.length !== 1)
+    throw new DecisionError(
+      "DECISION_SOURCE_NOT_FOUND",
+      candidates.length === 0
+        ? "No stored message with that id. Use the id of the person's message that holds the answer."
+        : "That provider message id matches more than one chat. Use the internal message id.",
+      { exitCode: 2 },
+    );
+  const message = candidates[0]!;
+  if (message.actorType !== "contact" || !message.contactId)
+    throw new DecisionError(
+      "DECISION_SOURCE_NOT_HUMAN",
+      "The answer's source must be a message written by a person, not by an agent or the system.",
+      { exitCode: 2 },
+    );
+  if (decision.ownerType === "human" && decision.ownerId && decision.ownerId !== message.contactId)
+    throw new DecisionError("DECISION_SOURCE_NOT_OWNER", "That message was not written by the decision's owner.", {
+      exitCode: 2,
+    });
+  return { contactId: message.contactId, messageId: message.id };
+}
+
+export async function answerDecision(id: string, text: string, by?: string, sourceMessage?: string) {
   const decision = requireVisibleDecision(id);
   const who = actor();
-  const provenance = by?.trim() ? `${who.actor} (for ${by.trim()})` : who.actor;
-  const result = decisionWrite(() => {
+  const source = sourceMessage?.trim() ? resolveDecisionAnswerSource(decision, sourceMessage) : null;
+  const subject = [by?.trim(), source ? `contact:${source.contactId} message:${source.messageId}` : null]
+    .filter(Boolean)
+    .join(", ");
+  const provenance = subject ? `${who.actor} (for ${subject})` : who.actor;
+  let closedWaits: Handoff[] = [];
+  const now = Date.now();
+  const result = decisionWrite((db) => {
     const current = requireVisibleDecision(id);
     validateDecisionMutation(current.origin, "answer", current);
     if (current.origin.type === "task")
@@ -204,9 +254,12 @@ export async function answerDecision(id: string, text: string, by?: string) {
       JSON.stringify(payload),
       deliveryId,
     );
+    // The wait that asked this question closes with the answer, in the same transaction.
+    closedWaits = acknowledgeHandoffsForDecision(db, id, `decision answered: ${id}`, now);
     return { decision: answered };
   });
   if ("event" in result) await emitTaskEvent(result.task, result.event);
+  for (const handoff of closedWaits) await publishHandoffEvent("acknowledged", handoff, now);
   return getDecision(decision.id)!;
 }
 
@@ -217,4 +270,43 @@ export function decisionHistory(id: string) {
       "SELECT id,type,actor,snapshot_json AS snapshot,created_at AS createdAt FROM decision_history WHERE decision_id=? ORDER BY id",
     )
     .all(id) as Array<{ id: number; type: string; actor: string | null; snapshot: string; createdAt: number }>;
+}
+
+/** A stable decision key from a wait's ref: lowercase slug, or `default` when the wait names nothing. */
+export function decisionKeyForWait(ref: string | null | undefined): string {
+  const slug = (ref ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^[-._]+|[-._]+$/g, "")
+    .slice(0, 64)
+    .replace(/[-._]+$/g, "");
+  return slug || "default";
+}
+
+/**
+ * `sessions report --awaiting decision` from a thread: record the question as a decision of that thread, owned
+ * by the installation's owner (the single `permission-owner` contact) when there is exactly one. Asked again
+ * with the same ref, it updates the same open decision instead of opening another.
+ */
+export async function askDecisionForWait(
+  childSessionKey: string,
+  ref: string | null | undefined,
+  question: string,
+  deps: { ownerContactIds?: () => string[] } = {},
+): Promise<Decision> {
+  const origin = resolveDecisionOrigin(undefined, childSessionKey);
+  const owners = [...new Set((deps.ownerContactIds ?? defaultOwnerContactIds)())];
+  const owner =
+    owners.length === 1 ? { ownerType: "human" as const, ownerId: owners[0]! } : { ownerType: "unassigned" as const };
+  const { decision } = await askDecision(origin, {
+    key: decisionKeyForWait(ref),
+    ask: question,
+    blocks: true,
+    ...owner,
+  });
+  return decision;
+}
+
+function defaultOwnerContactIds(): string[] {
+  return findContactsByTag(OWNER_CONTACT_TAG).map((contact) => contact.id);
 }
