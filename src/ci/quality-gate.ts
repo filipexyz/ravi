@@ -23,6 +23,9 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/channels/runner.ts": ["src/channels/runner.test.ts", "src/db/schema-owner.test.ts"],
   "src/channels/slack/socket-mode.ts": ["src/channels/slack/socket-mode.test.ts"],
   "src/channels/": [
+    // Owner DM guard: no one else's DM lands in an agent's shared DM session, on the key the commit lands in.
+    "src/channels/owner-dm-guard.test.ts",
+    "src/channels/owner-dm-guard.routing.test.ts",
     // Grant requests: the Slack adapter (reach approvers, private card, click handled by the core).
     "src/channels/slack/grant-request-adapter.test.ts",
     "src/channels/whatsapp/grant-request-adapter.test.ts",
@@ -119,6 +122,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/db/runtime-state.ts": ["src/db/schema-owner.test.ts"],
   "src/db/state-boundary.ts": ["src/router/state-boundary.test.ts"],
   "src/router/": [
+    // The owner's own recent messages in one chat (owner read confirmation).
+    "src/router/router-db.contact-chat-messages.test.ts",
     // Daemon/consumer initialization exercises the router's journal/schema boundary.
     "src/db/schema-owner.test.ts",
     "src/db/journal-mode-retry.test.ts",
