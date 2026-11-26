@@ -1,25 +1,34 @@
-// A direct message from someone who is not the installation owner never
-// resolves into the owner's shared session (spec channels/owner-dm-guard).
+// A direct message from anyone but the installation owner never lands in an
+// agent's shared DM session (spec channels/owner-dm-guard).
 //
 // `dmScope: "main"` collapses every DM of an agent into one session,
 // `agent:<id>:main`. On an operator's own agent that session carries the
-// owner's history and, in an ungoverned chat, the agent's whole ceiling
-// (spec permissions/agent-identity). Before this guard, any colleague who
-// DMed the bot on an `open` instance landed in it: the 04/11 incident.
+// owner's history and the agent's instructions; before this guard any
+// colleague who DMed the bot on an `open` instance landed in it (04/11).
 //
 // The guard runs after route matching and subscription rerouting, before the
 // session row is committed, on the key the commit will produce
 // (`previewCommittedSessionKey`): a route that forces a session redirects
 // there, so the preliminary `matched.sessionKey` is not where the message
-// lands. When it blocks, the inbound is held for owner review, the same path a
-// `pairing` DM takes: the owner decides by adding a route whose pattern is that
-// person's literal id.
+// lands. It admits only contacts tagged `permission-owner`, whatever a route
+// or an attached chat says: everyone else is held for owner review, the same
+// path a `pairing` DM takes. To let a person talk to an agent, the owner gives
+// them a session of their own: a route or agent whose `dmScope` is not `main`.
+// A forced session name alone does not isolate them: until that session
+// exists, the commit names the shared key after it.
+//
+// Since no one else's direct message can land there, the shared session is the
+// owner's own direct session as long as nothing else writes in it either
+// (`isSharedDmSessionPrivateToOwner`). That is what lets the owner's verified
+// DM count as the operator's turn (src/link/connector-turn.ts).
 //
 // With no contact tagged `permission-owner` the guard admits everything
-// (fail-open), so an installation is protected only once its owner is tagged.
+// (fail-open), and the shared session is never private.
 
 import { findContactsByTag } from "../contacts.js";
+import { dmContactForChat } from "../knowledge/contacts.js";
 import { OWNER_CONTACT_TAG } from "../knowledge/owner.js";
+import { dbGetChat, dbGetThreadParentChat, dbListRoutes, dbListSessionChatSubscriptions } from "../router/router-db.js";
 import { parseSessionKey } from "../router/session-key.js";
 import { logger } from "../utils/logger.js";
 
@@ -32,13 +41,6 @@ export interface OwnerDmGuardInput {
   sessionKey: string;
   /** Contact the sender resolved to, when known. Unknown senders are never the owner. */
   senderContactId: string | null | undefined;
-  /**
-   * The operator chose this destination for this conversation: a route whose
-   * pattern is a literal id (see `isPeerNamingRoutePattern`), or a chat
-   * attached by a person or agent. A glob is a wildcard, and routing's own
-   * bookkeeping attach is not a choice.
-   */
-  explicit: boolean;
 }
 
 export interface OwnerDmGuardDeps {
@@ -47,56 +49,35 @@ export interface OwnerDmGuardDeps {
 }
 
 export type OwnerDmGuardResult =
-  | { blocked: false; reason: "not_dm" | "not_owner_session" | "explicit" | "owner" | "no_owner_configured" }
+  | { blocked: false; reason: "not_dm" | "not_owner_session" | "owner" | "no_owner_configured" }
   | { blocked: true; reason: "non_owner_dm_to_owner_session"; ownerCount: number };
 
-/**
- * Whether a route pattern names one conversation. Route patterns only know the
- * `*` glob (`matchPattern`); any pattern with it, `*` itself or a prefix such as
- * `U0*`, matches people the operator never named, so it is a wildcard here.
- */
-export function isPeerNamingRoutePattern(pattern: string | null | undefined): boolean {
-  const trimmed = pattern?.trim();
-  if (!trimmed) return false;
-  return !trimmed.includes("*");
-}
-
-/**
- * Whether the operator chose the session this DM lands in. Each choice vouches
- * only for the destination it names:
- * - a route whose pattern is a literal id, when the message lands where that
- *   route sends it. A chat subscription can reroute the message elsewhere, for
- *   example routing's own attach of an earlier DM to the shared session;
- * - a chat attached by a person or an agent, when the message lands in the
- *   attached session.
- * The session keys are the ones the commit will produce
- * (`previewCommittedSessionKey`).
- */
-export function isOperatorChosenDestination(input: {
-  /** Pattern of the route `matchRoute` found, before any subscription reroute. */
-  routePattern: string | null | undefined;
-  /** Where that route sends the message on its own. */
-  routeSessionKey: string | null | undefined;
-  /** The chat's subscription was honored and was made by a person or an agent. */
-  attachExplicit: boolean;
-  /** Session the chat is attached to. */
-  attachSessionKey: string | null | undefined;
-  /** Session the message will land in. */
-  landingSessionKey: string;
-}): boolean {
-  if (isPeerNamingRoutePattern(input.routePattern) && input.routeSessionKey === input.landingSessionKey) return true;
-  return input.attachExplicit && input.attachSessionKey === input.landingSessionKey;
-}
-
-/** Whether the session key is an agent's shared DM session (`agent:<id>:main`). */
+/** Whether the session key is an agent's shared DM session (`agent:<id>:main`) or a thread under it. */
 export function isSharedOwnerSessionKey(sessionKey: string): boolean {
   return parseSessionKey(sessionKey)?.dmScope === "main";
+}
+
+/** Whether the key is exactly an agent's shared DM session, `agent:<id>:main`, and not a thread under it. */
+export function isAgentSharedDmSessionKey(sessionKey: string | null | undefined): boolean {
+  const parts = (sessionKey ?? "").split(":");
+  return parts.length === 3 && parts[0] === "agent" && parts[1] !== "" && parts[2] === "main";
+}
+
+/**
+ * Whether a route pattern reaches direct chats only: one literal peer id. A
+ * glob (`*`, `5511*`) also matches group targets (`group:<id>`), and `group:`
+ * and `thread:` patterns name conversations other people write in, which this
+ * guard does not cover.
+ */
+export function isDirectPeerRoutePattern(pattern: string | null | undefined): boolean {
+  const trimmed = pattern?.trim().toLowerCase();
+  if (!trimmed || trimmed.includes("*")) return false;
+  return !trimmed.startsWith("group:") && !trimmed.startsWith("thread:");
 }
 
 export function evaluateOwnerDmGuard(input: OwnerDmGuardInput, deps: OwnerDmGuardDeps = {}): OwnerDmGuardResult {
   if (input.peerKind !== "dm") return { blocked: false, reason: "not_dm" };
   if (!isSharedOwnerSessionKey(input.sessionKey)) return { blocked: false, reason: "not_owner_session" };
-  if (input.explicit) return { blocked: false, reason: "explicit" };
 
   const owners = readOwnerContactIds(deps);
   if (owners === null) {
@@ -115,11 +96,109 @@ export function evaluateOwnerDmGuard(input: OwnerDmGuardInput, deps: OwnerDmGuar
   return { blocked: true, reason: "non_owner_dm_to_owner_session", ownerCount: owners.size };
 }
 
+export interface SharedDmSessionPrivacyInput {
+  /** The session the turn runs in. */
+  sessionKey: string;
+  sessionName: string;
+  /** The speaker's contact. */
+  contactId: string;
+  /** The chat the turn came from: the speaker's own direct chat, already verified. */
+  chatId: string;
+}
+
+export interface SharedDmSessionPrivacyDeps {
+  /** Contacts tagged `permission-owner`. */
+  ownerContactIds?: () => string[];
+  /** Patterns of the active routes that send chats into the session by name. */
+  routePatternsForSessionName?: (sessionName: string) => string[];
+  /** Chats attached to the session. */
+  attachedChatIds?: (sessionKey: string) => string[];
+  /** Whether the chat is the contact's own direct chat, or a thread inside it. */
+  isContactsDirectChat?: (chatId: string, contactId: string) => boolean;
+}
+
+/**
+ * Whether an agent's shared DM session (`agent:<id>:main`) is the speaker's
+ * alone, so what their accounts return stays in a transcript only they read.
+ * The guard above lets only owners' direct messages land there. On top of it:
+ * - the speaker is the one contact tagged `permission-owner`. With two tagged
+ *   owners both land there; with none, the guard admits everyone;
+ * - every route that sends chats into the session by name reaches one direct
+ *   peer (`isDirectPeerRoutePattern`): a group, a thread or a glob would bring
+ *   conversations the guard does not cover;
+ * - every chat attached to the session is the speaker's own direct chat or a
+ *   thread inside it. An attached chat can also receive the session's answers.
+ * Anything that cannot be read is not private.
+ */
+export function isSharedDmSessionPrivateToOwner(
+  input: SharedDmSessionPrivacyInput,
+  deps: SharedDmSessionPrivacyDeps = {},
+): boolean {
+  const contactId = input.contactId?.trim();
+  if (!contactId || !input.sessionName?.trim() || !isAgentSharedDmSessionKey(input.sessionKey)) return false;
+  try {
+    const owners = new Set(
+      (deps.ownerContactIds ?? defaultOwnerContactIds)()
+        .map((id) => id.trim())
+        .filter(Boolean),
+    );
+    if (owners.size !== 1 || !owners.has(contactId)) return false;
+    const patterns = (deps.routePatternsForSessionName ?? defaultRoutePatternsForSessionName)(input.sessionName);
+    if (!patterns.every(isDirectPeerRoutePattern)) return false;
+    const isOwn = deps.isContactsDirectChat ?? isContactsOwnDirectChat;
+    for (const chatId of (deps.attachedChatIds ?? defaultAttachedChatIds)(input.sessionKey)) {
+      if (chatId === input.chatId) continue;
+      if (!isOwn(chatId, contactId)) return false;
+    }
+    return true;
+  } catch (error) {
+    log.warn("shared session privacy unreadable; the owner's turn there is not private", {
+      sessionKey: input.sessionKey,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
+/**
+ * Whether a chat is the contact's own direct chat, or a thread inside one: a
+ * thread of a direct chat has the same two people in it. Thread chats are
+ * stored as `<container-id>#<thread-id>` next to their container
+ * (`dbGetThreadParentChat`).
+ */
+export function isContactsOwnDirectChat(chatId: string, contactId: string): boolean {
+  if (dmContactForChat({ chatId, channel: null }) === contactId) return true;
+  const chat = dbGetChat(chatId);
+  if (chat?.chatType !== "thread") return false;
+  const parent = dbGetThreadParentChat(chat);
+  if (!parent || parent.chatType !== "dm") return false;
+  return dmContactForChat({ chatId: parent.id, channel: null }) === contactId;
+}
+
+function defaultOwnerContactIds(): string[] {
+  return findContactsByTag(OWNER_CONTACT_TAG).map((contact) => contact.id);
+}
+
+/**
+ * Patterns of every active route whose forced session is this one. The router
+ * trims a route's session name before it looks the session up
+ * (`commitMatchedRoute`), so a stored name with spaces around it still sends
+ * chats here; an exact `routes.session_name` match would miss it.
+ */
+function defaultRoutePatternsForSessionName(sessionName: string): string[] {
+  const name = sessionName.trim();
+  return dbListRoutes()
+    .filter((route) => route.session?.trim() === name)
+    .map((route) => route.pattern);
+}
+
+function defaultAttachedChatIds(sessionKey: string): string[] {
+  return dbListSessionChatSubscriptions(sessionKey).map((subscription) => subscription.chatId);
+}
+
 function readOwnerContactIds(deps: OwnerDmGuardDeps): Set<string> | null {
   try {
-    const ids = deps.ownerContactIds
-      ? deps.ownerContactIds()
-      : findContactsByTag(OWNER_CONTACT_TAG).map((contact) => contact.id);
+    const ids = deps.ownerContactIds ? deps.ownerContactIds() : defaultOwnerContactIds();
     return new Set(ids.map((id) => id.trim()).filter(Boolean));
   } catch (error) {
     log.warn("owner contacts unreadable; non-owner DM to the shared session is held", {

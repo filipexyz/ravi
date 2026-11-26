@@ -49,13 +49,18 @@
   `dm:` compartment whose session is the owner's own (the `person_asking`
   session check), MUST be allowed as speaker `owner`, conversation `dm`.
   The same contact with a different `consoleOrgId` MUST be blocked. In a
-  session other people's chats share (`dmScope: main`, a group key, an
-  unknown session, a route by session name, another person's chat attached)
-  it MUST exit 3 `CONNECTOR_GROUP_BLOCKED` with the chat line telling the
-  owner to give each person their own session (`replyTo: same_chat`), in
-  every agent mode; only `--shared` in `shared` mode moves it to the shared
-  account. That turn MUST still change a mode (`connectors mode`) and own
-  the crons it creates (`operator`).
+  session other people's chats can reach (a group key, an unknown session, a
+  route by session name, another person's chat attached; in an agent's shared
+  session `agent:<id>:main`, a second or no tagged owner, or a glob, `group:`
+  or `thread:` route by session name) it MUST exit 3
+  `CONNECTOR_GROUP_BLOCKED` with the chat line telling the owner to move the
+  other chats out of the session (`replyTo: same_chat`; in the agent's shared
+  session also to be the only contact tagged as owner, `agentSharedSession`),
+  in every agent mode;
+  only `--shared` in `shared` mode moves it to the shared account. That turn
+  MUST still change a mode (`connectors mode`) and own the crons it creates
+  (`operator`). The sole owner's DM in `agent:<id>:main` with only their own
+  chats attached MUST be allowed as speaker `owner`, conversation `dm`.
 - A contact linked to another Console user MUST be blocked
   (`CONNECTOR_SPEAKER_NOT_OWNER`, exit 3) and MUST NOT switch to that user's
   stored session, even when one exists.

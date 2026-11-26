@@ -104,7 +104,7 @@ instead of inventing local suggestions that would require extra remote calls.
 | `automation:operator:local` or `agent:bootstrap` relayed by the operator's `ravi sessions send` or `ask` (turn origin `session-relay`, action `send`/`ask`, no session, principal equal to the actor) | allowed: speaker `owner`, conversation `terminal`, when the answer reaches no chat (invariant 3a); a relay whose answer the session posts into a chat follows the last two rows |
 | The same principals with any other origin (`execute`, as the session-goal wake sends, `inform`, `answer`, a relay from a session, or no origin) | blocked `CONNECTOR_SPEAKER_NOT_OWNER` |
 | `contact:<id>`, `actorResolution=resolved`, `consoleUserId` equal to the active session's user (and the same org when both are known), in a `dm:` compartment whose session is the owner's own (the session check of invariant 23, `readIsPrivateDirectSession`) | allowed: speaker `owner` (contactId, consoleUserId), conversation `dm` |
-| The same owner in a `dm:` compartment whose session other people's chats share (`dmScope: main`, a route by session name, another person's chat attached), or whose session is unknown | blocked `CONNECTOR_GROUP_BLOCKED` (`speakerIsOwner`, `sharedSession`) |
+| The same owner in a `dm:` compartment whose session other people's chats can reach (another person's chat attached, a route by session name; in an agent's shared session `agent:<id>:main`, a second tagged owner or a glob, `group:` or `thread:` route by session name), or whose session is unknown | blocked `CONNECTOR_GROUP_BLOCKED` (`speakerIsOwner`, `sharedSession`) |
 | `contact:<id>` linked to another Console user, not linked, `missing_contact`, or `unknown` | blocked `CONNECTOR_SPEAKER_NOT_OWNER` |
 | `agent:<id>` (relay from another agent), `automation:session:*` | blocked `CONNECTOR_SPEAKER_NOT_OWNER` |
 | `automation:cron:<jobId>` (agent turn or the job's shell command) | allowed only with a valid admission snapshot eligible for operator authority, whose captured owner is `operator` (a NULL owner is nobody) or an existing, unblocked contact still linked to the active Console user and org: speaker `automation`, routine `cron`; missing snapshots and revoked owners block. Live ownership transfers never reclassify the run (see `cron`) |
@@ -154,14 +154,20 @@ MUST revalidate the human caller chain and contact before each protected call.
      "Vou te mandar isso no privado." and ask the owner to repeat the request
      in their direct chat;
    - the owner's direct chat in a shared session: "I can't use your Gmail in
-     this conversation: other people's chats share its session. Give each
-     person their own session (dmScope per-peer), then ask me again." / "Não
-     posso usar o seu Gmail nesta conversa: as conversas de outras pessoas
-     compartilham a sessão dela. Dê a cada pessoa a própria sessão (dmScope
-     per-peer) e me peça de novo.", `replyTo: same_chat`; the owner is also
-     the operator, so the line says how to allow it. `suggestedAction`:
-     "reply in this chat with the chat line, and do not retry until <owner>
-     gives each person their own session (dmScope per-peer)";
+     this conversation: other people's chats can reach its session. Move their
+     chats out of it, then ask me again." / "Não posso usar o seu Gmail nesta
+     conversa: conversas de outras pessoas chegam à sessão dela. Tire essas
+     conversas da sessão e me peça de novo.", `replyTo: same_chat`; the owner
+     is also the operator, so the line says how to allow it.
+     `suggestedAction`: "reply in this chat with the chat line, and do not
+     retry until <owner> moves the other chats out of this session (ravi
+     sessions subscriptions <session> lists the attached ones)". In the
+     agent's shared DM session (`agent:<id>:main`, `agentSharedSession`) the
+     line also names the owner tag: "...other people's chats can reach its
+     session, or you are not the only contact marked as owner. Fix that, then
+     ask me again." / "...ou você não é o único contato marcado como dono.
+     Corrija isso e me peça de novo.", and `suggestedAction` asks for the
+     only `permission-owner` contact as well;
    - a relay or routine answering into a chat that is not the owner's: no
      chat line; for a relay (also one whose answer Ravi could not place) the
      message says the owner can run the command in their terminal or ask in
@@ -516,13 +522,19 @@ MUST revalidate the human caller chain and contact before each protected call.
 
     A direct chat has a session of its own (`readIsPrivateDirectSession`)
     when the turn's contexts name one session key, that key parses as a
-    direct-chat key (`peerKind: dm`, never `dmScope: main`), no active route
-    sends chats into it by name (`routes.session_name`), and every active
+    per-person direct-chat key (`peerKind: dm`), no active route sends chats
+    into it by name (`routes.session_name`), and every active
     `session_chat_subscriptions` row of it (inbound routing attaches each
     chat it sends there) is the speaker's own direct chat: the compartment's
-    chat, or a `dm` chat that resolves to the same contact. Anything else,
-    or a failed read, is not private: in `person_asking` the person's mail
-    would stay in a transcript other people can ask about.
+    chat, or a `dm` chat that resolves to the same contact. An agent's shared
+    DM session (`agent:<id>:main`, exactly) is the speaker's own only when the
+    speaker is the one contact tagged `permission-owner` (the owner DM guard
+    keeps every other person's DM out of it), every route naming it reaches one
+    direct peer (no glob, `group:` or `thread:` pattern), and every attached
+    chat is the speaker's direct chat or a thread inside it (spec
+    `channels/owner-dm-guard`). Anything else, or a failed read, is not
+    private: in `person_asking` the person's mail would stay in a transcript
+    other people can ask about.
 
     `--shared` (on `gmail list|read|send`) works only on the owner's own
     turns in a chat (conversation `dm` or `group`), because a shared grant

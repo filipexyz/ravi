@@ -9,11 +9,13 @@
    intended, re-run with `--execute` (or `--yes`, the legacy equivalent).
 4. `CONNECTOR_GROUP_BLOCKED` (exit 3): the turn is in a group chat. Say
    `error.chatLine` in the group and continue in the owner's direct chat. Do
-   not retry with other flags. In the owner's own direct chat it means the
-   session is shared (`dmScope: main`, a route with a session name, another
-   person's chat attached): give each person their own session
-   (`dmScope: per-peer`, the default) and remove the route's session name or
-   detach the chat. On the operator's `ravi sessions send|ask` it means the
+   not retry with other flags. In the owner's own direct chat it means other
+   people's chats can reach the session (another person's chat attached, a
+   route with a session name; in an agent's shared session `agent:<id>:main`,
+   a second tagged owner or a glob, `group:` or `thread:` route naming it):
+   detach the other chats, remove the route's session name, and keep a single
+   contact tagged `permission-owner` (spec `channels/owner-dm-guard`). On the
+   operator's `ravi sessions send|ask` it means the
    session posts its answer into a group or someone else's chat (its output
    attachment): run the command in the terminal, or ask in the owner's
    direct chat. Where the answer goes is `metadata.turnReplyTarget` of the
