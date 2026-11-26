@@ -973,7 +973,9 @@ describe("connector turn classification", () => {
     });
   });
 
-  describe("the owner's own direct chat needs a session of its own", () => {
+  describe("the owner's own direct chat counts in any session", () => {
+    // Owner decision (26/11): "se eu escrevo eu quero que esse dado venha,
+    // independente de onde estar"; in a group, sharing is the owner's choice.
     const OWNER_JID = "5511999999999@s.whatsapp.net";
     const LUIS = {
       actorPrincipal: "contact:c_luis",
@@ -989,52 +991,64 @@ describe("connector turn classification", () => {
       return turnContext(metadata, session);
     }
 
-    it("uses the owner's account in a per-person direct-chat session", () => {
+    it("uses the owner's account whatever session the chat runs in", () => {
       for (const sessionKey of [
         OWNER_DM_SESSION.sessionKey,
         "agent:main:dm:5511999999999",
-        "agent:main:whatsapp:dm:5511999999999",
+        "agent:main:main",
+        "agent:main:whatsapp:group:120363",
+        "custom-session",
+        undefined,
       ]) {
-        const result = classify(ownerTurn({ sessionKey, sessionName: "luis-dm" }));
-        expect(result.ok).toBe(true);
-        if (result.ok) expect(result.turn).toMatchObject({ speaker: { kind: "owner" }, conversation: "dm" });
-      }
-    });
-
-    it("refuses the session all direct chats share (dmScope main), a group key and an unknown session", () => {
-      for (const sessionKey of ["agent:main:main", "agent:main:whatsapp:group:120363", "custom-session", undefined]) {
         const result = classify(ownerTurn({ sessionKey, sessionName: "main" }));
-        const error = expectBlocked(result, "CONNECTOR_GROUP_BLOCKED");
-        expect(error.details).toMatchObject({
-          source: "connector-turn",
-          chatLine:
-            "I can't use your Gmail in this conversation: other people's chats share its session. Give each person their own session (dmScope per-peer), then ask me again.",
-          chatLinePt:
-            "Não posso usar o seu Gmail nesta conversa: as conversas de outras pessoas compartilham a sessão dela. Dê a cada pessoa a própria sessão (dmScope per-peer) e me peça de novo.",
-          replyTo: "same_chat",
-        });
-        expect(error.message).toContain("Do not retry");
-        if (!result.ok) expect(result).toMatchObject({ speakerIsOwner: true, sharedSession: true });
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.turn).toMatchObject({
+            speaker: { kind: "owner", contactId: "c_luis" },
+            conversation: "dm",
+          });
+        }
       }
     });
 
-    it("tells the agent in the envelope to reply with the chat line and wait for sessions of their own", () => {
-      const error = expectBlocked(
-        classify(ownerTurn({ sessionKey: "agent:main:main", sessionName: "main" })),
-        "CONNECTOR_GROUP_BLOCKED",
+    it("still uses it when a route sends chats into the session by name, or another person's chat is attached", () => {
+      dbCreateRoute({ pattern: "*", accountId: "wa-main", agent: "main", session: "team-inbox" });
+      expect(classify(ownerTurn({ sessionKey: OWNER_DM_SESSION.sessionKey, sessionName: "team-inbox" })).ok).toBe(true);
+
+      getOrCreateSession(OWNER_DM_SESSION.sessionKey, "main", stateDir ?? "/tmp");
+      const anaChat = upsertDirectChat("5511888888888@s.whatsapp.net", "c_ana");
+      dbCreateSessionChatSubscription({ sessionKey: OWNER_DM_SESSION.sessionKey, chatId: anaChat.id, role: "input" });
+      expect(classify(ownerTurn(OWNER_DM_SESSION)).ok).toBe(true);
+    });
+
+    it("uses the owner's account in a group too", () => {
+      const result = classify(
+        turnContext({
+          actorPrincipal: "contact:c_luis",
+          consoleUserId: "user_luis",
+          consoleOrgId: "org_1",
+          agentIdentityCompartment: "chat:120363012345678901@g.us",
+        }),
       );
-      const contract = cloudErrorToContractError("gmail list", error);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.turn).toMatchObject({ speaker: { kind: "owner", contactId: "c_luis" }, conversation: "group" });
+      }
+    });
 
-      expect(contract.exitCode).toBe(3);
-      expect(contract.envelope().error).toMatchObject({
-        code: "CONNECTOR_GROUP_BLOCKED",
-        chatLine: error.details?.chatLine,
-        replyTo: "same_chat",
-        suggestedAction:
-          "reply in this chat with the chat line, and do not retry until Luis gives each person their own session (dmScope per-peer)",
-      });
+    it("never lets a contact other than the owner use the owner's account in the shared session", () => {
+      expectBlocked(
+        classify(
+          ownerTurn(
+            { sessionKey: "agent:main:main", sessionName: "main" },
+            { ...LUIS, actorPrincipal: "contact:c_ana", consoleUserId: "user_ana" },
+          ),
+        ),
+        "CONNECTOR_SPEAKER_NOT_OWNER",
+      );
+    });
 
-      // A block without its own next step keeps the code's catalog one.
+    it("keeps the catalog next step for a contact refused in a group", () => {
       const inGroup = expectBlocked(
         classify(
           turnContext({
@@ -1050,24 +1064,7 @@ describe("connector turn classification", () => {
       );
     });
 
-    it("refuses a session a route sends chats into by name, or another person's chat is attached to", () => {
-      dbCreateRoute({ pattern: "*", accountId: "wa-main", agent: "main", session: "team-inbox" });
-      expectBlocked(
-        classify(ownerTurn({ sessionKey: OWNER_DM_SESSION.sessionKey, sessionName: "team-inbox" })),
-        "CONNECTOR_GROUP_BLOCKED",
-      );
-
-      const ownChat = upsertDirectChat(OWNER_JID, "c_luis");
-      getOrCreateSession(OWNER_DM_SESSION.sessionKey, "main", stateDir ?? "/tmp");
-      dbCreateSessionChatSubscription({ sessionKey: OWNER_DM_SESSION.sessionKey, chatId: ownChat.id, role: "primary" });
-      expect(classify(ownerTurn(OWNER_DM_SESSION)).ok).toBe(true);
-
-      const anaChat = upsertDirectChat("5511888888888@s.whatsapp.net", "c_ana");
-      dbCreateSessionChatSubscription({ sessionKey: OWNER_DM_SESSION.sessionKey, chatId: anaChat.id, role: "input" });
-      expectBlocked(classify(ownerTurn(OWNER_DM_SESSION)), "CONNECTOR_GROUP_BLOCKED");
-    });
-
-    it("still lets the owner change a mode and own the crons they create there", () => {
+    it("still lets the owner change a mode and own the crons they create in a shared session", () => {
       const shared = ownerTurn({ sessionKey: "agent:main:main", sessionName: "main" });
 
       expect(
@@ -1077,15 +1074,15 @@ describe("connector turn classification", () => {
       expect(resolveCronOwnerPrincipalForCurrentTurn({ ...OWNER, env: envFor(shared) })).toBe("operator");
     });
 
-    it("keeps the refusal in every agent mode, unless the owner asks for the shared account", () => {
+    it("uses the owner's own account there in every agent mode, and the shared one only with --shared", () => {
       const env = envFor(ownerTurn({ sessionKey: "agent:main:main", sessionName: "main" }));
       const exec = (mode: ConnectorUseMode, useShared = false) =>
         resolveConnectorExecRoute({ ...OWNER, env, provider: "google", getAgentMode: () => mode, useShared });
 
       for (const mode of ["owner", "person_asking", "shared"] as const) {
         const result = exec(mode);
-        expect(result.ok).toBe(false);
-        if (!result.ok) expect(result.error.code).toBe("CONNECTOR_GROUP_BLOCKED");
+        expect(result.ok).toBe(true);
+        if (result.ok) expect(result.route).toMatchObject({ mode: "owner", turn: { conversation: "dm" } });
       }
       const shared = exec("shared", true);
       expect(shared.ok).toBe(true);

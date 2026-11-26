@@ -12,10 +12,9 @@ import { getNats, publish, nats } from "../nats.js";
 import { publishSessionPrompt } from "./session-stream.js";
 import { expandRaviCommandPrompt, RaviCommandError } from "../commands/index.js";
 import { channelMessagePrefixDelivery, parseChannelMessagePrefix } from "../channels/message-prefix.js";
-import { evaluateOwnerDmGuard, isOperatorChosenDestination } from "../channels/owner-dm-guard.js";
+import { evaluateOwnerDmGuard } from "../channels/owner-dm-guard.js";
 import { type PendingReviewInput, pendingReviewEvents } from "../channels/pending-review-event.js";
 import { resolveSubscriptionPrecedence } from "../channels/subscription-precedence.js";
-import { isExplicitSessionAttach } from "../router/route-sticky-attach.js";
 import { handleSlashCommand } from "../slash/index.js";
 import {
   handleLinkingDirectMessage,
@@ -1300,15 +1299,6 @@ export class OmniConsumer {
     // src/channels/subscription-precedence.ts
     const existingSubscription = findSessionByAttachedChat(canonicalChat.id);
     let staleSubscription: typeof existingSubscription = null;
-    // Where the route alone sends the message, before a subscription reroutes it.
-    const routeMatched = matched;
-    // Whether the chat's subscription was honored and was made by a person or
-    // an agent; routing's own bookkeeping attach does not count.
-    let subscriptionAttachIsExplicit = Boolean(
-      existingSubscription &&
-        existingSubscription.sessionKey === matched.sessionKey &&
-        isExplicitSessionAttach(existingSubscription.attachedByType),
-    );
     if (
       existingSubscription &&
       (existingSubscription.sessionKey !== matched.sessionKey || Boolean(matched.route?.session?.trim()))
@@ -1361,7 +1351,6 @@ export class OmniConsumer {
           // override. The subscription doesn't expose a route — instance-level
           // policy is the next fallback.
           matched = precedence.matched;
-          subscriptionAttachIsExplicit = isExplicitSessionAttach(existingSubscription.attachedByType);
         }
       } else {
         log.warn("Subscription points to a missing session or agent — falling back to route resolution", {
@@ -1608,23 +1597,17 @@ export class OmniConsumer {
     }
 
     // -- Owner session guard --
-    // A DM from anyone but the owner never lands in the owner's shared
-    // session, whatever the instance policy (spec channels/owner-dm-guard).
-    // It reads the session the commit will land in: a route that forces a
-    // session redirects there, away from `matched.sessionKey`.
+    // A DM from anyone but the owner never lands in an agent's shared DM
+    // session, whatever the instance policy, routes or attached chats say
+    // (spec channels/owner-dm-guard). It reads the session the commit will
+    // land in: a route that forces a session redirects there, away from
+    // `matched.sessionKey`.
     if (!isGroup) {
       const landingSessionKey = previewCommittedSessionKey(matched, { threadId });
       const ownerGuard = evaluateOwnerDmGuard({
         peerKind: peerKind ?? "dm",
         sessionKey: landingSessionKey,
         senderContactId: effectiveActorType === "contact" ? effectiveContactId : null,
-        explicit: isOperatorChosenDestination({
-          routePattern: routeMatched.route?.pattern,
-          routeSessionKey: previewCommittedSessionKey(routeMatched, { threadId }),
-          attachExplicit: subscriptionAttachIsExplicit,
-          attachSessionKey: existingSubscription?.sessionKey,
-          landingSessionKey,
-        }),
       });
       if (ownerGuard.blocked) {
         const isNew = saveAccountPending(effectiveAccountId, senderPhone, {

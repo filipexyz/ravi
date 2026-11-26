@@ -13,6 +13,8 @@ import {
   createCodexRuntimeProvider,
   isCodexRestrictedRuntimeProfile,
   resolveCodexThreadSecurity,
+  resolveCodexTurnSandbox,
+  toCodexSandboxPolicy,
 } from "./codex-provider.js";
 import type { RuntimeEvent, RuntimeHostServices, RuntimePromptMessage, RuntimeStartRequest } from "./types.js";
 import { CodexBashGateUnverifiedError, ensureCodexHookGuard } from "./codex-hook-guard.js";
@@ -1018,6 +1020,124 @@ rl.on("line", (line) => {
     ]);
     expect(requests[0]?.params.model).toBe("gpt-5.5");
     expect(requests.slice(1).map((request) => request.params.model)).toEqual([null, "gpt-5.4-mini", null, "gpt-5.5"]);
+  }, 20_000);
+
+  const writeSandboxRecordingServer = (cwd: string, requestsPath: string): string => {
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const requestsPath = ${JSON.stringify(requestsPath)};
+const rl = createInterface({ input: process.stdin });
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+let turns = 0;
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") return;
+  if (message.id && (message.method === "thread/start" || message.method === "thread/resume")) {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    send({ id: message.id, result: { thread: { id: "thread_sandbox", turns: [] }, model: message.params.model, modelProvider: "openai" } });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    turns += 1;
+    const turn = { id: "turn_" + turns, status: "inProgress" };
+    send({ id: message.id, result: { turn } });
+    send({ jsonrpc: "2.0", method: "turn/started", params: { threadId: "thread_sandbox", turn } });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/completed",
+      params: { threadId: "thread_sandbox", turn: { id: turn.id, status: "completed" } },
+    });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+    return command;
+  };
+
+  const runSandboxTurns = async (heldPerTurn: boolean[]) => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-turn-sandbox-"));
+    const requestsPath = join(cwd, "requests.jsonl");
+    const command = writeSandboxRecordingServer(cwd, requestsPath);
+    // The daemon refreshes this env object before each turn (runtime-request-context).
+    const env: Record<string, string> = { PATH: process.env.PATH ?? "", RAVI_CODEX_TRANSPORT: "stdio" };
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest([], {
+        cwd,
+        env,
+        prompt: (async function* () {
+          for (const [index, held] of heldPerTurn.entries()) {
+            if (held) env.RAVI_TURN_HELD_BELOW_AGENT = "1";
+            else delete env.RAVI_TURN_HELD_BELOW_AGENT;
+            yield {
+              type: "user",
+              message: { role: "user", content: `turn ${index}` },
+              session_id: "",
+              parent_tool_use_id: null,
+            } satisfies RuntimePromptMessage;
+          }
+        })(),
+      }),
+    );
+    await collectEvents(session.events);
+    return readFileSync(requestsPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+  };
+
+  it("runs a turn of a person held below the agent in the read-only sandbox, per turn", async () => {
+    const requests = await runSandboxTurns([false, true, false]);
+    const turnStarts = requests.filter((request) => request.method === "turn/start");
+    const threadOpens = requests.filter((request) => request.method !== "turn/start");
+
+    // Sent on every turn: an app-server override sticks to later turns.
+    expect(turnStarts.map((request) => request.params.sandboxPolicy)).toEqual([
+      { type: "dangerFullAccess" },
+      { type: "readOnly" },
+      { type: "dangerFullAccess" },
+    ]);
+    // A changed turn env respawns the app-server; the thread reopens in the turn's sandbox.
+    expect(threadOpens.map((request) => [request.method, request.params.sandbox])).toEqual([
+      ["thread/start", "danger-full-access"],
+      ["thread/resume", "read-only"],
+      ["thread/resume", "danger-full-access"],
+    ]);
+    // web_search and view_image run outside the sandbox: off for the held turn only.
+    expect(
+      threadOpens.map((request) => [
+        request.params.config?.web_search ?? null,
+        request.params.config?.["tools.view_image"] ?? null,
+      ]),
+    ).toEqual([
+      [null, null],
+      ["disabled", false],
+      [null, null],
+    ]);
+  }, 20_000);
+
+  it("opens the thread read-only when its first turn is held below the agent", async () => {
+    const requests = await runSandboxTurns([true]);
+
+    expect(requests[0]?.params.sandbox).toBe("read-only");
+    expect(requests[0]?.params.config).toMatchObject({
+      web_search: "disabled",
+      "tools.web_search": false,
+      "tools.view_image": false,
+    });
+    expect(requests[1]?.params.sandboxPolicy).toEqual({ type: "readOnly" });
   }, 20_000);
 
   it("keeps multi-agent child notifications from replacing the top-level thread", async () => {
@@ -4577,4 +4697,15 @@ rl.on("line", (line) => {
     expect(failures[0]).toMatchObject({ recoverable: false });
     expect(JSON.stringify(failures[0])).toContain("Refusing to run an ungoverned Codex session");
   }, 20_000);
+});
+
+describe("codex turn sandbox", () => {
+  it("never grants a held turn more than the read-only sandbox", () => {
+    const unrestricted = resolveCodexThreadSecurity(undefined);
+    expect(resolveCodexTurnSandbox(unrestricted, false)).toBe("danger-full-access");
+    expect(resolveCodexTurnSandbox(unrestricted, true)).toBe("read-only");
+    expect(resolveCodexTurnSandbox(undefined, true)).toBe("read-only");
+    expect(toCodexSandboxPolicy("read-only")).toEqual({ type: "readOnly" });
+    expect(toCodexSandboxPolicy("danger-full-access")).toEqual({ type: "dangerFullAccess" });
+  });
 });

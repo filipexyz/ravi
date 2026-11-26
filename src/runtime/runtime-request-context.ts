@@ -37,7 +37,11 @@ import {
 } from "../permissions/contact-policy-permissions-provider.js";
 import { canWithCapabilities } from "../permissions/capability-snapshot.js";
 import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
-import { isRelayHeldBelowAgent } from "../permissions/actor-limit.js";
+import {
+  isRelayHeldBelowAgent,
+  isTurnHeldBelowAgent,
+  RAVI_TURN_HELD_BELOW_AGENT_ENV,
+} from "../permissions/actor-limit.js";
 import {
   breakGlassDeniesForContact,
   dedupeBreakGlassDenies,
@@ -1304,6 +1308,7 @@ function buildContextSource(resolvedSource?: RuntimeMessageTarget) {
 
 const MANAGED_RAVI_RUNTIME_ENV_KEYS = [
   "RAVI_CONTEXT_KEY",
+  RAVI_TURN_HELD_BELOW_AGENT_ENV,
   "RAVI_SESSION_KEY",
   "RAVI_SESSION_NAME",
   "RAVI_AGENT_ID",
@@ -1448,6 +1453,27 @@ export function buildRuntimeRequestEnv(options: {
   );
 }
 
+/**
+ * A turn that must not get the provider's own execution power: a person held
+ * below the agent's break-glass, a held relay, or a contact narrowed to the
+ * chat's grants (an active overlay) whose grants do not run every executable.
+ * The overlay case carries no break-glass deny, so it is checked by what the
+ * turn may execute, not by the deny marker. Only `execute:executable:*` (or
+ * break-glass) keeps the agent's sandbox: a grant for named executables
+ * (`execute:executable:ravi`) is still held, because the provider's own tools
+ * are not limited to those names. This fails closed.
+ */
+export function turnRunsBelowAgentExecution(context: {
+  metadata?: Record<string, unknown> | null;
+  capabilities?: ContextCapability[] | null;
+}): boolean {
+  if (isTurnHeldBelowAgent(context)) return true;
+  return (
+    context.metadata?.userOverlay === "active" &&
+    !canWithCapabilities(context.capabilities ?? [], "execute", "executable", "*")
+  );
+}
+
 function buildRaviRuntimeEnv(options: {
   runtimeContext: ReturnType<typeof createRuntimeContext>;
   dbSessionKey: string;
@@ -1506,6 +1532,10 @@ function buildRaviRuntimeEnv(options: {
     raviEnv.RAVI_THREAD_HANDOFF_ID = prompt._thread.handoffId;
     if (prompt._thread.slug) raviEnv.RAVI_THREAD_SLUG = prompt._thread.slug;
   }
+
+  // Read by the provider in the daemon (never from the agent's process): a turn of a
+  // person held below the agent runs without execution power the provider would grant.
+  if (turnRunsBelowAgentExecution(runtimeContext)) raviEnv[RAVI_TURN_HELD_BELOW_AGENT_ENV] = "1";
 
   Object.assign(raviEnv, buildTaskRuntimeEnv(sessionName, sessionCwd, prompt.taskBarrierTaskId));
   return raviEnv;

@@ -365,3 +365,64 @@ describe("cloud agents client: chat delivery and thread = run", () => {
     expect(fake.requests.map((request) => request.actorContact)).toEqual(["contact-ana", null]);
   });
 });
+
+describe("cloud agents client: linked contact of a Console user", () => {
+  const OWNER_UUID = "8d576898-bfc1-49dc-b532-8f896e496728";
+  // ravi-console `publicBinding` (src/server/console/ravi-link.ts:358-373).
+  const serverBinding = (overrides: Record<string, unknown> = {}) => ({
+    id: "1f6c2b9a-3d4e-4a5b-8c7d-9e0f1a2b3c4d",
+    installationId: "0b9f4c1e-2a57-4d8e-9c3b-6f1a2d7e8b90",
+    organizationId: "5e2d8a41-7c6b-4f03-a9e1-3b8c0d4f6a12",
+    consoleUserId: OWNER_UUID,
+    contactId: "d8f3d5ad489d",
+    platformIdentities: {},
+    status: "active",
+    linkedBy: OWNER_UUID,
+    linkedAt: "2026-11-01T12:00:00.000Z",
+    revokedAt: null,
+    createdAt: "2026-11-01T12:00:00.000Z",
+    updatedAt: "2026-11-01T12:00:00.000Z",
+    ...overrides,
+  });
+
+  // The Console answers `GET /api/cli/link?consoleUserId=` in the plural
+  // (src/server/console/ravi-link.ts:278-279).
+  function clientAnswering(bindings: unknown[]) {
+    const paths: string[] = [];
+    const fetch = (async (url: string | URL | Request) => {
+      const parsed = new URL(String(url));
+      paths.push(`${parsed.pathname}${parsed.search}`);
+      return new Response(JSON.stringify({ version: 1, bindings }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as unknown as typeof globalThis.fetch;
+    const client = new CloudAgentsClient({
+      client: new ConsoleApiClient({ consoleUrl: FAKE_CONSOLE_URL, fetch, actorContact: () => null }),
+      credentials: fakeCredentials(),
+      write: () => {},
+      delete: () => {},
+    });
+    return { client, paths };
+  }
+
+  it("reads the Console's plural answer and returns the user's contact", async () => {
+    const { client, paths } = clientAnswering([serverBinding(), { broken: true }]);
+    expect(await client.resolveLinkedContact(OWNER_UUID)).toBe("d8f3d5ad489d");
+    expect(paths).toEqual([`/api/cli/link?consoleUserId=${OWNER_UUID}`]);
+  });
+
+  it("answers null when the user has no link, or is linked from more than one contact", async () => {
+    expect(await clientAnswering([]).client.resolveLinkedContact(OWNER_UUID)).toBeNull();
+    const two = clientAnswering([
+      serverBinding(),
+      serverBinding({ id: "2a7d3c0b-4e5f-4b6c-9d8e-0f1a2b3c4d5e", contactId: "wa_contact" }),
+    ]);
+    expect(await two.client.resolveLinkedContact(OWNER_UUID)).toBeNull();
+  });
+
+  it("ignores an entry of another Console user", async () => {
+    const { client } = clientAnswering([serverBinding({ consoleUserId: "00000000-0000-4000-8000-000000000000" })]);
+    expect(await client.resolveLinkedContact(OWNER_UUID)).toBeNull();
+  });
+});

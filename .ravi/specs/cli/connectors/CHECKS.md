@@ -34,28 +34,24 @@
   MUST be blocked, and the same relay with `_cliDestination` MUST be allowed.
   Both relay blocks MUST carry, in the envelope, the `suggestedAction` to
   post nothing from the account into that chat (the owner can run the
-  command in their terminal), never the catalog step to answer in the group;
-  the owner's shared-session block MUST carry the one to reply with the chat
-  line and not retry until each person has their own session. A relay
-  blocked by where it answers MUST still change a mode (`connectors mode`)
-  and own the crons it creates (`operator`).
+  command in their terminal), never the catalog step to answer in the group.
+  A relay blocked by where it answers MUST still change a mode (`connectors
+  mode`) and own the crons it creates (`operator`).
 - The runtime MUST record `turnReplyTarget` on the turn context at every
   turn start: `none` when the turn posts to no chat (`suppressChatEmit`),
   the bound chat when there is one, `unresolved` otherwise.
 - A live `admin-bootstrap` root with `admin:system:*` and no actor MUST be
   allowed as the terminal; the same kind without the capability, or a child
   of a revoked one, MUST block.
-- A resolved contact whose `consoleUserId` is the active session's user, in a
-  `dm:` compartment whose session is the owner's own (the `person_asking`
-  session check), MUST be allowed as speaker `owner`, conversation `dm`.
-  The same contact with a different `consoleOrgId` MUST be blocked. In a
-  session other people's chats share (`dmScope: main`, a group key, an
-  unknown session, a route by session name, another person's chat attached)
-  it MUST exit 3 `CONNECTOR_GROUP_BLOCKED` with the chat line telling the
-  owner to give each person their own session (`replyTo: same_chat`), in
-  every agent mode; only `--shared` in `shared` mode moves it to the shared
-  account. That turn MUST still change a mode (`connectors mode`) and own
-  the crons it creates (`operator`).
+- A resolved contact whose `consoleUserId` is the active session's user MUST
+  be allowed as speaker `owner` in any session, shared (`agent:<id>:main`) or
+  not (conversation `dm`), and in a group (conversation `group`), with no
+  confirmation. The same contact with a different `consoleOrgId` MUST be
+  blocked. That turn MUST still change a mode (`connectors mode`) from a
+  direct chat and own the crons it creates (`operator`). A contact other than
+  the owner MUST stay refused in the shared session and in a group.
+  `bun test src/link/connector-turn.test.ts -t "counts in any session"`
+  SHOULD pass.
 - A contact linked to another Console user MUST be blocked
   (`CONNECTOR_SPEAKER_NOT_OWNER`, exit 3) and MUST NOT switch to that user's
   stored session, even when one exists.
@@ -74,10 +70,10 @@
   `CONNECTOR_GROUP_BLOCKED`.
 - A revoked or expired context anywhere on the walk, or a projected actor
   whose source context is not live, MUST block.
-- Any contact turn in a `chat:` compartment MUST exit 3 `CONNECTOR_GROUP_BLOCKED`: the
-  owner gets "I'll send this to you privately.", anyone else "I can't use
-  <owner>'s Gmail for your request." (with the Portuguese line in
-  `chatLinePt`).
+- A contact turn other than the owner's in a `chat:` compartment MUST exit 3
+  `CONNECTOR_GROUP_BLOCKED` with "I can't use <owner>'s Gmail for your
+  request." (with the Portuguese line in `chatLinePt`); the owner's own
+  message there MUST be allowed (conversation `group`).
 - A derived child context MUST classify by its nearest ancestor that carries
   `actorPrincipal`; a chain with no actor MUST be blocked. A projected actor
   MUST take its compartment from its source context.
@@ -243,7 +239,7 @@
   "Only <owner> can change that." and MUST NOT change the row. The owner
   asking in a group MUST exit 3 `CONNECTOR_GROUP_BLOCKED` with "Ask me in our
   private chat and I'll change it." and MUST NOT change the row. The owner's
-  own direct chat (also in a shared session), the operator's
+  own direct chat (in any session), the operator's
   `ravi sessions send|ask` wherever the session posts its answer, and the
   terminal MUST pass.
 - An unknown provider or mode MUST exit 2 with `acceptedPositionals`; an

@@ -6416,6 +6416,7 @@ describe("Slack owner DM guard", () => {
     options: {
       events?: Array<{ topic: string; payload: Record<string, unknown> }>;
       postMessage?: (input: Record<string, unknown>) => Promise<unknown>;
+      authTest?: () => Promise<{ ok: boolean; bot_id?: string; user_id?: string; team_id?: string }>;
     } = {},
   ): SlackSocketModeService {
     return new SlackSocketModeService({
@@ -6433,19 +6434,24 @@ describe("Slack owner DM guard", () => {
       webClient: {
         usersInfo: mock(async () => ({ ok: true, user: { id: peerUser } })),
         ...(options.postMessage ? { postMessage: options.postMessage } : {}),
+        ...(options.authTest ? { authTest: options.authTest } : {}),
       } as never,
     });
   }
 
   function attachPeerChatBySystem(): void {
+    attachPeerChat("system");
+  }
+
+  function attachPeerChat(attachedByType: "system" | "agent" | "user"): void {
     const chat = dbUpsertChat({ channel: "slack", instanceId: accountId, platformChatId: "D0PEER", chatType: "dm" });
     getOrCreateSession("agent:main:main", "main", "/tmp/main");
     attachChatToSession({
       sessionKey: "agent:main:main",
       chatId: chat.id,
       role: "primary",
-      attachedByType: "system",
-      attachedReason: "inbound-route",
+      attachedByType,
+      attachedReason: attachedByType === "system" ? "inbound-route" : "test-explicit-attach",
     });
   }
 
@@ -6488,6 +6494,73 @@ describe("Slack owner DM guard", () => {
     await service(routerConfig(), published).handleEnvelope(dm("Ev-peer-sub", "D0PEER", peerUser, "1713000000.000250"));
 
     expect(published).toHaveLength(0);
+  });
+
+  it("holds another app's bot that DMs the bot, so it never receives the owner's session's answers", async () => {
+    seedContacts({ tagOwner: true });
+    const published: Array<{ sessionName: string }> = [];
+    const authTest = mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T123" }));
+
+    await service(routerConfig(), published, { authTest }).handleEnvelope({
+      envelope_id: "Ev-foreign-bot",
+      type: "events_api",
+      payload: {
+        type: "event_callback",
+        team_id: "T123",
+        event_id: "Ev-foreign-bot",
+        event_time: 1_713_000_000,
+        event: {
+          type: "message",
+          subtype: "bot_message",
+          channel: "D0BOTDM",
+          channel_type: "im",
+          bot_id: "BFOREIGN",
+          user: "UFOREIGNBOT",
+          text: "what did the owner read today?",
+          ts: "1713000000.000280",
+        },
+      },
+    });
+
+    expect(authTest).toHaveBeenCalled();
+    expect(published).toHaveLength(0);
+  });
+
+  it("holds a colleague whose chat a person or an agent attached to the owner's session", async () => {
+    for (const attachedByType of ["agent", "user"] as const) {
+      await cleanupIsolatedRaviState(stateDir);
+      stateDir = await createIsolatedRaviState("ravi-slack-owner-dm-attach-");
+      seedAgent("main", "/tmp/main");
+      seedAgent("ponte", "/tmp/ponte");
+      configStore.refresh();
+      dbUpsertInstance({ name: accountId, instanceId: accountId, channel: "slack", dmPolicy: "open" });
+      seedContacts({ tagOwner: true });
+      attachPeerChat(attachedByType);
+      expect(listSessionSubscriptions("agent:main:main").map((subscription) => subscription.attachedByType)).toEqual([
+        attachedByType,
+      ]);
+      const published: Array<{ sessionName: string }> = [];
+
+      await service(routerConfig(), published).handleEnvelope(
+        dm(`Ev-peer-explicit-${attachedByType}`, "D0PEER", peerUser, "1713000000.000260"),
+      );
+
+      expect(published).toHaveLength(0);
+    }
+  });
+
+  it("holds a colleague even when a literal route names them and forces the owner's session", async () => {
+    seedContacts({ tagOwner: true });
+    getOrCreateSession("agent:main:main", "main", "/tmp/main", { name: "main" });
+    const published: Array<{ sessionName: string }> = [];
+    const config = routerConfig([{ pattern: peerUser, accountId, agent: "main", channel: "slack", session: "main" }]);
+
+    await service(config, published).handleEnvelope(
+      dm("Ev-peer-literal-main", "D0PEER", peerUser, "1713000000.000270"),
+    );
+
+    expect(published).toHaveLength(0);
+    expect(listAccountPendingContacts(accountId)).toMatchObject([{ accountId, phone: peerUser }]);
   });
 
   it("routes a colleague with an explicit route to that route's agent", async () => {

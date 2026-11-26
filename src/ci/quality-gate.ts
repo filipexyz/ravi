@@ -23,6 +23,9 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/channels/runner.ts": ["src/channels/runner.test.ts", "src/db/schema-owner.test.ts"],
   "src/channels/slack/socket-mode.ts": ["src/channels/slack/socket-mode.test.ts"],
   "src/channels/": [
+    // Owner DM guard: no one else's DM lands in an agent's shared DM session, on the key the commit lands in.
+    "src/channels/owner-dm-guard.test.ts",
+    "src/channels/owner-dm-guard.routing.test.ts",
     // Grant requests: the Slack adapter (reach approvers, private card, click handled by the core).
     "src/channels/slack/grant-request-adapter.test.ts",
     "src/channels/whatsapp/grant-request-adapter.test.ts",
@@ -154,6 +157,7 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/cli/commands/skills.test.ts",
     "src/runtime/allowed-skills.test.ts",
   ],
+  "src/session-inbox/": ["src/session-inbox/session-inbox.test.ts"],
   "src/runtime/": [
     "src/runtime/agent-instructions.test.ts",
     "src/runtime/ravi-rules.test.ts",
@@ -177,6 +181,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/runtime-events.test.ts",
     // Signals piggyback: the transformTurnPrompt seam in the delivery queue.
     "src/signals/delivery-seam.test.ts",
+    // Session inbox: deferred notices drained only by a human (or opted-in heartbeat) turn.
+    "src/session-inbox/session-inbox.test.ts",
     "src/runtime/index.test.ts",
     "src/runtime/model-catalog.test.ts",
     // Fail-fast model existence (catalog-driven) on every runtime write path.
