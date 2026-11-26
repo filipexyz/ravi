@@ -5766,6 +5766,10 @@ public struct SessionsNamespace: Sendable {
     SessionsFollowupsNamespace(transport: transport)
   }
 
+  public var retained: SessionsRetainedNamespace {
+    SessionsRetainedNamespace(transport: transport)
+  }
+
   public var runtime: SessionsRuntimeNamespace {
     SessionsRuntimeNamespace(transport: transport)
   }
@@ -6285,6 +6289,26 @@ public struct SessionsFollowupsNamespace: Sendable {
     requestBody["id"] = try RaviJSON.fromEncodable(id)
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["sessions","followups"], command: "update", body: requestBody, as: SessionsFollowupsUpdateReturn.self)
+  }
+}
+
+public struct SessionsRetainedNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func list() async throws -> SessionsRetainedListReturn {
+    let requestBody: [String: RaviJSON] = [:]
+    return try await transport.call(groupSegments: ["sessions","retained"], command: "list", body: requestBody, as: SessionsRetainedListReturn.self)
+  }
+
+  public func resume(_ item: String, _ options: SessionsRetainedResumeOptions = .init()) async throws -> SessionsRetainedResumeReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["item"] = try RaviJSON.fromEncodable(item)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sessions","retained"], command: "resume", body: requestBody, as: SessionsRetainedResumeReturn.self)
   }
 }
 

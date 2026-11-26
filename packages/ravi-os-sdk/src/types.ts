@@ -21022,6 +21022,39 @@ export type SessionsResetInput = {
 /** Return shape for `sessions.reset`. */
 export type SessionsResetReturn = Record<string, unknown>;
 
+/** Input shape for `sessions.retained.list`. */
+export type SessionsRetainedListInput = Record<string, never>;
+
+/** Return shape for `sessions.retained.list`. */
+export type SessionsRetainedListReturn = {
+  items: Array<{
+    ageMinutes: number;
+    itemId: string;
+    plan: "resumed" | "superseded" | "expired" | "deferred" | "failed" | "invalid";
+    preview: string;
+    refusedAt: string;
+    sessionName: string;
+    status: string;
+  }>;
+  total: number;
+  ttlMinutes: number;
+};
+
+/** Input shape for `sessions.retained.resume`. */
+export type SessionsRetainedResumeInput = {
+  execute?: boolean;
+  force?: boolean;
+  item: string;
+};
+
+/** Return shape for `sessions.retained.resume`. */
+export type SessionsRetainedResumeReturn = {
+  itemId: string;
+  ok: boolean;
+  requeuedAt: string;
+  sessionName: string;
+};
+
 /** Input shape for `sessions.runtime.follow-up`. */
 export type SessionsRuntimeFollowUpInput = {
   execute?: boolean;

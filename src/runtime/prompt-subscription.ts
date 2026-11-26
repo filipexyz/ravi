@@ -4,6 +4,11 @@ import {
   runtimeStartReceiptKey,
 } from "./start-admission-inbox.js";
 import { RuntimeStartCapacityError } from "./start-admission.js";
+import {
+  RETAINED_START_RESUME_INTERVAL_MS,
+  resumeRetainedStarts,
+  type RetainedStartDecision,
+} from "./start-admission-resume.js";
 import { admitTaskDispatch } from "../tasks/dispatch-admission.js";
 import { admitDecisionAnswer } from "../decisions/delivery.js";
 import { admitThreadAttention } from "../channels/slack/thread-attention-admission.js";
@@ -35,6 +40,8 @@ export interface RuntimePromptSubscriptionOptions {
   ensurePromptInfrastructure?(options?: EnsureSessionPromptInfrastructureOptions): Promise<void>;
   promptAckProgressIntervalMs?: number;
   startCapacityRetryDelaysMs?: readonly number[];
+  /** How often saved capacity refusals are retried; 0 disables the timer (tests drive it by hand). */
+  retainedStartResumeIntervalMs?: number;
   markConsumerReady(): void;
   handlePrompt(sessionName: string, prompt: RuntimeLaunchPrompt): Promise<void>;
 }
@@ -43,6 +50,8 @@ export class RuntimePromptSubscription {
   active = false;
   promptsReceived = 0;
   private healthTimer: ReturnType<typeof setInterval> | null = null;
+  private resumeTimer: ReturnType<typeof setInterval> | null = null;
+  private resumeInFlight: Promise<RetainedStartDecision[]> | null = null;
   private healthProbeInFlight = false;
   private readonly sessionDispatchTails = new Map<string, Promise<void>>();
 
@@ -53,6 +62,7 @@ export class RuntimePromptSubscription {
   }
 
   startHealthCheck(): void {
+    this.startRetainedStartResume();
     const healthCheckIntervalMs = 30_000;
     this.healthTimer = setInterval(() => {
       if (!this.options.isRunning()) return;
@@ -82,6 +92,10 @@ export class RuntimePromptSubscription {
   }
 
   stopHealthCheck(): void {
+    if (this.resumeTimer) {
+      clearInterval(this.resumeTimer);
+      this.resumeTimer = null;
+    }
     if (!this.healthTimer) {
       return;
     }
@@ -269,6 +283,65 @@ export class RuntimePromptSubscription {
     void dispatch;
   }
 
+  /** The same admission owners as live intake (thread attention, task, decision), then the session itself. */
+  private async admitAndRun(
+    sessionName: string,
+    prompt: RuntimeLaunchPrompt,
+    run: (accepted: RuntimeLaunchPrompt) => Promise<void>,
+  ): Promise<void> {
+    if (
+      !(await admitThreadAttention(sessionName, prompt, run)) &&
+      !(await admitTaskDispatch(sessionName, prompt, run)) &&
+      !(await admitDecisionAnswer(sessionName, prompt, (accepted) => this.options.handlePrompt(sessionName, accepted)))
+    ) {
+      await run(prompt);
+    }
+  }
+
+  private startRetainedStartResume(): void {
+    const intervalMs = this.options.retainedStartResumeIntervalMs ?? RETAINED_START_RESUME_INTERVAL_MS;
+    if (intervalMs <= 0 || this.resumeTimer) return;
+    this.resumeTimer = setInterval(() => {
+      if (!this.options.isRunning() || !this.active) return;
+      void this.resumeRetainedStarts().catch((error) => log.warn("Retained start resume pass failed", { error }));
+    }, intervalMs);
+    this.resumeTimer.unref?.();
+  }
+
+  /**
+   * Retries requests saved for lack of capacity. Each one runs once, inside its session's dispatch lane so it
+   * keeps order with live prompts, through the same admission owners as live intake and a single start attempt.
+   */
+  resumeRetainedStarts(): Promise<RetainedStartDecision[]> {
+    if (this.resumeInFlight) return this.resumeInFlight;
+    const pass = resumeRetainedStarts({
+      runOnce: (sessionName, prompt) =>
+        this.runInSessionLane(sessionName, () =>
+          this.admitAndRun(sessionName, prompt, (accepted) => this.options.handlePrompt(sessionName, accepted)),
+        ),
+      emit: (topic, payload) => nats.emit(topic, payload),
+    }).finally(() => {
+      this.resumeInFlight = null;
+    });
+    this.resumeInFlight = pass;
+    return pass;
+  }
+
+  private runInSessionLane(sessionName: string, work: () => Promise<void>): Promise<void> {
+    const previous = this.sessionDispatchTails.get(sessionName) ?? Promise.resolve();
+    // The previous item already reported its own failure to its caller; it must not block this one.
+    const run = previous
+      .catch((error) => log.debug("Earlier lane work failed; running the next item", { sessionName, error }))
+      .then(work);
+    // `run` carries this item's failure to its caller; the lane tail only needs to settle.
+    const tail = run.catch((error) => log.debug("Resumed lane work failed", { sessionName, error }));
+    this.sessionDispatchTails.set(sessionName, tail);
+    void tail.finally(() => {
+      if (this.sessionDispatchTails.get(sessionName) === tail) this.sessionDispatchTails.delete(sessionName);
+    });
+    return run;
+  }
+
   private async handlePromptWithCapacityRetry(sessionName: string, prompt: RuntimeLaunchPrompt): Promise<void> {
     const delays = this.options.startCapacityRetryDelaysMs ?? START_CAPACITY_RETRY_DELAYS_MS;
     for (let attempt = 0; ; attempt++) {
@@ -329,19 +402,9 @@ export class RuntimePromptSubscription {
       // Keep the transport work item unacknowledged until the dispatcher has accepted
       // it. Provider/bootstrap failures can happen before a turn exists, so
       // acknowledging earlier loses the only retryable copy.
-      if (
-        !(await admitThreadAttention(sessionName, prompt, (accepted) =>
-          this.handlePromptWithCapacityRetry(sessionName, accepted),
-        )) &&
-        !(await admitTaskDispatch(sessionName, prompt, (accepted) =>
-          this.handlePromptWithCapacityRetry(sessionName, accepted),
-        )) &&
-        !(await admitDecisionAnswer(sessionName, prompt, (accepted) =>
-          this.options.handlePrompt(sessionName, accepted),
-        ))
-      ) {
-        await this.handlePromptWithCapacityRetry(sessionName, prompt);
-      }
+      await this.admitAndRun(sessionName, prompt, (accepted) =>
+        this.handlePromptWithCapacityRetry(sessionName, accepted),
+      );
     } catch (error) {
       if (error instanceof RuntimeStartCapacityError) {
         if (prompt._decisionDeliveryId) {
@@ -362,7 +425,7 @@ export class RuntimePromptSubscription {
           ...error.capacity,
           receipt: item.id,
           retainedBy: "inbox",
-          recovery: "operator_resume_saved_envelope",
+          recovery: "auto_resume_saved_envelope",
         });
         if (created) {
           await nats
@@ -385,7 +448,7 @@ export class RuntimePromptSubscription {
             `Sem capacidade agora: ${c.active + c.reserved}/${c.max} sessões ocupadas` +
             (c.lane === "background" ? ` (limite de background: ${c.backgroundLimit})` : "") +
             `. Seu pedido foi salvo na caixa de entrada. Recibo: ${item.id}. ` +
-            "O operador precisa liberar capacidade e retomar o pedido salvo; não é necessário reenviar a mensagem.";
+            "Ele será retomado sozinho quando houver vaga; não é necessário reenviar a mensagem.";
           await nats
             .emit(`ravi.session.${sessionName}.response`, {
               response,

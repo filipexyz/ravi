@@ -109391,6 +109391,132 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsRetainedListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsRetainedListReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "ageMinutes": {
+              "type": "number"
+            },
+            "itemId": {
+              "type": "string"
+            },
+            "plan": {
+              "enum": [
+                "resumed",
+                "superseded",
+                "expired",
+                "deferred",
+                "failed",
+                "invalid"
+              ],
+              "type": "string"
+            },
+            "preview": {
+              "type": "string"
+            },
+            "refusedAt": {
+              "type": "string"
+            },
+            "sessionName": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "itemId",
+            "sessionName",
+            "status",
+            "refusedAt",
+            "ageMinutes",
+            "plan",
+            "preview"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      },
+      "ttlMinutes": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "ttlMinutes",
+      "total",
+      "items"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsRetainedResumeInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "execute": {
+        "description": "Requeue the request; default is a dry-run (exit 3)",
+        "type": "boolean"
+      },
+      "force": {
+        "description": "Resume even if the session was served later or the request expired",
+        "type": "boolean"
+      },
+      "item": {
+        "description": "Inbox item id of the saved request",
+        "type": "string"
+      }
+    },
+    "required": [
+      "item"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsRetainedResumeReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "itemId": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "requeuedAt": {
+        "type": "string"
+      },
+      "sessionName": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "itemId",
+      "sessionName",
+      "requeuedAt"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SessionsRuntimeFollowUpInputSchema = #"""
   {
     "additionalProperties": false,

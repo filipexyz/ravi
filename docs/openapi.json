@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "c3450d047a073b1c"
+    "version": "6a5c272f6e6af7d8"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -123761,6 +123761,192 @@
         },
         "security": [],
         "summary": "Reset a session (fresh start)",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/retained/list": {
+      "post": {
+        "operationId": "sessions.retained.list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "items": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "ageMinutes": {
+                            "type": "number"
+                          },
+                          "itemId": {
+                            "type": "string"
+                          },
+                          "plan": {
+                            "enum": [
+                              "resumed",
+                              "superseded",
+                              "expired",
+                              "deferred",
+                              "failed",
+                              "invalid"
+                            ],
+                            "type": "string"
+                          },
+                          "preview": {
+                            "type": "string"
+                          },
+                          "refusedAt": {
+                            "type": "string"
+                          },
+                          "sessionName": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "itemId",
+                          "sessionName",
+                          "status",
+                          "refusedAt",
+                          "ageMinutes",
+                          "plan",
+                          "preview"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "total": {
+                      "type": "number"
+                    },
+                    "ttlMinutes": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "ttlMinutes",
+                    "total",
+                    "items"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List saved capacity refusals and what the daemon will do with each",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/retained/resume": {
+      "post": {
+        "operationId": "sessions.retained.resume",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "execute": {
+                    "description": "Requeue the request; default is a dry-run (exit 3)",
+                    "type": "boolean"
+                  },
+                  "force": {
+                    "description": "Resume even if the session was served later or the request expired",
+                    "type": "boolean"
+                  },
+                  "item": {
+                    "description": "Inbox item id of the saved request",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "item"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "itemId": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "requeuedAt": {
+                      "type": "string"
+                    },
+                    "sessionName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "itemId",
+                    "sessionName",
+                    "requeuedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Put one saved request back on its session's prompt queue (dry-run unless --execute)",
         "tags": [
           "sessions"
         ]

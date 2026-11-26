@@ -552,7 +552,7 @@ describe("RuntimePromptSubscription", () => {
     expect(mainEvents.find((c) => c.payload.type === "dispatch.start_rejected")?.payload).toMatchObject({
       receipt: expect.stringContaining("inbox_item"),
       retainedBy: "inbox",
-      recovery: "operator_resume_saved_envelope",
+      recovery: "auto_resume_saved_envelope",
     });
     const notice = emitCalls.find((c) => c.topic === "ravi.session.main.response");
     expect(notice?.payload.response).toContain("inbox_item");
@@ -579,6 +579,70 @@ describe("RuntimePromptSubscription", () => {
     subscription.subscribe();
     await waitUntil(() => resumed.ack.mock.calls.length === 1);
     expect(executed).toEqual(["other", "first"]);
+  });
+
+  it("resumes saved refusals once capacity frees up: one attempt per pass, in order, through live admission", async () => {
+    const source = { channel: "slack", accountId: "test", chatId: "C1", actorType: "contact" };
+    let saturated = true;
+    let attempts = 0;
+    const executed: string[] = [];
+    const admitted: string[] = [];
+    taskAdmission = async (_session, prompt, handle) => {
+      if (prompt.prompt !== "task") return false;
+      admitted.push(String(prompt.prompt));
+      await handle(prompt);
+      return true;
+    };
+    const subscription = new RuntimePromptSubscription({
+      isRunning: () => true,
+      canAcceptPrompt: () => true,
+      getStreamingSessionCount: () => 1,
+      markConsumerReady: () => {},
+      startCapacityRetryDelaysMs: [1, 5],
+      retainedStartResumeIntervalMs: 0,
+      handlePrompt: async (_name, prompt) => {
+        attempts++;
+        if (saturated)
+          throw new RuntimeStartCapacityError({
+            lane: "interactive",
+            reason: "concurrency_limit",
+            active: 1,
+            reserved: 0,
+            max: 1,
+            backgroundLimit: 1,
+            queuePosition: null,
+            occupants: [],
+            largestConsumer: null,
+          });
+        executed.push(prompt.prompt);
+      },
+    });
+    for (const [seq, text] of [
+      [201, "first"],
+      [202, "task"],
+    ] as const) {
+      const message = makePromptMessage("ravi.session.main.prompt", { prompt: text, source });
+      message.info = { stream: "SESSION_PROMPTS", streamSequence: seq, redeliveryCount: 1 };
+      await (subscription as any).dispatchPrompt("main", { prompt: text, source }, message);
+    }
+    expect(listLocalInboxItems({ sourceDomain: "system" })).toHaveLength(2);
+
+    // Still full: a resume pass tries the oldest once, with no local retry loop, and keeps both saved.
+    attempts = 0;
+    const deferred = await subscription.resumeRetainedStarts();
+    expect(deferred.map((d) => d.outcome)).toEqual(["deferred"]);
+    expect(attempts).toBe(1);
+    expect(listLocalInboxItems({ sourceDomain: "system" })).toHaveLength(2);
+
+    saturated = false;
+    const resumed = await subscription.resumeRetainedStarts();
+    expect(resumed.map((d) => d.outcome)).toEqual(["resumed", "resumed"]);
+    expect(executed).toEqual(["first", "task"]);
+    // Admission ran at live intake (refused) and again on resume: the same owner gates both.
+    expect(admitted).toEqual(["task", "task"]);
+    expect(listLocalInboxItems({ sourceDomain: "system" })).toHaveLength(0);
+    expect(await subscription.resumeRetainedStarts()).toEqual([]);
+    expect(executed).toEqual(["first", "task"]);
   });
 
   it("keeps the capacity receipt out of the chat for automation prompts, still saving and signalling them", async () => {
