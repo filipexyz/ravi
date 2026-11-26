@@ -595,6 +595,26 @@ mock.module("../../adapters/index.js", () => ({
   getSessionAdapterDebugSnapshot: (adapterId: string) => adapterSnapshots.get(adapterId) ?? null,
 }));
 
+// Open Asks, keyed "<asked session key>|<asker session key>": the real store is a DB table.
+const openAsks = new Set<string>();
+const recordedAsks: Array<{ originSessionKey: string; targetSessionKey: string; sender: string | null }> = [];
+const revokedAsks: string[] = [];
+mock.module("../../sessions/ask-grants.js", () => ({
+  ASK_GRANT_TTL_MS: 1,
+  recordAskGrant: (input: { originSessionKey: string; targetSessionKey: string; sender?: string | null }) => {
+    recordedAsks.push({ ...input, sender: input.sender ?? null });
+    const id = `${input.targetSessionKey}|${input.originSessionKey}`;
+    openAsks.add(id);
+    return { id, ...input };
+  },
+  revokeAskGrant: (id: string) => {
+    revokedAsks.push(id);
+    openAsks.delete(id);
+  },
+  findOpenAskGrant: (originRef: string, caller: string | undefined) =>
+    caller && openAsks.has(`${caller}|${originRef}`) ? { id: "ask_test" } : null,
+}));
+
 const actualScopeModule = await import("../../permissions/scope.js");
 mock.module("../../permissions/scope.js", () => ({
   ...actualScopeModule,
@@ -1549,6 +1569,117 @@ describe("SessionCommands delivery barriers", () => {
     expect(publishedPrompts[0]?.payload.prompt).toBe("[System] Answer: [from: unknown] answer");
     expect(publishedPrompts[0]?.payload.deliveryBarrier).toBe("after_response");
     expect(publishedPrompts[0]?.payload.deliveryBarrierSource).toBe("default");
+  });
+});
+
+describe("SessionCommands answer through an open Ask", () => {
+  // 26/11: the asked agent had no access to the asker and the answer the Ask asked for was refused.
+  const ASKER = "agent:convit-omie:whatsapp:main:group:1203";
+  const ASKED = "agent:main:main";
+
+  beforeEach(() => {
+    publishedPrompts.length = 0;
+    openAsks.clear();
+    recordedAsks.length = 0;
+    revokedAsks.length = 0;
+    resolvedSession = { sessionKey: ASKER, name: "cassia-omie", agentId: "convit-omie", agentCwd: "/tmp/c" };
+    toolContext = { suppressCliOutput: true, agentId: "main", sessionKey: ASKED, sessionName: "main" };
+    scopeEnforced = true;
+    canAccess = false;
+  });
+
+  it("records the Ask so the asked session can answer it", async () => {
+    resolvedSession = { sessionKey: ASKED, name: "main", agentId: "main", agentCwd: "/tmp/m" };
+    toolContext = { suppressCliOutput: true, agentId: "convit-omie", sessionKey: ASKER };
+    canAccess = true;
+    await new SessionCommands().ask("main", "pergunta", "Luís Filipe");
+    expect(recordedAsks).toEqual([{ originSessionKey: ASKER, targetSessionKey: ASKED, sender: "Luís Filipe" }]);
+  });
+
+  it("withdraws the grant of an Ask that could not be delivered", async () => {
+    resolvedSession = { sessionKey: ASKED, name: "main", agentId: "main", agentCwd: "/tmp/m" };
+    toolContext = { suppressCliOutput: true, agentId: "convit-omie", sessionKey: ASKER };
+    canAccess = true;
+    publishSessionPromptError = new Error("NATS connection refused");
+    await expect(
+      new SessionCommands().ask(
+        "main",
+        "pergunta",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
+    ).rejects.toThrow();
+    expect(revokedAsks).toEqual([`${ASKED}|${ASKER}`]);
+    expect(openAsks.size).toBe(0);
+  });
+
+  it("gives no grant to an Ask from a trigger's own session, which takes no answers", async () => {
+    resolvedSession = { sessionKey: ASKED, name: "main", agentId: "main", agentCwd: "/tmp/m" };
+    toolContext = { suppressCliOutput: true, agentId: "main", sessionKey: "agent:main:trigger:abc123:own" };
+    canAccess = true;
+    await new SessionCommands().ask("main", "pergunta");
+    expect(recordedAsks).toEqual([]);
+  });
+
+  it("answers with a receipt that shows nothing of the asker beyond its key", async () => {
+    openAsks.add(`${ASKED}|${ASKER}`);
+    resolvedSession = {
+      sessionKey: ASKER,
+      name: "cassia-omie",
+      agentId: "convit-omie",
+      agentCwd: "/srv/convit/private",
+      lastTo: "120363431846316920@g.us",
+    };
+    const receipt = (await new SessionCommands().answer(ASKER, "resposta")) as Record<string, unknown>;
+    expect(receipt.session).toEqual({ sessionKey: ASKER });
+    // Delivery names the barrier only: no chat, channel or account of the asker.
+    expect(Object.keys(receipt.delivery as Record<string, unknown>).sort()).toEqual(["barrier", "barrierSource"]);
+    expect(JSON.stringify(receipt)).not.toContain("/srv/convit/private");
+    expect(JSON.stringify(receipt)).not.toContain("120363431846316920@g.us");
+  });
+
+  it("delivers the answer to the asker while the Ask is open", async () => {
+    openAsks.add(`${ASKED}|${ASKER}`);
+    const receipt = (await new SessionCommands().answer(ASKER, "resposta", "Luís Filipe")) as Record<string, unknown>;
+    expect(receipt).toMatchObject({ action: "answer", published: true });
+    expect(publishedPrompts).toHaveLength(1);
+    expect(publishedPrompts[0]?.payload.prompt).toBe(`[System] Answer: [from: ${ASKED}, sender: Luís Filipe] resposta`);
+  });
+
+  it("refuses the answer when the caller was never asked, as if the session did not exist", async () => {
+    await expect(new SessionCommands().answer(ASKER, "resposta")).rejects.toThrow("Session not found");
+    expect(publishedPrompts).toHaveLength(0);
+  });
+
+  it("refuses the answer from a session other than the one asked", async () => {
+    openAsks.add(`${ASKED}|${ASKER}`);
+    toolContext = { suppressCliOutput: true, agentId: "dev", sessionKey: "agent:dev:main" };
+    await expect(new SessionCommands().answer(ASKER, "resposta")).rejects.toThrow("Session not found");
+    expect(publishedPrompts).toHaveLength(0);
+  });
+
+  it("refuses to redirect an answer sent through an Ask", async () => {
+    openAsks.add(`${ASKED}|${ASKER}`);
+    await expect(new SessionCommands().answer(ASKER, "resposta", undefined, "whatsapp")).rejects.toThrow("--channel");
+    await expect(new SessionCommands().answer(ASKER, "resposta", undefined, undefined, "120@g.us")).rejects.toThrow(
+      "--channel",
+    );
+    expect(publishedPrompts).toHaveLength(0);
+  });
+
+  it("does not open read, send, ask, execute or inform on the asker", async () => {
+    openAsks.add(`${ASKED}|${ASKER}`);
+    const commands = new SessionCommands();
+    await expect(commands.send(ASKER, "x")).rejects.toThrow("Session not found");
+    await expect(commands.ask(ASKER, "x")).rejects.toThrow("Session not found");
+    await expect(commands.execute(ASKER, "x")).rejects.toThrow("Session not found");
+    await expect(commands.inform(ASKER, "x")).rejects.toThrow("Session not found");
+    expect(publishedPrompts).toHaveLength(0);
   });
 });
 
