@@ -32,8 +32,9 @@ The installation's verified owner acts with their own power, not with the
 agent's ceiling. Everyone else acts as the agent ∩ the person.
 
 "The owner" is each contact carrying the global `permission-owner` tag: the
-tag is the only gate. The code does not enforce a single owner; writing the
-tag is protected (`privileged-contact-writes`, break-glass). Other consumers
+tag is the only qualifying tag (the contact must also be `allowed` and not
+opted out). The code does not enforce a single owner; writing the tag is
+protected (`privileged-contact-writes`, break-glass). Other consumers
 (knowledge owner, doctor) assume exactly one.
 
 ## Contract
@@ -74,16 +75,19 @@ tag is protected (`privileged-contact-writes`, break-glass). Other consumers
 - A chat that narrows the relayed turn's own actor MUST keep its overlay.
 - A chat grant, full access included, MUST NOT make anyone an owner.
 - The owner's power MUST be re-read on every turn: an untag or
-  `permissions deny` takes effect on the next turn. A turn already running
-  keeps its issued snapshot until it ends (the Bash hook does not re-read the
-  live ceiling for it).
+  `permissions deny` takes effect on the next turn. An untag does not cut a
+  turn already running: it keeps its issued snapshot (the Bash hook does not
+  re-read the live ceiling for it). A `permissions deny` of a grant recorded on
+  that turn's lifted overlay still revokes its context live, as for any
+  overlay.
 - Any other person's turn is unchanged: agent ∩ person, break-glass withheld.
 
 ## Not in scope
 
 Accepted risk (Luís, 26/11: "compartilhar com alguém em um grupo pode ser a
-minha escolha"): an owner turn gets an unbounded shell and, on Codex,
-full-access in any agent, including agents open to outsiders. Text other
+minha escolha"): an owner turn runs with the owner's snapshot (admin, so in
+practice an unbounded shell) and, on Codex, full-access (bridge turns
+excepted) in any agent, including agents open to outsiders. Text other
 participants wrote in the group enters the owner turn's context, so a
 stranger's message can steer what runs with the owner's power (prompt
 injection). The core does not mitigate this; the owner chooses where to speak.
