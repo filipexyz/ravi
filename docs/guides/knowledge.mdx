@@ -40,7 +40,7 @@ When the Console is unreachable or you are not logged in, the search still retur
 Knowledge answers only the operator's own turns:
 
 - the terminal;
-- the operator's own direct chat with an agent, in a session no one else shares;
+- the operator's own message to an agent, in any session or group. In a group, what it returns stays in that conversation, where others can ask about it later: sharing there is the operator's choice;
 - the operator's own `ravi sessions send|ask` and cron routines, when the session is theirs alone (a session made from the terminal, an `--isolated` cron, or their private direct chat). In a shared session the reason is `shared_session`.
 
 Every other turn (a group, a contact's DM, a heartbeat, a trigger, another agent) exits 3 with `KNOWLEDGE_TURN_NOT_OPERATOR`, and the agent tells the person to ask in private.

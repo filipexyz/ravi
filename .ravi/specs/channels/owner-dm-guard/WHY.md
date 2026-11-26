@@ -16,6 +16,8 @@ Knowledge (`audience=none`) answered as if a stranger had asked
 The private-session check refused every `dmScope: main` key, because the guard
 still let a colleague in through a route naming them or an attached chat. The
 owner asked that his DM stay in that session and work, and that every other
-person's DM stay out of it. The exception went away, and the check now accepts
-the shared session for its sole owner when nothing else writes in it.
+person's DM stay out of it. The exception went away. The same day he decided
+that his own message counts wherever he writes ("se eu escrevo eu quero que
+esse dado venha, independente de onde estar"), so the turn no longer depends
+on this guard; a chat other people read asks for his confirmation there.
 

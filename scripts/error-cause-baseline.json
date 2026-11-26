@@ -2894,13 +2894,6 @@
       "count": 1
     },
     {
-      "id": "src/knowledge/turn/audience.ts:ea85140b674efc5bc81dd4d4",
-      "file": "src/knowledge/turn/audience.ts",
-      "boundary": "knowledge",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
       "id": "src/knowledge/turn/preamble.ts:a714b2f5508113e5d021ad0b",
       "file": "src/knowledge/turn/preamble.ts",
       "boundary": "knowledge",
@@ -5730,7 +5723,7 @@
     }
   ],
   "totals": {
-    "violations": 857,
+    "violations": 856,
     "byDirectory": {
       "src/access": 2,
       "src/adapters": 2,
@@ -5780,7 +5773,7 @@
       "src/knowledge/packet": 3,
       "src/knowledge/safety": 12,
       "src/knowledge/store": 6,
-      "src/knowledge/turn": 6,
+      "src/knowledge/turn": 5,
       "src/leader": 4,
       "src/library": 51,
       "src/link": 20,
