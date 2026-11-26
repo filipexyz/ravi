@@ -93,7 +93,8 @@ gateway, and OpenAPI surfaces.
 ## Boundaries
 
 - This spec governs scaffold-owned artifact lifecycle only.
-- Plugin or global uninstall is out of scope.
+- Plugin uninstall is out of scope. Store installs and uninstalls are governed
+  by apps/store.
 - Broad SDK error redesign is out of scope.
 - Permissions domain work beyond typed error surfaces is out of scope.
 - Health checks, command execution, or app code execution during delete is

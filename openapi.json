@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "2797cd78da8b0907"
+    "version": "7f8e015a376e87d1"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -10744,7 +10744,8 @@
                                         "interface": {
                                           "enum": [
                                             "builtin",
-                                            "cli"
+                                            "cli",
+                                            "script"
                                           ],
                                           "type": "string"
                                         },
@@ -11615,7 +11616,8 @@
                                       "interface": {
                                         "enum": [
                                           "builtin",
-                                          "cli"
+                                          "cli",
+                                          "script"
                                         ],
                                         "type": "string"
                                       },
@@ -11905,7 +11907,8 @@
                                       "interface": {
                                         "enum": [
                                           "builtin",
-                                          "cli"
+                                          "cli",
+                                          "script"
                                         ],
                                         "type": "string"
                                       },
@@ -12311,7 +12314,8 @@
                                         "interface": {
                                           "enum": [
                                             "builtin",
-                                            "cli"
+                                            "cli",
+                                            "script"
                                           ],
                                           "type": "string"
                                         },
@@ -12602,6 +12606,74 @@
         ]
       }
     },
+    "/api/v1/apps/refresh": {
+      "post": {
+        "operationId": "apps.refresh",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "apps": {
+                      "type": "number"
+                    },
+                    "blockSerial": {
+                      "type": "number"
+                    },
+                    "changed": {
+                      "type": "boolean"
+                    },
+                    "indexSerial": {
+                      "type": "number"
+                    },
+                    "keysSerial": {
+                      "type": "number"
+                    },
+                    "refreshedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "source": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "changed",
+                    "keysSerial",
+                    "indexSerial",
+                    "blockSerial",
+                    "apps",
+                    "refreshedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Fetch and verify the signed official index, keys and block list",
+        "tags": [
+          "apps"
+        ]
+      }
+    },
     "/api/v1/apps/run": {
       "post": {
         "operationId": "apps.run",
@@ -12700,7 +12772,8 @@
                         {
                           "enum": [
                             "builtin",
-                            "cli"
+                            "cli",
+                            "script"
                           ],
                           "type": "string"
                         },
@@ -12840,7 +12913,8 @@
                         "interface": {
                           "enum": [
                             "builtin",
-                            "cli"
+                            "cli",
+                            "script"
                           ],
                           "type": "string"
                         },
@@ -12898,7 +12972,8 @@
                         "interface": {
                           "enum": [
                             "builtin",
-                            "cli"
+                            "cli",
+                            "script"
                           ],
                           "type": "string"
                         },
@@ -13203,6 +13278,149 @@
         ]
       }
     },
+    "/api/v1/apps/search": {
+      "post": {
+        "operationId": "apps.search",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "query": {
+                    "description": "Text to match in id, name or description",
+                    "type": "string"
+                  },
+                  "refresh": {
+                    "description": "Fetch the signed index before searching",
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "apps": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "blocked": {
+                            "type": "boolean"
+                          },
+                          "class": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "compose",
+                                  "connector",
+                                  "code"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "installed": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "latest": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "publisher": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "description",
+                          "publisher",
+                          "latest",
+                          "class",
+                          "installed",
+                          "blocked"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "indexSerial": {
+                      "type": "number"
+                    },
+                    "refreshedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "source": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "indexSerial",
+                    "refreshedAt",
+                    "apps"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Search the official Ravi Apps index",
+        "tags": [
+          "apps"
+        ]
+      }
+    },
     "/api/v1/apps/show": {
       "post": {
         "operationId": "apps.show",
@@ -13365,7 +13583,8 @@
                                     "interface": {
                                       "enum": [
                                         "builtin",
-                                        "cli"
+                                        "cli",
+                                        "script"
                                       ],
                                       "type": "string"
                                     },
@@ -13548,6 +13767,114 @@
         },
         "security": [],
         "summary": "Show a Ravi app manifest",
+        "tags": [
+          "apps"
+        ]
+      }
+    },
+    "/api/v1/apps/verify": {
+      "post": {
+        "operationId": "apps.verify",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "description": "Installed app id. Omit to verify every store app.",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "apps": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "exposedTo": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "ok": {
+                            "type": "boolean"
+                          },
+                          "problems": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "source": {
+                            "enum": [
+                              "official",
+                              "local"
+                            ],
+                            "type": "string"
+                          },
+                          "state": {
+                            "enum": [
+                              "active",
+                              "quarantined"
+                            ],
+                            "type": "string"
+                          },
+                          "version": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "version",
+                          "source",
+                          "state",
+                          "ok",
+                          "problems",
+                          "exposedTo"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "apps"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Check installed store apps against their receipts and the block list",
         "tags": [
           "apps"
         ]

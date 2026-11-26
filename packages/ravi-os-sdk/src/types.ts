@@ -1716,7 +1716,7 @@ export type AppsGuideReturn = {
         };
         failClosed: true;
         id: string;
-        interface: "builtin" | "cli";
+        interface: "builtin" | "cli" | "script";
         operation: string;
         requestSchema: {
           kind: "ref" | "inline" | "unknown";
@@ -1861,7 +1861,7 @@ export type AppsListReturn = {
         };
         failClosed: true;
         id: string;
-        interface: "builtin" | "cli";
+        interface: "builtin" | "cli" | "script";
         operation: string;
         requestSchema: {
           kind: "ref" | "inline" | "unknown";
@@ -1903,7 +1903,7 @@ export type AppsListReturn = {
         };
         failClosed: true;
         id: string;
-        interface: "builtin" | "cli";
+        interface: "builtin" | "cli" | "script";
         operation: string;
         requestSchema: {
           kind: "ref" | "inline" | "unknown";
@@ -1965,7 +1965,7 @@ export type AppsPromptsReturn = {
         };
         failClosed: true;
         id: string;
-        interface: "builtin" | "cli";
+        interface: "builtin" | "cli" | "script";
         operation: string;
         requestSchema: {
           kind: "ref" | "inline" | "unknown";
@@ -2008,6 +2008,20 @@ export type AppsPromptsReturn = {
   };
 };
 
+/** Input shape for `apps.refresh`. */
+export type AppsRefreshInput = Record<string, never>;
+
+/** Return shape for `apps.refresh`. */
+export type AppsRefreshReturn = {
+  apps: number;
+  blockSerial: number;
+  changed: boolean;
+  indexSerial: number;
+  keysSerial: number;
+  refreshedAt: string | null;
+  source: string;
+};
+
 /** Input shape for `apps.run`. */
 export type AppsRunInput = {
   args?: string[];
@@ -2029,7 +2043,7 @@ export type AppsRunReturn = {
   errorCode?: string;
   exitCode?: number | null;
   handler?: string;
-  interface: ("builtin" | "cli") | null;
+  interface: ("builtin" | "cli" | "script") | null;
   mutating: boolean;
   ok: boolean;
   operation: string | null;
@@ -2059,7 +2073,7 @@ export type AppsRunReturn = {
       };
       ttlSec?: number;
     };
-    interface: "builtin" | "cli";
+    interface: "builtin" | "cli" | "script";
     providerId: string;
     providerOperationId: string;
     providerVersion: string;
@@ -2071,7 +2085,7 @@ export type AppsRunReturn = {
   plan?: {
     appId: string;
     argumentCount: number;
-    interface: "builtin" | "cli";
+    interface: "builtin" | "cli" | "script";
     mutating: true;
     operationId: string;
   };
@@ -2122,6 +2136,29 @@ export type AppsScaffoldReturn = {
   specPath: string | null;
 };
 
+/** Input shape for `apps.search`. */
+export type AppsSearchInput = {
+  query?: string;
+  refresh?: boolean;
+};
+
+/** Return shape for `apps.search`. */
+export type AppsSearchReturn = {
+  apps: Array<{
+    blocked: boolean;
+    class: ("compose" | "connector" | "code") | null;
+    description: string;
+    id: string;
+    installed: string | null;
+    latest: string | null;
+    name: string;
+    publisher: string;
+  }>;
+  indexSerial: number;
+  refreshedAt: string | null;
+  source: string;
+};
+
 /** Input shape for `apps.show`. */
 export type AppsShowInput = {
   id: string;
@@ -2150,7 +2187,7 @@ export type AppsShowReturn = {
         };
         failClosed: true;
         id: string;
-        interface: "builtin" | "cli";
+        interface: "builtin" | "cli" | "script";
         operation: string;
         requestSchema: {
           kind: "ref" | "inline" | "unknown";
@@ -2172,6 +2209,25 @@ export type AppsShowReturn = {
     version: string | null;
     warnings: string[];
   };
+};
+
+/** Input shape for `apps.verify`. */
+export type AppsVerifyInput = {
+  id?: string;
+};
+
+/** Return shape for `apps.verify`. */
+export type AppsVerifyReturn = {
+  apps: Array<{
+    exposedTo: string[];
+    id: string;
+    ok: boolean;
+    problems: string[];
+    source: "official" | "local";
+    state: "active" | "quarantined";
+    version: string;
+  }>;
+  ok: boolean;
 };
 
 /** Input shape for `artifacts.archive`. */

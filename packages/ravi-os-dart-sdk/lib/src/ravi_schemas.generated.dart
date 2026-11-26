@@ -9597,7 +9597,8 @@ class RaviSchemas {
                         "interface": {
                           "enum": [
                             "builtin",
-                            "cli"
+                            "cli",
+                            "script"
                           ],
                           "type": "string"
                         },
@@ -10449,7 +10450,8 @@ class RaviSchemas {
                       "interface": {
                         "enum": [
                           "builtin",
-                          "cli"
+                          "cli",
+                          "script"
                         ],
                         "type": "string"
                       },
@@ -10739,7 +10741,8 @@ class RaviSchemas {
                       "interface": {
                         "enum": [
                           "builtin",
-                          "cli"
+                          "cli",
+                          "script"
                         ],
                         "type": "string"
                       },
@@ -11119,7 +11122,8 @@ class RaviSchemas {
                         "interface": {
                           "enum": [
                             "builtin",
-                            "cli"
+                            "cli",
+                            "script"
                           ],
                           "type": "string"
                         },
@@ -11394,6 +11398,60 @@ class RaviSchemas {
 }
 ''';
 
+  static const appsRefreshInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+}
+''';
+
+  static const appsRefreshReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "apps": {
+      "type": "number"
+    },
+    "blockSerial": {
+      "type": "number"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "indexSerial": {
+      "type": "number"
+    },
+    "keysSerial": {
+      "type": "number"
+    },
+    "refreshedAt": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "source",
+    "changed",
+    "keysSerial",
+    "indexSerial",
+    "blockSerial",
+    "apps",
+    "refreshedAt"
+  ],
+  "type": "object"
+}
+''';
+
   static const appsRunInputSchema = r'''
 {
   "additionalProperties": false,
@@ -11482,7 +11540,8 @@ class RaviSchemas {
         {
           "enum": [
             "builtin",
-            "cli"
+            "cli",
+            "script"
           ],
           "type": "string"
         },
@@ -11622,7 +11681,8 @@ class RaviSchemas {
         "interface": {
           "enum": [
             "builtin",
-            "cli"
+            "cli",
+            "script"
           ],
           "type": "string"
         },
@@ -11680,7 +11740,8 @@ class RaviSchemas {
         "interface": {
           "enum": [
             "builtin",
-            "cli"
+            "cli",
+            "script"
           ],
           "type": "string"
         },
@@ -11976,6 +12037,123 @@ class RaviSchemas {
 }
 ''';
 
+  static const appsSearchInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "query": {
+      "description": "Text to match in id, name or description",
+      "type": "string"
+    },
+    "refresh": {
+      "description": "Fetch the signed index before searching",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const appsSearchReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "apps": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "blocked": {
+            "type": "boolean"
+          },
+          "class": {
+            "anyOf": [
+              {
+                "enum": [
+                  "compose",
+                  "connector",
+                  "code"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "installed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "publisher": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "publisher",
+          "latest",
+          "class",
+          "installed",
+          "blocked"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "indexSerial": {
+      "type": "number"
+    },
+    "refreshedAt": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "source",
+    "indexSerial",
+    "refreshedAt",
+    "apps"
+  ],
+  "type": "object"
+}
+''';
+
   static const appsShowInputSchema = r'''
 {
   "additionalProperties": false,
@@ -12128,7 +12306,8 @@ class RaviSchemas {
                     "interface": {
                       "enum": [
                         "builtin",
-                        "cli"
+                        "cli",
+                        "script"
                       ],
                       "type": "string"
                     },
@@ -12295,6 +12474,88 @@ class RaviSchemas {
   },
   "required": [
     "app"
+  ],
+  "type": "object"
+}
+''';
+
+  static const appsVerifyInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Installed app id. Omit to verify every store app.",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const appsVerifyReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "apps": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "exposedTo": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "problems": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "source": {
+            "enum": [
+              "official",
+              "local"
+            ],
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "active",
+              "quarantined"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "source",
+          "state",
+          "ok",
+          "problems",
+          "exposedTo"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "ok",
+    "apps"
   ],
   "type": "object"
 }

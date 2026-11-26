@@ -75,6 +75,7 @@ import { startSignalsRunner, stopSignalsRunner } from "./signals/index.js";
 import { startKnowledgeLeaderRunners, stopKnowledgeLeaderRunners } from "./knowledge/runners.js";
 import { startSyncRunner, stopSyncRunner } from "./sync/index.js";
 import { startLibraryPinRunner, stopLibraryPinRunner } from "./library/pin-runner.js";
+import { startAppStoreRunner, stopAppStoreRunner } from "./apps/store/runner.js";
 import { startLibraryRequestRunner, stopLibraryRequestRunner } from "./library/request-runner.js";
 import { startCloudTaskWatcher, stopCloudTaskWatcher } from "./cloud-agents/task-watcher.js";
 import { startCloudWorkerRunner, stopCloudWorkerRunner } from "./cloud-agents/worker-runner.js";
@@ -339,6 +340,7 @@ async function shutdown(signal: string, exitCode = 0) {
       { name: "whatsapp-grant-request", stop: stopWhatsAppGrantRequestRunner },
       { name: "sync", stop: stopSyncRunner },
       { name: "library-pin", stop: stopLibraryPinRunner },
+      { name: "app-store", stop: stopAppStoreRunner },
       { name: "library-request", stop: stopLibraryRequestRunner },
       { name: "cloud-task", stop: stopCloudTaskWatcher },
       { name: "cloud-worker", stop: stopCloudWorkerRunner },
@@ -685,6 +687,9 @@ export async function startDaemon() {
 
   await startLibraryPinRunner();
   log.info("Library pin runner started");
+
+  await startAppStoreRunner();
+  log.info("App store runner started");
 
   await startLibraryRequestRunner();
   log.info("Library request runner started");

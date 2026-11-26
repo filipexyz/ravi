@@ -103,6 +103,23 @@ export function enforceRaviAppRunResult(result: RaviAppRunResult, asJson: boolea
     });
   }
 
+  // Script operations (spec apps/router, "Script Operations"): input, limit and output refusals are Ravi's own text
+  // and name the fix. A script that threw explains itself in its own words, kept labeled as the app's.
+  if (result.errorCode?.startsWith("APP_SCRIPT_")) {
+    const appText = result.errorCode === "APP_SCRIPT_FAILED";
+    const message = appText ? APP_OPERATION_FAILED_MESSAGE : (result.error ?? APP_OPERATION_FAILED_MESSAGE);
+    contractFail("apps run", result.errorCode, message, {
+      asJson,
+      details: {
+        suggestedAction: appText
+          ? REPORTED_CAUSE_ACTION
+          : "Fix the input the message names (folders must be inside the working directory), then retry",
+        ...(appText && result.error ? { appReported: { message: result.error } } : {}),
+      },
+      diagnostic: errorDiagnostic(message, { operation: "apps run" }),
+    });
+  }
+
   const failure = result.failure;
   // A CLI that ran and failed explains itself through the projection the router kept (never its raw output). What it
   // reported is the app's text, so it stays labeled as the app's: the headline and the next step are Ravi's own and

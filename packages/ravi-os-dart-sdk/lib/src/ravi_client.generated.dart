@@ -636,6 +636,16 @@ class AppsNamespace {
     );
   }
 
+  Future<AppsRefreshReturn> refresh() async {
+    final requestBody = <String, RaviJson>{};
+    return _transport.callJson(
+      groupSegments: const ["apps"],
+      command: "refresh",
+      body: requestBody,
+      decode: appsRefreshReturnFromJson,
+    );
+  }
+
   Future<AppsRunReturn> run(String id, [String? operation, List<String>? args, AppsRunOptions options = const AppsRunOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["id"] = RaviJson.from(id);
@@ -666,6 +676,20 @@ class AppsNamespace {
     );
   }
 
+  Future<AppsSearchReturn> search([String? query, AppsSearchOptions options = const AppsSearchOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    if (query != null) {
+      requestBody["query"] = RaviJson.from(query);
+    }
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["apps"],
+      command: "search",
+      body: requestBody,
+      decode: appsSearchReturnFromJson,
+    );
+  }
+
   Future<AppsShowReturn> show(String id) async {
     final requestBody = <String, RaviJson>{};
     requestBody["id"] = RaviJson.from(id);
@@ -674,6 +698,19 @@ class AppsNamespace {
       command: "show",
       body: requestBody,
       decode: appsShowReturnFromJson,
+    );
+  }
+
+  Future<AppsVerifyReturn> verify([String? id]) async {
+    final requestBody = <String, RaviJson>{};
+    if (id != null) {
+      requestBody["id"] = RaviJson.from(id);
+    }
+    return _transport.callJson(
+      groupSegments: const ["apps"],
+      command: "verify",
+      body: requestBody,
+      decode: appsVerifyReturnFromJson,
     );
   }
 }

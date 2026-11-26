@@ -86,4 +86,5 @@ called another.
 
 Rejected: letting an app name a provider by a path or a command (it would
 bypass the router and the context lineage), and an install-time dependency
-resolver (installation is not where authority is decided).
+resolver (installation is not where authority is decided: the store's install
+exposes an app to no agent, see apps/store).

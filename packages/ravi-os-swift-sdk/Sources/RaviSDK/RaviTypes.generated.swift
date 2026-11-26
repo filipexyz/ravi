@@ -1894,6 +1894,36 @@ public struct AppsPromptsReturn: Codable, Sendable {
   }
 }
 
+public struct AppsRefreshReturn: Codable, Sendable {
+  public var apps: Double
+  public var blockSerial: Double
+  public var changed: Bool
+  public var indexSerial: Double
+  public var keysSerial: Double
+  public var refreshedAt: RaviJSON
+  public var source: String
+
+  public init(apps: Double, blockSerial: Double, changed: Bool, indexSerial: Double, keysSerial: Double, refreshedAt: RaviJSON, source: String) {
+    self.apps = apps
+    self.blockSerial = blockSerial
+    self.changed = changed
+    self.indexSerial = indexSerial
+    self.keysSerial = keysSerial
+    self.refreshedAt = refreshedAt
+    self.source = source
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case apps = "apps"
+    case blockSerial = "blockSerial"
+    case changed = "changed"
+    case indexSerial = "indexSerial"
+    case keysSerial = "keysSerial"
+    case refreshedAt = "refreshedAt"
+    case source = "source"
+  }
+}
+
 public struct AppsRunOptions: Codable, Sendable {
   public var execute: Bool?
 
@@ -2101,6 +2131,45 @@ public struct AppsScaffoldReturn: Codable, Sendable {
   }
 }
 
+public struct AppsSearchOptions: Codable, Sendable {
+  public var refresh: Bool?
+
+  public init(refresh: Bool? = nil) {
+    self.refresh = refresh
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case refresh = "refresh"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.refresh {
+      body["refresh"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct AppsSearchReturn: Codable, Sendable {
+  public var apps: [RaviJSON]
+  public var indexSerial: Double
+  public var refreshedAt: RaviJSON
+  public var source: String
+
+  public init(apps: [RaviJSON], indexSerial: Double, refreshedAt: RaviJSON, source: String) {
+    self.apps = apps
+    self.indexSerial = indexSerial
+    self.refreshedAt = refreshedAt
+    self.source = source
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case apps = "apps"
+    case indexSerial = "indexSerial"
+    case refreshedAt = "refreshedAt"
+    case source = "source"
+  }
+}
+
 public struct AppsShowReturn: Codable, Sendable {
   public var app: RaviJSON
 
@@ -2110,6 +2179,21 @@ public struct AppsShowReturn: Codable, Sendable {
 
   enum CodingKeys: String, CodingKey {
     case app = "app"
+  }
+}
+
+public struct AppsVerifyReturn: Codable, Sendable {
+  public var apps: [RaviJSON]
+  public var ok: Bool
+
+  public init(apps: [RaviJSON], ok: Bool) {
+    self.apps = apps
+    self.ok = ok
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case apps = "apps"
+    case ok = "ok"
   }
 }
 
