@@ -13,6 +13,7 @@ import { buildRaviRulesPromptSection } from "./ravi-rules.js";
 import { buildRuntimeOperationalContextContent } from "./runtime-operational-context.js";
 import type { ContextCapability, ContextRecord } from "../router/router-db.js";
 import { buildSessionGoalPromptSection } from "./session-goals.js";
+import { DECISIONS_SECTION_ID, DECISIONS_SECTION_TITLE, buildDecisionsInForceSection } from "../decisions/prompt.js";
 import { listGroupSkillRules } from "../cli/skill-gates.js";
 import {
   canRunSkillsShow,
@@ -61,6 +62,7 @@ export async function buildRuntimeSystemPrompt(input: RuntimeSystemPromptInput):
     buildRuntimeOperationalContextSection(input),
     ...buildKnowledgePromptSections(input),
     ...buildSessionGoalPromptSections(input),
+    ...buildDecisionsPromptSections(input),
     ...buildStickerPromptSectionsForRuntime(input.agent, input.ctx, input.sessionRuntimeParams),
     ...(await buildWorkspacePromptSections(input.cwd)),
     ...(await buildRaviRulesPromptSections(input.cwd)),
@@ -257,6 +259,25 @@ function buildSessionGoalPromptSections(input: RuntimeSystemPromptInput): Prompt
       title: "Session Goal",
       priority: 23,
       source: "session-goals",
+      content,
+    },
+  ];
+}
+
+/** Answered decisions in force for this turn; sentinels carry none. */
+function buildDecisionsPromptSections(input: RuntimeSystemPromptInput): PromptContextSection[] {
+  if (input.agent.mode === "sentinel") return [];
+  const content = buildDecisionsInForceSection({
+    agentId: input.agent.id,
+    sessionKey: input.sessionKey ?? input.runtimeContext?.sessionKey,
+  });
+  if (!content) return [];
+  return [
+    {
+      id: DECISIONS_SECTION_ID,
+      title: DECISIONS_SECTION_TITLE,
+      priority: 23,
+      source: "decisions",
       content,
     },
   ];

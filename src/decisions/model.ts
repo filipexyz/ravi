@@ -1,4 +1,4 @@
-import type { Decision, DecisionOwnerType, DecisionStatus } from "./types.js";
+import type { Decision, DecisionOwnerType, DecisionScope, DecisionStatus } from "./types.js";
 
 /** A verified rejection before queueing or execution; safe to retry with the same delivery id. */
 export class DecisionDispatchRejectedError extends Error {
@@ -18,7 +18,10 @@ export type DecisionErrorCode =
   | "DECISION_INVALID_OWNER"
   | "DECISION_INVALID_ASK"
   | "DECISION_INVALID_ANSWER"
-  | "DECISION_SOURCE_NOT_OWNER";
+  | "DECISION_SOURCE_NOT_OWNER"
+  | "DECISION_INVALID_SCOPE"
+  | "DECISION_SCOPE_NOT_AUTHORIZED"
+  | "DECISION_NOT_ANSWERED";
 
 export class DecisionError extends Error {
   readonly code: DecisionErrorCode;
@@ -86,4 +89,35 @@ export function formatDecisionOwner(decision: Pick<Decision, "ownerType" | "owne
   return decision.ownerType === "unassigned" || !decision.ownerId
     ? "unassigned"
     : `${decision.ownerType}:${decision.ownerId}`;
+}
+
+const SCOPE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
+/**
+ * Parse `thread`, `task`, `agent:<id>`, `project:<id>` or `org`. `thread` and `task` both mean the asking origin;
+ * an empty value is the origin too. Anything else is a usage error.
+ */
+export function parseDecisionScope(raw: string | null | undefined): DecisionScope {
+  const value = (raw ?? "").trim();
+  if (!value || value === "thread" || value === "task" || value === "origin") return { type: "origin", id: null };
+  if (value === "org") return { type: "org", id: null };
+  const separator = value.indexOf(":");
+  const type = separator === -1 ? "" : value.slice(0, separator);
+  const id = separator === -1 ? "" : value.slice(separator + 1).trim();
+  if ((type === "agent" || type === "project") && SCOPE_ID_PATTERN.test(id)) return { type, id };
+  throw new DecisionError(
+    "DECISION_INVALID_SCOPE",
+    `Invalid decision scope ${JSON.stringify(value)}: use thread, agent:<id>, project:<id> or org.`,
+    { exitCode: 2, suggestedAction: "Omit --scope to keep the decision in its thread or task." },
+  );
+}
+
+export function formatDecisionScope(decision: Pick<Decision, "scope" | "origin">): string {
+  const { scope } = decision;
+  if (scope.type === "origin") return decision.origin.type;
+  return scope.type === "org" ? "org" : `${scope.type}:${scope.id}`;
+}
+
+export function sameDecisionScope(a: DecisionScope, b: DecisionScope): boolean {
+  return a.type === b.type && (a.id ?? null) === (b.id ?? null);
 }

@@ -2,8 +2,8 @@ import { runThreadMutation } from "../threads/schema-fence.js";
 import { randomUUID } from "node:crypto";
 import { executeWrite } from "../db/write-retry.js";
 import { getDb } from "../router/router-db.js";
-import { DecisionError, normalizeDecisionKey, parseDecisionOwner } from "./model.js";
-import type { Decision, DecisionAsk, DecisionOrigin } from "./types.js";
+import { DecisionError, normalizeDecisionKey, parseDecisionOwner, sameDecisionScope } from "./model.js";
+import type { Decision, DecisionAsk, DecisionOrigin, DecisionScope } from "./types.js";
 
 export interface DecisionRow {
   id: string;
@@ -22,6 +22,11 @@ export interface DecisionRow {
   answered_by: string | null;
   answered_at: number | null;
   blocks: number;
+  scope_type: DecisionScope["type"] | null;
+  scope_id: string | null;
+  source_message_id: string | null;
+  source_excerpt: string | null;
+  superseded_by: string | null;
   revision: number;
   created_at: number;
   updated_at: number;
@@ -32,6 +37,7 @@ export function decisionFromRow(row: DecisionRow): Decision {
     id: row.id,
     origin: { type: row.origin_type, id: row.origin_id, chatId: row.chat_id, sessionKey: row.session_key },
     key: row.key,
+    scope: { type: row.scope_type ?? "origin", id: row.scope_id ?? null },
     status: row.status,
     ownerType: row.owner_type,
     ownerId: row.owner_id,
@@ -42,6 +48,9 @@ export function decisionFromRow(row: DecisionRow): Decision {
     answeredBy: row.answered_by,
     answeredAt: row.answered_at,
     blocks: row.blocks === 1,
+    sourceMessageId: row.source_message_id ?? null,
+    sourceExcerpt: row.source_excerpt ?? null,
+    supersededBy: row.superseded_by ?? null,
     revision: row.revision,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -100,7 +109,7 @@ export function validateDecisionAsk(input: DecisionAsk): DecisionAsk {
   const owner = parseDecisionOwner(
     input.ownerType && input.ownerType !== "unassigned" ? `${input.ownerType}:${input.ownerId ?? ""}` : "unassigned",
   );
-  return { ...input, ...owner, key, ask };
+  return { ...input, ...owner, key, ask, scope: input.scope ?? { type: "origin", id: null } };
 }
 
 export function validateDecisionAnswer(answer: string): string {
@@ -122,26 +131,29 @@ export function askDecisionRecord(origin: DecisionOrigin, raw: DecisionAsk): { d
       existing.ask === input.ask &&
       existing.ownerType === input.ownerType &&
       existing.ownerId === (input.ownerId ?? null) &&
-      existing.blocks === Boolean(input.blocks)
+      existing.blocks === Boolean(input.blocks) &&
+      sameDecisionScope(existing.scope, input.scope!)
     ) {
       return { decision: existing, created: false };
     }
     if (existing) {
       runThreadMutation(
         db,
-        "UPDATE decisions SET ask=?,owner_type=?,owner_id=?,blocks=?,updated_at=?,revision=revision+1 WHERE id=?",
+        "UPDATE decisions SET ask=?,owner_type=?,owner_id=?,blocks=?,scope_type=?,scope_id=?,updated_at=?,revision=revision+1 WHERE id=?",
         input.ask,
         input.ownerType!,
         input.ownerId ?? null,
         input.blocks ? 1 : 0,
+        input.scope!.type,
+        input.scope!.id,
         now,
         id,
       );
     } else {
       runThreadMutation(
         db,
-        `INSERT INTO decisions(id,origin_type,origin_id,chat_id,session_key,key,status,owner_type,owner_id,ask,asked_by,asked_at,blocks,created_at,updated_at)
-        VALUES (?,?,?,?,?,?,'open',?,?,?,?,?,?,?,?)`,
+        `INSERT INTO decisions(id,origin_type,origin_id,chat_id,session_key,key,status,owner_type,owner_id,ask,asked_by,asked_at,blocks,scope_type,scope_id,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,'open',?,?,?,?,?,?,?,?,?,?)`,
         id,
         origin.type,
         origin.id,
@@ -154,6 +166,8 @@ export function askDecisionRecord(origin: DecisionOrigin, raw: DecisionAsk): { d
         input.actor ?? null,
         now,
         input.blocks ? 1 : 0,
+        input.scope!.type,
+        input.scope!.id,
         now,
         now,
       );
@@ -208,10 +222,98 @@ function appendHistory(
 /** The verified source of an answer, kept as structured history so a free-text label can never imitate it. */
 export function recordDecisionAnswerSource(
   decision: Decision,
-  source: { contactId: string; messageId: string },
+  source: { contactId: string; messageId: string; excerpt: string },
   actor: string,
 ): void {
+  runThreadMutation(
+    getDb(),
+    "UPDATE decisions SET source_message_id=?,source_excerpt=? WHERE id=?",
+    source.messageId,
+    source.excerpt,
+    decision.id,
+  );
   appendHistory(decision, "answer-source", actor, { decisionId: decision.id, ...source });
+}
+
+/** Settle the scope of an open decision as part of answering it; the answer's revision carries it. */
+export function setOpenDecisionScope(id: string, scope: DecisionScope): void {
+  runThreadMutation(
+    getDb(),
+    "UPDATE decisions SET scope_type=?,scope_id=? WHERE id=? AND status='open'",
+    scope.type,
+    scope.id,
+    id,
+  );
+}
+
+/**
+ * A later answered decision replaces an earlier one: the old leaves every turn's context and keeps its answer and
+ * history, pointing at its replacement. Both must be answered; a decision never replaces itself.
+ */
+export function supersedeDecisionRecord(oldId: string, newId: string, actor: string, now = Date.now()): Decision {
+  return decisionWrite((db) => {
+    const old = getDecision(oldId);
+    const replacement = getDecision(newId);
+    if (!old || !replacement) throw new DecisionError("DECISION_NOT_FOUND", "Decision not found.");
+    if (oldId === newId)
+      throw new DecisionError("DECISION_NOT_ANSWERED", "A decision cannot replace itself.", { exitCode: 2 });
+    if (old.status !== "answered" || replacement.status !== "answered")
+      throw new DecisionError(
+        "DECISION_NOT_ANSWERED",
+        "Only an answered decision replaces another answered decision.",
+        {
+          exitCode: 2,
+        },
+      );
+    runThreadMutation(
+      db,
+      "UPDATE decisions SET status='superseded',superseded_by=?,updated_at=? WHERE id=? AND status='answered'",
+      newId,
+      now,
+      oldId,
+    );
+    const superseded = getDecision(oldId)!;
+    appendHistory(superseded, "superseded", actor, { ...superseded, supersededBy: newId });
+    return superseded;
+  });
+}
+
+/** Most decisions a turn carries; the newest win. */
+export const DECISIONS_IN_FORCE_LIMIT = 20;
+
+/**
+ * Answered decisions that cover a turn: org, the turn's agent, the session's project and the thread whose waiting
+ * session this is. Superseded decisions and open questions never count. Newest first.
+ */
+export function listDecisionsInForce(input: {
+  agentId?: string | null;
+  projectId?: string | null;
+  sessionKey?: string | null;
+  limit?: number;
+}): Decision[] {
+  const clauses = ["scope_type = 'org'"];
+  const params: string[] = [];
+  if (input.agentId) {
+    clauses.push("(scope_type = 'agent' AND scope_id = ?)");
+    params.push(input.agentId);
+  }
+  if (input.projectId) {
+    clauses.push("(scope_type = 'project' AND scope_id = ?)");
+    params.push(input.projectId);
+  }
+  if (input.sessionKey) {
+    clauses.push("(scope_type = 'origin' AND origin_type = 'thread' AND session_key = ?)");
+    params.push(input.sessionKey);
+  }
+  const limit = Math.max(1, Math.min(input.limit ?? DECISIONS_IN_FORCE_LIMIT, DECISIONS_IN_FORCE_LIMIT));
+  return (
+    getDb()
+      .query(
+        `SELECT * FROM decisions WHERE status = 'answered' AND (${clauses.join(" OR ")})
+         ORDER BY answered_at DESC, id DESC LIMIT ${limit}`,
+      )
+      .all(...params) as DecisionRow[]
+  ).map(decisionFromRow);
 }
 
 /**

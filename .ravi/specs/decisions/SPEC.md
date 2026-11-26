@@ -47,6 +47,15 @@ A decision owns a question, owner, immutable answer and audit history. Tasks and
 - The generic store MUST retain history when an origin is deleted; orphaned history remains inaccessible through ordinary origin reads. No cascade silently erases a decision.
 - Deployment must migrate with an operator-approved backup. This PR validates only isolated fixtures; it MUST NOT migrate the running production DB.
 
+## Scope, source and replacement
+
+- Every decision MUST carry a scope: `origin` (its thread or task, the default), `agent:<id>`, `project:<id>` or `org`. The asker MAY propose a scope; the answer settles it, widening or narrowing the proposal. While open, the scope is only a proposal and reaches no turn.
+- An answer whose scope is wider than its origin MUST come with a bound owner source (`--source-message`) or from the local operator (no agent, no runtime context, operator authority). An agent MUST NOT widen a decision on its own authority, whatever its grants. A proposed wide scope binds an answer that does not narrow it.
+- A source MUST be one stored message written by the decision's human owner, at or after `asked_at` (provider time read as seconds below 10^12, else ingestion time), in the decision's chat or a direct chat, and bound to this decision: it names the decision id, or the recorder quotes (`--source-quote`) a passage it contains (whitespace and case ignored). The quote, or the message when it names the id, MUST be stored on the decision as `source_excerpt` with `source_message_id`. Every refusal MUST share one code and text. A provider-id lookup MUST apply owner, time and chat eligibility before any row limit.
+- Every runtime turn of a non-sentinel agent MUST carry the answered decisions that cover it: org, the turn's agent, the project of the session's goal, and thread decisions whose waiting session is this session. Newest answer first, at most 20, question and answer quoted as JSON data, each with its id and scope. Open and superseded decisions MUST NOT appear; owner contact ids MUST NOT appear. A store capacity failure MUST degrade to a note, not fail the turn.
+- An answered decision MAY be replaced by a later answered one (`answer --supersedes <old>` in the answering transaction, or `supersede <old> --by <new>`). The old one MUST become `superseded` with `superseded_by`, keep its answer and history, and leave every turn. Replacing an origin decision needs answer authority on its origin; replacing a wider one needs the local operator or a replacement with an owner source at the same scope or org. A decision MUST NOT replace itself; open decisions neither replace nor are replaced.
+- Decision waits (`sessions report --awaiting decision`) MUST propose the origin scope.
+
 ## Thread delivery
 
 - A thread question MUST be presented in that thread and prioritized on its programmatic root card. A root written by a person MUST NOT be edited. Thread summaries MUST expose `openDecisionCount`.
@@ -63,10 +72,10 @@ A decision owns a question, owner, immutable answer and audit history. Tasks and
 
 ## CLI
 
-`ravi decisions ask --task <id>|--thread <child> --key <key> --ask <text> [--owner human:<contact>|agent:<id>|unassigned] [--blocks]`
+`ravi decisions ask --task <id>|--thread <child> --key <key> --ask <text> [--owner human:<contact>|agent:<id>|unassigned] [--blocks] [--scope thread|agent:<id>|project:<id>|org]`
 
-`ravi decisions list [--task <id>|--thread <child>] [--all] [--limit <n>] [--offset <n>]`, `show <id>`, `answer <id> --text <text> [--by <label>]`, `retry <id>`, `resolve-delivery <id> --outcome received|not_received --evidence <finding>` all support JSON.
+`ravi decisions list [--task <id>|--thread <child>] [--all] [--scope <scope>] [--answered-since <iso|ms>] [--limit <n>] [--offset <n>]`, `show <id>`, `answer <id> --text <text> [--by <label>] [--source-message <id> [--source-quote <text>]] [--scope <scope>] [--supersedes <id>]`, `supersede <id> --by <id>`, `retry <id>`, `resolve-delivery <id> --outcome received|not_received --evidence <finding>` all support JSON. `list --scope org --answered-since <start of day>` is the digest's and the daily status's source of the day's org decisions.
 
-Thread ask/answer and retry/resolve-delivery MUST require `--execute`. Task ask/answer remain immediate ledger writes. Validation and origin authorization precede the brake; preview MUST write no decision, audit or effect. Errors: 1 execution/not-found/self-answer/not-open; 2 usage; 3 confirmation.
+Thread ask/answer, supersede and retry/resolve-delivery MUST require `--execute`. Task ask/answer remain immediate ledger writes. Validation and origin authorization precede the brake; preview MUST write no decision, audit or effect. Errors: 1 execution/not-found/self-answer/not-open; 2 usage; 3 confirmation.
 
 Task mutations move from `tasks decide|answer` to this namespace; no deprecated CLI aliases remain. Task attention/show remain task projections. Generated SDKs and OpenAPI MUST match the new registry.

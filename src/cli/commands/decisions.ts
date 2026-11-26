@@ -5,7 +5,7 @@ import { contractDryRun } from "../agent-contract.js";
 import { CliExpectedError } from "../expected-error.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { strictCliOffsetPaginationSchema } from "../return-schemas.js";
-import { DecisionError, parseDecisionOwner } from "../../decisions/model.js";
+import { DecisionError, formatDecisionScope, parseDecisionOwner, parseDecisionScope } from "../../decisions/model.js";
 import { validateDecisionAsk, validateDecisionAnswer } from "../../decisions/store.js";
 import {
   resolveDecisionOrigin,
@@ -14,7 +14,9 @@ import {
   validateDecisionMutation,
   askDecision,
   answerDecision,
-  resolveDecisionAnswerSource,
+  checkDecisionAnswer,
+  checkSupersede,
+  supersedeDecision,
   decisionHistory,
 } from "../../decisions/service.js";
 import {
@@ -34,6 +36,7 @@ export const decisionSchema = z.object({
     sessionKey: z.string().nullable(),
   }),
   key: z.string(),
+  scope: z.object({ type: z.enum(["origin", "agent", "project", "org"]), id: z.string().nullable() }),
   status: z.enum(["open", "answered", "superseded"]),
   ownerType: z.enum(["human", "agent", "unassigned"]),
   ownerId: z.string().nullable(),
@@ -44,6 +47,9 @@ export const decisionSchema = z.object({
   answeredBy: z.string().nullable(),
   answeredAt: z.number().nullable(),
   blocks: z.boolean(),
+  sourceMessageId: z.string().nullable(),
+  sourceExcerpt: z.string().nullable(),
+  supersededBy: z.string().nullable(),
   revision: z.number(),
   createdAt: z.number(),
   updatedAt: z.number(),
@@ -75,6 +81,18 @@ const detailSchema = mutationSchema.extend({
     }),
   ),
 });
+
+function parseSince(raw: string): number {
+  const value = raw.trim();
+  const at = /^\d+$/.test(value) ? Number(value) : Date.parse(value);
+  if (!Number.isFinite(at))
+    throw new CliExpectedError(
+      `Invalid --answered-since ${JSON.stringify(raw)}: use ISO time or epoch ms.`,
+      "USAGE_ERROR",
+      2,
+    );
+  return at;
+}
 
 function output<T>(value: T, asJson: boolean | undefined, text: string): T {
   console.log(asJson ? JSON.stringify(value, null, 2) : text);
@@ -112,11 +130,23 @@ export class DecisionsCommands {
     owner?: string,
     @Option({ flags: "--blocks", description: "Blocks work; a human-owned task decision derives parked" })
     blocks?: boolean,
+    @Option({
+      flags: "--scope <scope>",
+      description:
+        "Proposed scope once answered: thread (default), agent:<id>, project:<id> or org; the answer settles it",
+    })
+    scope?: string,
     @Option({ flags: "--json", description: "Print JSON" }) asJson?: boolean,
     @Option({ flags: "--execute", description: "Required for a thread: publishes the question" }) execute?: boolean,
   ) {
     return run(async () => {
-      const input = validateDecisionAsk({ key: key ?? "", ask: ask ?? "", ...parseDecisionOwner(owner), blocks });
+      const input = validateDecisionAsk({
+        key: key ?? "",
+        ask: ask ?? "",
+        ...parseDecisionOwner(owner),
+        blocks,
+        scope: parseDecisionScope(scope),
+      });
       const origin = resolveDecisionOrigin(task, thread);
       validateDecisionMutation(origin, "ask");
       if (origin.type === "thread" && !execute)
@@ -147,9 +177,23 @@ export class DecisionsCommands {
     @Option({
       flags: "--source-message <id>",
       description:
-        "The person's message that holds this answer (internal or provider message id). Recorded as provenance; it must be a message written by a person, and by the decision's owner when it names one",
+        "The owner's message that holds this answer (internal or provider message id), written after the question in its chat or a direct chat. Recorded as provenance; required to widen the scope",
     })
     sourceMessage?: string,
+    @Option({
+      flags: "--source-quote <text>",
+      description:
+        "A passage of the source message that holds the answer; needed unless the message names the decision id",
+    })
+    sourceQuote?: string,
+    @Option({
+      flags: "--scope <scope>",
+      description:
+        "Where the answer applies: thread (default), agent:<id>, project:<id> or org; wider than the thread needs --source-message or the local operator",
+    })
+    scope?: string,
+    @Option({ flags: "--supersedes <id>", description: "An answered decision this answer replaces" })
+    supersedes?: string,
     @Option({ flags: "--json", description: "Print JSON" }) asJson?: boolean,
     @Option({ flags: "--execute", description: "Required for a thread: queues work in the waiting session" })
     execute?: boolean,
@@ -158,20 +202,31 @@ export class DecisionsCommands {
       const answer = validateDecisionAnswer(text ?? "");
       const current = requireVisibleDecision(id);
       validateDecisionMutation(current.origin, "answer", current);
-      // Checked before the dry-run so a wrong source fails the preview too.
-      if (sourceMessage !== undefined) resolveDecisionAnswerSource(current, sourceMessage);
+      const options = {
+        scope: scope !== undefined ? parseDecisionScope(scope) : undefined,
+        sourceQuote,
+        supersedes,
+      };
+      // Checked before the dry-run so a wrong source, scope or replacement fails the preview too.
+      const checked = checkDecisionAnswer(current, sourceMessage, options);
       if (current.origin.type === "thread" && !execute)
         contractDryRun(
           "decisions answer",
-          { decisionId: id, originType: current.origin.type, originId: current.origin.id },
+          {
+            decisionId: id,
+            originType: current.origin.type,
+            originId: current.origin.id,
+            scope: formatDecisionScope({ scope: checked.scope, origin: current.origin }),
+            supersedes: checked.replaced?.id ?? null,
+          },
           { asJson },
         );
-      const decision = await answerDecision(id, answer, by, sourceMessage);
+      const decision = await answerDecision(id, answer, by, sourceMessage, options);
       if (decision.origin.type === "thread") await reconcileDecisionDeliveries(undefined, id);
       return output(
         { decision, deliveries: decisionDeliveries(id) },
         asJson,
-        `Answer recorded for ${id}. Delivery: ${decisionDeliveries(id).find((d) => d.kind === "answer")?.status ?? "not requested"}`,
+        `Answer recorded for ${id} (scope ${formatDecisionScope(decision)}). Delivery: ${decisionDeliveries(id).find((d) => d.kind === "answer")?.status ?? "not requested"}`,
       );
     });
   }
@@ -204,15 +259,33 @@ export class DecisionsCommands {
     @Option({ flags: "--task <id>", description: "Filter to a task" }) task?: string,
     @Option({ flags: "--thread <session>", description: "Filter to a thread" }) thread?: string,
     @Option({ flags: "--all", description: "Include answered history" }) all?: boolean,
+    @Option({
+      flags: "--scope <scope>",
+      description: "Only decisions with this scope: thread, task, agent:<id>, project:<id> or org",
+    })
+    scope?: string,
+    @Option({
+      flags: "--answered-since <time>",
+      description: "Only decisions answered at or after this ISO time or epoch ms (implies --all)",
+    })
+    answeredSince?: string,
     @Option({ flags: "--json", description: "Print JSON" }) asJson?: boolean,
     @Option({ flags: "--limit <n>", description: "Page size (default 50, maximum 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Page offset" }) offset?: string,
   ) {
     return run(() => {
-      const page = paginateCliItems(
-        visibleDecisions(task || thread ? resolveDecisionOrigin(task, thread) : undefined, !all),
-        { limit, offset },
+      const scopeFilter = scope !== undefined ? scope.trim() : undefined;
+      if (scopeFilter !== undefined && !["thread", "task"].includes(scopeFilter)) parseDecisionScope(scopeFilter);
+      const since = answeredSince !== undefined ? parseSince(answeredSince) : undefined;
+      const items = visibleDecisions(
+        task || thread ? resolveDecisionOrigin(task, thread) : undefined,
+        !all && since === undefined,
+      ).filter(
+        (d) =>
+          (scopeFilter === undefined || formatDecisionScope(d) === scopeFilter) &&
+          (since === undefined || (d.answeredAt !== null && d.answeredAt >= since)),
       );
+      const page = paginateCliItems(items, { limit, offset });
       const decisions = page.items;
       const pagination = buildCliOffsetPagination({
         baseCommand: ["ravi", "decisions", "list"],
@@ -220,13 +293,51 @@ export class DecisionsCommands {
         offset: page.offset,
         total: page.total,
         returned: decisions.length,
-        options: ["--task", task, "--thread", thread, all && "--all"],
+        options: [
+          "--task",
+          task,
+          "--thread",
+          thread,
+          "--scope",
+          scopeFilter,
+          "--answered-since",
+          answeredSince,
+          all && "--all",
+        ],
       });
       return output(
         { decisions, pagination },
         asJson,
-        decisions.map((d) => `${d.id} [${d.status}] ${d.ask}`).join("\n") || "No decisions.",
+        decisions.map((d) => `${d.id} [${d.status}] (${formatDecisionScope(d)}) ${d.ask}`).join("\n") ||
+          "No decisions.",
       );
+    });
+  }
+
+  @Command({
+    name: "supersede",
+    description: "Replace an answered decision with a later answered one; the old leaves turn context, history stays",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "decisions",
+    action: "supersede",
+    risk: "medium",
+    requiresConfirmation: true,
+  })
+  @Returns(z.object({ decision: decisionSchema, replacement: decisionSchema }))
+  async supersede(
+    @Arg("id", { description: "Answered decision to replace" }) id: string,
+    @Option({ flags: "--by <id>", description: "Answered decision that replaces it" }) by?: string,
+    @Option({ flags: "--json", description: "Print JSON" }) asJson?: boolean,
+    @Option({ flags: "--execute", description: "Record the replacement" }) execute?: boolean,
+  ) {
+    return run(() => {
+      if (!by?.trim()) throw new CliExpectedError("Pass --by <id> with the replacing decision.", "USAGE_ERROR", 2);
+      const { old, replacement } = checkSupersede(id, by);
+      if (!execute) contractDryRun("decisions supersede", { decisionId: old.id, by: replacement.id }, { asJson });
+      const decision = supersedeDecision(old.id, replacement.id);
+      return output({ decision, replacement }, asJson, `${decision.id} superseded by ${replacement.id}.`);
     });
   }
 

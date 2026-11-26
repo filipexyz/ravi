@@ -7,6 +7,8 @@ import { addSticker } from "../stickers/catalog.js";
 import { dbCreateAgent, dbUpdateAgent, type ContextCapability } from "../router/router-db.js";
 import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { decisionWrite } from "../decisions/store.js";
+import { runThreadMutation } from "../threads/schema-fence.js";
 
 describe("buildRuntimeSystemPrompt", () => {
   it("renders workspace and agent contexts as plain Markdown sections", async () => {
@@ -587,5 +589,58 @@ describe("buildRuntimeSystemPrompt Slack Threads", () => {
     ).toBe(false);
     expect(hasSection(await slackPrompt({ capabilities: [sessions], mode: "sentinel" }))).toBe(false);
     expect(hasSection(await slackPrompt({ capabilities: [sessions], channelId: "whatsapp-baileys" }))).toBe(false);
+  });
+});
+
+describe("buildRuntimeSystemPrompt decisions in force", () => {
+  let stateDir: string | null = null;
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-runtime-decisions-");
+  });
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  function recordAnswered(id: string, scopeType: string, scopeId: string | null, answer: string): void {
+    const now = Date.now();
+    decisionWrite((db) =>
+      runThreadMutation(
+        db,
+        `INSERT INTO decisions(id,origin_type,origin_id,key,status,owner_type,ask,asked_at,answer,answered_at,scope_type,scope_id,created_at,updated_at)
+         VALUES (?,'task','task-x',?,'answered','unassigned','Pergunta?',?,?,?,?,?,?,?)`,
+        id,
+        id,
+        now,
+        answer,
+        now,
+        scopeType,
+        scopeId,
+        now,
+        now,
+      ),
+    );
+  }
+
+  it("carries the org and agent decisions as quoted data; a sentinel and another agent's decision stay out", async () => {
+    recordAnswered("dec_org", "org", null, "Sem confirmação em grupos.");
+    recordAnswered("dec_other", "agent", "other", "Regra de outro agente.");
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-runtime-system-prompt-"));
+    try {
+      const prompt = await buildRuntimeSystemPrompt({ cwd, sessionName: "dev", agent: { id: "main", cwd } });
+      expect(prompt.sections.map((section) => section.id)).toContain("decisions.in_force");
+      expect(prompt.text).toContain("## Decisions in Force");
+      expect(prompt.text).toContain("- dec_org (org, answered");
+      expect(prompt.text).toContain('"answer":"Sem confirmação em grupos."');
+      expect(prompt.text).not.toContain("dec_other");
+      const sentinel = await buildRuntimeSystemPrompt({
+        cwd,
+        sessionName: "dev",
+        agent: { id: "main", cwd, mode: "sentinel" },
+      });
+      expect(sentinel.sections.map((section) => section.id)).not.toContain("decisions.in_force");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 });

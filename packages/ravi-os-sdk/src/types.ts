@@ -12947,7 +12947,10 @@ export type DecisionsAnswerInput = {
   by?: string;
   execute?: boolean;
   id: string;
+  scope?: string;
   sourceMessage?: string;
+  sourceQuote?: string;
+  supersedes?: string;
   text?: string;
 };
 
@@ -12974,7 +12977,14 @@ export type DecisionsAnswerReturn = {
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
     revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
     status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
     updatedAt: number;
   };
   deliveries: Array<{
@@ -12997,6 +13007,7 @@ export type DecisionsAskInput = {
   execute?: boolean;
   key?: string;
   owner?: string;
+  scope?: string;
   task?: string;
   thread?: string;
 };
@@ -13024,7 +13035,14 @@ export type DecisionsAskReturn = {
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
     revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
     status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
     updatedAt: number;
   };
   deliveries: Array<{
@@ -13043,8 +13061,10 @@ export type DecisionsAskReturn = {
 /** Input shape for `decisions.list`. */
 export type DecisionsListInput = {
   all?: boolean;
+  answeredSince?: string;
   limit?: string;
   offset?: string;
+  scope?: string;
   task?: string;
   thread?: string;
 };
@@ -13071,7 +13091,14 @@ export type DecisionsListReturn = {
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
     revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
     status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
     updatedAt: number;
   }>;
   pagination: {
@@ -13116,7 +13143,14 @@ export type DecisionsResolveDeliveryReturn = {
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
     revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
     status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
     updatedAt: number;
   };
   deliveries: Array<{
@@ -13161,7 +13195,14 @@ export type DecisionsRetryReturn = {
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
     revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
     status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
     updatedAt: number;
   };
   deliveries: Array<{
@@ -13205,7 +13246,14 @@ export type DecisionsShowReturn = {
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
     revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
     status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
     updatedAt: number;
   };
   deliveries: Array<{
@@ -13226,6 +13274,77 @@ export type DecisionsShowReturn = {
     snapshot: string;
     type: string;
   }>;
+};
+
+/** Input shape for `decisions.supersede`. */
+export type DecisionsSupersedeInput = {
+  by?: string;
+  execute?: boolean;
+  id: string;
+};
+
+/** Return shape for `decisions.supersede`. */
+export type DecisionsSupersedeReturn = {
+  decision: {
+    answer: string | null;
+    answeredAt: number | null;
+    answeredBy: string | null;
+    ask: string;
+    askedAt: number;
+    askedBy: string | null;
+    blocks: boolean;
+    createdAt: number;
+    id: string;
+    key: string;
+    origin: {
+      chatId: string | null;
+      id: string;
+      sessionKey: string | null;
+      type: "task" | "thread";
+    };
+    ownerId: string | null;
+    ownerType: "human" | "agent" | "unassigned";
+    revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
+    status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
+    updatedAt: number;
+  };
+  replacement: {
+    answer: string | null;
+    answeredAt: number | null;
+    answeredBy: string | null;
+    ask: string;
+    askedAt: number;
+    askedBy: string | null;
+    blocks: boolean;
+    createdAt: number;
+    id: string;
+    key: string;
+    origin: {
+      chatId: string | null;
+      id: string;
+      sessionKey: string | null;
+      type: "task" | "thread";
+    };
+    ownerId: string | null;
+    ownerType: "human" | "agent" | "unassigned";
+    revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
+    status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
+    updatedAt: number;
+  };
 };
 
 /** Input shape for `devin.auth.check`. */

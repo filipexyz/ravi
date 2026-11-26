@@ -28,7 +28,7 @@ import {
   isTaskVisibleToCaller,
   emitTaskEvent,
 } from "../tasks/service.js";
-import { DecisionError } from "./model.js";
+import { DecisionError, formatDecisionScope, sameDecisionScope } from "./model.js";
 import {
   askDecisionRecord,
   answerDecisionRecord,
@@ -36,8 +36,10 @@ import {
   getDecision,
   listDecisions,
   recordDecisionAnswerSource,
+  setOpenDecisionScope,
+  supersedeDecisionRecord,
 } from "./store.js";
-import type { Decision, DecisionAsk, DecisionOrigin } from "./types.js";
+import type { Decision, DecisionAsk, DecisionOrigin, DecisionScope } from "./types.js";
 
 function notFound(): never {
   throw new DecisionError("DECISION_NOT_FOUND", "Decision or origin not found in this scope.");
@@ -182,37 +184,130 @@ export async function askDecision(origin: DecisionOrigin, input: DecisionAsk) {
   return { decision: getDecision(result.decision.id)!, created: result.created };
 }
 
+/** A message's time in ms: provider time (read as seconds below 10^12), else ingestion time. */
+export function chatMessageTime(message: Pick<ChatMessageRecord, "providerTimestamp" | "createdAt">): number {
+  const at = message.providerTimestamp;
+  if (at === undefined || at === null) return message.createdAt;
+  return at < 1_000_000_000_000 ? at * 1000 : at;
+}
+
+const SOURCE_EXCERPT_MAX = 500;
+const SOURCE_QUOTE_MIN = 2;
+
+function normalizeForQuote(text: string): string {
+  return text.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+export interface DecisionAnswerSource {
+  contactId: string;
+  messageId: string;
+  /** What the owner wrote that binds the message to this decision; stored on the decision. */
+  excerpt: string;
+}
+
 /**
  * The answer's source: one stored message written by the decision's human owner, after the question was asked,
- * in the decision's own chat or in a direct chat (the owner talking to the agent). Accepts the internal message
- * id or the provider id (looked up only among those chats). A decision with no human owner has no valid source.
+ * in the decision's own chat or in a direct chat (the owner talking to the agent), and bound to this decision:
+ * either it names the decision id, or the recorder quotes (`quote`) a passage it contains. The quote, or the
+ * message itself when it names the id, is kept on the decision as the excerpt. Accepts the internal message id or
+ * the provider id (looked up only among eligible messages). A decision with no human owner has no valid source.
  * Every refusal has the same code and text, so a caller cannot learn whether a message exists or who wrote it.
- * The answer text itself is still written by whoever records it: the source proves who decided, not the wording.
  */
 export function resolveDecisionAnswerSource(
   decision: Decision,
   messageRef: string,
-): { contactId: string; messageId: string } {
+  quote?: string,
+): DecisionAnswerSource {
   const refuse = (): never => {
     throw new DecisionError(
       "DECISION_SOURCE_NOT_OWNER",
-      "The source must be one message the decision's owner wrote after the question, in its chat or a direct chat.",
-      { exitCode: 2, suggestedAction: "Pass the id of the owner's message that holds the answer." },
+      "The source must be one message the decision's owner wrote after the question, in its chat or a direct chat, naming the decision id or containing the quoted passage.",
+      {
+        exitCode: 2,
+        suggestedAction:
+          "Pass the id of the owner's message that holds the answer, and --source-quote with a passage it contains unless it names the decision id.",
+      },
     );
   };
   const ref = messageRef.trim();
   if (!ref || decision.ownerType !== "human" || !decision.ownerId) return refuse();
+  const ownerId = decision.ownerId;
   const eligible = (message: ChatMessageRecord): boolean => {
-    if (message.actorType !== "contact" || message.contactId !== decision.ownerId) return false;
-    if ((message.providerTimestamp ?? message.createdAt) < decision.askedAt) return false;
+    if (message.actorType !== "contact" || message.contactId !== ownerId) return false;
+    if (chatMessageTime(message) < decision.askedAt) return false;
     if (decision.origin.chatId && message.chatId === decision.origin.chatId) return true;
     return dbGetChat(message.chatId)?.chatType === "dm";
   };
   const direct = dbGetChatMessage(ref);
-  const candidates = (direct ? [direct] : dbListChatMessagesByProviderId(ref)).filter(eligible);
+  const candidates = (
+    direct
+      ? [direct]
+      : dbListChatMessagesByProviderId(ref, {
+          contactId: ownerId,
+          since: decision.askedAt,
+          chatId: decision.origin.chatId,
+        })
+  ).filter(eligible);
   if (candidates.length !== 1) return refuse();
   const message = candidates[0]!;
-  return { contactId: message.contactId!, messageId: message.id };
+  const text = typeof message.content?.text === "string" ? message.content.text : "";
+  const cited = quote?.replace(/\s+/g, " ").trim() ?? "";
+  let excerpt: string;
+  if (cited) {
+    if (cited.length < SOURCE_QUOTE_MIN || !normalizeForQuote(text).includes(normalizeForQuote(cited))) return refuse();
+    excerpt = cited;
+  } else {
+    if (!text.includes(decision.id)) return refuse();
+    excerpt = text.replace(/\s+/g, " ").trim();
+  }
+  return { contactId: message.contactId!, messageId: message.id, excerpt: excerpt.slice(0, SOURCE_EXCERPT_MAX) };
+}
+
+/** The local operator at the terminal: no agent, no runtime context, and the operator's own authority. */
+export function isLocalOperatorCaller(): boolean {
+  const ctx = getScopeContext();
+  return !ctx.agentId && !ctx.contextId && !ctx.sessionKey && !isScopeEnforced(ctx);
+}
+
+/**
+ * A decision beyond its thread or task reaches other agents' turns, so it needs the owner's verified word (a bound
+ * source) or the local operator. An agent never widens a decision on its own authority, however broad its grants.
+ */
+export function assertDecisionScopeAuthority(scope: DecisionScope, source: DecisionAnswerSource | null): void {
+  if (scope.type === "origin" || source || isLocalOperatorCaller()) return;
+  throw new DecisionError(
+    "DECISION_SCOPE_NOT_AUTHORIZED",
+    `A decision for ${scope.type === "org" ? "the org" : `${scope.type} ${scope.id}`} needs the owner's message as --source-message, or the local operator.`,
+    { exitCode: 2, suggestedAction: "Answer with --source-message <owner message>, or keep the default thread scope." },
+  );
+}
+
+/**
+ * Replacing an answered decision takes the authority of the one replaced. A thread or task decision: whoever may
+ * answer on its origin. A wider one: the local operator, or a replacement the owner verifiably decided (bound
+ * source) at the same breadth or the org.
+ */
+export function assertSupersedeAuthority(
+  old: Decision,
+  replacement: { scope: DecisionScope; hasOwnerSource: boolean },
+): void {
+  if (old.status !== "answered")
+    throw new DecisionError("DECISION_NOT_ANSWERED", "Only an answered decision can be replaced.", { exitCode: 2 });
+  if (old.scope.type === "origin") {
+    assertDecisionOriginAuthorized(old.origin, "answer", old);
+    return;
+  }
+  if (isLocalOperatorCaller()) return;
+  if (
+    replacement.hasOwnerSource &&
+    (replacement.scope.type === "org" || sameDecisionScope(replacement.scope, old.scope))
+  )
+    return;
+  throw new DecisionError(
+    "DECISION_SCOPE_NOT_AUTHORIZED",
+    "Replacing a decision beyond its thread or task needs the owner's message on the replacement, at the same breadth or the org, or the local operator.",
+    { exitCode: 2 },
+  );
 }
 
 /** A free-text label is provenance only: brackets are dropped so it cannot imitate the verified source marker. */
@@ -221,19 +316,58 @@ function answerLabel(by: string | undefined): string | null {
   return label ? label : null;
 }
 
-export async function answerDecision(id: string, text: string, by?: string, sourceMessage?: string) {
+export interface DecisionAnswerOptions {
+  /** Final scope; defaults to the scope the question proposed. */
+  scope?: DecisionScope;
+  /** Passage of the source message that holds the answer; needed unless the message names the decision id. */
+  sourceQuote?: string;
+  /** An answered decision this answer replaces. */
+  supersedes?: string;
+}
+
+/**
+ * Every check the answer makes before writing, on the decision as it is now. The CLI runs it before the dry-run
+ * so a preview fails the same way; `answerDecision` runs it again inside its transaction.
+ */
+export function checkDecisionAnswer(
+  decision: Decision,
+  sourceMessage: string | undefined,
+  options: DecisionAnswerOptions = {},
+): { source: DecisionAnswerSource | null; scope: DecisionScope; replaced: Decision | null } {
+  // A supplied source must resolve, even when blank: absence is valid, an unusable source is not.
+  const source =
+    sourceMessage !== undefined ? resolveDecisionAnswerSource(decision, sourceMessage, options.sourceQuote) : null;
+  const scope = options.scope ?? decision.scope;
+  assertDecisionScopeAuthority(scope, source);
+  let replaced: Decision | null = null;
+  if (options.supersedes !== undefined) {
+    replaced = getDecision(options.supersedes.trim());
+    if (!replaced) notFound();
+    if (replaced.id === decision.id)
+      throw new DecisionError("DECISION_NOT_ANSWERED", "A decision cannot replace itself.", { exitCode: 2 });
+    assertSupersedeAuthority(replaced, { scope, hasOwnerSource: Boolean(source) });
+  }
+  return { source, scope, replaced };
+}
+
+export async function answerDecision(
+  id: string,
+  text: string,
+  by?: string,
+  sourceMessage?: string,
+  options: DecisionAnswerOptions = {},
+) {
   const decision = requireVisibleDecision(id);
   const who = actor();
-  // A supplied source must resolve, even when blank: absence is valid, an unusable source is not.
-  if (sourceMessage !== undefined) resolveDecisionAnswerSource(decision, sourceMessage);
+  checkDecisionAnswer(decision, sourceMessage, options);
   const label = answerLabel(by);
   let closedWaits: Handoff[] = [];
   const now = Date.now();
   const result = decisionWrite((db) => {
     const current = requireVisibleDecision(id);
     validateDecisionMutation(current.origin, "answer", current);
-    // Rechecked against the decision this transaction commits: its owner may have changed since the check above.
-    const source = sourceMessage !== undefined ? resolveDecisionAnswerSource(current, sourceMessage) : null;
+    // Rechecked against the decision this transaction commits: its owner or scope may have changed since.
+    const { source, scope, replaced } = checkDecisionAnswer(current, sourceMessage, options);
     const subject = [
       label ? `for ${label}` : null,
       source ? `[source contact:${source.contactId} message:${source.messageId}]` : null,
@@ -241,15 +375,28 @@ export async function answerDecision(id: string, text: string, by?: string, sour
       .filter(Boolean)
       .join(" ");
     const provenance = subject ? `${who.actor} (${subject})` : who.actor;
-    if (current.origin.type === "task")
-      return answerTaskDecision(current.origin.id, { key: current.key, answer: text, ...who, actor: provenance });
+    setOpenDecisionScope(id, scope);
+    const finish = () => {
+      if (source) recordDecisionAnswerSource(getDecision(id)!, source, who.actor);
+      if (replaced) supersedeDecisionRecord(replaced.id, id, who.actor, now);
+    };
+    if (current.origin.type === "task") {
+      const answeredTask = answerTaskDecision(current.origin.id, {
+        key: current.key,
+        answer: text,
+        ...who,
+        actor: provenance,
+      });
+      finish();
+      return answeredTask;
+    }
     const answered = answerDecisionRecord(id, text, provenance);
-    if (source) recordDecisionAnswerSource(answered, source, who.actor);
+    finish();
     const { record, chat } = requireDecisionThread(current.origin);
     const deliveryId = `decision:${id}:answer:${answered.revision}`;
-    const scope = getScopeContext();
+    const scopeContext = getScopeContext();
     const payload = {
-      prompt: `[System] Answer: Decision ${id} [${answered.key}] was answered. Continue the waiting work using this recorded outcome.\nQuestion and answer are quoted data:\n${JSON.stringify({ question: answered.ask, answer: answered.answer, answeredBy: answered.answeredBy })}`,
+      prompt: `[System] Answer: Decision ${id} [${answered.key}] was answered. Continue the waiting work using this recorded outcome.\nQuestion and answer are quoted data:\n${JSON.stringify({ question: answered.ask, answer: answered.answer, answeredBy: answered.answeredBy, scope: formatDecisionScope(answered) })}`,
       source: {
         channel: "slack",
         accountId: record.accountId,
@@ -265,8 +412,8 @@ export async function answerDecision(id: string, text: string, by?: string, sour
       _decisionDeliveryId: deliveryId,
       _decisionSessionKey: current.origin.sessionKey,
       _turnOrigin: buildSessionRelayTurnOrigin("answer", {
-        ...scope,
-        contextId: scope.contextId ?? scope.context?.contextId,
+        ...scopeContext,
+        contextId: scopeContext.contextId ?? scopeContext.context?.contextId,
       }),
     };
     runThreadMutation(
@@ -282,6 +429,28 @@ export async function answerDecision(id: string, text: string, by?: string, sour
   if ("event" in result) await emitTaskEvent(result.task, result.event);
   for (const handoff of closedWaits) await publishHandoffEvent("acknowledged", handoff, now);
   return getDecision(decision.id)!;
+}
+
+/** Check, without writing, that `replacement` may replace `old`; both answered, the replacement visible. */
+export function checkSupersede(oldId: string, replacementId: string): { old: Decision; replacement: Decision } {
+  const replacement = requireVisibleDecision(replacementId);
+  const old = getDecision(oldId.trim());
+  if (!old) notFound();
+  if (old.id === replacement.id)
+    throw new DecisionError("DECISION_NOT_ANSWERED", "A decision cannot replace itself.", { exitCode: 2 });
+  if (replacement.status !== "answered")
+    throw new DecisionError("DECISION_NOT_ANSWERED", "The replacement must be answered first.", { exitCode: 2 });
+  assertSupersedeAuthority(old, { scope: replacement.scope, hasOwnerSource: Boolean(replacement.sourceMessageId) });
+  return { old, replacement };
+}
+
+/** `decisions supersede <old> --by <new>`: the old one leaves every turn's context and keeps its history. */
+export function supersedeDecision(oldId: string, replacementId: string): Decision {
+  assertNoUserOverlayAutomationWrite("decisions");
+  return decisionWrite(() => {
+    const { old, replacement } = checkSupersede(oldId, replacementId);
+    return supersedeDecisionRecord(old.id, replacement.id, actor().actor);
+  });
 }
 
 export function decisionHistory(id: string) {

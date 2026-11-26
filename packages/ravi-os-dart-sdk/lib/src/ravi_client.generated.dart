@@ -4593,6 +4593,18 @@ class DecisionsNamespace {
       decode: decisionsShowReturnFromJson,
     );
   }
+
+  Future<DecisionsSupersedeReturn> supersede(String id, [DecisionsSupersedeOptions options = const DecisionsSupersedeOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["decisions"],
+      command: "supersede",
+      body: requestBody,
+      decode: decisionsSupersedeReturnFromJson,
+    );
+  }
 }
 
 class DevinNamespace {

@@ -764,7 +764,15 @@ function rowToTaskDependency(row: TaskDependencyRow): TaskDependencyRecord {
 }
 
 function taskDecisionProjection(decision: Decision): TaskDecision {
-  const { origin, revision: _revision, ...fields } = decision;
+  const {
+    origin,
+    revision: _revision,
+    scope: _scope,
+    sourceMessageId: _sourceMessageId,
+    sourceExcerpt: _sourceExcerpt,
+    supersededBy: _supersededBy,
+    ...fields
+  } = decision;
   return { ...fields, taskId: origin.id };
 }
 
