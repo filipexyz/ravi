@@ -2222,6 +2222,76 @@ describe("runtime request context chat-scoped user overlay", () => {
     }
   });
 
+  it("marks the runtime env of a held person's turn and clears it on the next turn", () => {
+    dbUpdateAgent(agent.id, {
+      defaults: { runtimePermissions: { capabilities: ["admin:system:*", "execute:executable:*"] } },
+    });
+    const chat = groupChat("120363400000000095@g.us");
+    const stranger = createContact({ phone: "5511900000095", name: "Stranger" });
+    const owner = createContact({
+      phone: "5511900000096",
+      name: "Owner",
+      tags: ["permission-owner"],
+      status: "allowed",
+    });
+    const heldSessionKey = `agent:provider-agent:chat:${chat.id}:held-env`;
+    const heldSessionName = `held-env-${chat.id}`;
+    getOrCreateSession(heldSessionKey, agent.id, agent.cwd, { name: heldSessionName });
+    const strangerPrompt = promptInChat(stranger.id, chat);
+    const built = buildRuntimeRequestContext({
+      dbSessionKey: heldSessionKey,
+      sessionName: heldSessionName,
+      sessionCwd: agent.cwd,
+      agent,
+      prompt: strangerPrompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: strangerPrompt.source,
+    });
+    const runtimeEnv: Record<string, string> = { ...built.raviEnv };
+    expect(runtimeEnv.RAVI_TURN_HELD_BELOW_AGENT).toBe("1");
+
+    const ownerPrompt = promptInChat(owner.id, chat);
+    refreshRuntimeRequestContextForTurn({
+      runtimeContext: built.runtimeContext,
+      toolContext: built.toolContext,
+      runtimeEnv,
+      dbSessionKey: heldSessionKey,
+      sessionName: heldSessionName,
+      sessionCwd: agent.cwd,
+      agent,
+      prompt: ownerPrompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: ownerPrompt.source,
+    });
+    expect(runtimeEnv.RAVI_TURN_HELD_BELOW_AGENT).toBeUndefined();
+
+    // Once the chat has contact grants, a contact narrowed to them carries no
+    // break-glass deny: it is held because its grants run no executable.
+    grant(stranger.id, "chat", chat.id);
+    const governedPrompt = promptInChat(stranger.id, chat);
+    const governed = refreshRuntimeRequestContextForTurn({
+      runtimeContext: built.runtimeContext,
+      toolContext: built.toolContext,
+      runtimeEnv,
+      dbSessionKey: heldSessionKey,
+      sessionName: heldSessionName,
+      sessionCwd: agent.cwd,
+      agent,
+      prompt: governedPrompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: governedPrompt.source,
+    });
+    expect(governed.metadata?.userOverlay).toBe("active");
+    expect(governed.metadata?.actorBreakGlassWithheld).toBeUndefined();
+    expect(runtimeEnv.RAVI_TURN_HELD_BELOW_AGENT).toBe("1");
+  });
+
   it("never lets a person's turn in an ungoverned chat inherit the agent's break-glass", () => {
     dbUpdateAgent(agent.id, {
       defaults: {

@@ -79,6 +79,7 @@ import type {
   SessionRuntimeProvider,
 } from "./types.js";
 import { toCodexRuntimeEffort } from "./effort.js";
+import { RAVI_TURN_HELD_BELOW_AGENT_ENV } from "../permissions/actor-limit.js";
 import { createRuntimeTerminalEventTracker, type RuntimeFailedTerminalInput } from "./terminality.js";
 import { materializeRuntimeModelBroker } from "./model-broker-materializer.js";
 
@@ -140,6 +141,8 @@ interface CodexCliTurnRequest {
   cwd: string;
   /** Sandbox and native tool switches for this agent's thread (contract §13.10). */
   security?: CodexThreadSecurity;
+  /** The turn's person is held below the agent: this turn runs in the read-only sandbox. */
+  heldBelowAgent?: boolean;
   env: NodeJS.ProcessEnv;
   model?: string;
   effort?: string;
@@ -236,6 +239,25 @@ export function isCodexRestrictedRuntimeProfile(config: AgentRuntimePermissionsC
     const key = runtimeCapabilityKey(capability);
     return key === null || CODEX_EXEC_CAPABILITY_PREFIXES.some((prefix) => key.startsWith(prefix));
   });
+}
+
+/**
+ * The sandbox one turn runs in. A turn of a person held below the agent (no
+ * grant in the chat, or a held relay) never gets `danger-full-access`: the
+ * Ravi Bash hook gates `shell`, but `apply_patch` and the sandbox are Codex's,
+ * so the sandbox is what keeps that person from writing. Pure.
+ */
+export function resolveCodexTurnSandbox(
+  security: CodexThreadSecurity | undefined,
+  heldBelowAgent: boolean | undefined,
+): CodexSandboxMode {
+  if (heldBelowAgent) return "read-only";
+  return (security ?? UNRESTRICTED_CODEX_THREAD_SECURITY).sandbox;
+}
+
+/** The app-server `SandboxPolicy` for a sandbox mode. Sent on every turn: an override sticks to later turns. */
+export function toCodexSandboxPolicy(sandbox: CodexSandboxMode): { type: "readOnly" | "dangerFullAccess" } {
+  return sandbox === "read-only" ? { type: "readOnly" } : { type: "dangerFullAccess" };
 }
 
 /** The thread security for a runtime permissions config. Pure. */
@@ -787,6 +809,7 @@ async function* normalizeCodexEvents(
           input.env?.RAVI_BRIDGE_TURN === "1"
             ? RESTRICTED_CODEX_THREAD_SECURITY
             : resolveCodexThreadSecurity(input.agentId),
+        heldBelowAgent: input.env?.[RAVI_TURN_HELD_BELOW_AGENT_ENV] === "1",
         env: input.env ?? process.env,
         model: resolveCodexModelArg(
           promptMessage.runtimeOptions?.model && !input.modelBroker ? promptMessage.runtimeOptions.model : input.model,
@@ -2344,6 +2367,8 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     const effort = toCodexRuntimeEffort(input.effort);
     const security = input.security ?? UNRESTRICTED_CODEX_THREAD_SECURITY;
     currentSecurity = security;
+    // A thread opened by a held turn never starts in full access, not even before turn/start.
+    const threadSandbox = resolveCodexTurnSandbox(security, input.heldBelowAgent);
     const config: Record<string, unknown> = { model_reasoning_effort: effort, ...security.config };
     if (input.allowedSkills?.length || input.hiddenSkills?.length) {
       const inventory = await sendRequest("skills/list", { cwds: [input.cwd], forceReload: true });
@@ -2370,7 +2395,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           cwd: input.cwd,
           approvalPolicy: "never",
           approvalsReviewer: null,
-          sandbox: security.sandbox,
+          sandbox: threadSandbox,
           config,
           baseInstructions: null,
           developerInstructions: null,
@@ -2384,7 +2409,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             modelProvider: null,
             cwd: input.cwd,
             approvalPolicy: "never",
-            sandbox: security.sandbox,
+            sandbox: threadSandbox,
             config,
             baseInstructions: null,
             developerInstructions: input.systemPromptAppend || null,
@@ -2397,7 +2422,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             modelProvider: null,
             cwd: input.cwd,
             approvalPolicy: "never",
-            sandbox: security.sandbox,
+            sandbox: threadSandbox,
             config,
             serviceName: null,
             baseInstructions: null,
@@ -2689,7 +2714,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
                 ],
                 cwd: null,
                 approvalPolicy: null,
-                sandboxPolicy: null,
+                sandboxPolicy: toCodexSandboxPolicy(resolveCodexTurnSandbox(input.security, input.heldBelowAgent)),
                 model: switchesModel ? turnModel : null,
                 effort: input.effort ?? null,
                 summary: null,
@@ -2830,7 +2855,12 @@ function _createCodexCliTransport(options: { command?: string } = {}): CodexCliT
 
   return {
     startTurn(input) {
-      const args = buildExecArgs(input.resume, input.model, toCodexRuntimeEffort(input.effort), input.security);
+      const args = buildExecArgs(
+        input.resume,
+        input.model,
+        toCodexRuntimeEffort(input.effort),
+        input.heldBelowAgent ? RESTRICTED_CODEX_THREAD_SECURITY : input.security,
+      );
       const child = spawn(command, args, {
         cwd: input.cwd,
         detached: true,
