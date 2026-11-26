@@ -69,3 +69,12 @@
   src/cli/commands/doctor.test.ts` MUST flag a shell cron or trigger whose
   command runs a file under an agent `cwd`, and `ravi doctor` MUST warn with
   `permissions.shell_automation_in_agent_workspace`.
+
+- `bun test src/runtime/codex-provider.test.ts -t "held|sandbox"` MUST show a
+  held turn sending `sandboxPolicy: {type: "readOnly"}` on `turn/start`, an
+  operator turn after it sending `dangerFullAccess` again, and a thread opened
+  (or resumed) by a held turn in `read-only`.
+
+- `bun test src/runtime/runtime-request-context.test.ts -t "marks the runtime env"`
+  MUST show `RAVI_TURN_HELD_BELOW_AGENT=1` on a held person's turn and the key
+  cleared when the next turn is the owner's.

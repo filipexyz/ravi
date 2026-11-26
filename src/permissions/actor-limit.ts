@@ -39,3 +39,16 @@ export function isActorBreakGlassLimitedContext(context: ActorLimitContextLike |
 export function isRelayHeldBelowAgent(metadata: Record<string, unknown> | null | undefined): boolean {
   return metadata?.relayNarrowing === true && metadata.relayCallerUnrestricted !== true;
 }
+
+/**
+ * Set by the daemon on the runtime env of a turn held below the agent
+ * (`isTurnHeldBelowAgent`). The provider reads it in the daemon to drop the
+ * execution power it would otherwise grant (Codex: the read-only sandbox).
+ */
+export const RAVI_TURN_HELD_BELOW_AGENT_ENV = "RAVI_TURN_HELD_BELOW_AGENT";
+
+/** A person held below the agent's break-glass, or a relay held below the agent. */
+export function isTurnHeldBelowAgent(context: ActorLimitContextLike | null | undefined): boolean {
+  if (!context) return false;
+  return isActorBreakGlassLimitedContext(context) || isRelayHeldBelowAgent(context.metadata);
+}
