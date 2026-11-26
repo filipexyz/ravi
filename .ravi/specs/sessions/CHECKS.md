@@ -76,3 +76,6 @@
 - Bare `ravi tui` MUST fail with a usage error instead of opening `main`.
 
 - `bun test src/cli/commands/sessions.test.ts`: an empty child returns zero rows despite parent/sibling same-chat history and metadata; a populated child returns only its own rows.
+
+- `bun test src/sessions/ask-grants.test.ts`: with an open Ask, the asked session's `sessions answer` to the asker passes the hook by key, by name (also a name shaped like a key) and after leading options (`--json`, `--barrier <value>`); `read`, `info`, `send`, `ask`, `execute`, `inform` and `reset` on the asker stay refused; a third session, an expired Ask, a withdrawn grant and a session deleted and recreated under the same key find no grant.
+- `bun test src/cli/commands/sessions.test.ts -t "open Ask"`: the Ask is recorded, an undelivered Ask withdraws its grant, a trigger's own session gets none, the answer is delivered with a receipt that shows only the asker's key, `--channel`/`--to` are refused, and a caller never asked gets "Session not found".

@@ -13,6 +13,7 @@ import {
   resolveSession,
   findSessionByChatId,
 } from "../session-targets.js";
+import { findOpenAskGrant, recordAskGrant, revokeAskGrant } from "../../sessions/ask-grants.js";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { Group, Command, CommandAccess, CliOnly, Arg, Option } from "../decorators.js";
@@ -5958,19 +5959,34 @@ export class SessionCommands {
     const deliveryBarrier = delivery.barrier;
     const { source, context } = this.resolveSource(session, channel, to);
 
-    await this.emitToSession(
-      "ask",
-      session.name ?? target,
-      prompt,
-      session,
-      channel,
-      to,
-      deliveryBarrier,
-      delivery.source,
-      undefined,
-      false,
-      asJson,
-    );
+    // The Ask is what lets the asked session answer back, and only that: record it before
+    // the prompt exists, so an answer can never arrive before its authorization. A trigger's
+    // own session takes no prompts, so it cannot be answered and gets no grant.
+    this.assertSessionTakesPrompts(session);
+    const grant =
+      origin !== "unknown" && origin !== session.sessionKey && !isTriggerOwnSessionKey(origin)
+        ? recordAskGrant({ originSessionKey: origin, targetSessionKey: session.sessionKey, sender: sender ?? null })
+        : null;
+
+    try {
+      await this.emitToSession(
+        "ask",
+        session.name ?? target,
+        prompt,
+        session,
+        channel,
+        to,
+        deliveryBarrier,
+        delivery.source,
+        undefined,
+        false,
+        asJson,
+      );
+    } catch (error) {
+      // An Ask that was never delivered authorizes no answer.
+      if (grant) revokeAskGrant(grant.id);
+      throw error;
+    }
     if (shouldReturnStructuredResult(asJson)) {
       const payload = {
         action: "ask",
@@ -6029,8 +6045,9 @@ export class SessionCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
   ) {
-    const session = this.resolveTarget(target);
-    if (!session) return;
+    const resolved = this.resolveAnswerTarget(target, channel, to);
+    if (!resolved) return;
+    const { session, throughAsk } = resolved;
 
     const origin = getContext()?.sessionKey ?? "unknown";
     const senderTag = sender ? `, sender: ${sender}` : "";
@@ -6058,13 +6075,17 @@ export class SessionCommands {
       asJson,
     );
     if (shouldReturnStructuredResult(asJson)) {
+      // An answer sent through an Ask grants no view of the asker: the receipt names only the
+      // key the Ask already gave, never its record, workspace or chat.
       const payload = {
         action: "answer",
         published: true,
-        session: buildSessionJson(session),
+        session: throughAsk ? { sessionKey: session.sessionKey } : buildSessionJson(session),
         messageLength: message.length,
         sender: sender ?? null,
-        delivery: buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context),
+        delivery: throughAsk
+          ? { barrier: deliveryBarrier, barrierSource: delivery.source }
+          : buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context),
       };
       return returnStructuredResult(payload, asJson);
     }
@@ -7107,6 +7128,45 @@ export class SessionCommands {
     }
 
     return { session };
+  }
+
+  /**
+   * The target of `sessions answer`. Access to the session answers as before. Without it, an
+   * open Ask from that session to the caller authorizes this delivery and nothing more: the
+   * caller still cannot read, recap or prompt the asker, and cannot redirect the delivery.
+   */
+  private resolveAnswerTarget(
+    nameOrKey: string,
+    channel?: string,
+    to?: string,
+  ): { session: SessionEntry; throughAsk: boolean } | null {
+    const direct = (): { session: SessionEntry; throughAsk: boolean } | null => {
+      const session = this.resolveTarget(nameOrKey);
+      return session ? { session, throughAsk: false } : null;
+    };
+    const scopeCtx = getScopeContext();
+    if (!isScopeEnforced(scopeCtx)) return direct();
+    if (isBridgeSessionTarget(nameOrKey)) {
+      fail(`Session not found: ${nameOrKey}`);
+      return null;
+    }
+    const known = resolveSession(nameOrKey) ?? findSessionByChatId(nameOrKey);
+    if (known && canAccessSession(scopeCtx, known.name ?? known.sessionKey)) return direct();
+
+    // Through an Ask the target is named the way the Ask names it, by key or name; the hook
+    // resolves it the same way, so both layers agree on which session is answered.
+    const session = resolveSession(nameOrKey);
+    const grant = session ? findOpenAskGrant(session.sessionKey, getContext()?.sessionKey) : null;
+    if (!session || !grant) {
+      // Same answer as an unknown session: an Ask grant does not reveal which sessions exist.
+      fail(`Session not found: ${nameOrKey}`);
+      return null;
+    }
+    if (channel || to) {
+      fail("An answer sent through an open Ask goes back where the Ask came from: --channel and --to are refused.");
+      return null;
+    }
+    return { session, throughAsk: true };
   }
 
   private resolveTarget(

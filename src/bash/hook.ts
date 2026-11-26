@@ -26,6 +26,7 @@ import { collectShellLevels, type ShellLevel } from "./shell-structure.js";
 import { checkExecutablePath, isInterpreterName, isShellName } from "./executable-path.js";
 import { logger } from "../utils/logger.js";
 import { getScopeContext } from "../permissions/scope.js";
+import { findOpenAskGrant } from "../sessions/ask-grants.js";
 import {
   canWithCapabilities,
   canWithCapabilityContext,
@@ -921,6 +922,34 @@ function canAccessSessionWithBashContext(ctx: BashPermissionContext, targetNameO
   return canWithBashContext(ctx, "access", "session", targetNameOrKey);
 }
 
+/** `sessions answer` options that take a value; every other `--flag` is a boolean. */
+const ANSWER_VALUE_OPTIONS = new Set(["--channel", "--to", "--barrier"]);
+
+/**
+ * The asker named by `ravi sessions answer`, read the way the CLI reads it: options may
+ * come before the target, with or without a value. Null when the line cannot be read.
+ */
+function extractAnswerTarget(command: string): string | null {
+  const match = command.match(/(?:^|\s|&&|\|\||;)\s*(?:\S+=\S+\s+)*(?:\/\S+\/)?ravi\s+sessions\s+answer\b(.*)$/s);
+  if (!match) return null;
+  const tokens = match[1].match(/"[^"]*"|'[^']*'|\S+/g) ?? [];
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index];
+    if (token.startsWith("--")) {
+      if (!token.includes("=") && ANSWER_VALUE_OPTIONS.has(token)) index++;
+      continue;
+    }
+    return token.replace(/^["']|["']$/g, "") || null;
+  }
+  return null;
+}
+
+/** An open Ask from the answered session to this one: it authorizes this answer and nothing else. */
+function answersOpenAsk(command: string, ctx: BashPermissionContext): boolean {
+  const target = extractAnswerTarget(command);
+  return Boolean(target && findOpenAskGrant(target, ctx.sessionKey));
+}
+
 function checkScopePermissionForContext(
   command: string,
   toolName: string | null,
@@ -930,7 +959,13 @@ function checkScopePermissionForContext(
 
   if (SESSION_TARGET_COMMANDS.has(toolName)) {
     const target = extractRaviTarget(command);
-    if (target && !canAccessSessionWithBashContext(ctx, target)) {
+    if (
+      target &&
+      !canAccessSessionWithBashContext(ctx, target) &&
+      !(toolName === "sessions_answer" && answersOpenAsk(command, ctx))
+    ) {
+      // An open Ask from the target to this session lets it answer that Ask, and only
+      // answer: read, recap, send and the rest still need access to the session.
       return {
         allowed: false,
         reason: `Permission denied: agent:${ctx.agentId ?? "unknown"} cannot access session:${target}`,
