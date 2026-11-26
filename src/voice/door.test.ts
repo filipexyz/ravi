@@ -640,6 +640,82 @@ describe("voice door", () => {
     expect(getVoiceCall(call.id)?.usage.estimatedCostUsd).toBeCloseTo(0.05, 5);
   });
 
+  it("live gets sanitized context, never secrets or paths from the screen text", async () => {
+    const frames: Array<{ kind: string; text: string; id: string | null }> = [];
+    let handlers: any = null;
+    const hub = new Hub();
+    const history = [{ id: 1, role: "user", content: "old" }];
+    const door = new VoiceDoorService({
+      subscribe: hub.subscribe as VoiceDoorDeps["subscribe"],
+      emit: hub.emit,
+      publishPrompt: async (sessionName, payload) => {
+        setTimeout(async () => {
+          const own = { _correlationIds: [payload._correlationId] };
+          await hub.emit(`ravi.session.${sessionName}.runtime`, { type: "turn.started", ...own });
+          history.push({
+            id: 2,
+            role: "assistant",
+            content: "🔊 Pronto.\nChave sk-abcdefghijklmnop1234 em /Users/luis/.ravi/.env, ver https://x.example/a",
+          });
+          await hub.emit(`ravi.session.${sessionName}.runtime`, { type: "turn.complete", ...own });
+        }, 5);
+      },
+      readHistory: () => history,
+      env: { RAVI_VOICE_OPENAI_API_KEY: "k" },
+      createSideband: (input) => {
+        handlers = input.handlers;
+        return {
+          connect: () => {},
+          commentary: (text, id) => frames.push({ kind: "commentary", text, id }),
+          thinking: (text, id) => frames.push({ kind: "thinking", text, id }),
+          close: () => {},
+        };
+      },
+      closeLiveProviderSession: async () => {},
+      transcriptWaitMs: 100,
+    });
+    const call = makeCall("live", { state: "starting" });
+    await door.handleControl({ op: "live-attach", callId: call.id, providerSessionId: "ls_s" });
+    handlers.onDelegation({ delegationId: "d1", text: "onde está a chave?" });
+    await until(() => frames.some((frame) => frame.kind === "commentary"), "commentary");
+    const sent = JSON.stringify(frames);
+    expect(sent).not.toContain("sk-abcdefghijklmnop1234");
+    expect(sent).not.toContain("/Users/luis");
+    expect(sent).not.toContain("https://");
+  });
+
+  it("ending a live call drains pending speech while the call still accepts transcripts", async () => {
+    const hub = new Hub();
+    const statesAtDrain: Array<string | undefined> = [];
+    let handlers: any = null;
+    const door = new VoiceDoorService({
+      subscribe: hub.subscribe as VoiceDoorDeps["subscribe"],
+      emit: hub.emit,
+      publishPrompt: async () => {},
+      readHistory: () => [],
+      env: { RAVI_VOICE_OPENAI_API_KEY: "k" },
+      createSideband: (input) => {
+        handlers = input.handlers;
+        return {
+          connect: () => {},
+          commentary: () => {},
+          thinking: () => {},
+          drain: () => {
+            statesAtDrain.push(getVoiceCall(call.id)?.state);
+            handlers.onUserTranscript("até amanhã");
+          },
+          close: () => {},
+        };
+      },
+      closeLiveProviderSession: async () => {},
+      transcriptWaitMs: 100,
+    });
+    const call = makeCall("live", { state: "starting" });
+    await door.handleControl({ op: "live-attach", callId: call.id, providerSessionId: "ls_d" });
+    await door.endCall(call.id, "ended");
+    expect(statesAtDrain).toEqual(["active"]);
+  });
+
   it("a second connect replaces the sideband without ending the call; closing the current one ends it", async () => {
     const all: any[] = [];
     const hub = new Hub();

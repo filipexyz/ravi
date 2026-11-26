@@ -270,6 +270,37 @@ describe("voice engines", () => {
     expect(h.users).toEqual(["e aí"]);
   });
 
+  it("a barge-in over a reply stays one request (later reply deltas are not boundaries)", () => {
+    const h = harness();
+    h.send({ type: "session.output_transcript.delta", delta: "Vou mandar o ", start_ms: 0, end_ms: 600 });
+    h.send({ type: "session.input_transcript.delta", delta: "não ", start_ms: 650, end_ms: 900 });
+    h.send({ type: "session.output_transcript.delta", delta: "relatório", start_ms: 700, end_ms: 1100 });
+    h.send({ type: "session.input_transcript.delta", delta: "manda o relatório", start_ms: 1000, end_ms: 1800 });
+    h.send({ type: "session.delegation.created", delegation: { id: "d1" } });
+    h.timers[0]?.();
+    expect(h.delegations).toEqual([{ delegationId: "d1", text: "não manda o relatório" }]);
+    expect(h.users).toEqual([]);
+  });
+
+  it("without timestamps, only the first delta of a reply is a boundary", () => {
+    const h = harness();
+    h.send({ type: "session.output_transcript.delta", delta: "Vou mandar o " });
+    h.send({ type: "session.input_transcript.delta", delta: "não " });
+    h.send({ type: "session.output_transcript.delta", delta: "relatório" });
+    h.send({ type: "session.input_transcript.delta", delta: "manda o relatório" });
+    h.send({ type: "session.delegation.created", delegation: { id: "d1" } });
+    h.timers[0]?.();
+    expect(h.delegations).toEqual([{ delegationId: "d1", text: "não manda o relatório" }]);
+  });
+
+  it("drain publishes speech nobody took yet, once", () => {
+    const h = harness();
+    h.send({ type: "session.input_transcript.delta", delta: "até amanhã", start_ms: 0, end_ms: 700 });
+    h.sideband.drain();
+    h.sideband.close();
+    expect(h.users).toEqual(["até amanhã"]);
+  });
+
   it("reads the provider error nested under error", () => {
     const h = harness();
     h.send({

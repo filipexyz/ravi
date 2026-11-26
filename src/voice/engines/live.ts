@@ -221,6 +221,10 @@ export class LiveSideband {
   private pendingUtterances: string[] = [];
   /** Delegations created but not yet settled. */
   private pendingDelegations = 0;
+  /** A model reply is being transcribed (timestamps decide when one ends). */
+  private replyOpen = false;
+  /** End of the last model transcript delta, when the provider sent it. */
+  private agentLastEndMs: number | null = null;
   private agentBuffer = "";
   private readonly seenDelegations = new Set<string>();
   private closed = false;
@@ -249,6 +253,16 @@ export class LiveSideband {
   /** Silent context for the voice model. */
   thinking(text: string, delegationId: string | null): void {
     this.append("session.thinking.append", text, delegationId);
+  }
+
+  /**
+   * Publish what the person said that no delegation or reply took yet. The
+   * door calls this before it marks the call as ending, while transcripts are
+   * still accepted (a goodbye said right before hanging up is kept).
+   */
+  drain(): void {
+    this.finishUtterance();
+    this.emitConversation();
   }
 
   close(): void {
@@ -300,16 +314,30 @@ export class LiveSideband {
       case "session.input_transcript.completed":
         this.finishUtterance();
         return;
-      case "session.output_transcript.delta":
-        // The model answering on its own ends the person's utterance; if no
-        // delegation is waiting for it, it was conversation and is shown now.
-        this.finishUtterance();
-        if (this.pendingDelegations === 0) this.emitConversation();
+      case "session.output_transcript.delta": {
+        // Only the START of a model reply ends the person's utterance. Later
+        // deltas of the same reply are not boundaries: words the person says
+        // over a reply (a barge-in) stay one request.
+        const startMs = numberField(event, "start_ms");
+        const replyStarts =
+          startMs !== null && this.agentLastEndMs !== null
+            ? startMs - this.agentLastEndMs > UTTERANCE_GAP_MS
+            : !this.replyOpen;
+        if (replyStarts) {
+          this.finishUtterance();
+          // If no delegation is waiting for it, what was said was conversation.
+          if (this.pendingDelegations === 0) this.emitConversation();
+        }
+        this.replyOpen = true;
+        const endMs = numberField(event, "end_ms");
+        if (endMs !== null) this.agentLastEndMs = endMs;
         this.agentBuffer += stringField(event, "delta");
         if (/[.!?…]\s*$/.test(this.agentBuffer)) this.flushAgent();
         return;
+      }
       case "session.output_transcript.done":
       case "session.output_transcript.completed":
+        this.replyOpen = false;
         this.flushAgent();
         return;
       case "session.delegation.created": {
