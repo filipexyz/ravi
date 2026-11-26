@@ -1063,6 +1063,21 @@ describe("connector turn classification", () => {
       );
     });
 
+    it("classifies each turn of the shared session by its own actor, not by who wrote before", () => {
+      // Two people's messages in the same session run as separate turns, each
+      // with its own context: the owner's turn does not lend its standing to
+      // the next one, and a stranger's turn does not take it away.
+      const session = { sessionKey: "agent:main:main", sessionName: "main" };
+      const owner1 = ownerTurn(session);
+      const ana = ownerTurn(session, { ...LUIS, actorPrincipal: "contact:c_ana", consoleUserId: "user_ana" });
+      const owner2 = ownerTurn(session);
+
+      expect(classify(owner1).ok).toBe(true);
+      expectBlocked(classify(ana), "CONNECTOR_SPEAKER_NOT_OWNER");
+      expect(classify(owner2).ok).toBe(true);
+      expectBlocked(classify(ana), "CONNECTOR_SPEAKER_NOT_OWNER");
+    });
+
     it("keeps the catalog next step for a contact refused in a group", () => {
       const inGroup = expectBlocked(
         classify(

@@ -586,6 +586,9 @@ No confirmation is asked. Anyone else's message never starts a private read.
   session's context, so anyone who can write into that session (another
   participant of the chat, another chat attached or routed to it, or a relay
   with `access session:<name>`) can ask about it later.
+- Attribution is per turn: each turn carries its own context (actor,
+  `consoleUserId`), so in a shared session the owner's turn never lends its
+  standing to another person's message, queued or not.
 - Where it applies: `pages read` of a private route, `ravi knowledge`,
   meeting transcripts and the Library's operator-only items. The calendar
   keeps its own group refusal (spec `calendar/meeting-assistant`). The
