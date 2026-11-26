@@ -20,7 +20,11 @@
 
 import { homedir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
-import { providerConfigWriteDenial, isActorBreakGlassLimited } from "../permissions/provider-config-paths.js";
+import {
+  isActorBreakGlassLimited,
+  providerConfigWriteDenial,
+  providerFileReadDenial,
+} from "../permissions/provider-config-paths.js";
 import { canWithCapabilityContext } from "../permissions/provider-runtime.js";
 import { getContext } from "./context.js";
 import { CliExpectedError } from "./expected-error.js";
@@ -84,7 +88,13 @@ export function assertCallerFileAccess(path: string, mode: CallerPathMode): void
           cwd: isActorBreakGlassLimited(context) ? authenticatedSessionWorkspace(context) : getCallerCwd(),
           restrictToWorkspace: isActorBreakGlassLimited(context),
         })
-      : undefined;
+      : providerFileReadDenial({
+          can,
+          agentId: ctx?.agentId ?? context.agentId,
+          targets: [path],
+          cwd: isActorBreakGlassLimited(context) ? authenticatedSessionWorkspace(context) : getCallerCwd(),
+          restrictToWorkspace: isActorBreakGlassLimited(context),
+        });
   if (denial) {
     throw new CliExpectedError(denial, "PERMISSION_DENIED", 1, "Ask the operator for file access, or use stdout");
   }

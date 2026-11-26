@@ -8,7 +8,6 @@
  */
 
 import { AckPolicy, DeliverPolicy, StringCodec, type JetStreamClient, type JetStreamManager } from "nats";
-import { execFile } from "node:child_process";
 import { getNats, publish, nats } from "../nats.js";
 import { publishSessionPrompt } from "./session-stream.js";
 import { expandRaviCommandPrompt, RaviCommandError } from "../commands/index.js";
@@ -25,7 +24,6 @@ import {
 } from "../identity-link/link-dm-flow.js";
 import { interceptCloudChatMessage } from "../cloud-agents/chat-routing.js";
 import { isIgnoredOmniInstanceId } from "../router/omni-ignore.js";
-import { promisify } from "node:util";
 
 const CONSUMER_READY_TIMEOUT = 60_000; // Wait up to 60s for streams to appear
 const CONSUMER_RETRY_DELAY_MS = 2_000;
@@ -107,10 +105,10 @@ import { firstProviderTimestampMs, timestampLikeToMs } from "../utils/provider-t
 import { transcribeAudio } from "../transcribe/openai.js";
 import { readdir } from "node:fs/promises";
 import type { RuntimeAbortProvenance } from "../runtime/session-dispatcher.js";
+import { inspectAgentWorkspaceChanges, type WorkspaceChangeInspection } from "./workspace-inspection.js";
 
 const log = logger.child("omni:consumer");
 const sc = StringCodec();
-const execFileAsync = promisify(execFile);
 
 export function supportsOmniReadReceipts(channelType: string): boolean {
   switch (channelType.toLowerCase()) {
@@ -185,12 +183,6 @@ interface MessageEditInfo {
   newText: string;
   editedAt?: number;
   source: "content-edit" | "raw-is-edited";
-}
-
-interface WorkspaceChangeInspection {
-  state: "clean" | "dirty" | "unavailable";
-  changedFiles: number;
-  preview: string[];
 }
 
 /** Omni instance.qr_code payload */
@@ -2294,25 +2286,7 @@ export class OmniConsumer {
   }
 
   private async inspectWorkspaceChanges(cwd: string): Promise<WorkspaceChangeInspection> {
-    try {
-      const { stdout } = await execFileAsync("git", ["status", "--porcelain"], {
-        cwd,
-        encoding: "utf8",
-        timeout: 2_000,
-        maxBuffer: 64 * 1024,
-      });
-      const lines = String(stdout)
-        .split(/\r?\n/)
-        .map((line) => line.trimEnd())
-        .filter(Boolean);
-      return {
-        state: lines.length > 0 ? "dirty" : "clean",
-        changedFiles: lines.length,
-        preview: lines.slice(0, 8),
-      };
-    } catch {
-      return { state: "unavailable", changedFiles: 0, preview: [] };
-    }
+    return inspectAgentWorkspaceChanges(cwd);
   }
 
   private resolveEditedMessageActorMetadata(
@@ -2387,7 +2361,7 @@ export class OmniConsumer {
     } else {
       lines.push(
         "",
-        "Nao foi possivel verificar o workspace do agente. Antes de modificar arquivos, confira o estado local.",
+        "O daemon nao inspeciona o workspace do agente. Antes de modificar arquivos, confira o estado local (git status).",
       );
     }
 

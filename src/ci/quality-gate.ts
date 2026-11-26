@@ -101,6 +101,7 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/subscription-precedence.test.ts",
   ],
   "src/omni/": [
+    "src/omni/workspace-inspection.test.ts",
     "src/omni/consumer-context.test.ts",
     "src/omni/consumer-policy.test.ts",
     "src/omni/session-stream.test.ts",
@@ -154,6 +155,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/allowed-skills.test.ts",
   ],
   "src/runtime/": [
+    "src/runtime/agent-instructions.test.ts",
+    "src/runtime/ravi-rules.test.ts",
     // Person credentials: a relay made with one person's key is that person's turn, never the agent's.
     "src/runtime/person-credential.test.ts",
     // A finishing session keeps its slot until its loop restarts the stashed recovery (pool reclaimer race).

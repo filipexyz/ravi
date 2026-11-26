@@ -93,6 +93,47 @@ invariant stronger than most: context keys (`rctx_*`) ARE credentials.
     runtime and explicit remote invocations MUST NOT gain a local operator
     fallback. No arbitrary environment or client file path is forwarded.
 
+## Local operator is not a boundary
+
+- A local `cli` invocation without `RAVI_CONTEXT_KEY` and without an explicit
+  remote gateway (`RAVI_GATEWAY_URL`) resolves to the local operator. Every agent process runs as the same OS user as the daemon, so any
+  agent that can execute code (a script, `bun <file>`, a git hook) can start a
+  child without the key and act as the operator. Profiles, the Bash guard and
+  approvals decide what is offered to the agent; they are not a boundary
+  against code it already runs. Only OS isolation of the agent runtime closes
+  this, and until it exists an agent reachable by third parties SHOULD stay
+  `chat-only`.
+- A process the daemon spawned for `ravi jobs run` (`RAVI_AUTOMATION_PRINCIPAL`
+  = `automation:job:*`) MUST NOT resolve to the local operator: jobs are open to
+  agents. A present marker (including a blank one) that is not a well-formed
+  cron or trigger principal MUST also be denied. Shell cron and shell triggers keep the local operator
+  because they run only when their owner acts as the operator
+  (`CRON_SHELL_NOT_OPERATOR`, `TRIGGER_SHELL_NOT_OPERATOR`). This check closes
+  the easy path only; a process can drop the marker.
+
+## The daemon does not trust the agent's workspace
+
+- The daemon MUST NOT run tools inside an agent's workspace. A `git status`
+  there honours repository config the agent writes (`core.fsmonitor`, clean
+  filters, submodules); the message-edit notice tells the agent to check its
+  workspace itself.
+- Writes the daemon makes in a workspace (`AGENTS.md`, `CLAUDE.md`, imported
+  rules) MUST NOT follow a symlink at the target, and an imported rule MUST NOT
+  land (or create directories) outside the workspace through a symlinked
+  directory. `.ravi/rules` is read only when its real path stays inside the
+  workspace; the daemon then reads and writes through the resolved directory,
+  not the name, and re-checks after creating directories. Node has no
+  per-component no-follow open, so a race on an intermediate directory stays
+  possible until the OS sandbox; the agent can already read those files itself.
+- CLAUDE.md becomes a pointer to AGENTS.md only when AGENTS.md holds real
+  instructions; a skipped (symlinked) legacy bridge leaves CLAUDE.md intact.
+- File arguments the daemon reads for a person held below break-glass stay in
+  the session workspace and the temp directory, like their writes.
+- Shell cron and shell triggers run as the operator. `ravi doctor` warns
+  (`permissions.shell_automation_in_agent_workspace`) when one runs code from
+  an agent's workspace, because that agent can change what the operator runs.
+  It does not refuse them: existing workflows rely on it.
+
 ## Write classification (brake decision per op)
 
 | op | class | brake |

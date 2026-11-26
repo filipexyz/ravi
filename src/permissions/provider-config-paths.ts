@@ -167,6 +167,26 @@ export function isAppStatePath(path: string, cwd?: string): boolean {
   return roots.some((root) => isUnder(physical, root) || isUnder(physical.toLowerCase(), root.toLowerCase()));
 }
 
+/**
+ * Reads the daemon does for a person held below break-glass (`pages ship
+ * --html <path>` and other file arguments) stay in the session workspace and
+ * the temp directory, like their writes: the daemon reads with its own
+ * filesystem authority, which reaches `~/.ravi/.env` and other operator files.
+ */
+export function providerFileReadDenial(input: {
+  can: CanCheck;
+  agentId?: string | null;
+  targets: string[];
+  cwd?: string;
+  restrictToWorkspace?: boolean;
+}): string | undefined {
+  const breakGlass = input.can("admin", "system", "*") || input.can("execute", "executable", "*");
+  if (!input.restrictToWorkspace || breakGlass) return undefined;
+  const outside = input.targets.filter((target) => !isWorkspaceOrTempPath(target, input.cwd));
+  if (outside.length === 0) return undefined;
+  return `Permission denied: agent:${input.agentId ?? "unknown"} cannot read outside the session workspace for the person who asked (${outside.join(", ")}); reading there needs execute:executable:* or admin:system:*`;
+}
+
 /** Whether a turn is a person held below the agent's break-glass (metadata or inherited `deny_*`). */
 export function isActorBreakGlassLimited(context: ActorLimitContextLike | null | undefined): boolean {
   return isActorBreakGlassLimitedContext(context);
