@@ -17,6 +17,7 @@
   agent MUST keep holding them.
 - A route that names the shared session with spaces around the name MUST
   count like the trimmed name the router uses.
+- A DM from another app's bot MUST NOT land in the shared session.
 - A cloud approval reply from a held colleague MUST reach the run.
 - With no owner tagged the shared session MUST keep its legacy behaviour.
 - An unreadable owner set MUST hold the DM.

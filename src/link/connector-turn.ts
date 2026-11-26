@@ -99,6 +99,13 @@ export type ConnectorTurnResult =
        */
       sharedSession?: boolean;
       /**
+       * With `sharedSession`: the session is the agent's shared DM session
+       * (`agent:<id>:main`), which is the owner's alone only while they are
+       * the one contact tagged `permission-owner` and nothing else writes in
+       * it (spec channels/owner-dm-guard).
+       */
+      agentSharedSession?: boolean;
+      /**
        * The operator's own relay (`ravi sessions send|ask`), refused only for
        * where the session posts its answer (a chat that is not the owner's
        * direct chat, or one Ravi could not read): the relay turn, with that
@@ -372,7 +379,8 @@ export function resolveConnectorTurn(deps: ConnectorTurnDeps = {}): ConnectorTur
     // The owner's own chat, but in a session other people's chats can reach,
     // what the account returns stays in a transcript they can ask about.
     if (!candidate || !isPrivateDirectChat(candidate, deps)) {
-      return withCandidate(ownerSharedSessionBlocked(actorPrincipal, owner), candidate);
+      const agentShared = isAgentSharedDmSessionKey(candidate?.directChat?.sessionKey);
+      return withCandidate(ownerSharedSessionBlocked(actorPrincipal, owner, agentShared), candidate);
     }
     return {
       ok: true,
@@ -1392,28 +1400,39 @@ function relayBlocked(
 /**
  * The owner in their own direct chat, in a session other people's chats can
  * reach (another person's chat attached to it, a route that sends a group, a
- * thread or several chats into it, or, in an agent's shared DM session, a
- * second contact tagged as owner): what their accounts return would stay in a
- * transcript the others can ask about. The owner is also the operator, so the
- * line tells them how to allow it.
+ * thread or several chats into it): what their accounts return would stay in
+ * a transcript the others can ask about. In the agent's shared DM session the
+ * owner must also be the one contact tagged as owner. The owner is also the
+ * operator, so the line tells them how to allow it.
  */
-function ownerSharedSessionBlocked(actorPrincipal: string, owner: OwnerIdentity): BlockedTurn {
-  const chatLine = `I can't use your ${owner.service} in this conversation: other people's chats can reach its session. Move their chats out of it, then ask me again.`;
-  const chatLinePt = `Não posso usar o seu ${owner.service} nesta conversa: conversas de outras pessoas chegam à sessão dela. Tire essas conversas da sessão e me peça de novo.`;
+function ownerSharedSessionBlocked(actorPrincipal: string, owner: OwnerIdentity, agentShared: boolean): BlockedTurn {
+  const chatLine = agentShared
+    ? `I can't use your ${owner.service} in this conversation: other people's chats can reach its session, or you are not the only contact marked as owner. Fix that, then ask me again.`
+    : `I can't use your ${owner.service} in this conversation: other people's chats can reach its session. Move their chats out of it, then ask me again.`;
+  const chatLinePt = agentShared
+    ? `Não posso usar o seu ${owner.service} nesta conversa: conversas de outras pessoas chegam à sessão dela, ou você não é o único contato marcado como dono. Corrija isso e me peça de novo.`
+    : `Não posso usar o seu ${owner.service} nesta conversa: conversas de outras pessoas chegam à sessão dela. Tire essas conversas da sessão e me peça de novo.`;
+  const why = agentShared
+    ? `this is the agent's shared DM session, which is ${owner.possessiveEn} alone only while ${owner.label} is the one contact tagged permission-owner and no other chat reaches it (another person's chat attached, a route that sends a group, a thread or several chats into it)`
+    : "other people's chats can reach its session (another person's chat attached to it, a route that sends a group, a thread or several chats into it)";
+  const fix = agentShared
+    ? `${owner.label} is the only contact tagged permission-owner and moves the other chats out of this session (ravi sessions subscriptions <session> lists the attached ones)`
+    : `${owner.label} moves the other chats out of this session (ravi sessions subscriptions <session> lists the attached ones)`;
   return {
     ...blocked(
       "CONNECTOR_GROUP_BLOCKED",
       actorPrincipal,
-      `${owner.label} asked in their own direct chat, but other people's chats can reach its session (another person's chat attached to it, a route that sends a group, a thread or several chats into it, or a second contact tagged as owner), so they could read what ${owner.possessiveEn} ${owner.service} returns. Do not retry. Reply: "${chatLine}"`,
+      `${owner.label} asked in their own direct chat, but ${why}, so others could read what ${owner.possessiveEn} ${owner.service} returns. Do not retry. Reply: "${chatLine}"`,
       {
         chatLine,
         chatLinePt,
         replyTo: "same_chat",
-        suggestedAction: `reply in this chat with the chat line, and do not retry until ${owner.label} moves the other chats out of this session (ravi sessions subscriptions <session> lists the attached ones)`,
+        suggestedAction: `reply in this chat with the chat line, and do not retry until ${fix}`,
       },
     ),
     speakerIsOwner: true,
     sharedSession: true,
+    ...(agentShared ? { agentSharedSession: true } : {}),
   };
 }
 

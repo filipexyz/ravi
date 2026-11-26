@@ -161,7 +161,13 @@ MUST revalidate the human caller chain and contact before each protected call.
      is also the operator, so the line says how to allow it.
      `suggestedAction`: "reply in this chat with the chat line, and do not
      retry until <owner> moves the other chats out of this session (ravi
-     sessions subscriptions <session> lists the attached ones)";
+     sessions subscriptions <session> lists the attached ones)". In the
+     agent's shared DM session (`agent:<id>:main`, `agentSharedSession`) the
+     line also names the owner tag: "...other people's chats can reach its
+     session, or you are not the only contact marked as owner. Fix that, then
+     ask me again." / "...ou você não é o único contato marcado como dono.
+     Corrija isso e me peça de novo.", and `suggestedAction` asks for the
+     only `permission-owner` contact as well;
    - a relay or routine answering into a chat that is not the owner's: no
      chat line; for a relay (also one whose answer Ravi could not place) the
      message says the owner can run the command in their terminal or ask in

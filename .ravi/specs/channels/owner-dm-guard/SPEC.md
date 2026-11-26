@@ -50,7 +50,8 @@ nothing else writes in it either.
   there, and a thread under a forced session forks from it, so
   `matched.sessionKey` alone is not where the message lands.
 - A guarded DM is admitted only when the sender's resolved contact is an owner.
-  An unresolved sender is never the owner.
+  An unresolved sender is never the owner, and neither is another app's bot:
+  its DM would receive the session's answers, so it is held too.
 - No route or attached chat admits anyone else into the shared session: a
   literal or glob route, with or without a forced session, and a chat attached
   by routing, a person or an agent all leave a non-owner's DM held.

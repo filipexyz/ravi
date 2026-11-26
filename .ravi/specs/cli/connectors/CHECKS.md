@@ -54,7 +54,9 @@
   session `agent:<id>:main`, a second or no tagged owner, or a glob, `group:`
   or `thread:` route by session name) it MUST exit 3
   `CONNECTOR_GROUP_BLOCKED` with the chat line telling the owner to move the
-  other chats out of the session (`replyTo: same_chat`), in every agent mode;
+  other chats out of the session (`replyTo: same_chat`; in the agent's shared
+  session also to be the only contact tagged as owner, `agentSharedSession`),
+  in every agent mode;
   only `--shared` in `shared` mode moves it to the shared account. That turn
   MUST still change a mode (`connectors mode`) and own the crons it creates
   (`operator`). The sole owner's DM in `agent:<id>:main` with only their own

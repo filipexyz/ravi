@@ -2233,11 +2233,12 @@ export class SlackSocketModeService {
     }
     // A DM from anyone but the owner never lands in an agent's shared DM
     // session, whatever the instance policy, routes or attached chats say
-    // (spec channels/owner-dm-guard). It reads the session the commit will
-    // land in: a route that forces a session redirects there, away from
-    // `matched.sessionKey`.
+    // (spec channels/owner-dm-guard). Another app's bot is not the owner
+    // either: its DM would receive the session's answers. It reads the
+    // session the commit will land in: a route that forces a session
+    // redirects there, away from `matched.sessionKey`.
     let ownerSessionBlocked = false;
-    if (!isGroup && matched && message.senderKind !== "bot") {
+    if (!isGroup && matched) {
       const landingSessionKey = previewCommittedSessionKey(matched, { threadId: routeThreadId });
       const ownerGuard = evaluateOwnerDmGuard({
         peerKind,
