@@ -7633,6 +7633,7 @@ export class SessionCommands {
       return;
     }
     const callerAgentId = getContext()?.agentId;
+    let conflict: Record<string, unknown> | undefined;
     try {
       const result = attachChatToSession({
         sessionKey: session.sessionKey,
@@ -7675,19 +7676,23 @@ export class SessionCommands {
         // Only an explicit --json takes the conflict as data. A gateway call without it keeps failing, so a caller
         // that did not ask for the structured form never reads a conflict as a successful attach.
         if (asJson) {
-          const conflict = {
+          conflict = {
             error: err.code,
             message: err.message,
             currentOwner: err.currentSessionKey,
             chatId: err.chatId,
           };
-          printJson(conflict);
-          return conflict;
+        } else {
+          fail(err.message);
+          return;
         }
-        fail(err.message);
-        return;
+      } else {
+        throw err;
       }
-      throw err;
+    }
+    if (conflict) {
+      printJson(conflict);
+      return conflict;
     }
   }
 
