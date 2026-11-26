@@ -27,6 +27,7 @@ import { sanitizePublicValue } from "../cli/redaction.js";
 
 import { APPROVAL_ID_PATTERN, CONSENT_REF_PATTERN, LinkApiClient, LinkStepUpRequiredError } from "./client.js";
 import type { ConnectorUseMode } from "./connector-mode.js";
+import type { OwnerReadExposureDeps } from "./owner-read-confirmation.js";
 import {
   buildAgentExecContext,
   buildExecContext,
@@ -59,6 +60,8 @@ export interface ConnectorHelperDeps {
   deleteCredentials?: typeof deleteCloudCredentials;
   /** Turn classification inputs (tests). */
   turn?: ConnectorTurnDeps;
+  /** Who reads the chat the owner's answer goes to (tests). */
+  ownerRead?: OwnerReadExposureDeps;
 }
 
 export interface ConnectorListItem {
@@ -138,6 +141,7 @@ async function authenticate(
     readActive: read,
     turn: deps.turn,
     ...(exec ? { exec } : {}),
+    ...(deps.ownerRead ? { ownerRead: deps.ownerRead } : {}),
   });
   const consoleClient = deps.consoleClient ?? new ConsoleApiClient({ consoleUrl: credentials.consoleUrl });
   const { me, credentials: fresh } = await getMeWithAutoRefresh({
@@ -283,6 +287,7 @@ export function resolveConnectorExecPlan(
     readActive: deps.readCredentials ?? readCloudCredentials,
     turn: deps.turn,
     exec: options,
+    ...(deps.ownerRead ? { ownerRead: deps.ownerRead } : {}),
   });
   return { mode: route?.mode ?? "owner", agentId: route?.turn.agentId ?? null };
 }

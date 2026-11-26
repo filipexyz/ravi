@@ -51,7 +51,6 @@ function audienceWith(overrides: Partial<KnowledgeAudienceDeps> = {}) {
   const deps: KnowledgeAudienceDeps = {
     ownerContactIds: () => [OWNER],
     sessionKeyFor: () => "agent:main:whatsapp:dm:5511",
-    isPrivateDirectSession: (input) => !input.sessionKey?.endsWith(":main"),
     dmContact: () => null,
     packet: noPacket,
     isLinkedOwner: () => true,
@@ -129,8 +128,8 @@ describe("withKnowledgePreamble", () => {
     expect(firstLines(result, 1)).toEqual([KNOWLEDGE_AUDIENCE_LINES.operator]);
   });
 
-  it("writes none for a group", () => {
-    const group = dm(OWNER);
+  it("writes none for someone else in a group", () => {
+    const group = dm(CLIENT);
     group.context = { ...group.context!, isGroup: true };
     const result = withKnowledgePreamble(group, ctx, {
       audience: audienceWith(),
@@ -138,6 +137,17 @@ describe("withKnowledgePreamble", () => {
       canUseKnowledge: () => true,
     });
     expect(firstLines(result, 1)).toEqual([KNOWLEDGE_AUDIENCE_LINES.none]);
+  });
+
+  it("writes operator for the owner in a group, where Knowledge asks them to confirm first", () => {
+    const group = dm(OWNER);
+    group.context = { ...group.context!, isGroup: true };
+    const result = withKnowledgePreamble(group, ctx, {
+      audience: audienceWith(),
+      packet: noPacket,
+      canUseKnowledge: () => true,
+    });
+    expect(firstLines(result, 1)).toEqual([KNOWLEDGE_AUDIENCE_LINES.operator]);
   });
 
   it("writes none for heartbeat and trigger turns", () => {
@@ -154,12 +164,13 @@ describe("withKnowledgePreamble", () => {
     }
   });
 
-  it("writes none for the owner's DM in a dmScope main session shared with another contact", () => {
+  it("writes operator for the owner's DM in the agent's shared session (dmScope main)", () => {
     const result = withKnowledgePreamble(dm(OWNER), ctx, {
       audience: audienceWith({ sessionKeyFor: () => "agent:main:main" }),
       packet: noPacket,
+      canUseKnowledge: () => true,
     });
-    expect(firstLines(result, 1)).toEqual([KNOWLEDGE_AUDIENCE_LINES.none]);
+    expect(firstLines(result, 1)).toEqual([KNOWLEDGE_AUDIENCE_LINES.operator]);
   });
 
   it("writes contact followed by the packet for a non-owner DM with a packet", () => {

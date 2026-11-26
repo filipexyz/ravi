@@ -520,19 +520,19 @@ export class PagesCommands {
         if (failure) {
           // A private Page refused on a turn that is not the operator's own: say which rule decided it.
           const block = failure.details.reason === "public_only" ? pageReadTurnBlock(this.deps) : null;
-          contractFail(
-            "pages read",
-            failure.code,
-            block ? `${failure.message} This turn is not the operator's own: ${block.why}.` : failure.message,
-            {
-              ...{
-                asJson,
-                exitCode: failure.exitCode,
-                details: block ? { ...failure.details, turn: block.turn } : failure.details,
-              },
-              diagnostic: errorDiagnostic(error, { operation: "pages read" }),
+          const message = !block
+            ? failure.message
+            : block.turn === "owner_confirmation"
+              ? `${failure.message} ${block.why}`
+              : `${failure.message} This turn is not the operator's own: ${block.why}.`;
+          contractFail("pages read", failure.code, message, {
+            ...{
+              asJson,
+              exitCode: failure.exitCode,
+              details: block ? { ...failure.details, ...(block.details ?? {}), turn: block.turn } : failure.details,
             },
-          );
+            diagnostic: errorDiagnostic(error, { operation: "pages read" }),
+          });
         }
         throw error;
       }

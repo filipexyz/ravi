@@ -7,6 +7,7 @@ import {
   type ConnectorTurn,
   type ConnectorTurnDeps,
 } from "../link/connector-turn.js";
+import { ownerReadExposure, type OwnerReadExposureDeps } from "../link/owner-read-confirmation.js";
 import { CloudAuthError } from "./errors.js";
 import {
   deleteCloudCredentials,
@@ -26,6 +27,8 @@ export interface ConnectorAuthOptions {
    * contact's turn may go to agent exec instead of being refused.
    */
   exec?: { provider: string; useShared?: boolean };
+  /** Who reads the chat the owner's answer goes to (tests). */
+  ownerRead?: OwnerReadExposureDeps;
 }
 
 /**
@@ -91,6 +94,14 @@ export function resolveConnectorCloudCredentials(options: ConnectorAuthOptions =
     );
   }
   if (!result.ok) throw result.error;
+  // The owner's own account, asked for in a chat people outside the
+  // organization read: the owner confirms there first. Other people's or a
+  // shared account (agent exec) keep their own rules.
+  const turn = "route" in result ? result.route.turn : result.turn;
+  if (!("route" in result) || result.route.mode === "owner") {
+    const exposure = ownerReadExposure(turn, options.ownerRead);
+    if (!exposure.ok) throw exposure.error;
+  }
   if ("route" in result) return { turn: result.route.turn, credentials: active, activeUserId, route: result.route };
   return { turn: result.turn, credentials: active, activeUserId };
 }

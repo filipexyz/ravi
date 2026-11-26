@@ -103,8 +103,8 @@ instead of inventing local suggestions that would require extra remote calls.
 | A runtime marker (`RAVI_SESSION_KEY`, `RAVI_SESSION_NAME`, `RAVI_AGENT_ID`, `RAVI_TRIGGER_ID`) or a tool/gateway transport without a live context, or an unresolved/revoked/expired context key, or a revoked/expired context on the walk | blocked `CONNECTOR_SPEAKER_NOT_OWNER` |
 | `automation:operator:local` or `agent:bootstrap` relayed by the operator's `ravi sessions send` or `ask` (turn origin `session-relay`, action `send`/`ask`, no session, principal equal to the actor) | allowed: speaker `owner`, conversation `terminal`, when the answer reaches no chat (invariant 3a); a relay whose answer the session posts into a chat follows the last two rows |
 | The same principals with any other origin (`execute`, as the session-goal wake sends, `inform`, `answer`, a relay from a session, or no origin) | blocked `CONNECTOR_SPEAKER_NOT_OWNER` |
-| `contact:<id>`, `actorResolution=resolved`, `consoleUserId` equal to the active session's user (and the same org when both are known), in a `dm:` compartment whose session is the owner's own (the session check of invariant 23, `readIsPrivateDirectSession`) | allowed: speaker `owner` (contactId, consoleUserId), conversation `dm` |
-| The same owner in a `dm:` compartment whose session other people's chats can reach (another person's chat attached, a route by session name; in an agent's shared session `agent:<id>:main`, a second tagged owner or a glob, `group:` or `thread:` route by session name), or whose session is unknown | blocked `CONNECTOR_GROUP_BLOCKED` (`speakerIsOwner`, `sharedSession`) |
+| `contact:<id>`, `actorResolution=resolved`, `consoleUserId` equal to the active session's user (and the same org when both are known), in a `dm:` compartment, in any session (shared or not) | allowed: speaker `owner` (contactId, consoleUserId), conversation `dm`, `answerChat` the compartment's chat; a private read there follows "Owner read confirmation" |
+| The same owner in a `chat:` compartment (a group or channel) | allowed: speaker `owner`, conversation `group`, `answerChat` the chat; a private read there waits for the owner's confirmation ("Owner read confirmation") |
 | `contact:<id>` linked to another Console user, not linked, `missing_contact`, or `unknown` | blocked `CONNECTOR_SPEAKER_NOT_OWNER` |
 | `agent:<id>` (relay from another agent), `automation:session:*` | blocked `CONNECTOR_SPEAKER_NOT_OWNER` |
 | `automation:cron:<jobId>` (agent turn or the job's shell command) | allowed only with a valid admission snapshot eligible for operator authority, whose captured owner is `operator` (a NULL owner is nobody) or an existing, unblocked contact still linked to the active Console user and org: speaker `automation`, routine `cron`; missing snapshots and revoked owners block. Live ownership transfers never reclassify the run (see `cron`) |
@@ -153,21 +153,9 @@ MUST revalidate the human caller chain and contact before each protected call.
    - group, owner speaking: "I'll send this to you privately." /
      "Vou te mandar isso no privado." and ask the owner to repeat the request
      in their direct chat;
-   - the owner's direct chat in a shared session: "I can't use your Gmail in
-     this conversation: other people's chats can reach its session. Move their
-     chats out of it, then ask me again." / "Não posso usar o seu Gmail nesta
-     conversa: conversas de outras pessoas chegam à sessão dela. Tire essas
-     conversas da sessão e me peça de novo.", `replyTo: same_chat`; the owner
-     is also the operator, so the line says how to allow it.
-     `suggestedAction`: "reply in this chat with the chat line, and do not
-     retry until <owner> moves the other chats out of this session (ravi
-     sessions subscriptions <session> lists the attached ones)". In the
-     agent's shared DM session (`agent:<id>:main`, `agentSharedSession`) the
-     line also names the owner tag: "...other people's chats can reach its
-     session, or you are not the only contact marked as owner. Fix that, then
-     ask me again." / "...ou você não é o único contato marcado como dono.
-     Corrija isso e me peça de novo.", and `suggestedAction` asks for the
-     only `permission-owner` contact as well;
+   - the owner in a chat people outside the organization read:
+     `OWNER_CONFIRMATION_REQUIRED` ("Owner read confirmation"), with the
+     chat line asking for `confirmo <code>`, `replyTo: same_chat`;
    - a relay or routine answering into a chat that is not the owner's: no
      chat line; for a relay (also one whose answer Ravi could not place) the
      message says the owner can run the command in their terminal or ask in
@@ -509,10 +497,10 @@ MUST revalidate the human caller chain and contact before each protected call.
 | Turn | `owner` | `person_asking` | `shared` |
 |---|---|---|---|
 | Terminal, operator relay (`ravi sessions send\|ask`) answering to no chat | own connection | own connection | own connection (`--shared`: `PAYLOAD_INVALID`) |
-| The owner's own direct chat (a session of its own), or an operator relay answering into it | own connection | own connection | own connection; agent exec `shared`, conversation `dm`, with `gmail --shared` |
-| The owner's own direct chat whose session other people share | `CONNECTOR_GROUP_BLOCKED` | `CONNECTOR_GROUP_BLOCKED` | `CONNECTOR_GROUP_BLOCKED`; agent exec `shared`, conversation `dm`, with `--shared` |
+| The owner's own direct chat (any session), or an operator relay answering into it | own connection | own connection | own connection; agent exec `shared`, conversation `dm`, with `gmail --shared` |
+| The owner in a direct chat with someone outside the organization | own connection after the owner confirms there (`OWNER_CONFIRMATION_REQUIRED` until then) | the same | the same; agent exec `shared`, conversation `dm`, with `--shared` |
 | An operator relay answering into a group or another person's chat | `CONNECTOR_GROUP_BLOCKED` | `CONNECTOR_GROUP_BLOCKED` | `CONNECTOR_GROUP_BLOCKED`; agent exec `shared` with that conversation, with `--shared` |
-| The owner in a group | `CONNECTOR_GROUP_BLOCKED` | `CONNECTOR_GROUP_BLOCKED` | `CONNECTOR_GROUP_BLOCKED`; agent exec `shared`, conversation `group`, with `--shared` |
+| The owner in a group | own connection after the owner confirms there (`OWNER_CONFIRMATION_REQUIRED` until then) | the same | the same; agent exec `shared`, conversation `group`, with `--shared` |
 | A resolved contact (linked to another user, or not linked) in a direct chat with a session of their own | `CONNECTOR_SPEAKER_NOT_OWNER` | agent exec `person_asking` | agent exec `shared`, conversation `dm` |
 | A resolved contact in a direct chat whose session other people share | `CONNECTOR_SPEAKER_NOT_OWNER` | `CONNECTOR_GROUP_BLOCKED` ("I can't use your Gmail in this conversation.") | agent exec `shared`, conversation `dm` |
 | A resolved contact in a group | `CONNECTOR_GROUP_BLOCKED` | `CONNECTOR_GROUP_BLOCKED` ("I can only use your Gmail in a direct chat with me. Ask me there.") | agent exec `shared`, conversation `group` |
@@ -527,12 +515,9 @@ MUST revalidate the human caller chain and contact before each protected call.
     `session_chat_subscriptions` row of it (inbound routing attaches each
     chat it sends there) is the speaker's own direct chat: the compartment's
     chat, or a `dm` chat that resolves to the same contact. An agent's shared
-    DM session (`agent:<id>:main`, exactly) is the speaker's own only when the
-    speaker is the one contact tagged `permission-owner` (the owner DM guard
-    keeps every other person's DM out of it), every route naming it reaches one
-    direct peer (no glob, `group:` or `thread:` pattern), and every attached
-    chat is the speaker's direct chat or a thread inside it (spec
-    `channels/owner-dm-guard`). Anything else, or a failed read, is not
+    DM session (`dmScope: main`) is never one person's own. This check serves
+    a contact's `person_asking` turn; the owner's own turn does not depend on
+    it ("Owner read confirmation"). Anything else, or a failed read, is not
     private: in `person_asking` the person's mail would stay in a transcript
     other people can ask about.
 
@@ -594,6 +579,41 @@ MUST revalidate the human caller chain and contact before each protected call.
       for `person_asking` the person asking, in this direct chat; for
       `shared` the account's manager, and the chat line carries no link.
 
+### Owner read confirmation
+
+Decision (26/11/2026, 15:11Z, owner): "se eu escrevo eu quero que esse dado
+venha, independente de onde estar". The owner's own verified message (a
+resolved contact linked to the login's Console user) is the operator's turn in
+any session, shared or not, in a direct chat or a group. What changes with the
+chat is who reads the answer (`src/link/owner-read-confirmation.ts`):
+
+- Inside the organization: a direct chat, or a thread inside one, whose person
+  is tagged `permission-owner` or linked to this installation (`ravi link`,
+  the cached actor binding for the login's installation). The owner's private
+  data goes there without asking.
+- Anything else (a group, a channel, a direct chat with someone outside the
+  organization): a private read exits 3 `OWNER_CONFIRMATION_REQUIRED` with
+  `details.chatLinePt` "Este chat tem gente de fora da organização. Para eu
+  trazer isso aqui, responda: confirmo <code>" (`chatLine` in English,
+  `replyTo: same_chat`, `confirmationCode`). The agent posts that line and
+  runs the command again only after the owner answers.
+- The confirmation is the owner's own canonical message in that chat
+  (`chat_messages`, `contact_id` the owner) from the last ten minutes carrying
+  `confirmo <code>` (or `confirm <code>`). The code is the first six hex digits
+  of sha256 over (chat, owner contact, ten-minute window); the current window
+  and the one before it count. Someone else's message, the agent's own line,
+  an older code or another chat's code never confirm. Nothing is stored.
+- No chat to answer in, or anything unreadable: refused with the same code
+  and the line "Não sei quem lê este chat, então não trago isso aqui. Me peça
+  no nosso chat privado." (no confirmation code).
+- Where it applies: `pages read` of a private route (`details.turn:
+  owner_confirmation`), `ravi knowledge` (`OWNER_CONFIRMATION_REQUIRED`
+  instead of `KNOWLEDGE_TURN_NOT_OPERATOR`), meeting transcripts, and the
+  owner's own connected accounts (`connector-auth`; agent exec for another
+  person's or a shared account keeps its own rules). Terminal, relays,
+  routines and contacts other than the owner are not affected.
+- Channel-free: chats, participants, contacts and canonical messages only.
+
 ## Write classification (brake decision per op)
 
 | op | class | brake |
@@ -608,7 +628,8 @@ MUST revalidate the human caller chain and contact before each protected call.
 | case | code | exit |
 |---|---|---|
 | braked revoke without `--yes`/`--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
-| group chat (any speaker) | `CONNECTOR_GROUP_BLOCKED` | 3 |
+| group chat (a speaker other than the owner) | `CONNECTOR_GROUP_BLOCKED` | 3 |
+| the owner's own data asked for in a chat people outside the organization read, before the owner confirms there | `OWNER_CONFIRMATION_REQUIRED` | 3 |
 | someone other than the owner, or an unknown turn | `CONNECTOR_SPEAKER_NOT_OWNER` | 3 |
 | organization turned the connector off | `CONNECTOR_DISABLED_BY_ORG` | 3 |
 | tool blocked by the owner or the organization | `CONNECTOR_TOOL_BLOCKED` | 3 |

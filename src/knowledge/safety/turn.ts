@@ -17,6 +17,7 @@ import {
   isOwnersDirectChat,
   resolveConnectorTurn,
 } from "../../link/connector-turn.js";
+import { ownerReadExposure } from "../../link/owner-read-confirmation.js";
 import { dbListRoutesBySessionName, dbListSessionChatSubscriptions } from "../../router/router-db.js";
 import { parseSessionKey } from "../../router/session-key.js";
 import { resolveSession } from "../../router/sessions.js";
@@ -30,9 +31,18 @@ export type KnowledgeTurnVerdict =
       code: "KNOWLEDGE_TURN_NOT_OPERATOR";
       reason: "group" | "contact" | "shared_session" | "routine" | "agent" | "unknown";
       actorPrincipal: string;
+    }
+  | {
+      ok: false;
+      code: "OWNER_CONFIRMATION_REQUIRED";
+      reason: "owner_confirmation";
+      actorPrincipal: string;
+      /** What the agent tells the owner, and the code the owner answers with. */
+      message: string;
+      details: Record<string, unknown>;
     };
 
-type RefusalReason = Extract<KnowledgeTurnVerdict, { ok: false }>["reason"];
+type RefusalReason = Extract<KnowledgeTurnVerdict, { ok: false; code: "KNOWLEDGE_TURN_NOT_OPERATOR" }>["reason"];
 
 const TERMINAL_TURN: KnowledgeTurn = {
   audience: "operator",
@@ -86,12 +96,28 @@ function verdictFor(result: ConnectorTurnResult, deps: LibraryTurnDeps): Knowled
   if (turn.speaker.kind === "terminal") return allow(turn, null);
   const sessionKey = currentKnowledgeSessionKey(deps);
   if (turn.speaker.kind === "owner") {
+    if (turn.speaker.contactId) {
+      // The owner's own message counts wherever they write (their direct chat
+      // in any session, or a group); a chat that people outside the
+      // organization read waits for the owner to confirm there.
+      if (turn.conversation !== "dm" && turn.conversation !== "group") return refuse("unknown", turn.actorPrincipal);
+      const exposure = ownerReadExposure(turn, deps.ownerRead);
+      if (!exposure.ok) {
+        return {
+          ok: false,
+          code: "OWNER_CONFIRMATION_REQUIRED",
+          reason: "owner_confirmation",
+          actorPrincipal: turn.actorPrincipal,
+          message: exposure.error.message,
+          details: exposure.error.details ?? {},
+        };
+      }
+      return allow(turn, sessionKey);
+    }
     if (turn.conversation !== "dm" && turn.conversation !== "terminal") {
       return refuse(turn.conversation === "group" ? "group" : "unknown", turn.actorPrincipal);
     }
-    // The owner's own direct chat was checked for a private session upstream;
-    // the relay (no contact) answers in whatever session it was sent to.
-    if (turn.speaker.contactId) return allow(turn, sessionKey);
+    // The relay (no contact) answers in whatever session it was sent to.
     return privateSessionOrRefuse(turn, sessionKey, deps);
   }
   if (turn.routine?.kind === "cron") return privateSessionOrRefuse(turn, sessionKey, deps);
@@ -159,7 +185,6 @@ export function currentKnowledgeSessionKey(deps: LibraryTurnDeps = {}): string |
 }
 
 function blockedReason(result: Extract<ConnectorTurnResult, { ok: false }>): RefusalReason {
-  if (result.sharedSession) return "shared_session";
   const shaped = result.candidate ?? result.relay;
   if (shaped?.conversation === "group") return "group";
   if (shaped) return reasonForSpeaker(shaped);

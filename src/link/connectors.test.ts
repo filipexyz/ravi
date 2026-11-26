@@ -21,6 +21,14 @@ import {
   type TerminalApprovalOptions,
   waitForConnectorApproval,
 } from "./connectors.js";
+import type { OwnerReadExposureDeps } from "./owner-read-confirmation.js";
+
+/** The owner's direct chat, read by the owner alone (src/link/owner-read-confirmation.ts). */
+const OWN_DM_ONLY: OwnerReadExposureDeps = {
+  directChatContact: () => "owner",
+  isInsideContact: () => true,
+  contactMessagesSince: () => [],
+};
 
 const TERMINAL: ConnectorTurnDeps = { runtimeContext: { present: false, record: null } };
 
@@ -189,12 +197,13 @@ describe("connector link helpers", () => {
         consoleClient: makeConsoleClient(async () => ({})),
         link,
         readCredentials: makeReadCredentials(),
-        // The owner's direct chat, in a session of its own.
+        // The owner's direct chat, read by the owner alone.
         turn: {
           activeUserId: "user_alice",
           runtimeContext: { present: true, record },
           isPrivateDirectSession: () => true,
         },
+        ownerRead: OWN_DM_ONLY,
       },
     );
 
@@ -476,6 +485,7 @@ function fakeWorker(
     link,
     readCredentials: makeReadCredentials(),
     turn,
+    ownerRead: OWN_DM_ONLY,
   };
   return { calls, deps };
 }

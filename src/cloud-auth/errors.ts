@@ -42,6 +42,9 @@ export const CLOUD_AUTH_ERROR_CODES = [
   "CONNECTOR_PERMISSION_REQUIRED",
   "CONNECTOR_POLICY_ABOVE_CEILING",
   "CONNECTOR_FORBIDDEN",
+  // The owner's private data asked for in a chat people outside the
+  // organization can read: it comes only after the owner confirms there.
+  "OWNER_CONFIRMATION_REQUIRED",
   "ACTOR_NOT_LINKED",
   // A runtime turn Ravi cannot attribute (another agent's turn, an unresolved
   // speaker): refused locally, never sent as the operator.
@@ -71,6 +74,7 @@ export const RETRYABLE_CLOUD_AUTH_CODES: ReadonlySet<CloudAuthErrorCode> = new S
  * run as asked.
  */
 export const CONNECTOR_POLICY_CODES: ReadonlySet<CloudAuthErrorCode> = new Set([
+  "OWNER_CONFIRMATION_REQUIRED",
   "CONNECTOR_GROUP_BLOCKED",
   "CONNECTOR_SPEAKER_NOT_OWNER",
   "CONNECTOR_DISABLED_BY_ORG",

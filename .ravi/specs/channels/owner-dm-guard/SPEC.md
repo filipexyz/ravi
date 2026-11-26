@@ -16,8 +16,6 @@ applies_to:
   - src/channels/slack/socket-mode.ts
   - src/omni/consumer.ts
   - src/router/resolver.ts
-  - src/link/connector-turn.ts
-  - src/pages/read.ts
 owners:
   - dev
 status: active
@@ -34,10 +32,11 @@ into the owner's shared session. The owner's shared session is an agent's
 into it, and it carries the owner's history and, in an ungoverned chat, the
 agent's whole ceiling (`permissions/agent-identity`).
 
-Because no one else's direct message can land there, the shared session can be
-the owner's own direct session: the owner's verified DM in it counts as the
-operator's turn (private Pages, Knowledge, the owner's connected accounts) while
-nothing else writes in it either.
+The guard keeps the routing only. Whether a turn is the operator's does not
+depend on it: the owner's own verified message counts as the operator's turn
+wherever it runs, shared session or not, and a private read in a chat other
+people read waits for the owner's confirmation there (spec `cli/connectors`,
+"Owner read confirmation").
 
 ## Contract
 
@@ -77,8 +76,11 @@ nothing else writes in it either.
   ungoverned chat, its ceiling; holding keeps a stranger out of both.
 - Decision (26/11/2026): the shared session admits owners only. The 19/11
   exception for a route naming the person, or a chat attached by a person or
-  an agent, is gone: with it the session could never be the owner's alone, and
-  the owner's own DM never counted as the operator's turn.
+  an agent, is gone: the owner's DM stays in the shared session and every other
+  person's DM gets a session of their own or is held.
+- Decision (26/11/2026, 15:11Z, owner): "se eu escrevo eu quero que esse dado
+  venha, independente de onde estar". The owner's turn no longer depends on
+  the session being theirs alone; this guard is not a privacy check.
 - No owner tagged: the guard does not block (a fresh installation has nobody
   to protect the session for and nobody to review a held message). This is
   fail-open and nothing reports it yet: an installation is protected only once
@@ -87,25 +89,14 @@ nothing else writes in it either.
 - The omni path records the rejection as `route.rejected` with reason
   `dm_owner_session_non_owner`.
 
-## The owner's own direct session
+## The owner's turn
 
-- The owner's DM in an agent's shared session (`agent:<id>:main` exactly, not a
-  thread under it) runs in a session of their own
-  (`readIsPrivateDirectSession` → `isSharedDmSessionPrivateToOwner`) when:
-  - the speaker is the one contact tagged `permission-owner`. With two tagged
-    owners both land there; with none, the guard admits everyone;
-  - every active route that sends chats into the session by name
-    (`routes.session_name`, compared trimmed, as the router looks it up)
-    reaches one direct peer: a literal id, never a glob (it also matches
-    `group:` targets), a `group:` or a `thread:` pattern. This guard covers
-    direct messages only;
-  - every chat attached to the session is the speaker's own direct chat or a
-    thread inside it (`dbGetThreadParentChat`). An attached chat can also
-    receive the session's answers.
-- Anything unreadable is not private. A relay, a cron or a thread child of the
-  shared session keeps the rules of `knowledge` and `cli/connectors`.
-- The rule is channel-free: it reads contacts, routes and chat subscriptions,
-  never a channel name.
+- The owner's verified message counts as the operator's turn in the shared
+  session, in a per-person session and in a group alike (`cli/connectors`,
+  "Owner read confirmation"). This guard adds nothing to that rule and reads
+  no privacy from routes or attached chats.
+- The rule is channel-free: it reads contacts and session keys, never a
+  channel name.
 
 ## Out of scope
 

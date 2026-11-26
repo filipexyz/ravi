@@ -5,6 +5,7 @@ import { CloudAuthError } from "../cloud-auth/errors.js";
 import { readActiveCloudAuthUserId, readCloudCredentials } from "../cloud-auth/storage.js";
 import { LEGACY_CLOUD_AUTH_USER_ID } from "../cloud-auth/types.js";
 import { resolveConnectorTurn, type ConnectorTurnDeps, type ConnectorTurnResult } from "../link/connector-turn.js";
+import { ownerReadExposure, type OwnerReadExposureDeps } from "../link/owner-read-confirmation.js";
 import { createAuthenticatedPagesContext, type PagesClientDeps, type PagesClientOptions } from "./client.js";
 import {
   downloadPageFiles,
@@ -58,6 +59,8 @@ export interface PageReadOptions extends PagesClientOptions {
 
 export interface PageReadDeps extends PagesClientDeps {
   turn?: ConnectorTurnDeps;
+  /** Who reads the chat the owner's answer goes to (tests). */
+  ownerRead?: OwnerReadExposureDeps;
   /** Overrides the turn classification (tests). */
   publicOnly?: boolean;
   /** Downloads the presigned file URLs (tests). */
@@ -180,16 +183,14 @@ export function normalizePageReadNumber(
 
 /**
  * Whether this call may only read public Pages: every turn that is not the
- * operator's own, as the connector classifier decides it.
- *
- * A group is the owner's call: the same consent that lets their connectors
- * answer there lets a private Page be read there. Open follow-up: when the room
- * holds people outside the page's organization, nothing yet checks that
- * everyone who will read it may read it.
+ * operator's own, as the connector classifier decides it, and the owner's own
+ * turn in a chat people outside the organization can read until the owner
+ * confirms there (`ownerReadExposure`).
  */
 export function pageReadIsPublicOnly(deps: PageReadDeps = {}): boolean {
   if (deps.publicOnly !== undefined) return deps.publicOnly;
-  return !resolveTurnForActiveLogin(deps).ok;
+  const result = resolveTurnForActiveLogin(deps);
+  return !result.ok || !ownerReadExposure(result.turn, deps.ownerRead).ok;
 }
 
 /**
@@ -214,7 +215,7 @@ export function resolveTurnForActiveLogin(
 
 /** Which rule kept this turn from being the operator's own (for a `public_only` refusal). */
 export type PageReadTurnBlock =
-  | "shared_session"
+  | "owner_confirmation"
   | "relay_answer_chat"
   | "owner_outside_dm"
   | "group"
@@ -226,7 +227,9 @@ export type PageReadTurnBlock =
  * an agent can relay; null when it did (or a test fixed `publicOnly`). It
  * only explains the existing classification: it never changes it.
  */
-export function pageReadTurnBlock(deps: PageReadDeps = {}): { turn: PageReadTurnBlock; why: string } | null {
+export function pageReadTurnBlock(
+  deps: PageReadDeps = {},
+): { turn: PageReadTurnBlock; why: string; details?: Record<string, unknown> } | null {
   if (deps.publicOnly !== undefined) return null;
   let result: ConnectorTurnResult;
   try {
@@ -234,13 +237,14 @@ export function pageReadTurnBlock(deps: PageReadDeps = {}): { turn: PageReadTurn
   } catch {
     return { turn: "unknown", why: "Ravi could not classify who is asking in this turn." };
   }
-  if (result.ok) return null;
-  if (result.sharedSession) {
+  if (result.ok) {
+    const exposure = ownerReadExposure(result.turn, deps.ownerRead);
+    if (exposure.ok) return null;
+    const { chatLine, chatLinePt, replyTo, confirmationCode } = exposure.error.details ?? {};
     return {
-      turn: "shared_session",
-      why: result.agentSharedSession
-        ? "the owner's direct chat runs in their agent's shared DM session, which is theirs alone only while they are the one contact tagged permission-owner and no other chat reaches it (another person's chat attached, a route that sends a group, a thread or several chats into it)"
-        : "the owner's direct chat runs in a session other people's chats can reach (another person's chat attached to it, a route that sends a group, a thread or several chats into it)",
+      turn: "owner_confirmation",
+      why: exposure.error.message,
+      details: { chatLine, chatLinePt, replyTo, ...(confirmationCode ? { confirmationCode } : {}) },
     };
   }
   if (result.relay) {

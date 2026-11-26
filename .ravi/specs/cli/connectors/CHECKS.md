@@ -35,8 +35,8 @@
   Both relay blocks MUST carry, in the envelope, the `suggestedAction` to
   post nothing from the account into that chat (the owner can run the
   command in their terminal), never the catalog step to answer in the group;
-  the owner's shared-session block MUST carry the one to reply with the chat
-  line and not retry until each person has their own session. A relay
+  the owner confirmation refusal MUST carry the one to reply with the chat
+  line and run again only after the owner answers. A relay
   blocked by where it answers MUST still change a mode (`connectors mode`)
   and own the crons it creates (`operator`).
 - The runtime MUST record `turnReplyTarget` on the turn context at every
@@ -45,22 +45,23 @@
 - A live `admin-bootstrap` root with `admin:system:*` and no actor MUST be
   allowed as the terminal; the same kind without the capability, or a child
   of a revoked one, MUST block.
-- A resolved contact whose `consoleUserId` is the active session's user, in a
-  `dm:` compartment whose session is the owner's own (the `person_asking`
-  session check), MUST be allowed as speaker `owner`, conversation `dm`.
-  The same contact with a different `consoleOrgId` MUST be blocked. In a
-  session other people's chats can reach (a group key, an unknown session, a
-  route by session name, another person's chat attached; in an agent's shared
-  session `agent:<id>:main`, a second or no tagged owner, or a glob, `group:`
-  or `thread:` route by session name) it MUST exit 3
-  `CONNECTOR_GROUP_BLOCKED` with the chat line telling the owner to move the
-  other chats out of the session (`replyTo: same_chat`; in the agent's shared
-  session also to be the only contact tagged as owner, `agentSharedSession`),
-  in every agent mode;
-  only `--shared` in `shared` mode moves it to the shared account. That turn
-  MUST still change a mode (`connectors mode`) and own the crons it creates
-  (`operator`). The sole owner's DM in `agent:<id>:main` with only their own
-  chats attached MUST be allowed as speaker `owner`, conversation `dm`.
+- A resolved contact whose `consoleUserId` is the active session's user MUST
+  be allowed as speaker `owner` in any session, shared (`agent:<id>:main`) or
+  not: conversation `dm` with `answerChat` in a `dm:` compartment, `group` in
+  a `chat:` one. The same contact with a different `consoleOrgId` MUST be
+  blocked. That turn MUST still change a mode (`connectors mode`) and own the
+  crons it creates (`operator`).
+- Owner read confirmation: in the owner's own direct chat, a thread inside
+  it, or a direct chat with a person tagged `permission-owner` or linked to
+  this installation, the owner's private read MUST pass without asking. In a
+  group, a channel or a direct chat with someone outside the organization it
+  MUST exit 3 `OWNER_CONFIRMATION_REQUIRED` with `details.confirmationCode`
+  and the chat line, and MUST pass only after the owner's own message there
+  in the last ten minutes carries `confirmo <code>` of this or the previous
+  window. A code of an older window or another chat, a bare `confirmo`, the
+  agent's own line and another person's message MUST NOT confirm. No answer
+  chat, or an unreadable store, MUST refuse with no code.
+  `bun test src/link/owner-read-confirmation.test.ts` SHOULD pass.
 - A contact linked to another Console user MUST be blocked
   (`CONNECTOR_SPEAKER_NOT_OWNER`, exit 3) and MUST NOT switch to that user's
   stored session, even when one exists.
@@ -248,7 +249,7 @@
   "Only <owner> can change that." and MUST NOT change the row. The owner
   asking in a group MUST exit 3 `CONNECTOR_GROUP_BLOCKED` with "Ask me in our
   private chat and I'll change it." and MUST NOT change the row. The owner's
-  own direct chat (also in a shared session), the operator's
+  own direct chat (in any session), the operator's
   `ravi sessions send|ask` wherever the session posts its answer, and the
   terminal MUST pass.
 - An unknown provider or mode MUST exit 2 with `acceptedPositionals`; an

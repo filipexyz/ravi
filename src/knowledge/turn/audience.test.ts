@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { parseSessionKey } from "../../router/session-key.js";
 import type { RuntimeLaunchPrompt } from "../../runtime/message-types.js";
 import { buildSessionRelayTurnOrigin } from "../../runtime/turn-origin.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
@@ -54,12 +53,6 @@ function deps(overrides: Partial<KnowledgeAudienceDeps> = {}): KnowledgeAudience
   return {
     ownerContactIds: () => [OWNER],
     sessionKeyFor: () => "agent:main:whatsapp:dm:5511900000001",
-    // The session-key half of readIsPrivateDirectSession (its route and
-    // attachment reads are covered in src/link/connector-turn.test.ts).
-    isPrivateDirectSession: ({ sessionKey }) => {
-      const parsed = sessionKey ? parseSessionKey(sessionKey) : null;
-      return parsed?.peerKind === "dm" && parsed.dmScope !== "main";
-    },
     dmContact: ({ chatId }) => (chatId === OWNER_CHAT ? OWNER : chatId === CLIENT_CHAT ? CLIENT : null),
     packet: () => {
       throw new Error("packet must not be built");
@@ -85,13 +78,13 @@ describe("knowledgeAudienceForPrompt", () => {
     expect(knowledgeAudienceForPrompt(cli, ctx, deps({ isOperatorSession: () => false }))).toBe("none");
   });
 
-  it("gives none for the owner's DM in a dmScope main session other contacts share", () => {
+  it("gives operator for the owner's DM in the agent's shared session (dmScope main)", () => {
     expect(
       knowledgeAudienceForPrompt(dm(OWNER, OWNER_CHAT), ctx, deps({ sessionKeyFor: () => "agent:main:main" })),
-    ).toBe("none");
+    ).toBe("operator");
   });
 
-  it("gives none for the owner in a group", () => {
+  it("gives operator for the owner in a group: Knowledge asks them to confirm there", () => {
     const prompt = dm(OWNER, "120363000000000001@g.us");
     prompt.context = { ...prompt.context!, isGroup: true };
     expect(
@@ -100,13 +93,13 @@ describe("knowledgeAudienceForPrompt", () => {
         ctx,
         deps({ sessionKeyFor: () => "agent:main:whatsapp:wa-main:group:120363000000000001" }),
       ),
-    ).toBe("none");
+    ).toBe("operator");
   });
 
   it("treats a chat whose session key is a group as a group even without context", () => {
     const prompt: RuntimeLaunchPrompt = {
       prompt: "oi",
-      source: { channel: "whatsapp", accountId: "wa-main", chatId: OWNER_CHAT, contactId: OWNER },
+      source: { channel: "whatsapp", accountId: "wa-main", chatId: CLIENT_CHAT, contactId: CLIENT },
     };
     expect(
       knowledgeAudienceForPrompt(

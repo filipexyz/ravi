@@ -21,6 +21,23 @@ export function assertKnowledgeAllowed(
   if (!exposure.ok) fail(exposureError(op, exposure), asJson);
 
   const verdict = (deps?.classify ?? (() => classifyKnowledgeTurn()))();
+  if (!verdict.ok && verdict.code === "OWNER_CONFIRMATION_REQUIRED") {
+    // The owner, in a chat people outside the organization read: ask there first.
+    fail(
+      new ContractError(op, "OWNER_CONFIRMATION_REQUIRED", verdict.message, CONTRACT_EXIT_POLICY, {
+        ...errorDiagnostic(verdict.message, { operation: op }),
+        ...{
+          retryable: false,
+          refusal: verdict.reason,
+          ...verdict.details,
+          issues: [
+            `Reply in this chat: "${String(verdict.details.chatLinePt ?? verdict.details.chatLine ?? "")}" and run the same command again only after the owner answers with the code.`,
+          ],
+        },
+      }),
+      asJson,
+    );
+  }
   if (!verdict.ok) {
     fail(
       new ContractError(

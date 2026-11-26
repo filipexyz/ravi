@@ -21,6 +21,7 @@ import type { ContextRecord } from "../router/router-db.js";
 import { getOrCreateSession } from "../router/sessions.js";
 import { createRuntimeContext } from "../runtime/context-registry.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import type { OwnerReadExposureDeps } from "../link/owner-read-confirmation.js";
 
 describe("normalizePageReadUrl", () => {
   it("accepts *.ravi.page links with or without a scheme and drops the fragment", () => {
@@ -104,14 +105,18 @@ describe("pageReadTurnBlock on real turn contexts", () => {
     });
   }
 
-  function deps(context: ContextRecord, isPrivateDirectSession?: () => boolean) {
+  /** The owner's DM, read by the owner alone, unless a test says otherwise. */
+  const OWNER_ONLY_CHAT: OwnerReadExposureDeps = {
+    directChatContact: () => "c_luis",
+    isInsideContact: (contactId) => contactId === "c_luis",
+    contactMessagesSince: () => [],
+  };
+
+  function deps(context: ContextRecord, ownerRead: OwnerReadExposureDeps = OWNER_ONLY_CHAT) {
     return {
       readCredentials: () => makeCredentials(),
-      turn: {
-        ...OWNER,
-        env: { RAVI_CONTEXT_KEY: context.contextKey },
-        ...(isPrivateDirectSession ? { isPrivateDirectSession } : {}),
-      },
+      turn: { ...OWNER, env: { RAVI_CONTEXT_KEY: context.contextKey } },
+      ownerRead,
     };
   }
 
@@ -128,13 +133,29 @@ describe("pageReadTurnBlock on real turn contexts", () => {
     expect(pageReadTurnBlock(deps(context))).toBeNull();
   });
 
-  it("names the shared-session rule when the owner's direct chat shares its session", () => {
-    const context = turnContext(ownerDm, OWNER_DM, "luis-dm");
-    const shared = deps(context, () => false);
-    expect(pageReadIsPublicOnly(shared)).toBe(true);
-    expect(pageReadTurnBlock(shared)).toMatchObject({ turn: "shared_session" });
+  it("counts the owner's own direct chat in a shared session too", () => {
     const main = turnContext(ownerDm, "agent:main:main", "main");
-    expect(pageReadTurnBlock(deps(main))).toMatchObject({ turn: "shared_session" });
+    expect(pageReadIsPublicOnly(deps(main))).toBe(false);
+    expect(pageReadTurnBlock(deps(main))).toBeNull();
+  });
+
+  it("asks the owner to confirm in a chat people outside the organization read, then reads", () => {
+    const group = turnContext(
+      { ...ownerDm, agentIdentityCompartment: "chat:120363012345678901@g.us" },
+      "agent:main:whatsapp:wa-main:group:120363012345678901",
+      "client-group",
+    );
+    const outside: OwnerReadExposureDeps = { ...OWNER_ONLY_CHAT, directChatContact: () => null };
+    expect(pageReadIsPublicOnly(deps(group, outside))).toBe(true);
+    const block = pageReadTurnBlock(deps(group, outside));
+    expect(block).toMatchObject({ turn: "owner_confirmation" });
+    const code = String(block?.details?.confirmationCode ?? "");
+    expect(code).toMatch(/^[0-9a-f]{6}$/);
+    expect(block?.why).toContain(`confirmo ${code}`);
+
+    const confirmed: OwnerReadExposureDeps = { ...outside, contactMessagesSince: () => [`confirmo ${code}`] };
+    expect(pageReadIsPublicOnly(deps(group, confirmed))).toBe(false);
+    expect(pageReadTurnBlock(deps(group, confirmed))).toBeNull();
   });
 
   it("names the link rule when the owner writes from an account not linked to this login", () => {

@@ -1,11 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import {
-  evaluateOwnerDmGuard,
-  isAgentSharedDmSessionKey,
-  isDirectPeerRoutePattern,
-  isSharedDmSessionPrivateToOwner,
-  isSharedOwnerSessionKey,
-} from "./owner-dm-guard.js";
+import { evaluateOwnerDmGuard, isSharedOwnerSessionKey } from "./owner-dm-guard.js";
 
 const OWNER = "contact-owner";
 const PEER = "contact-peer";
@@ -82,101 +76,5 @@ describe("owner DM guard", () => {
         },
       ),
     ).toEqual({ blocked: true, reason: "non_owner_dm_to_owner_session", ownerCount: 0 });
-  });
-});
-
-describe("owner DM guard: the shared session as the owner's own direct session", () => {
-  const SHARED = { sessionKey: "agent:main:main", sessionName: "main", contactId: OWNER, chatId: "chat_owner_dm" };
-  const OWN_CHATS = new Set(["chat_owner_dm", "chat_owner_thread", "chat_owner_whatsapp"]);
-  const deps = {
-    ownerContactIds: () => [OWNER],
-    routePatternsForSessionName: () => ["5511999999999", "U0OWNER"],
-    attachedChatIds: () => ["chat_owner_dm", "chat_owner_thread", "chat_owner_whatsapp"],
-    isContactsDirectChat: (chatId: string, contactId: string) => contactId === OWNER && OWN_CHATS.has(chatId),
-  };
-
-  it("matches only the exact shared key, never a thread under it or a per-peer key", () => {
-    expect(isAgentSharedDmSessionKey("agent:main:main")).toBe(true);
-    for (const key of [
-      "agent:main:main:thread:1763555555.000100",
-      "agent:main:dm:U9",
-      "agent::main",
-      "main",
-      "",
-      null,
-      undefined,
-    ]) {
-      expect(isAgentSharedDmSessionKey(key)).toBe(false);
-    }
-  });
-
-  it("counts a route as safe only when it reaches one direct peer", () => {
-    for (const pattern of ["5511999999999", "U0OWNER", "178035101794451", "lid:178035101794451"]) {
-      expect(isDirectPeerRoutePattern(pattern)).toBe(true);
-    }
-    for (const pattern of ["*", "5511*", "*999", "group:120363", "GROUP:C0CHAN", "thread:1763.1", "", " ", null]) {
-      expect(isDirectPeerRoutePattern(pattern)).toBe(false);
-    }
-  });
-
-  it("is the sole owner's when only their own chats are attached and only direct routes name it", () => {
-    expect(isSharedDmSessionPrivateToOwner(SHARED, deps)).toBe(true);
-  });
-
-  it("is never private to someone who is not the owner", () => {
-    expect(isSharedDmSessionPrivateToOwner({ ...SHARED, contactId: PEER }, deps)).toBe(false);
-  });
-
-  it("is nobody's while no owner, or more than one, is tagged, or the owners cannot be read", () => {
-    for (const ownerContactIds of [
-      () => [],
-      () => [OWNER, PEER],
-      () => {
-        throw new Error("db locked");
-      },
-    ]) {
-      expect(isSharedDmSessionPrivateToOwner(SHARED, { ...deps, ownerContactIds })).toBe(false);
-    }
-  });
-
-  it("is not private while another person's chat is attached to it", () => {
-    expect(
-      isSharedDmSessionPrivateToOwner(SHARED, {
-        ...deps,
-        attachedChatIds: () => ["chat_owner_dm", "chat_colleague_dm"],
-      }),
-    ).toBe(false);
-  });
-
-  it("is not private while a route sends a group, a thread or a glob into it", () => {
-    for (const pattern of ["group:120363", "thread:1763.1", "*", "U0*"]) {
-      expect(
-        isSharedDmSessionPrivateToOwner(SHARED, {
-          ...deps,
-          routePatternsForSessionName: () => ["5511999999999", pattern],
-        }),
-      ).toBe(false);
-    }
-  });
-
-  it("trusts the turn's own chat without asking who owns it", () => {
-    const isContactsDirectChat = (chatId: string) => chatId !== "chat_turn";
-    expect(
-      isSharedDmSessionPrivateToOwner(
-        { ...SHARED, chatId: "chat_turn" },
-        { ...deps, attachedChatIds: () => ["chat_turn", "chat_owner_dm"], isContactsDirectChat },
-      ),
-    ).toBe(true);
-  });
-
-  it("refuses any other session shape, an empty speaker or an unnamed session", () => {
-    for (const input of [
-      { ...SHARED, sessionKey: "agent:main:main:thread:1763555555.000100" },
-      { ...SHARED, sessionKey: "agent:main:dm:U0OWNER" },
-      { ...SHARED, contactId: " " },
-      { ...SHARED, sessionName: "" },
-    ]) {
-      expect(isSharedDmSessionPrivateToOwner(input, deps)).toBe(false);
-    }
   });
 });

@@ -49,8 +49,12 @@ nudges that send agents to the command.
 4. A `public_only` refusal MUST exit 3 (`PAGE_ACCESS_DENIED`, policy block);
    other access refusals exit 1. The refusal MUST say which classifier rule
    kept the turn from being the operator's own (`details.turn`:
-   `shared_session`, `relay_answer_chat`, `owner_outside_dm`, `group`,
-   `not_owner` or `unknown`, and the same sentence in the message). That
+   `owner_confirmation`, `relay_answer_chat`, `owner_outside_dm`, `group`,
+   `not_owner` or `unknown`, and the same sentence in the message). The
+   owner's own turn in a chat people outside the organization read is
+   `owner_confirmation`, with `chatLinePt`, `confirmationCode` and
+   `replyTo: same_chat` in `details` (`cli/connectors`, "Owner read
+   confirmation"). That
    explanation never changes the classification. Through the daemon gateway
    the message, `turn` and `suggestedAction` reach the agent (`cli`). Not found is `PAGE_NOT_FOUND`; non-text
    routes are `PAGE_CONTENT_UNSUPPORTED`.

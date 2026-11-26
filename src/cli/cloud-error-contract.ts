@@ -255,6 +255,8 @@ function publicMessage(code: CloudAuthError["code"], sourceMessage: string): str
       return "The organization's limit for this tool does not allow that policy.";
     case "CONNECTOR_FORBIDDEN":
       return "Only the owner of this connection can do that.";
+    case "OWNER_CONFIRMATION_REQUIRED":
+      return "People outside the organization can read this chat, so the owner's private data comes only after the owner confirms here.";
     case "ACTOR_NOT_LINKED":
       return "The person asking is not linked to a Console user on this Ravi.";
     case "ACTOR_UNKNOWN":
@@ -377,6 +379,8 @@ function suggestedAction(code: CloudAuthError["code"]): string {
       return "pick a stricter policy, or ask an organization owner or admin to raise the limit";
     case "CONNECTOR_FORBIDDEN":
       return "ask the connection's owner to make this change";
+    case "OWNER_CONFIRMATION_REQUIRED":
+      return "reply in this chat with the chat line; run the same command again only after the owner answers with the code";
     case "ACTOR_NOT_LINKED":
       return "run `ravi link` from the person's own chat turn; Ravi sends them a private approval link";
     case "ACTOR_UNKNOWN":

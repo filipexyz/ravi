@@ -8742,6 +8742,35 @@ export function dbListChatMessagesPageByContactId(input: {
   };
 }
 
+/**
+ * One contact's messages in one chat since a time (provider time, else
+ * ingestion), newest first. Reads the `idx_chat_messages_contact_time` index.
+ */
+export function dbListContactChatMessagesSince(input: {
+  chatId: string;
+  contactId: string;
+  sinceMs: number;
+  limit?: number;
+}): ChatMessageRecord[] {
+  const rows = getDb()
+    .prepare(
+      `
+      SELECT * FROM chat_messages
+      WHERE contact_id = ? AND chat_id = ? AND deleted_at IS NULL
+        AND COALESCE(provider_timestamp, ingested_at) >= ?
+      ORDER BY COALESCE(provider_timestamp, ingested_at) DESC, ingested_at DESC, id
+      LIMIT ?
+    `,
+    )
+    .all(
+      input.contactId,
+      input.chatId,
+      input.sinceMs,
+      Math.max(1, Math.min(input.limit ?? 50, 200)),
+    ) as ChatMessageRow[];
+  return rows.map(rowToChatMessage);
+}
+
 export function dbListChatMessages(chatId: string, limit = 50): ChatMessageRecord[] {
   const rows = getDb()
     .prepare(
