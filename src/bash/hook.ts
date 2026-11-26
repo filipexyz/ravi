@@ -498,6 +498,9 @@ function isDelegatedBashContext(ctx: Pick<BashPermissionContext, "kind" | "metad
 
 function canUseLiveExecutorCeiling(ctx: BashPermissionContext): boolean {
   if (!ctx.agentId) return false;
+  // Owner authority: the turn carries the owner's own power, not the agent's ceiling
+  // (`permissions/owner-authority`); the issued snapshot is the bound.
+  if (typeof ctx.metadata?.ownerAuthority === "string") return false;
   if (!isDelegatedBashContext(ctx)) return false;
   if (isUnresolvedAgentIdentityActor(ctx)) return false;
   if (hasTurnCapabilityNarrowing(ctx)) return false;

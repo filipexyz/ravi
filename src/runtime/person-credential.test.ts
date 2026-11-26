@@ -129,6 +129,26 @@ describe("person credentials", () => {
     expect(turn.metadata?.actorBreakGlassWithheld).toBeUndefined();
   });
 
+  it("a person credential never lends owner authority, even the owner's (a guest can speak on it)", () => {
+    // An agent with a closed list: the owner typing would act with their own power (owner authority),
+    // but a turn produced with a credential (a paired device, a call) stays agent ∩ person.
+    dbUpdateAgent(agent.id, {
+      defaults: { runtimePermissions: { capabilities: ["execute:executable:git", "mutate:image:generate"] } },
+    });
+    const owner = createContact({
+      phone: "5511900000994",
+      name: "Owner",
+      tags: ["permission-owner"],
+      status: "allowed",
+    });
+    const turn = turnFor(relayPrompt(credentialFor(owner.id).contextId));
+
+    expect(turn.metadata?.actorPrincipal).toBe(`contact:${owner.id}`);
+    expect(turn.metadata?.ownerAuthority).toBeUndefined();
+    expect(canWithCapabilities(turn.capabilities, "execute", "executable", "git")).toBe(true);
+    expect(canWithCapabilities(turn.capabilities, "execute", "executable", "codex")).toBe(false);
+  });
+
   it("applies the person's grants in the session's chat, as if they had typed there", () => {
     dbCreateTagDefinition({
       slug: "permission-image",

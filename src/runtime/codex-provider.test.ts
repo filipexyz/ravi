@@ -14,6 +14,7 @@ import {
   isCodexRestrictedRuntimeProfile,
   resolveCodexThreadSecurity,
   resolveCodexTurnSandbox,
+  resolveCodexTurnSecurity,
   toCodexSandboxPolicy,
 } from "./codex-provider.js";
 import type { RuntimeEvent, RuntimeHostServices, RuntimePromptMessage, RuntimeStartRequest } from "./types.js";
@@ -4707,5 +4708,19 @@ describe("codex turn sandbox", () => {
     expect(resolveCodexTurnSandbox(undefined, true)).toBe("read-only");
     expect(toCodexSandboxPolicy("read-only")).toEqual({ type: "readOnly" });
     expect(toCodexSandboxPolicy("danger-full-access")).toEqual({ type: "dangerFullAccess" });
+  });
+
+  it("opens an owner-authority turn unrestricted even for a restricted agent profile, turn by turn", () => {
+    const restrictedAgent = () => buildCodexThreadSecurity({ profile: "chat-only" });
+    const ownerEnv = { RAVI_TURN_OWNER_AUTHORITY: "1" };
+    // The owner's turn: not bounded by the agent profile (permissions/owner-authority).
+    expect(resolveCodexTurnSecurity(ownerEnv, "agent", restrictedAgent).sandbox).toBe("danger-full-access");
+    // The next ordinary turn (the daemon cleared the mark): back to the agent profile.
+    expect(resolveCodexTurnSecurity({}, "agent", restrictedAgent).sandbox).toBe("read-only");
+    // A bridge turn stays restricted, and a held turn never takes the owner path.
+    expect(resolveCodexTurnSecurity({ ...ownerEnv, RAVI_BRIDGE_TURN: "1" }, "agent").sandbox).toBe("read-only");
+    expect(
+      resolveCodexTurnSecurity({ ...ownerEnv, RAVI_TURN_HELD_BELOW_AGENT: "1" }, "agent", restrictedAgent).sandbox,
+    ).toBe("read-only");
   });
 });
