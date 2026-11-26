@@ -4188,15 +4188,14 @@ export class SessionCommands {
       return;
     }
 
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = buildSessionMutationJson("rename", result.before, result.after, result.changed, {
         oldName: result.oldName,
         newName: result.newName,
         routeReferencesUpdated: result.routeReferencesUpdated,
         sessionKeyChanged: false,
       });
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
 
     if (!result.changed) {
@@ -5076,7 +5075,7 @@ export class SessionCommands {
       revokedContexts: revokedContexts.length,
       durationMs: Date.now() - startedAt,
     });
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = buildSessionMutationJson("reset", s, afterSession, changed, {
         nextMessageStartsFreshConversation: true,
         audit: {
@@ -5086,8 +5085,7 @@ export class SessionCommands {
         },
         revokedContexts: revokedContexts.length,
       });
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
     console.log(`Session reset: ${s.name ?? s.sessionKey}`);
     console.log("Next message will start a fresh conversation.");
@@ -5170,7 +5168,7 @@ export class SessionCommands {
       revokedContexts: revokedContexts.length,
       durationMs: Date.now() - startedAt,
     });
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = buildSessionMutationJson("delete", s, null, changed, {
         audit: {
           requested: true,
@@ -5179,8 +5177,7 @@ export class SessionCommands {
         },
         revokedContexts: revokedContexts.length,
       });
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
     console.log(`🗑️ Session deleted: ${s.name ?? s.sessionKey}`);
     if (revokedContexts.length > 0) {
@@ -5421,14 +5418,13 @@ export class SessionCommands {
         ephemeral: true,
         expiresAt: expiresAt.getTime(),
       } as SessionEntry);
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = buildSessionMutationJson("set-ttl", s, after, true, {
         duration,
         ttlMs,
         expiresAt: expiresAt.getTime(),
       });
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
     console.log(`⏳ Session "${s.name ?? s.sessionKey}" is now ephemeral.`);
     console.log(`   Expires: ${formatDate(expiresAt.getTime())}`);
@@ -5485,14 +5481,13 @@ export class SessionCommands {
         ephemeral: true,
         expiresAt: newExpiry,
       } as SessionEntry);
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = buildSessionMutationJson("extend", s, after, true, {
         duration: effectiveDuration,
         ttlMs,
         expiresAt: newExpiry,
       });
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
     console.log(`⏳ Extended "${s.name ?? s.sessionKey}" by ${duration ?? "5h"}.`);
     console.log(`   New expiry: ${formatDate(newExpiry)}`);
@@ -5524,12 +5519,11 @@ export class SessionCommands {
     }
 
     if (!s.ephemeral) {
-      if (asJson) {
+      if (shouldReturnStructuredResult(asJson)) {
         const payload = buildSessionMutationJson("keep", s, s, false, {
           reason: "already_permanent",
         });
-        printJson(payload);
-        return payload;
+        return returnStructuredResult(payload, asJson);
       }
       console.log(`Session "${s.name ?? s.sessionKey}" is already permanent.`);
       return;
@@ -5543,10 +5537,9 @@ export class SessionCommands {
         ephemeral: false,
         expiresAt: undefined,
       } as SessionEntry);
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = buildSessionMutationJson("keep", s, after, true);
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
     console.log(`✅ Session "${s.name ?? s.sessionKey}" is now permanent.`);
   }
@@ -5969,7 +5962,7 @@ export class SessionCommands {
       false,
       asJson,
     );
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = {
         action: "ask",
         published: true,
@@ -5978,8 +5971,7 @@ export class SessionCommands {
         sender: sender ?? null,
         delivery: buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context),
       };
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
     console.log(`✓ [ask] sent to ${session.name ?? target}`);
   }
@@ -6056,7 +6048,7 @@ export class SessionCommands {
       false,
       asJson,
     );
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = {
         action: "answer",
         published: true,
@@ -6065,8 +6057,7 @@ export class SessionCommands {
         sender: sender ?? null,
         delivery: buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context),
       };
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
     console.log(`✓ [answer] sent to ${session.name ?? target}`);
   }
@@ -6135,7 +6126,7 @@ export class SessionCommands {
       false,
       asJson,
     );
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = {
         action: "execute",
         published: true,
@@ -6143,8 +6134,7 @@ export class SessionCommands {
         messageLength: message.length,
         delivery: buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context),
       };
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
     console.log(`✓ [execute] sent to ${session.name ?? target}`);
   }
@@ -6445,7 +6435,7 @@ export class SessionCommands {
       false,
       asJson,
     );
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = {
         action: "inform",
         published: true,
@@ -6453,8 +6443,7 @@ export class SessionCommands {
         messageLength: message.length,
         delivery: buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context),
       };
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
     console.log(`✓ [inform] sent to ${session.name ?? target}`);
   }
@@ -7644,6 +7633,7 @@ export class SessionCommands {
       return;
     }
     const callerAgentId = getContext()?.agentId;
+    let conflict: Record<string, unknown> | undefined;
     try {
       const result = attachChatToSession({
         sessionKey: session.sessionKey,
@@ -7657,23 +7647,25 @@ export class SessionCommands {
       const sessionRef = session.name ?? session.sessionKey;
       const detachCommand = buildSessionDetachCommand(sessionRef, chat.id);
       const state = describeSessionChatAssociation(session.sessionKey, chat.id, session.name);
-      if (asJson) {
-        printJson({
-          ...state,
-          created: result.created,
-          outputAttached: result.outputAttached,
-          subscription: result.subscription,
-          chat: {
-            id: chat.id,
-            title: chat.title,
-            channel: chat.channel,
-            instanceId: chat.instanceId,
+      if (shouldReturnStructuredResult(asJson)) {
+        return returnStructuredResult(
+          {
+            ...state,
+            created: result.created,
+            outputAttached: result.outputAttached,
+            subscription: result.subscription,
+            chat: {
+              id: chat.id,
+              title: chat.title,
+              channel: chat.channel,
+              instanceId: chat.instanceId,
+            },
+            hints: {
+              detach: detachCommand,
+            },
           },
-          hints: {
-            detach: detachCommand,
-          },
-        });
-        return;
+          asJson,
+        );
       }
       const verb = result.created ? "Attached" : "Already attached";
       console.log(`${verb} chat ${chat.id} (${chat.title ?? "no title"}) to session ${sessionRef}`);
@@ -7681,19 +7673,26 @@ export class SessionCommands {
       console.log(`Detach hint: ${detachCommand}`);
     } catch (err) {
       if (err instanceof SessionAttachConflictError) {
+        // Only an explicit --json takes the conflict as data. A gateway call without it keeps failing, so a caller
+        // that did not ask for the structured form never reads a conflict as a successful attach.
         if (asJson) {
-          printJson({
+          conflict = {
             error: err.code,
             message: err.message,
             currentOwner: err.currentSessionKey,
             chatId: err.chatId,
-          });
+          };
+        } else {
+          fail(err.message);
           return;
         }
-        fail(err.message);
-        return;
+      } else {
+        throw err;
       }
-      throw err;
+    }
+    if (conflict) {
+      printJson(conflict);
+      return conflict;
     }
   }
 
@@ -7733,9 +7732,8 @@ export class SessionCommands {
       return;
     }
     const result = detachChatFromSession(session.sessionKey, chat.id, session.name);
-    if (asJson) {
-      printJson(result);
-      return;
+    if (shouldReturnStructuredResult(asJson)) {
+      return returnStructuredResult(result, asJson);
     }
     if (result.detached) {
       const suffix = result.outputDetached ? " and cleared it as default output" : "";
@@ -9314,7 +9312,7 @@ export class SessionCommands {
       return;
     }
     const subs = listSessionSubscriptions(session.sessionKey);
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const enriched = subs.map((s) => {
         const chat = dbGetChat(s.chatId);
         return {
@@ -9329,12 +9327,14 @@ export class SessionCommands {
             : null,
         };
       });
-      printJson({
-        sessionKey: session.sessionKey,
-        sessionName: session.name,
-        subscriptions: enriched,
-      });
-      return;
+      return returnStructuredResult(
+        {
+          sessionKey: session.sessionKey,
+          sessionName: session.name,
+          subscriptions: enriched,
+        },
+        asJson,
+      );
     }
     if (subs.length === 0) {
       console.log(`No subscriptions for session ${session.name ?? session.sessionKey}`);

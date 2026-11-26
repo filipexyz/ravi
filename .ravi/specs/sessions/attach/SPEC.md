@@ -289,6 +289,7 @@ Regression coverage MUST include:
 
 ## Failure Modes
 
+- Printing the attach/detach/subscriptions payload without returning it, so a gateway turn reads `{}`.
 - Mutating `currentSource` when a later message arrives.
 - Resolving subscriptions again when a response is emitted.
 - Combining messages from different chats before provider delivery.

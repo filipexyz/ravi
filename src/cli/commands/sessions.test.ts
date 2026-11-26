@@ -1290,6 +1290,26 @@ describe("SessionCommands delivery barriers", () => {
     expect(output).toBe("");
   });
 
+  it("returns the receipt of ask, answer, execute and inform inside the gateway context, without --json", async () => {
+    toolContext = { suppressCliOutput: true, sessionKey: "agent:main:origin" };
+    const commands = new SessionCommands();
+    let receipts: Array<Record<string, unknown> | undefined> = [];
+
+    const output = await captureLogsAsync(async () => {
+      receipts = [
+        (await commands.ask("dev", "ask", "display-only")) as Record<string, unknown> | undefined,
+        (await commands.answer("dev", "answer", "display-only")) as Record<string, unknown> | undefined,
+        (await commands.execute("dev", "execute")) as Record<string, unknown> | undefined,
+        (await commands.inform("dev", "inform")) as Record<string, unknown> | undefined,
+      ];
+    });
+
+    // A gateway caller reads the return value; a handler that only printed left it with `{}`.
+    expect(receipts.map((receipt) => receipt?.action)).toEqual(["ask", "answer", "execute", "inform"]);
+    expect(receipts.every((receipt) => receipt?.published === true)).toBe(true);
+    expect(output).toBe("");
+  });
+
   it("returns the waited response when invoked through the SDK gateway context", async () => {
     toolContext = { suppressCliOutput: true, sessionKey: "agent:main:origin" };
     const commands = new SessionCommands();

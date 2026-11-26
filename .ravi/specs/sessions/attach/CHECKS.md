@@ -67,6 +67,8 @@
   `IDEMPOTENCY_CONFLICT`.
 - `ravi sessions attach|detach --json` MUST report attached, default output,
   remaining active subscriptions, and `legacy.status: none`.
+- `ravi sessions attach|detach|subscriptions` MUST return the same payload `--json` prints when called through the gateway from an agent turn (console muted, no `--json`); the terminal output stays the human text. `returnStructuredResult` adds the gateway receipts, so the returned value may carry fields the terminal JSON does not. An attach conflict is returned as data only with an explicit `--json` and still fails without it.
+- `bun test src/cli/commands/sessions-structured-return.test.ts` SHOULD pass after changing those return values.
 - Attach/detach during a running turn MUST NOT redirect that turn's captured
   reply target.
 - Different source chats and threads MUST run as separate serialized turns.
