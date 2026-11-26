@@ -257,6 +257,29 @@ export function listLocalInboxItems(input: ListLocalInboxItemsInput = {}): Local
   return rows.map(rowToItem);
 }
 
+/**
+ * Open items (not done/archived/dismissed) of one exact source that happened at or before `occurredAtOrBefore`.
+ * Unpaged on purpose: a caller resolving a source's alerts must see all of them, not the first page.
+ */
+export function listOpenLocalInboxItemsForSource(input: {
+  sourceDomain: string;
+  sourceType: string;
+  sourceId: string;
+  occurredAtOrBefore: number;
+}): LocalInboxItem[] {
+  ensureLocalInboxSchema();
+  const rows = getDb()
+    .prepare(
+      `SELECT * FROM inbox_items
+        WHERE source_domain = ? AND source_type = ? AND source_id = ?
+          AND status NOT IN ('done','archived','dismissed')
+          AND COALESCE(occurred_at, created_at) <= ?
+        ORDER BY COALESCE(occurred_at, created_at) ASC`,
+    )
+    .all(input.sourceDomain, input.sourceType, input.sourceId, input.occurredAtOrBefore) as LocalInboxItemRow[];
+  return rows.map(rowToItem);
+}
+
 /** Lookup without marking an item seen or appending an inbox event. */
 export function findLocalInboxItemByDedupeKey(dedupeKey: string): LocalInboxItem | null {
   ensureLocalInboxSchema();

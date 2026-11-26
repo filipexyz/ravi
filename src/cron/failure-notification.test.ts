@@ -13,6 +13,8 @@ import {
   notifyCronFailure,
   notifyUndeliveredRunReturn,
   recordUnreadableCronFailure,
+  resolveCronFailureAlerts,
+  CRON_FAILURE_RESOLVED_EVENT,
 } from "./failure-notification.js";
 
 let stateDir: string | null = null;
@@ -508,5 +510,81 @@ describe("undelivered run return notice: one per origin per window", () => {
     expect(sent[1]).toContain("O resultado de 4 execuções do agendamento");
     // The second window's count starts at the second notice: the first window's joins are not counted again.
     expect(sent[2]).toContain("O resultado de 3 execuções do agendamento");
+  });
+});
+
+describe("cron failure alerts resolve when the job runs fine again", () => {
+  const silent = { owner: () => target, deliver: async () => {} };
+
+  function failureItems() {
+    return listLocalInboxItems({ includeArchived: true, limit: 500 }).filter(
+      (item) => item.sourceDomain === "cron" && item.sourceType === "run_failed",
+    );
+  }
+
+  it("closes every open failure of the job up to the successful run, with a resolution event", async () => {
+    const current = job();
+    const t0 = Date.now() - 10_000;
+    await notifyCronFailure({ ...current, lastRunAt: t0, runId: "r1" }, "Agent turn interrupted", silent);
+    await notifyCronFailure({ ...current, lastRunAt: t0 + 1000, runId: "r2" }, "Agent turn interrupted", silent);
+    expect(failureItems().filter((item) => item.status !== "done")).toHaveLength(2);
+
+    expect(resolveCronFailureAlerts(current.id, t0 + 5000)).toBe(2);
+
+    const items = failureItems();
+    expect(items.every((item) => item.status === "done")).toBe(true);
+    for (const item of items) {
+      const resolved = listLocalInboxEvents(item.id).filter((event) => event.eventType === CRON_FAILURE_RESOLVED_EVENT);
+      expect(resolved).toHaveLength(1);
+      expect(resolved[0]!.actorType).toBe("system");
+    }
+  });
+
+  it("keeps a failure that happened after the successful run open", async () => {
+    const current = job();
+    const t0 = Date.now() - 10_000;
+    await notifyCronFailure({ ...current, lastRunAt: t0, runId: "before" }, "Agent turn interrupted", silent);
+    await notifyCronFailure({ ...current, lastRunAt: t0 + 9000, runId: "after" }, "Agent turn interrupted", silent);
+
+    expect(resolveCronFailureAlerts(current.id, t0 + 5000)).toBe(1);
+
+    const open = failureItems().filter((item) => item.status !== "done");
+    expect(open).toHaveLength(1);
+    expect(open[0]!.occurredAt).toBe(t0 + 9000);
+  });
+
+  it("never touches another job's failures", async () => {
+    const mine = job();
+    const other = job();
+    const t0 = Date.now() - 10_000;
+    await notifyCronFailure({ ...mine, lastRunAt: t0, runId: "m" }, "Agent turn interrupted", silent);
+    await notifyCronFailure({ ...other, lastRunAt: t0, runId: "o" }, "Agent turn interrupted", silent);
+
+    expect(resolveCronFailureAlerts(mine.id, t0 + 5000)).toBe(1);
+
+    const open = failureItems().filter((item) => item.status !== "done");
+    expect(open).toHaveLength(1);
+    expect(open[0]!.sourceId).toBe(other.id);
+  });
+
+  it("does not reopen or re-record items a person already closed", async () => {
+    const current = job();
+    const t0 = Date.now() - 10_000;
+    await notifyCronFailure({ ...current, lastRunAt: t0, runId: "r1" }, "Agent turn interrupted", silent);
+    const [item] = failureItems();
+    markLocalInboxItem(item!.id, "done", { eventType: "done", actorType: "contact" });
+
+    expect(resolveCronFailureAlerts(current.id, t0 + 5000)).toBe(0);
+    expect(listLocalInboxEvents(item!.id).some((event) => event.eventType === CRON_FAILURE_RESOLVED_EVENT)).toBe(false);
+  });
+
+  it("resolves more than one page of failures", async () => {
+    const current = job();
+    const t0 = Date.now() - 1_000_000;
+    for (let i = 0; i < 60; i++) {
+      await notifyCronFailure({ ...current, lastRunAt: t0 + i, runId: `r${i}` }, "Agent turn interrupted", silent);
+    }
+    expect(resolveCronFailureAlerts(current.id, t0 + 100)).toBe(60);
+    expect(failureItems().filter((item) => item.status !== "done")).toHaveLength(0);
   });
 });

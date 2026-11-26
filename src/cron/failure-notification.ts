@@ -5,6 +5,7 @@ import {
   listLocalInboxEvents,
   markLocalInboxItem,
   upsertLocalInboxItem,
+  listOpenLocalInboxItemsForSource,
 } from "../inbox/local-db.js";
 import { resolveOwnerDirectTarget, resolveOwnerDirectTargets, type OwnerDirectTarget } from "../knowledge/owner.js";
 import { createOmniClient } from "../omni/client.js";
@@ -110,6 +111,39 @@ export function recordUnreadableCronFailure(run: { id: string; job_id: string; a
   });
   if (listLocalInboxEvents(item.id).some((event) => event.eventType === "cron.failure.unreadable")) return;
   markLocalInboxItem(item.id, item.status, { eventType: "cron.failure.unreadable", actorType: "system" });
+}
+
+/** Inbox event that closes a failure item because its job ran fine afterwards. */
+export const CRON_FAILURE_RESOLVED_EVENT = "cron.failure.resolved" as const;
+
+/**
+ * A job that ran fine closes its open failure items: an alert is about a state, and that state no longer
+ * holds. Only failures that happened at or before the successful run close; one that came after stays.
+ * Returns how many items were closed. Never throws: a broken inbox must not fail the run that succeeded.
+ */
+export function resolveCronFailureAlerts(jobId: string, succeededAt: number): number {
+  try {
+    const open = listOpenLocalInboxItemsForSource({
+      sourceDomain: "cron",
+      sourceType: "run_failed",
+      sourceId: jobId,
+      occurredAtOrBefore: succeededAt,
+    });
+    for (const item of open) {
+      markLocalInboxItem(item.id, "done", {
+        eventType: CRON_FAILURE_RESOLVED_EVENT,
+        actorType: "system",
+        payload: { jobId, succeededAt },
+      });
+    }
+    return open.length;
+  } catch (error) {
+    log.warn("Failed to resolve cron failure alerts", {
+      jobId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return 0;
+  }
 }
 
 /** Whether a chat can be reached now: true, false, or null when it cannot be told (keep trying it). */

@@ -472,16 +472,28 @@ describe("CronRunner agent job outcome tracking", () => {
       runtimeEvent(sessionName, { type: "turn.failed", error: "boom", _turnProvenance: cronProvenance(job.id) }),
     );
     expect(dbGetCronJob(job.id)?.lastStatus).toBe("error");
+    const { listLocalInboxItems, listLocalInboxEvents } = await import("../inbox/local-db.js");
+    const failures = () =>
+      listLocalInboxItems({ sourceDomain: "cron", includeArchived: true }).filter(
+        (item) => item.sourceType === "run_failed" && item.sourceId === job.id,
+      );
+    expect(failures().filter((item) => item.status !== "done")).toHaveLength(1);
 
     await runner.triggerJob(job.id);
     const redispatched = dbGetCronJob(job.id)!;
     expect(redispatched.lastStatus).toBeUndefined();
     expect(redispatched.lastError).toBeUndefined();
+    // Dispatching again is not success: the failure alert stays open until the turn completes.
+    expect(failures().filter((item) => item.status !== "done")).toHaveLength(1);
 
     await runner.handleRuntimeEvent(
       runtimeEvent(sessionName, { type: "turn.complete", _turnProvenance: cronProvenance(job.id) }),
     );
     expect(dbGetCronJob(job.id)?.lastStatus).toBe("ok");
+    // The job ran fine again: its failure alert closes on its own.
+    const [closed] = failures();
+    expect(closed?.status).toBe("done");
+    expect(listLocalInboxEvents(closed!.id).some((event) => event.eventType === "cron.failure.resolved")).toBe(true);
   });
 
   it("keeps failed one-shots and deletes them only after a successful turn", async () => {
