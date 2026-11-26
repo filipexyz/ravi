@@ -199,6 +199,29 @@ export class ConsoleApiClient {
     return { unlinked: true, binding: parseOptionalActorBinding(payload) };
   }
 
+  /**
+   * Active bindings of this installation for a Console user. Without a
+   * contact the Console answers in the plural (`{ version, bindings: [...] }`);
+   * an entry that does not parse is skipped, never the whole list.
+   */
+  async listActorBindingsForUser(consoleUserId: string, accessToken: string): Promise<ActorBinding[]> {
+    const params = new URLSearchParams({ consoleUserId });
+    const payload = await this.requestJson<unknown>(
+      "GET",
+      `/api/cli/link?${params.toString()}`,
+      undefined,
+      accessToken,
+    );
+    const list = objectValue(payload)?.bindings;
+    if (!Array.isArray(list)) return [];
+    const bindings: ActorBinding[] = [];
+    for (const entry of list) {
+      const binding = parseOptionalActorBinding(entry);
+      if (binding) bindings.push(binding);
+    }
+    return bindings;
+  }
+
   /** Active binding of this installation for the contact, or null. */
   async resolveActorBinding(query: ActorBindingResolveQuery, accessToken: string): Promise<ActorBinding | null> {
     const params = new URLSearchParams();
