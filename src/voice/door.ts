@@ -675,7 +675,18 @@ export class VoiceDoorService {
         void this.endCall(call.id, reason === "closed_by_door" ? "ended" : reason);
       },
       onError: (error) => {
-        void this.emitOpen(call.id, "error", { code: "VOICE_LIVE_ERROR", message: error.message }, this.sink);
+        void this.emitOpen(
+          call.id,
+          "error",
+          {
+            code: "VOICE_LIVE_ERROR",
+            message: error.message,
+            ...(error.providerCode ? { providerCode: error.providerCode } : {}),
+            ...(error.providerType ? { providerType: error.providerType } : {}),
+            ...(error.param ? { param: error.param } : {}),
+          },
+          this.sink,
+        );
       },
     };
     const sideband = this.deps.createSideband
