@@ -351,7 +351,7 @@ describe("voice engines", () => {
   });
 
   // Repro from the review of #1023 (reviews/repro-live-1023.ts), S1-S3, at any delay.
-  it("S1: a greeting the model answered is shown once and still reaches the session with the request", () => {
+  it("S1: a greeting the model answered is shown once and does not ride along with the request", () => {
     const h = harness();
     h.send(inp("oi", 0, 400));
     h.send(out("Oi!", 600, 900));
@@ -359,9 +359,55 @@ describe("voice engines", () => {
     h.send(del("d1", 3200));
     h.timers[0]?.();
     expect(h.users).toEqual(["oi"]);
-    expect(h.delegations).toEqual([{ delegationId: "d1", text: "oi manda o resumo" }]);
-    // The door shows only what was not on screen: no line the person did not say.
+    expect(h.delegations).toEqual([{ delegationId: "d1", text: "manda o resumo" }]);
     expect(h.displays).toEqual(["manda o resumo"]);
+  });
+
+  it("review #1026 A: 'E aí' answered, 60 s later 'para': the request is just 'para' (spoken cancel works)", () => {
+    const h = harness();
+    const last: string[] = [];
+    h.sideband["options"].handlers.onDelegation = (input: any) => {
+      h.delegations.push({ delegationId: input.delegationId, text: input.text });
+      last.push(input.lastUtterance);
+    };
+    h.send(inp("E aí", 0, 500));
+    h.send(out("Oi! Tudo certo.", 700, 1500));
+    h.send(inp("para", 60_000, 60_400));
+    h.send(del("d1", 60_500));
+    h.timers[0]?.();
+    expect(h.delegations).toEqual([{ delegationId: "d1", text: "para" }]);
+    expect(last).toEqual(["para"]);
+  });
+
+  it("review #1026 B: an answered 'não' never flips the meaning of a later request", () => {
+    const h = harness();
+    h.send(inp("não", 0, 300));
+    h.send(out("Tudo bem.", 500, 900));
+    h.send(inp("manda o resumo do dia", 300_000, 301_500));
+    h.send(del("d1", 301_600));
+    h.timers[0]?.();
+    expect(h.delegations).toEqual([{ delegationId: "d1", text: "manda o resumo do dia" }]);
+  });
+
+  it("speech before a pause longer than REQUEST_GAP_MS is conversation, not part of the request", () => {
+    const h = harness();
+    h.send(inp("deixa eu pensar", 0, 800));
+    h.send(inp("manda o relatório", 20_000, 21_000));
+    h.send(del("d1", 21_100));
+    h.timers[0]?.();
+    expect(h.delegations).toEqual([{ delegationId: "d1", text: "manda o relatório" }]);
+    expect(h.users).toEqual(["deixa eu pensar"]);
+  });
+
+  it("answered speech is dropped from the pending parts (no unbounded growth)", () => {
+    const h = harness();
+    for (let i = 0; i < 50; i++) {
+      const t = i * 10_000;
+      h.send(inp(`fala ${i}`, t, t + 500));
+      h.send(out("Ok.", t + 700, t + 900));
+    }
+    expect((h.sideband as any).parts.length).toBeLessThanOrEqual(1);
+    expect(h.users).toHaveLength(50);
   });
 
   it("S2/S3: the model talking first never loses the request, however late the delegation comes", () => {

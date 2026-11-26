@@ -507,6 +507,40 @@ describe("voice door", () => {
     expect(listVoiceTurns(call.id)).toHaveLength(1);
   });
 
+  it("live: a spoken cancel is read from the last utterance, not from the whole request", async () => {
+    const hub = new Hub();
+    let handlers: any = null;
+    const door = new VoiceDoorService({
+      subscribe: hub.subscribe as VoiceDoorDeps["subscribe"],
+      emit: hub.emit,
+      publishPrompt: async (sessionName, payload) => {
+        setTimeout(
+          () =>
+            hub.emit(`ravi.session.${sessionName}.runtime`, {
+              type: "turn.started",
+              _correlationIds: [payload._correlationId],
+            }),
+          5,
+        );
+      },
+      readHistory: () => [],
+      env: { RAVI_VOICE_OPENAI_API_KEY: "k" },
+      createSideband: (input) => {
+        handlers = input.handlers;
+        return { connect: () => {}, commentary: () => {}, thinking: () => {}, close: () => {} };
+      },
+      closeLiveProviderSession: async () => {},
+      transcriptWaitMs: 50,
+    });
+    const call = makeCall("live", { state: "starting" });
+    await door.handleControl({ op: "live-attach", callId: call.id, providerSessionId: "ls_c" });
+    handlers.onDelegation({ delegationId: "d1", text: "faz o relatório", displayText: "faz o relatório" });
+    await until(() => listVoiceEvents(call.id).some((event) => event.data.state === "running"), "running");
+    handlers.onDelegation({ delegationId: "d2", text: "E aí para", displayText: "para", lastUtterance: "para" });
+    await until(() => hub.published.some((message) => message.topic === "ravi.session.abort"), "abort");
+    expect(listVoiceTurns(call.id)).toHaveLength(1);
+  });
+
   it("a cancel while queued behind another turn never aborts that turn; it aborts its own once it starts", async () => {
     const hub = new Hub();
     const history = [{ id: 1, role: "user", content: "old" }];

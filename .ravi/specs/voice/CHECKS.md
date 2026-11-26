@@ -38,3 +38,7 @@ normative: false
   `offset_ms` (also inside one utterance); review repro S1-S3 at any delay; a paused request the
   model acknowledged arrives whole; speech shows once (`displayText` excludes what is on screen); a
   closed sideband starts no work. `door.test.ts`: a replaced sideband's late delegation is ignored.
+- Review of #1026 (`engines.test.ts`, `door.test.ts`): "E aí" answered and "para" 60 s later delegates
+  only "para", and the door cancels the running turn from the last utterance; an answered "não"
+  never flips a later request; speech before a pause over `REQUEST_GAP_MS` is conversation; answered
+  speech is dropped from the pending parts.

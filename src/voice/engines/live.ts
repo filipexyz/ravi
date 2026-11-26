@@ -27,6 +27,11 @@ export const APPEND_CHUNK_CHARS = 900;
 export const DELEGATION_SETTLE_MS = 900;
 /** A pause longer than this between transcript deltas starts a new utterance. */
 export const UTTERANCE_GAP_MS = 1200;
+/**
+ * An utterance belongs to the next request only if no model reply started
+ * in between and the pause before the next one was at most this long.
+ */
+export const REQUEST_GAP_MS = 15_000;
 /** Events that carry reflected audio. They are dropped on arrival, never stored or published. */
 const AUDIO_EVENTS = new Set(["session.input_audio.append", "session.output_audio.delta"]);
 
@@ -164,7 +169,7 @@ export interface LiveSidebandHandlers {
    * `text` is everything the person said for this request; `displayText` is
    * the part not already shown on screen (may be empty).
    */
-  onDelegation(input: { delegationId: string; text: string; displayText: string }): void;
+  onDelegation(input: { delegationId: string; text: string; displayText: string; lastUtterance?: string }): void;
   onUserTranscript(text: string): void;
   onAgentTranscript(text: string): void;
   onUsage(input: { seconds: number; activeSeconds?: number }): void;
@@ -222,7 +227,10 @@ export class LiveSideband {
    * A delegation takes every part that started before its offset (nothing is
    * dropped, no wall clock decides); later parts wait for the next one.
    */
-  private parts: Array<{ text: string; startMs: number | null; utterance: number }> = [];
+  private parts: Array<{ text: string; startMs: number | null; endMs: number | null; utterance: number }> = [];
+  /** Model replies started so far, and how many had started when each utterance began. */
+  private replyCount = 0;
+  private readonly repliesBefore = new Map<number, number>();
   /** Current utterance id; a pause or the model starting to answer closes it. */
   private utteranceSeq = 0;
   private utteranceOpen = false;
@@ -324,9 +332,11 @@ export class LiveSideband {
         if (!this.utteranceOpen) {
           this.utteranceSeq += 1;
           this.utteranceOpen = true;
+          this.repliesBefore.set(this.utteranceSeq, this.replyCount);
+          this.dropAnswered();
         }
-        this.parts.push({ text: stringField(event, "delta"), startMs, utterance: this.utteranceSeq });
         const endMs = numberField(event, "end_ms");
+        this.parts.push({ text: stringField(event, "delta"), startMs, endMs, utterance: this.utteranceSeq });
         if (endMs !== null) this.userLastEndMs = endMs;
         return;
       }
@@ -348,6 +358,7 @@ export class LiveSideband {
           // consumes it: a delegation still takes it if the model delegates.
           this.closeUtterance();
           this.showUnshown();
+          this.replyCount += 1;
         }
         this.replyOpen = true;
         const endMs = numberField(event, "end_ms");
@@ -377,8 +388,8 @@ export class LiveSideband {
           this.pendingDelegations = Math.max(0, this.pendingDelegations - 1);
           // A sideband that was closed or replaced starts no work.
           if (this.closed) return;
-          const { text, displayText } = this.takeUserText(offsetMs);
-          this.options.handlers.onDelegation({ delegationId: id, text, displayText });
+          const { text, displayText, lastUtterance } = this.takeUserText(offsetMs);
+          this.options.handlers.onDelegation({ delegationId: id, text, displayText, lastUtterance });
         }, this.options.settleMs ?? DELEGATION_SETTLE_MS);
         return;
       }
@@ -408,21 +419,71 @@ export class LiveSideband {
   }
 
   /**
-   * Take every part said before the delegation's offset (all of them when the
-   * provider sent no offset). `text` goes to the session; `displayText` is the
-   * part not already shown on screen, so nothing is shown twice.
+   * The request is the last utterance said before the delegation's offset,
+   * plus the utterances right before it that belong to it: no model reply
+   * started in between and the pause was at most REQUEST_GAP_MS. Older speech
+   * was conversation: it is shown once and dropped, never sent. Speech after
+   * the offset waits for the next delegation. `displayText` is the part not
+   * already on screen; `lastUtterance` is what spoken cancel/deny read.
    */
-  private takeUserText(offsetMs: number | null = null): { text: string; displayText: string } {
+  private takeUserText(offsetMs: number | null = null): { text: string; displayText: string; lastUtterance: string } {
     const before = (part: { startMs: number | null }) =>
       offsetMs === null || part.startMs === null || part.startMs <= offsetMs;
-    const taken = this.parts.filter(before);
+    const eligible = this.parts.filter(before);
     this.parts = this.parts.filter((part) => !before(part));
+    const order: number[] = [];
+    for (const part of eligible) if (order[order.length - 1] !== part.utterance) order.push(part.utterance);
+    const partsOf = (utterance: number) => eligible.filter((part) => part.utterance === utterance);
+    const included = new Set<number>();
+    if (order.length) included.add(order[order.length - 1] as number);
+    for (let i = order.length - 2; i >= 0; i--) {
+      const prev = order[i] as number;
+      const next = order[i + 1] as number;
+      if ((this.repliesBefore.get(prev) ?? 0) !== (this.repliesBefore.get(next) ?? 0)) break;
+      const prevEnd = partsOf(prev).at(-1)?.endMs ?? null;
+      const nextStart = partsOf(next)[0]?.startMs ?? null;
+      if (prevEnd !== null && nextStart !== null && nextStart - prevEnd > REQUEST_GAP_MS) break;
+      included.add(prev);
+    }
+    // Older speech was conversation: show it once (if not yet) and drop it.
+    for (const utterance of order) {
+      if (included.has(utterance) || this.shownUtterances.has(utterance)) continue;
+      this.shownUtterances.add(utterance);
+      const text = joinUtterances(partsOf(utterance));
+      if (text) this.options.handlers.onUserTranscript(text);
+    }
     // Words after the offset start the next request as a new utterance.
     if (this.parts.length) this.utteranceOpen = this.parts.every((part) => part.utterance === this.utteranceSeq);
     else this.closeUtterance();
-    const text = joinUtterances(taken);
-    const displayText = joinUtterances(taken.filter((part) => !this.shownUtterances.has(part.utterance)));
-    return { text, displayText };
+    const taken = eligible.filter((part) => included.has(part.utterance));
+    const last = order[order.length - 1];
+    return {
+      text: joinUtterances(taken),
+      displayText: joinUtterances(taken.filter((part) => !this.shownUtterances.has(part.utterance))),
+      lastUtterance: last === undefined ? "" : joinUtterances(partsOf(last)),
+    };
+  }
+
+  /**
+   * A new utterance after a model reply: what that reply answered can no
+   * longer be part of a request. Show it once (if not yet) and drop it, so the
+   * pending speech stays small.
+   */
+  private dropAnswered(): void {
+    const current = this.repliesBefore.get(this.utteranceSeq) ?? 0;
+    const stale = new Set<number>();
+    for (const part of this.parts) {
+      if ((this.repliesBefore.get(part.utterance) ?? 0) < current) stale.add(part.utterance);
+    }
+    if (!stale.size) return;
+    for (const utterance of stale) {
+      if (this.shownUtterances.has(utterance)) continue;
+      this.shownUtterances.add(utterance);
+      const text = joinUtterances(this.parts.filter((part) => part.utterance === utterance));
+      if (text) this.options.handlers.onUserTranscript(text);
+    }
+    this.parts = this.parts.filter((part) => !stale.has(part.utterance));
+    for (const utterance of stale) this.repliesBefore.delete(utterance);
   }
 
   private closeUtterance(): void {
