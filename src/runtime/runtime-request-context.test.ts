@@ -2268,6 +2268,28 @@ describe("runtime request context chat-scoped user overlay", () => {
       resolvedSource: ownerPrompt.source,
     });
     expect(runtimeEnv.RAVI_TURN_HELD_BELOW_AGENT).toBeUndefined();
+
+    // Once the chat has contact grants, a contact narrowed to them carries no
+    // break-glass deny: it is held because its grants run no executable.
+    grant(stranger.id, "chat", chat.id);
+    const governedPrompt = promptInChat(stranger.id, chat);
+    const governed = refreshRuntimeRequestContextForTurn({
+      runtimeContext: built.runtimeContext,
+      toolContext: built.toolContext,
+      runtimeEnv,
+      dbSessionKey: heldSessionKey,
+      sessionName: heldSessionName,
+      sessionCwd: agent.cwd,
+      agent,
+      prompt: governedPrompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: governedPrompt.source,
+    });
+    expect(governed.metadata?.userOverlay).toBe("active");
+    expect(governed.metadata?.actorBreakGlassWithheld).toBeUndefined();
+    expect(runtimeEnv.RAVI_TURN_HELD_BELOW_AGENT).toBe("1");
   });
 
   it("never lets a person's turn in an ungoverned chat inherit the agent's break-glass", () => {

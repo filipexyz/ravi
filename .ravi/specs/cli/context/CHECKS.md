@@ -76,5 +76,6 @@
   (or resumed) by a held turn in `read-only`.
 
 - `bun test src/runtime/runtime-request-context.test.ts -t "marks the runtime env"`
-  MUST show `RAVI_TURN_HELD_BELOW_AGENT=1` on a held person's turn and the key
-  cleared when the next turn is the owner's.
+  MUST show `RAVI_TURN_HELD_BELOW_AGENT=1` on a held person's turn, the key
+  cleared when the next turn is the owner's, and the key set again for a
+  contact narrowed to a governed chat's grants (no break-glass deny there).

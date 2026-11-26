@@ -137,8 +137,9 @@ invariant stronger than most: context keys (`rctx_*`) ARE credentials.
   a path there can read another session's temp files through a command that
   reads files (`pages ship --html`). This is an accepted limit until the OS
   sandbox; a per-session temp directory is the follow-up.
-- A Codex turn of a person held below the agent (no grant in the chat, or a
-  held relay) runs in Codex's `read-only` sandbox, sent on every `turn/start`
+- A Codex turn of a person held below the agent (no grant in an ungoverned
+  chat, a held relay, or a contact narrowed to a governed chat's grants that do
+  not run any executable) runs in Codex's `read-only` sandbox, sent on every `turn/start`
   and on the thread it opens, never in `danger-full-access`. The Bash hook
   gates `shell`, but `apply_patch` and the sandbox are Codex's own, so the
   sandbox is what stops that person from writing files or reaching the network.

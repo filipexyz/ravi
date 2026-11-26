@@ -1453,6 +1453,24 @@ export function buildRuntimeRequestEnv(options: {
   );
 }
 
+/**
+ * A turn that must not get the provider's own execution power: a person held
+ * below the agent's break-glass, a held relay, or a contact narrowed to the
+ * chat's grants (an active overlay) whose grants do not run any executable.
+ * The overlay case carries no break-glass deny, so it is checked by what the
+ * turn may execute, not by the deny marker.
+ */
+export function turnRunsBelowAgentExecution(context: {
+  metadata?: Record<string, unknown> | null;
+  capabilities?: ContextCapability[] | null;
+}): boolean {
+  if (isTurnHeldBelowAgent(context)) return true;
+  return (
+    context.metadata?.userOverlay === "active" &&
+    !canWithCapabilities(context.capabilities ?? [], "execute", "executable", "*")
+  );
+}
+
 function buildRaviRuntimeEnv(options: {
   runtimeContext: ReturnType<typeof createRuntimeContext>;
   dbSessionKey: string;
@@ -1514,7 +1532,7 @@ function buildRaviRuntimeEnv(options: {
 
   // Read by the provider in the daemon (never from the agent's process): a turn of a
   // person held below the agent runs without execution power the provider would grant.
-  if (isTurnHeldBelowAgent(runtimeContext)) raviEnv[RAVI_TURN_HELD_BELOW_AGENT_ENV] = "1";
+  if (turnRunsBelowAgentExecution(runtimeContext)) raviEnv[RAVI_TURN_HELD_BELOW_AGENT_ENV] = "1";
 
   Object.assign(raviEnv, buildTaskRuntimeEnv(sessionName, sessionCwd, prompt.taskBarrierTaskId));
   return raviEnv;
