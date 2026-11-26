@@ -19,6 +19,7 @@ let resolvedContext:
         instanceId?: string;
         canonicalChatId?: string;
       };
+      metadata?: Record<string, unknown>;
       capabilities: unknown[];
       kind: string;
       createdAt: number;
@@ -72,6 +73,23 @@ describe("cli context resolution", () => {
     restoreEnv("RAVI_CHAT_ID", originalEnv.RAVI_CHAT_ID);
     restoreEnv("RAVI_CANONICAL_CHAT_ID", originalEnv.RAVI_CANONICAL_CHAT_ID);
     restoreEnv("RAVI_CREDENTIALS_PATH", originalEnv.RAVI_CREDENTIALS_PATH);
+  });
+
+  it("does not expose an approval-only origin as an implicit command destination", () => {
+    process.env.RAVI_CONTEXT_KEY = "rctx_approval_only";
+    process.env.RAVI_CHANNEL = "slack";
+    process.env.RAVI_ACCOUNT_ID = "stale-account";
+    process.env.RAVI_CHAT_ID = "stale-chat";
+    resolvedContext = {
+      contextId: "approval-only",
+      kind: "turn-runtime",
+      createdAt: Date.now(),
+      capabilities: [],
+      source: { channel: "slack", accountId: "origin", chatId: "origin-chat" },
+      metadata: { approvalSourceOnly: true },
+    };
+    expect(getContext()?.source).toBeUndefined();
+    expect(getContext()?.context?.source?.chatId).toBe("origin-chat");
   });
 
   it("prefers resolved runtime context when RAVI_CONTEXT_KEY is present", () => {

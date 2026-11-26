@@ -357,7 +357,7 @@ export function refreshRuntimeRequestContextForTurn(options: {
       runtimeProviderId: options.runtimeProviderId,
       model: options.model,
       runtimeResolution: options.runtimeResolution,
-      approvalSource: options.approvalSource,
+      approvalSource: options.prompt._approvalSource,
       replyTarget: options.replyTarget,
     }),
   });
@@ -488,20 +488,19 @@ function deriveRuntimeContextForPrompt(options: {
   }
   const identity = buildAgentIdentityRuntimeContextInputForPrompt(options);
   const callerContextId = resolveRuntimeTurnOrigin(options.prompt._turnOrigin)?.callerContextId;
-  const callerSource = callerContextId ? dbGetContext(callerContextId)?.source : undefined;
-  const delegatedSource = ContextSourceSchema.safeParse(options.metadata.approvalSource);
-  return {
-    capabilities: identity.capabilities,
-    metadata: {
-      ...options.metadata,
-      ...identity.metadata,
-    },
-    // A delegated approval destination is routing provenance, not a human
-    // actor or an authority grant. Keep identity derivation above unchanged.
-    source: buildContextSource(
-      options.resolvedSource ?? callerSource ?? (delegatedSource.success ? delegatedSource.data : undefined),
-    ),
-  };
+  const suppliedSource = ContextSourceSchema.safeParse(options.metadata.approvalSource);
+  // An exact caller with no origin must not fall back to a historical hint.
+  const approvalSource = callerContextId
+    ? dbGetContext(callerContextId)?.source
+    : suppliedSource.success
+      ? suppliedSource.data
+      : undefined;
+  const source = buildContextSource(options.resolvedSource ?? approvalSource);
+  const metadata = { ...options.metadata, ...identity.metadata };
+  delete metadata.approvalSource;
+  if (approvalSource) metadata.approvalSource = approvalSource;
+  if (!options.resolvedSource && source) metadata.approvalSourceOnly = true;
+  return { capabilities: identity.capabilities, metadata, source };
 }
 
 function persistRuntimeContextInPlace(

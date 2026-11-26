@@ -305,6 +305,7 @@ describe("runtime context registry", () => {
         { permission: "access", objectType: "session", objectId: "agent:dev:main" },
       ],
       metadata: {
+        approvalSourceOnly: true,
         approvalSource: {
           channel: "whatsapp",
           accountId: "main",
@@ -316,6 +317,7 @@ describe("runtime context registry", () => {
     const child = issueRuntimeContext({
       parent,
       cliName: "sync-cli",
+      metadata: { approvalSourceOnly: false },
       ttlMs: 2 * 60 * 60 * 1000,
       capabilities: [{ permission: "execute", objectType: "group", objectId: "daemon" }],
     });
@@ -326,6 +328,7 @@ describe("runtime context registry", () => {
     expect(child.capabilities).toEqual([{ permission: "execute", objectType: "group", objectId: "daemon" }]);
     expect(child.expiresAt).toBe(parent.expiresAt);
     expect(child.metadata).toMatchObject({
+      approvalSourceOnly: true,
       parentContextId: parent.contextId,
       parentContextKind: "agent-runtime",
       issuedFor: "sync-cli",

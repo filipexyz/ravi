@@ -79,6 +79,10 @@ audit surfaces while still allowing Ravi to perform approved external actions.
   MUST NOT exceed that context's remaining lease. Revocation or deletion MUST
   atomically expire pending requests, including cascaded child revocation; a
   lost waiter MUST NOT leave a claimable request behind.
+- Approval schema MUST participate in daemon state preparation/readiness. CLI
+  and channel consumers MUST NOT migrate the approval store on first use.
+- Delivery adapters MUST persist approval message correlation independently of
+  request-reply listeners and finalize terminal requests even on late delivery.
 - Approval decision claims MUST revalidate caller liveness. Active waiters MUST
   settle and finalize delivered cards when the caller ends, including when it
   ends during delivery. A late click MUST NOT revive the caller or read secrets.

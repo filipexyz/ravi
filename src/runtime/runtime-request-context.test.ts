@@ -1358,7 +1358,8 @@ describe("runtime request context authority", () => {
       ...options,
       runtimeContext: built.runtimeContext,
       toolContext: built.toolContext,
-      approvalSource: { ...source, chatId: "next-origin" },
+      approvalSource: source, // captured launch value must not govern this turn
+      prompt: { ...prompt, _approvalSource: { ...source, chatId: "next-origin" } },
     });
     expect(dbGetContext(rotated.contextId)?.source?.chatId).toBe("next-origin");
     expect(rotated.metadata?.actorPrincipal).toBe("agent:origin-agent");
@@ -1367,9 +1368,33 @@ describe("runtime request context authority", () => {
       runtimeContext: rotated,
       toolContext: built.toolContext,
       prompt: { prompt: "local work" },
-      approvalSource: undefined,
+      approvalSource: source, // even a retained launch hint must be cleared
     });
     expect(plain.source).toBeUndefined();
+  });
+
+  it("does not substitute a historical hint when the exact caller has no origin", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+    const caller = createRuntimeContext({ kind: "turn-runtime", agentId: agent.id, capabilities: [] });
+    const stale = { channel: "slack", accountId: "main", chatId: "previous-chat" };
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: agent.cwd,
+      agent,
+      prompt: {
+        prompt: "unsourced work",
+        _approvalSource: stale,
+        _turnOrigin: buildSessionRelayTurnOrigin("execute", { agentId: agent.id, contextId: caller.contextId }),
+      },
+      runtimeProviderId: "codex",
+      model: "test",
+      runtimeResolution,
+      approvalSource: stale,
+    });
+    expect(runtimeContext.source).toBeUndefined();
+    expect(runtimeContext.metadata?.approvalSource).toBeUndefined();
   });
 
   it("narrows a relay produced by a contact-overlay turn to that turn's capabilities", () => {

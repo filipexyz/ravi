@@ -13,6 +13,7 @@ export async function initializeRuntimeState(): Promise<void> {
   (await import("../channels/outbound-publish-outbox.js")).ensureChannelOutboundPublishOutboxSchema(router);
   (await import("../channels/slack/automatic-output-circuit.js")).ensureSlackAutomaticOutputSchema(router);
   (await import("../pr/journal.js")).initializePublicationSchema(router);
+  (await import("../approval/store.js")).ensureApprovalRequestTable(router);
   (await import("../bridge/store.js")).getBridgeStore();
   (await import("../contacts.js")).ensureContactsDb();
   (await import("../db.js")).getDb();
@@ -30,7 +31,15 @@ export function assertRuntimeStateReady(env: NodeJS.ProcessEnv = process.env): v
   const stores: Array<[string, string[]]> = [
     [
       join(root, "ravi.db"),
-      ["router", "cloud-chat", "channel-outbound-publish", "slack-automatic-output", "console-scope", "pr-publication"],
+      [
+        "router",
+        "cloud-chat",
+        "channel-outbound-publish",
+        "slack-automatic-output",
+        "console-scope",
+        "pr-publication",
+        "approval",
+      ],
     ],
     [join(root, "chat.db"), ["contacts", "chat"]],
     [getCredentialsDbPath(env), ["credentials"]],

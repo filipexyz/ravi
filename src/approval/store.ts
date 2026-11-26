@@ -1,3 +1,5 @@
+import type { Database } from "bun:sqlite";
+import { initializeStateSchema } from "../db/schema-owner.js";
 import { getDb } from "../router/router-db.js";
 import { fromSubjectColumns, resolveSubjectForChat, toSubjectColumns, type SubjectRef } from "../identity/subject.js";
 import type { PermissionGrantMetadata } from "./grant-metadata.js";
@@ -367,10 +369,10 @@ interface ApprovalDeliveryRow {
   created_at: number;
 }
 
-function ensureApprovalRequestTable(): void {
-  const db = getDb();
-  db.prepare(
-    `CREATE TABLE IF NOT EXISTS approval_requests (
+export function ensureApprovalRequestTable(db: Database = getDb()): void {
+  initializeStateSchema(db, "approval", () => {
+    db.prepare(
+      `CREATE TABLE IF NOT EXISTS approval_requests (
       id TEXT PRIMARY KEY,
       type TEXT NOT NULL,
       channel TEXT NOT NULL,
@@ -392,65 +394,69 @@ function ensureApprovalRequestTable(): void {
       expires_at INTEGER NOT NULL,
       decided_at INTEGER
     )`,
-  ).run();
-  db.prepare(
-    `CREATE INDEX IF NOT EXISTS idx_approval_requests_message
+    ).run();
+    db.prepare(
+      `CREATE INDEX IF NOT EXISTS idx_approval_requests_message
       ON approval_requests(message_id)`,
-  ).run();
-  db.prepare(
-    `CREATE INDEX IF NOT EXISTS idx_approval_requests_status_expires
+    ).run();
+    db.prepare(
+      `CREATE INDEX IF NOT EXISTS idx_approval_requests_status_expires
       ON approval_requests(status, expires_at)`,
-  ).run();
-  const approvalColumns = new Set(
-    (db.prepare("PRAGMA table_info(approval_requests)").all() as Array<{ name: string }>).map((column) => column.name),
-  );
-  for (const column of [
-    "subject_kind",
-    "subject_contact_id",
-    "subject_identity_id",
-    "subject_agent_id",
-    "subject_channel",
-    "subject_raw_id",
-    "grant_json",
-    "grant_intent",
-    "grant_scope",
-    "grant_outcome",
-    "caller_context_id",
-  ]) {
-    if (!approvalColumns.has(column)) {
-      db.exec(`ALTER TABLE approval_requests ADD COLUMN ${column} TEXT`);
+    ).run();
+    const approvalColumns = new Set(
+      (db.prepare("PRAGMA table_info(approval_requests)").all() as Array<{ name: string }>).map(
+        (column) => column.name,
+      ),
+    );
+    for (const column of [
+      "subject_kind",
+      "subject_contact_id",
+      "subject_identity_id",
+      "subject_agent_id",
+      "subject_channel",
+      "subject_raw_id",
+      "grant_json",
+      "grant_intent",
+      "grant_scope",
+      "grant_outcome",
+      "caller_context_id",
+    ]) {
+      if (!approvalColumns.has(column)) {
+        db.exec(`ALTER TABLE approval_requests ADD COLUMN ${column} TEXT`);
+      }
     }
-  }
-  db.exec(
-    "CREATE INDEX IF NOT EXISTS idx_approval_requests_caller ON approval_requests(caller_context_id) WHERE status = 'pending'",
-  );
-  // Cancel in the same transaction as revocation, even if the waiter died.
-  // Every context revocation path (including cascades) updates this table.
-  db.exec(`CREATE TRIGGER IF NOT EXISTS approval_caller_revoked AFTER UPDATE OF revoked_at ON contexts
+    db.exec(
+      "CREATE INDEX IF NOT EXISTS idx_approval_requests_caller ON approval_requests(caller_context_id) WHERE status = 'pending'",
+    );
+    // Cancel in the same transaction as revocation, even if the waiter died.
+    // Every context revocation path (including cascades) updates this table.
+    db.exec(`CREATE TRIGGER IF NOT EXISTS approval_caller_revoked AFTER UPDATE OF revoked_at ON contexts
     WHEN NEW.revoked_at > 0 AND NEW.revoked_at <= unixepoch('subsec') * 1000
     BEGIN
       UPDATE approval_requests SET status = 'expired', reason = '${APPROVAL_CALLER_INVALID_REASON}',
         decided_at = NEW.revoked_at
       WHERE caller_context_id = NEW.context_id AND status = 'pending';
     END`);
-  db.exec(`CREATE TRIGGER IF NOT EXISTS approval_caller_deleted AFTER DELETE ON contexts
+    db.exec(`CREATE TRIGGER IF NOT EXISTS approval_caller_deleted AFTER DELETE ON contexts
     BEGIN
       UPDATE approval_requests SET status = 'expired', reason = '${APPROVAL_CALLER_INVALID_REASON}',
         decided_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
       WHERE caller_context_id = OLD.context_id AND status = 'pending';
     END`);
-  db.exec("CREATE INDEX IF NOT EXISTS idx_approval_requests_subject_contact ON approval_requests(subject_contact_id)");
-  db.prepare(
-    `CREATE TABLE IF NOT EXISTS approval_card_scopes (
+    db.exec(
+      "CREATE INDEX IF NOT EXISTS idx_approval_requests_subject_contact ON approval_requests(subject_contact_id)",
+    );
+    db.prepare(
+      `CREATE TABLE IF NOT EXISTS approval_card_scopes (
       request_id TEXT NOT NULL,
       user_id TEXT NOT NULL,
       scope TEXT NOT NULL,
       updated_at INTEGER NOT NULL,
       PRIMARY KEY (request_id, user_id)
     )`,
-  ).run();
-  db.prepare(
-    `CREATE TABLE IF NOT EXISTS approval_request_deliveries (
+    ).run();
+    db.prepare(
+      `CREATE TABLE IF NOT EXISTS approval_request_deliveries (
       request_id TEXT NOT NULL,
       user_id TEXT NOT NULL,
       kind TEXT NOT NULL,
@@ -459,7 +465,8 @@ function ensureApprovalRequestTable(): void {
       created_at INTEGER NOT NULL,
       PRIMARY KEY (request_id, user_id)
     )`,
-  ).run();
+    ).run();
+  });
 }
 
 function rowToRecord(row: ApprovalRequestRow): ApprovalRequestRecord {

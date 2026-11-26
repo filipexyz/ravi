@@ -1,3 +1,4 @@
+import { runtimeCommandSource } from "../runtime/context-source.js";
 import { randomUUID } from "node:crypto";
 import { authorizeBridgeAction } from "../bridge/native.js";
 import { nats as runtimeNats } from "../nats.js";
@@ -611,8 +612,10 @@ export async function authorizeRuntimeContext(opts: ContextAuthorizationOptions)
     return denyRuntimeContext(opts, reason, "runtime_actor_unresolved");
   }
 
-  const resolvedSource = toApprovalTarget(context.source);
-  const approvalSource = resolvedSource ? undefined : getApprovalSourceFromMetadata(context);
+  const resolvedSource = toApprovalTarget(runtimeCommandSource(context));
+  const approvalSource = resolvedSource
+    ? undefined
+    : (toApprovalTarget(context.source) ?? getApprovalSourceFromMetadata(context));
 
   // An approval that is not routed privately to grantors is posted into the turn's own
   // conversation. In a direct chat the only person there is the one who asked: when that
@@ -723,7 +726,7 @@ function buildRuntimePermissionGrant(
   context: ContextRecord,
   capability: { permission: string; objectType: string; objectId: string },
 ): PermissionGrantMetadata | null {
-  const source = context.source;
+  const source = runtimeCommandSource(context);
   if (!source || !isSlackChannel(source.channel)) return null;
   const instanceId = source.instanceId ?? source.accountId;
   try {
@@ -1220,7 +1223,17 @@ async function finalizeApprovalMessage(
   clicker?: { readonly actorId?: string; readonly responseUrlId?: string },
   detail?: string,
 ): Promise<void> {
-  if (!isSlackChannel(request.channel) || !request.messageId) return;
+  if (!request.messageId) return;
+  if (!isSlackChannel(request.channel)) {
+    if (request.callerContextId && outcome === "expired") {
+      await approvalServiceDependencies.requestReply(
+        "ravi.outbound.approval.finalize",
+        { requestId: request.id, messageId: request.messageId },
+        DEFAULT_APPROVAL_DELIVERY_TIMEOUT_MS,
+      );
+    }
+    return;
+  }
   const message = buildSlackApprovalFinalMessage({
     type: request.type,
     outcome,

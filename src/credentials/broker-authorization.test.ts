@@ -766,6 +766,10 @@ describe("credential approval origin and caller lifetime", () => {
         approvalService.setApprovalServiceDependenciesForTest({
           now: Date.now,
           requestReply: (async (_topic: string, data: Record<string, unknown>) => {
+            if (_topic === "ravi.outbound.approval.finalize") {
+              finalized.push(String(data.requestId));
+              return { success: true };
+            }
             requestId = String(data.approvalRequestId);
             expect(data).toMatchObject({ channel, to: source.chatId, threadId: source.threadId });
             expect(getApprovalRequest(requestId)).toMatchObject({
@@ -811,7 +815,7 @@ describe("credential approval origin and caller lifetime", () => {
           detail: expect.stringContaining("nova tentativa"),
         });
         expect(readSecret).not.toHaveBeenCalled();
-        if (channel === "slack") expect(finalized).toContain(requestId);
+        expect(finalized).toContain(requestId);
       });
     }
   }

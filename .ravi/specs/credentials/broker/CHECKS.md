@@ -246,3 +246,9 @@ built.
 - a 200-character cut never leaves a lone surrogate (N9; mutant: no surrogate check); a 181-character connection name goes up at 100 (mutant: identifiers uncapped).
 - the bounds come after the sync redactor: text at its limit that the redactor lengthens ("Bearer x" in `purpose` at 200 and `connection` at 100, and in every other text field), in the payload builder and end to end through the store and the outbox, still passes a copy of the Console `pageSchema`, and the payload stays a fixed point of `sanitizeSyncPayload` (B1 of the #971 review; mutants: the bounds before the redactor; no redactor in the builder).
 - every bounded string goes up cut to the Console limit and a value at the limit goes up as it is, checked against that copy of the Console `pageSchema`: item `id` 200, `provider` 100, `connection` 100, `secretRefAlias` 250, `label`, `owner` and `purpose` 200, each scope 100; audit `provider` 100, `connection` 100, `action`, `decision`, `resultStatus` and `errorCode` 200 (N1 of the #971 review; mutants: each bound removed, one at a time; each limit moved by one, both ways). The copy of the schema is refreshed whenever ravi-console `src/server/console/vault-inventory.ts` changes.
+
+- Relay a credential write from Slack and WhatsApp: a pending request must preserve the exact chat/thread and caller context.
+- Revoke/delete/expire that caller during delivery: inspect the raw request row, reject a late claim, finalize the delivered prompt, and prove no secret was read.
+- Let delivery complete after the caller or request-reply deadline: the gateway must still persist correlation and finalize terminal cards.
+- With no source or no delivery adapter, assert fixed safe diagnostics; caller invalidation must be `caller_invalid`.
+- Check schema readiness before any CLI/channel consumer; only daemon/isolated initialization adds approval linkage.

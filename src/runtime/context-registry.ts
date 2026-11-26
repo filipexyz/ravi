@@ -559,6 +559,7 @@ function buildDerivedContextMetadata(
 
   // Lineage is host-owned. A CLI child must not erase its ancestry and pose
   // as a runtime-issued human turn when it dispatches a relay or bootstrap.
+  if (parent.metadata?.approvalSourceOnly === true) derived.approvalSourceOnly = true;
   derived.parentContextId = parent.contextId;
   derived.parentContextKind = parent.kind;
   derived.issuedFor = cliName;

@@ -1234,7 +1234,7 @@ async function buildRuntimeStartRequestInternal(
         model: streamingSession.currentModel || effectiveModel,
         runtimeResolution: turnRuntimeResolution,
         resolvedSource: turnSource,
-        approvalSource,
+        approvalSource: boundTurnPrompt._approvalSource,
         // Recorded so a connector call in this turn knows who reads the
         // answer: a relay has no chat of its own to say it.
         replyTarget: buildTurnReplyTarget({
@@ -1267,7 +1267,7 @@ async function buildRuntimeStartRequestInternal(
         model: streamingSession.currentModel || effectiveModel,
         runtimeResolution: turnRuntimeResolution,
         resolvedSource: turnSource,
-        approvalSource,
+        approvalSource: boundTurnPrompt._approvalSource,
         isActive: () => streamingSession.turnActive && !streamingSession.done,
         signal: streamingSession.abortController.signal,
         abortedBySuccessor: () =>

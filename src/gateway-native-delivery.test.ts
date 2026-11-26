@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { configStore } from "./config-store.js";
 import {
+  getApprovalRequest,
   claimApprovalDecision,
   createApprovalRequest,
   recordApprovalDeliveries,
@@ -686,6 +687,8 @@ type DirectSendTestRequest = {
   replyTopic?: string;
   threadId?: string;
   blocks?: readonly Record<string, unknown>[];
+  approvalRequestId?: string;
+  privateTo?: readonly string[];
 };
 
 type ReactionTestRequest = {
@@ -829,6 +832,83 @@ describe("Gateway native channel account actions", () => {
       },
     );
     expect(emitted[0]).toEqual(["ravi.reply.omni-send", { success: true, messageId: "omni-1" }]);
+  });
+
+  it("records and closes an Omni approval delivered after its caller stopped waiting, retaining its topic", async () => {
+    seedOmniWhatsApp();
+    const { gateway, omniSend, omniEditMessage } = await createGateway();
+    const chatId = "group:120363407390920496";
+    createApprovalRequest({
+      id: "late-omni",
+      type: "permission",
+      channel: "whatsapp",
+      accountId: "main",
+      chatId,
+      threadId: "topic",
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 1000,
+    });
+    expireApprovalRequest("late-omni", Date.now());
+    await handleDirectSend(gateway, {
+      channel: "whatsapp",
+      accountId: "main",
+      to: chatId,
+      text: "approval?",
+      threadId: "topic",
+      approvalRequestId: "late-omni",
+    });
+    expect(getApprovalRequest("late-omni")).toMatchObject({ messageId: "omni-1", status: "expired" });
+    expect(omniSend).toHaveBeenCalledWith(
+      OMNI_UUID,
+      "120363407390920496@g.us",
+      "approval?",
+      expect.objectContaining({ threadId: "topic" }),
+    );
+    expect(omniEditMessage).toHaveBeenCalledWith(
+      OMNI_UUID,
+      "120363407390920496@g.us",
+      "omni-1",
+      expect.stringContaining("encerrado"),
+    );
+  });
+
+  it("persists and finalizes late private Slack cards without a request-reply listener", async () => {
+    seedNativeSlack();
+    const { gateway } = await createGateway();
+    createApprovalRequest({
+      id: "late-slack",
+      type: "permission",
+      channel: "slack",
+      accountId: "hana-slack",
+      chatId: "C123",
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 1000,
+    });
+    const send = spyOn(slackTextSend, "sendSlackPrivateCards").mockImplementation(async () => {
+      expireApprovalRequest("late-slack", Date.now());
+      return {
+        deliveries: [{ userId: "U_OWNER", kind: "dm" as const, chatId: "D_OWNER", messageId: "late-dm" }],
+        failures: [],
+      };
+    });
+    const edit = spyOn(slackTextSend, "updateSlackText").mockResolvedValue({} as never);
+    try {
+      await handleDirectSend(gateway, {
+        channel: "slack",
+        accountId: "hana-slack",
+        to: "C123",
+        text: "approval?",
+        approvalRequestId: "late-slack",
+        privateTo: ["U_OWNER"],
+      });
+      expect(getApprovalRequest("late-slack")).toMatchObject({ messageId: "late-dm", status: "expired" });
+      expect(edit).toHaveBeenCalledWith(expect.objectContaining({ chatId: "D_OWNER", messageId: "late-dm" }), {
+        authority: { kind: "internal-service", service: "approval-delivery" },
+      });
+    } finally {
+      send.mockRestore();
+      edit.mockRestore();
+    }
   });
 
   it("keeps No instance for account when neither Omni nor a native channel exists", async () => {
@@ -1107,7 +1187,7 @@ describe("Gateway stored Slack approval finalization", () => {
       expect(update).not.toHaveBeenCalled();
       expect(emitted).toHaveLength(4);
       for (const [, result] of emitted)
-        expect(result).toEqual({ success: false, error: "Slack approval finalization failed." });
+        expect(result).toEqual({ success: false, error: "Approval finalization failed." });
     } finally {
       update.mockRestore();
     }
