@@ -116,7 +116,8 @@ export function enqueueInboxItem(input: InboxItemInput): InboxItem {
   if (!INBOX_SOURCE_KINDS.includes(input.sourceKind)) {
     throw new InboxUsageError(`Unknown sourceKind: ${String(input.sourceKind)}`);
   }
-  const sourceRef = requireText(input.sourceRef, "sourceRef");
+  // One line, like the title: the source ref is printed inside the block line.
+  const sourceRef = requireText(input.sourceRef, "sourceRef").replace(/\s+/g, " ");
   // The title is one line in the rendered block: no line of it may pass for a line of the block.
   const title = requireText(input.title, "title").replace(/\s+/g, " ");
   const rawBody = requireText(input.body, "body");

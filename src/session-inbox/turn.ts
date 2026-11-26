@@ -1,10 +1,11 @@
 /**
  * Decides whether a turn drains the session inbox and builds the block. Spec: `runtime/session-inbox`.
  *
- * Only two kinds of turn drain the inbox: a turn that carries a verified human message, and a
- * heartbeat turn when the operator opted in (`inbox.drainOnHeartbeat=true`). Every other background
- * turn (trigger, cron, observer, another notice) leaves the inbox untouched, so the person gets the
- * deferred notices together, in their own turn.
+ * Only the session's owner drains the inbox (see owner.ts): a human turn from the owner's own direct
+ * chat, or a heartbeat when the operator opted in (`inbox.drainOnHeartbeat=true`) and the session's
+ * default chat is the owner's direct chat. A turn that also carries a message from any other person
+ * never drains. Every other background turn (trigger, cron, observer, another notice) leaves the
+ * inbox untouched, so the owner gets the deferred notices together, in their own turn.
  */
 
 import { classifyTurnProvenance, type TurnProvenanceInput } from "../runtime/turn-provenance.js";
@@ -21,19 +22,31 @@ export interface InboxTurnMessage {
 
 export type InboxDrainReason = "human" | "heartbeat";
 
+export interface InboxDrainOptions {
+  drainOnHeartbeat: boolean;
+  /** Whether a human message comes from the session owner's own direct chat (owner.ts). */
+  isOwnerTurn: (prompt: InboxTurnMessage["launchPrompt"]) => boolean;
+  /** Whether the session's default chat is the owner's direct chat, for a heartbeat (owner.ts). */
+  isOwnerSession: () => boolean;
+}
+
 export function inboxDrainReason(
   messages: readonly InboxTurnMessage[],
-  options: { drainOnHeartbeat: boolean },
+  options: InboxDrainOptions,
 ): InboxDrainReason | null {
+  let owner = false;
   let heartbeat = false;
   for (const message of messages) {
-    const origin = classifyTurnProvenance({
-      prompt: message.launchPrompt,
-    }).origin;
-    if (origin === "human") return "human";
+    const origin = classifyTurnProvenance({ prompt: message.launchPrompt }).origin;
+    if (origin === "human") {
+      // Fail closed: one message from anyone but the owner keeps the block out of this turn.
+      if (!options.isOwnerTurn(message.launchPrompt)) return null;
+      owner = true;
+    }
     if (origin === "heartbeat") heartbeat = true;
   }
-  return heartbeat && options.drainOnHeartbeat ? "heartbeat" : null;
+  if (owner) return "human";
+  return heartbeat && options.drainOnHeartbeat && options.isOwnerSession() ? "heartbeat" : null;
 }
 
 export interface InboxTurnBlock {
@@ -49,6 +62,8 @@ export interface PrepareInboxTurnInput {
   sessionName: string;
   messages: readonly InboxTurnMessage[];
   drainOnHeartbeat: boolean;
+  isOwnerTurn: InboxDrainOptions["isOwnerTurn"];
+  isOwnerSession: InboxDrainOptions["isOwnerSession"];
   now?: number;
   /** Test seam: the block renderer. */
   render?: typeof renderInboxBlock;
@@ -62,6 +77,8 @@ export interface PrepareInboxTurnInput {
 export function prepareInboxTurnBlock(input: PrepareInboxTurnInput): InboxTurnBlock | null {
   const reason = inboxDrainReason(input.messages, {
     drainOnHeartbeat: input.drainOnHeartbeat,
+    isOwnerTurn: input.isOwnerTurn,
+    isOwnerSession: input.isOwnerSession,
   });
   if (!reason) return null;
   const reservation = reserveInboxItems({

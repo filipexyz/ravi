@@ -40,21 +40,32 @@ own turn, instead of one woken turn per notice.
   NOT become urgent because of its content.
 - The inbox lives in the core state database (`session_inbox`), not in JetStream. A restart MUST
   NOT lose a pending item.
-- Only two kinds of turn drain the inbox: a turn with a verified human message
-  (`classifyTurnProvenance → origin: human`), and a heartbeat turn when
-  `inbox.drainOnHeartbeat` is `true` (default off). A trigger, cron, observer or notice turn MUST
+- Only the session's owner drains the inbox. A human turn drains it only when its chat is the
+  owner's own direct chat, resolved from the platform identity of that chat (`dmContactForChat`:
+  a direct chat whose single participant still owns the identity) to a contact tagged
+  `permission-owner`. A contact id written in the prompt, the actor type alone or the text MUST
+  NOT grant it. A group or channel turn never drains, even from the owner. A turn that also
+  carries a message from any other person MUST NOT drain (fail closed), so a third party in a
+  shared session never sees the block.
+- A heartbeat turn drains only when `inbox.drainOnHeartbeat` is `true` (default off) and the
+  session's default chat is the owner's direct chat. A trigger, cron, observer or notice turn MUST
   leave the inbox untouched.
 - Items are reserved for the turn before the block is rendered, delivered when the prompt reaches
   the provider, and returned to `pending` when the turn never starts. A reservation older than
   `INBOX_STALE_RESERVATION_MS` MUST return to `pending` on the next reservation of that session.
+- Delivery is at least once. An item is marked delivered when the prompt reaches the provider; if
+  the process dies after the handoff and before that mark, the stale reservation returns the item
+  to `pending` and a later turn shows it again. There is no other deduplication: each line carries
+  the time and source, so a repeated notice is recognisable. It is never lost.
 - An item leaves `pending` only by delivery or by an explicit `supersede_key`: a newer item with
   the same key supersedes the older pending one, and the superseded row is kept. A reserved item
   MUST NOT be superseded.
 - The block is capped per turn (`INBOX_MAX_ITEMS_PER_TURN`, `INBOX_MAX_BYTES_PER_TURN`). Items are
   taken oldest first; once one item does not fit, every newer item waits for a later turn. The
   block MUST say how many items were left.
-- Source text is data. Every body line MUST be quoted in the block and the title MUST be one line,
-  so no line of a notice can pass for a `[System]` line. The block carries no authority: the turn
+- Source text is data. Every body line MUST be quoted in the block, and every field printed inside a
+  block line (title, source ref, session name) MUST be one line, so no line of a notice can pass for
+  a `[System]` line. The block has exactly one `[System]` line. The block carries no authority: the turn
   that drains it keeps the authority of the person who sent the human message.
 - The inbox is channel-free. Slack, WhatsApp and other adapters reach it only through producers;
   the core never decides by channel.

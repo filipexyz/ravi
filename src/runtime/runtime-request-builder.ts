@@ -40,6 +40,12 @@ import {
   type InboxTurnMessage,
   prepareInboxTurnBlock,
 } from "../session-inbox/turn.js";
+import {
+  type InboxOwnerDeps,
+  type InboxOwnerPrompt,
+  isInboxOwnerSession,
+  isInboxOwnerTurn,
+} from "../session-inbox/owner.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./task-runtime-context.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
@@ -141,12 +147,16 @@ export function getInboxRenderFailureCount(): number {
 export function prepareInboxForTurn(
   sessionName: string,
   deliverableMessages: readonly InboxTurnMessage[],
+  sessionKey: string | null = null,
+  ownerDeps: InboxOwnerDeps = {},
 ): InboxTurnBlock | null {
   try {
     return prepareInboxTurnBlock({
       sessionName,
       messages: deliverableMessages,
       drainOnHeartbeat: dbGetSetting(INBOX_DRAIN_ON_HEARTBEAT_SETTING) === "true",
+      isOwnerTurn: (prompt) => isInboxOwnerTurn(prompt as InboxOwnerPrompt | undefined, ownerDeps),
+      isOwnerSession: () => isInboxOwnerSession(sessionKey, ownerDeps),
     });
   } catch (error) {
     inboxRenderFailures += 1;
@@ -1274,7 +1284,7 @@ async function buildRuntimeStartRequestInternal(
     transformTurnPrompt: ({ combinedPrompt, deliverableMessages }) => {
       // Deferred notices open the turn that may drain them (runtime/session-inbox). They become
       // part of the current request, so a recovered context still wraps them.
-      const inbox = prepareInboxForTurn(sessionName, deliverableMessages);
+      const inbox = prepareInboxForTurn(sessionName, deliverableMessages, dbSessionKey ?? null);
       if (inbox) combinedPrompt = `${inbox.block}\n\n${combinedPrompt}`;
       return composeInboxWithTurnPrompt(inbox, applySignalsToTurnPrompt(combinedPrompt, deliverableMessages));
     },

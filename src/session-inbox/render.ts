@@ -35,6 +35,11 @@ function formatTime(ms: number, timeZone: string): string {
   }).format(new Date(ms));
 }
 
+/** A field printed inside a block line: one line, whatever the producer stored. */
+function inline(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
 function quote(body: string): string[] {
   return body.split(/\r?\n/).map((line) => `  > ${line}`);
 }
@@ -53,14 +58,14 @@ export function renderInboxBlock(input: RenderInboxBlockInput): string {
     if (group.length === 0) continue;
     lines.push(`## ${GROUP_TITLES[kind]}`);
     for (const item of group) {
-      lines.push(`- ${formatTime(item.createdAt, timeZone)} [${item.sourceRef}] ${item.title}`);
+      lines.push(`- ${formatTime(item.createdAt, timeZone)} [${inline(item.sourceRef)}] ${inline(item.title)}`);
       lines.push(...quote(renderedInboxBody(item)));
     }
   }
   if (input.overflow > 0) {
     lines.push(
       `+${input.overflow} ${input.overflow === 1 ? "item mais novo ficou" : "itens mais novos ficaram"} para o próximo turno ` +
-        `(caixa da sessão ${input.targetSessionName}).`,
+        `(caixa da sessão ${inline(input.targetSessionName)}).`,
     );
   }
   return lines.join("\n");
