@@ -38,7 +38,7 @@ import {
   getDecision,
   listDecisions,
   recordDecisionAnswerSource,
-  setOpenDecisionScope,
+  settleAnsweredDecisionScope,
   supersedeDecisionRecord,
 } from "./store.js";
 import type { Decision, DecisionAsk, DecisionOrigin, DecisionScope } from "./types.js";
@@ -191,6 +191,21 @@ export async function askDecision(origin: DecisionOrigin, input: DecisionAsk) {
   return { decision: getDecision(result.decision.id)!, created: result.created };
 }
 
+/** A stored message's text: `content.text`, else its text blocks (the channel backend's shape). */
+export function chatMessageText(message: Pick<ChatMessageRecord, "content">): string {
+  const content = message.content;
+  if (typeof content?.text === "string") return content.text;
+  const blocks = Array.isArray(content?.blocks) ? (content.blocks as unknown[]) : [];
+  return blocks
+    .map((block) =>
+      block && typeof block === "object" && (block as { type?: unknown }).type === "text"
+        ? String((block as { text?: unknown }).text ?? "")
+        : "",
+    )
+    .filter(Boolean)
+    .join("\n");
+}
+
 /** A message's time in ms: provider time (read as seconds below 10^12), else ingestion time. */
 export function chatMessageTime(message: Pick<ChatMessageRecord, "providerTimestamp" | "createdAt">): number {
   const at = message.providerTimestamp;
@@ -243,9 +258,11 @@ export function resolveDecisionAnswerSource(
   const ref = messageRef.trim();
   if (!ref || decision.ownerType !== "human" || !decision.ownerId) return refuse();
   const ownerId = decision.ownerId;
+  // The current wording: a message sent before the question was last revised did not answer it.
+  const sourceSince = Math.max(decision.askedAt, decision.revisedAt);
   const eligible = (message: ChatMessageRecord): boolean => {
     if (message.actorType !== "contact" || message.contactId !== ownerId) return false;
-    if (chatMessageTime(message) < decision.askedAt) return false;
+    if (chatMessageTime(message) < sourceSince) return false;
     if (decision.origin.chatId && message.chatId === decision.origin.chatId) return true;
     return dbGetChat(message.chatId)?.chatType === "dm";
   };
@@ -255,13 +272,13 @@ export function resolveDecisionAnswerSource(
       ? [direct]
       : dbListChatMessagesByProviderId(ref, {
           contactId: ownerId,
-          since: decision.askedAt,
+          since: sourceSince,
           chatId: decision.origin.chatId,
         })
   ).filter(eligible);
   if (candidates.length !== 1) return refuse();
   const message = candidates[0]!;
-  const text = typeof message.content?.text === "string" ? message.content.text : "";
+  const text = chatMessageText(message);
   const cited = quote?.replace(/\s+/g, " ").trim() ?? "";
   let excerpt: string;
   if (cited) {
@@ -433,7 +450,6 @@ export async function answerDecision(
       .filter(Boolean)
       .join(" ");
     const provenance = subject ? `${who.actor} (${subject})` : who.actor;
-    setOpenDecisionScope(id, scope);
     const finish = () => {
       if (source)
         recordDecisionAnswerSource(
@@ -450,10 +466,11 @@ export async function answerDecision(
         ...who,
         actor: provenance,
       });
+      if (scope.type !== "origin") settleAnsweredDecisionScope(id, scope);
       finish();
       return answeredTask;
     }
-    const answered = answerDecisionRecord(id, text, provenance);
+    const answered = answerDecisionRecord(id, text, provenance, scope);
     finish();
     const { record, chat } = requireDecisionThread(current.origin);
     const deliveryId = `decision:${id}:answer:${answered.revision}`;

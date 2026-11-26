@@ -17,7 +17,8 @@ import {
   resolveDecisionOrigin,
   supersedeDecision,
 } from "./service.js";
-import { decisionWrite, getDecision, listDecisionsInForce } from "./store.js";
+import { answerDecisionRecord, decisionWrite, getDecision, listDecisionsInForce } from "./store.js";
+import { admitDecisionAnswer } from "./delivery.js";
 import { buildDecisionsInForceSection, refreshDecisionsForTurn } from "./prompt.js";
 import { parseDecisionScope } from "./model.js";
 import type { Decision, DecisionOrigin } from "./types.js";
@@ -466,5 +467,92 @@ describe("review follow-ups (#1030)", () => {
     const replaced = refreshDecisionsForTurn(input, changed.current);
     expect(replaced.block).toContain(next.id);
     expect(replaced.block).not.toContain(org.id);
+  });
+});
+
+describe("CodeRabbit follow-ups (#1030)", () => {
+  it("a source must not predate the current wording of the question", async () => {
+    const origin = await thread();
+    const decision = await ask(origin, "deploy");
+    decisionWrite((db) =>
+      runThreadMutation(db, "UPDATE decisions SET asked_at=asked_at-10000 WHERE id=?", decision.id),
+    );
+    const beforeRevision = ownerSays(`${decision.id} sim`, { providerTimestamp: decision.askedAt - 5000 });
+    const reasked = await runWithContext(caller(origin.sessionKey!), () =>
+      askDecision(origin, { key: "deploy", ask: "Pergunta nova?", ownerType: "human", ownerId: OWNER, blocks: true }),
+    );
+    expect(reasked.decision.revisedAt).toBeGreaterThan(reasked.decision.askedAt);
+    expect(() => resolveDecisionAnswerSource(reasked.decision, beforeRevision.id)).toThrow(
+      expect.objectContaining({ code: "DECISION_SOURCE_NOT_OWNER" }),
+    );
+    const after = ownerSays(`${decision.id} sim`);
+    expect(resolveDecisionAnswerSource(reasked.decision, after.id).messageId).toBe(after.id);
+  });
+
+  it("reads the owner's text from content blocks", async () => {
+    const decision = await ask(await thread(), "deploy");
+    const msg = dbUpsertChatMessage({
+      chatId: ownerDm().id,
+      channel: "slack",
+      instanceId: "fixture-slack",
+      providerMessageId: "m-blocks",
+      rawChatId: "D-owner",
+      actorType: "contact",
+      contactId: OWNER,
+      content: { blocks: [{ type: "text", text: `${decision.id} org` }] },
+    }).message;
+    expect(resolveDecisionAnswerSource(decision, msg.id)).toMatchObject({ namesDecision: true });
+  });
+
+  it("keeps the exact whitespace of an answer in the turn", async () => {
+    const origin = await thread();
+    const decision = await ask(origin, "pattern");
+    await answerDecision(decision.id, 'Use "^a  b$".\nSó isso.');
+    const section = buildDecisionsInForceSection({ agentId: "main", sessionKey: origin.sessionKey! })!;
+    expect(section).toContain(JSON.stringify('Use "^a  b$".\nSó isso.'));
+  });
+
+  it("an answer recorded without a checked scope stays in its origin, whatever was proposed", async () => {
+    const origin = await thread();
+    const proposed = await ask(origin, "deploy", "org");
+    const answered = decisionWrite(() => answerDecisionRecord(proposed.id, "Sim", "someone"));
+    expect(answered.scope).toEqual({ type: "origin", id: null });
+  });
+
+  it("a replaced decision's published answer is withdrawn and never admitted", async () => {
+    const origin = await thread();
+    const old = await operatorAnswer(origin, "old", "thread");
+    decisionWrite((db) =>
+      runThreadMutation(db, "UPDATE decision_deliveries SET status='published' WHERE decision_id=?", old.id),
+    );
+    const row = getDb()
+      .query("SELECT id,payload_json AS payload FROM decision_deliveries WHERE decision_id=? AND kind='answer'")
+      .get(old.id) as { id: string; payload: string };
+    const next = await operatorAnswer(origin, "next", "thread");
+    supersedeDecision(old.id, next.id);
+    expect(
+      (getDb().query("SELECT status FROM decision_deliveries WHERE id=?").get(row.id) as { status: string }).status,
+    ).toBe("superseded");
+    let handled = 0;
+    const session = getSession(origin.sessionKey!)!;
+    expect(
+      await admitDecisionAnswer(session.name ?? session.sessionKey, JSON.parse(row.payload), async () => {
+        handled += 1;
+      }),
+    ).toBe(true);
+    expect(handled).toBe(0);
+  });
+
+  it("decisions list filters by a normalized scope and by origin type", async () => {
+    const origin = await thread();
+    const agentScoped = await operatorAnswer(origin, "agent-main", "agent:main");
+    const inThread = await operatorAnswer(origin, "in-thread", "thread");
+    const { DecisionsCommands } = await import("../cli/commands/decisions.js");
+    const command = new DecisionsCommands();
+    const ids = async (scope: string) =>
+      (await command.list(undefined, undefined, true, scope, undefined, true)).decisions.map((d) => d.id);
+    expect(await ids("agent: main")).toEqual([agentScoped.id]);
+    expect(await ids("thread")).toEqual([inThread.id]);
+    expect(await ids("task")).toEqual([]);
   });
 });

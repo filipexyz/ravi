@@ -32,6 +32,8 @@ export interface Decision {
   ask: string;
   askedBy: string | null;
   askedAt: number;
+  /** When the current wording of the question was asked; a source must not predate it. */
+  revisedAt: number;
   answer: string | null;
   answeredBy: string | null;
   answeredAt: number | null;

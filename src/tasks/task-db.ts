@@ -767,6 +767,7 @@ function taskDecisionProjection(decision: Decision): TaskDecision {
   const {
     origin,
     revision: _revision,
+    revisedAt: _revisedAt,
     scope: _scope,
     sourceMessageId: _sourceMessageId,
     sourceExcerpt: _sourceExcerpt,

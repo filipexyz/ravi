@@ -22,10 +22,11 @@ function bound(text: string, max: number): string {
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
 
+/** Whitespace inside an answer is kept: JSON quoting carries newlines and exact spacing. */
 function boundAnswer(text: string): string {
-  const flat = text.replace(/\s+/g, " ").trim();
-  if (flat.length <= ANSWER_MAX) return flat;
-  return `${flat.slice(0, ANSWER_MAX)} [the answer continues; its full text was delivered to this thread when it was answered]`;
+  const answer = text.trim();
+  if (answer.length <= ANSWER_MAX) return answer;
+  return `${answer.slice(0, ANSWER_MAX)} [the answer continues; its full text was delivered to this thread when it was answered]`;
 }
 
 function renderDecision(decision: Decision): string {

@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "e83a9dd4aaf7cae4"
+    "version": "d3d7b1a8921cc684"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -76183,6 +76183,9 @@
                           ],
                           "type": "string"
                         },
+                        "revisedAt": {
+                          "type": "number"
+                        },
                         "revision": {
                           "type": "number"
                         },
@@ -76268,6 +76271,7 @@
                         "ask",
                         "askedBy",
                         "askedAt",
+                        "revisedAt",
                         "answer",
                         "answeredBy",
                         "answeredAt",
@@ -76560,6 +76564,9 @@
                           ],
                           "type": "string"
                         },
+                        "revisedAt": {
+                          "type": "number"
+                        },
                         "revision": {
                           "type": "number"
                         },
@@ -76645,6 +76652,7 @@
                         "ask",
                         "askedBy",
                         "askedAt",
+                        "revisedAt",
                         "answer",
                         "answeredBy",
                         "answeredAt",
@@ -76931,6 +76939,9 @@
                             ],
                             "type": "string"
                           },
+                          "revisedAt": {
+                            "type": "number"
+                          },
                           "revision": {
                             "type": "number"
                           },
@@ -77016,6 +77027,7 @@
                           "ask",
                           "askedBy",
                           "askedAt",
+                          "revisedAt",
                           "answer",
                           "answeredBy",
                           "answeredAt",
@@ -77269,6 +77281,9 @@
                           ],
                           "type": "string"
                         },
+                        "revisedAt": {
+                          "type": "number"
+                        },
                         "revision": {
                           "type": "number"
                         },
@@ -77354,6 +77369,7 @@
                         "ask",
                         "askedBy",
                         "askedAt",
+                        "revisedAt",
                         "answer",
                         "answeredBy",
                         "answeredAt",
@@ -77625,6 +77641,9 @@
                           ],
                           "type": "string"
                         },
+                        "revisedAt": {
+                          "type": "number"
+                        },
                         "revision": {
                           "type": "number"
                         },
@@ -77710,6 +77729,7 @@
                         "ask",
                         "askedBy",
                         "askedAt",
+                        "revisedAt",
                         "answer",
                         "answeredBy",
                         "answeredAt",
@@ -77977,6 +77997,9 @@
                           ],
                           "type": "string"
                         },
+                        "revisedAt": {
+                          "type": "number"
+                        },
                         "revision": {
                           "type": "number"
                         },
@@ -78062,6 +78085,7 @@
                         "ask",
                         "askedBy",
                         "askedAt",
+                        "revisedAt",
                         "answer",
                         "answeredBy",
                         "answeredAt",
@@ -78394,6 +78418,9 @@
                           ],
                           "type": "string"
                         },
+                        "revisedAt": {
+                          "type": "number"
+                        },
                         "revision": {
                           "type": "number"
                         },
@@ -78479,6 +78506,7 @@
                         "ask",
                         "askedBy",
                         "askedAt",
+                        "revisedAt",
                         "answer",
                         "answeredBy",
                         "answeredAt",

@@ -12976,6 +12976,7 @@ export type DecisionsAnswerReturn = {
     };
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
+    revisedAt: number;
     revision: number;
     scope: {
       id: string | null;
@@ -13034,6 +13035,7 @@ export type DecisionsAskReturn = {
     };
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
+    revisedAt: number;
     revision: number;
     scope: {
       id: string | null;
@@ -13090,6 +13092,7 @@ export type DecisionsListReturn = {
     };
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
+    revisedAt: number;
     revision: number;
     scope: {
       id: string | null;
@@ -13142,6 +13145,7 @@ export type DecisionsResolveDeliveryReturn = {
     };
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
+    revisedAt: number;
     revision: number;
     scope: {
       id: string | null;
@@ -13194,6 +13198,7 @@ export type DecisionsRetryReturn = {
     };
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
+    revisedAt: number;
     revision: number;
     scope: {
       id: string | null;
@@ -13245,6 +13250,7 @@ export type DecisionsShowReturn = {
     };
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
+    revisedAt: number;
     revision: number;
     scope: {
       id: string | null;
@@ -13309,6 +13315,7 @@ export type DecisionsSupersedeReturn = {
     };
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
+    revisedAt: number;
     revision: number;
     scope: {
       id: string | null;

@@ -420,7 +420,7 @@ export type TaskDecisionOwnerType = DecisionOwnerType;
 /** The task surface of a decision; scope, source and replacement stay on `ravi decisions`. */
 export type TaskDecision = Omit<
   Decision,
-  "origin" | "revision" | "scope" | "sourceMessageId" | "sourceExcerpt" | "supersededBy"
+  "origin" | "revision" | "revisedAt" | "scope" | "sourceMessageId" | "sourceExcerpt" | "supersededBy"
 > & { taskId: string };
 
 export interface TaskDecisionInput {

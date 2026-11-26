@@ -68555,6 +68555,9 @@ export const DecisionsAnswerReturnSchema = {
           ],
           "type": "string"
         },
+        "revisedAt": {
+          "type": "number"
+        },
         "revision": {
           "type": "number"
         },
@@ -68640,6 +68643,7 @@ export const DecisionsAnswerReturnSchema = {
         "ask",
         "askedBy",
         "askedAt",
+        "revisedAt",
         "answer",
         "answeredBy",
         "answeredAt",
@@ -68904,6 +68908,9 @@ export const DecisionsAskReturnSchema = {
           ],
           "type": "string"
         },
+        "revisedAt": {
+          "type": "number"
+        },
         "revision": {
           "type": "number"
         },
@@ -68989,6 +68996,7 @@ export const DecisionsAskReturnSchema = {
         "ask",
         "askedBy",
         "askedAt",
+        "revisedAt",
         "answer",
         "answeredBy",
         "answeredAt",
@@ -69247,6 +69255,9 @@ export const DecisionsListReturnSchema = {
             ],
             "type": "string"
           },
+          "revisedAt": {
+            "type": "number"
+          },
           "revision": {
             "type": "number"
           },
@@ -69332,6 +69343,7 @@ export const DecisionsListReturnSchema = {
           "ask",
           "askedBy",
           "askedAt",
+          "revisedAt",
           "answer",
           "answeredBy",
           "answeredAt",
@@ -69557,6 +69569,9 @@ export const DecisionsResolveDeliveryReturnSchema = {
           ],
           "type": "string"
         },
+        "revisedAt": {
+          "type": "number"
+        },
         "revision": {
           "type": "number"
         },
@@ -69642,6 +69657,7 @@ export const DecisionsResolveDeliveryReturnSchema = {
         "ask",
         "askedBy",
         "askedAt",
+        "revisedAt",
         "answer",
         "answeredBy",
         "answeredAt",
@@ -69885,6 +69901,9 @@ export const DecisionsRetryReturnSchema = {
           ],
           "type": "string"
         },
+        "revisedAt": {
+          "type": "number"
+        },
         "revision": {
           "type": "number"
         },
@@ -69970,6 +69989,7 @@ export const DecisionsRetryReturnSchema = {
         "ask",
         "askedBy",
         "askedAt",
+        "revisedAt",
         "answer",
         "answeredBy",
         "answeredAt",
@@ -70209,6 +70229,9 @@ export const DecisionsShowReturnSchema = {
           ],
           "type": "string"
         },
+        "revisedAt": {
+          "type": "number"
+        },
         "revision": {
           "type": "number"
         },
@@ -70294,6 +70317,7 @@ export const DecisionsShowReturnSchema = {
         "ask",
         "askedBy",
         "askedAt",
+        "revisedAt",
         "answer",
         "answeredBy",
         "answeredAt",
@@ -70598,6 +70622,9 @@ export const DecisionsSupersedeReturnSchema = {
           ],
           "type": "string"
         },
+        "revisedAt": {
+          "type": "number"
+        },
         "revision": {
           "type": "number"
         },
@@ -70683,6 +70710,7 @@ export const DecisionsSupersedeReturnSchema = {
         "ask",
         "askedBy",
         "askedAt",
+        "revisedAt",
         "answer",
         "answeredBy",
         "answeredAt",

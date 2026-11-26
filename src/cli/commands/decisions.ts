@@ -5,7 +5,13 @@ import { contractDryRun } from "../agent-contract.js";
 import { CliExpectedError } from "../expected-error.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { strictCliOffsetPaginationSchema } from "../return-schemas.js";
-import { DecisionError, formatDecisionScope, parseDecisionOwner, parseDecisionScope } from "../../decisions/model.js";
+import {
+  DecisionError,
+  formatDecisionScope,
+  parseDecisionOwner,
+  parseDecisionScope,
+  sameDecisionScope,
+} from "../../decisions/model.js";
 import { validateDecisionAsk, validateDecisionAnswer } from "../../decisions/store.js";
 import {
   resolveDecisionOrigin,
@@ -43,6 +49,7 @@ export const decisionSchema = z.object({
   ask: z.string(),
   askedBy: z.string().nullable(),
   askedAt: z.number(),
+  revisedAt: z.number(),
   answer: z.string().nullable(),
   answeredBy: z.string().nullable(),
   answeredAt: z.number().nullable(),
@@ -275,14 +282,18 @@ export class DecisionsCommands {
   ) {
     return run(() => {
       const scopeFilter = scope !== undefined ? scope.trim() : undefined;
-      if (scopeFilter !== undefined && !["thread", "task"].includes(scopeFilter)) parseDecisionScope(scopeFilter);
+      // `thread` and `task` filter origin decisions by origin type; anything else is a parsed scope.
+      const originFilter = scopeFilter === "thread" || scopeFilter === "task" ? scopeFilter : undefined;
+      const parsedFilter =
+        scopeFilter !== undefined && originFilter === undefined ? parseDecisionScope(scopeFilter) : undefined;
       const since = answeredSince !== undefined ? parseSince(answeredSince) : undefined;
       const items = visibleDecisions(
         task || thread ? resolveDecisionOrigin(task, thread) : undefined,
         !all && since === undefined,
       ).filter(
         (d) =>
-          (scopeFilter === undefined || formatDecisionScope(d) === scopeFilter) &&
+          (originFilter === undefined || (d.scope.type === "origin" && d.origin.type === originFilter)) &&
+          (parsedFilter === undefined || sameDecisionScope(d.scope, parsedFilter)) &&
           (since === undefined || (d.answeredAt !== null && d.answeredAt >= since)),
       );
       const page = paginateCliItems(items, { limit, offset });

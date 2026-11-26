@@ -50,6 +50,7 @@ export function migrateDecisions(db: Database): void {
     const added: Array<[string, string]> = [
       ["scope_type", "TEXT NOT NULL DEFAULT 'origin' CHECK(scope_type IN ('origin','agent','project','org'))"],
       ["scope_id", "TEXT"],
+      ["revised_at", "INTEGER"],
       ["source_message_id", "TEXT"],
       ["source_excerpt", "TEXT"],
       ["superseded_by", "TEXT"],

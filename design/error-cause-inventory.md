@@ -693,7 +693,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/db.ts | 54 | triaged-follow-up | catch-without-binding | src/cli/commands/db.ts:ecaa7a4be44ef9cca7f3dd7d |
 | cli | src/cli/commands/db.ts | 81 | triaged-follow-up | catch-without-binding | src/cli/commands/db.ts:79cdb8bf8b319d593d64cdde |
 | cli | src/cli/commands/db.ts | 97 | triaged-follow-up | surface-bypasses-constructor | src/cli/commands/db.ts:0fa4c8eccad90392c776790f |
-| cli | src/cli/commands/decisions.ts | 104 | fixed | binding retained / no recognized error surface | src/cli/commands/decisions.ts:fb10d65f4b6cd0f39872adfa |
+| cli | src/cli/commands/decisions.ts | 111 | fixed | binding retained / no recognized error surface | src/cli/commands/decisions.ts:fb10d65f4b6cd0f39872adfa |
 | cli | src/cli/commands/devin.ts | 76 | triaged-follow-up | cause-not-forwarded-at-surface | src/cli/commands/devin.ts:089371c20205645d5a23704b |
 | cli | src/cli/commands/doctor.ts | 416 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:c31755850b556ad462559083 |
 | cli | src/cli/commands/doctor.ts | 420 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:dc59537e08e6eba4ce2691ff |
@@ -1273,12 +1273,12 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | db | src/db/write-retry.ts | 192 | fixed | binding retained / no recognized error surface | src/db/write-retry.ts:84f503ea348ad1ef99f7285a |
 | db | src/db/write-retry.ts | 195 | triaged-follow-up | catch-without-binding | src/db/write-retry.ts:2678de187797463c8ed583e4 |
 | db | src/db/write-retry.ts | 202 | fixed | binding retained / no recognized error surface | src/db/write-retry.ts:84062c12fd2f8003f2079c47 |
-| decisions | src/decisions/delivery.ts | 148 | fixed | binding retained / no recognized error surface | src/decisions/delivery.ts:97fe4c572fb465b96175a072 |
-| decisions | src/decisions/delivery.ts | 173 | triaged-follow-up | catch-without-binding | src/decisions/delivery.ts:7b0a35781f7aa52edcfabc1d |
-| decisions | src/decisions/delivery.ts | 230 | fixed | binding retained / no recognized error surface | src/decisions/delivery.ts:036f5bdac76af5c3a7ff7485 |
-| decisions | src/decisions/prompt.ts | 53 | fixed | binding retained / no recognized error surface | src/decisions/prompt.ts:e36095d5d6b570a28b2547b2 |
+| decisions | src/decisions/delivery.ts | 151 | fixed | binding retained / no recognized error surface | src/decisions/delivery.ts:97fe4c572fb465b96175a072 |
+| decisions | src/decisions/delivery.ts | 176 | triaged-follow-up | catch-without-binding | src/decisions/delivery.ts:7b0a35781f7aa52edcfabc1d |
+| decisions | src/decisions/delivery.ts | 235 | fixed | binding retained / no recognized error surface | src/decisions/delivery.ts:036f5bdac76af5c3a7ff7485 |
+| decisions | src/decisions/prompt.ts | 54 | fixed | binding retained / no recognized error surface | src/decisions/prompt.ts:e36095d5d6b570a28b2547b2 |
 | decisions | src/decisions/service.ts | 134 | triaged-follow-up | catch-without-binding | src/decisions/service.ts:9976a2926e156eebf70c85c0 |
-| decisions | src/decisions/store.ts | 382 | fixed | binding retained / no recognized error surface | src/decisions/store.ts:9d27ea0e13e9df13e080e49b |
+| decisions | src/decisions/store.ts | 399 | fixed | binding retained / no recognized error surface | src/decisions/store.ts:9d27ea0e13e9df13e080e49b |
 | devin | src/devin/client.ts | 172 | triaged-follow-up | catch-without-binding | src/devin/client.ts:f9738c424b2304727de29663 |
 | devin | src/devin/store.ts | 30 | fixed | binding retained / no recognized error surface | src/devin/store.ts:e4170fde61eed61beeec45e0 |
 | devin | src/devin/store.ts | 33 | no-cause | Cleanup must not replace the setup error rethrown below; the handle was never cached. | src/devin/store.ts:b40d3a30c5dc4e85f5659411 |

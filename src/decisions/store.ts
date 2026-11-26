@@ -22,6 +22,7 @@ export interface DecisionRow {
   answered_by: string | null;
   answered_at: number | null;
   blocks: number;
+  revised_at: number | null;
   scope_type: DecisionScope["type"] | null;
   scope_id: string | null;
   source_message_id: string | null;
@@ -44,6 +45,7 @@ export function decisionFromRow(row: DecisionRow): Decision {
     ask: row.ask,
     askedBy: row.asked_by,
     askedAt: row.asked_at,
+    revisedAt: row.revised_at ?? row.asked_at,
     answer: row.answer,
     answeredBy: row.answered_by,
     answeredAt: row.answered_at,
@@ -139,7 +141,7 @@ export function askDecisionRecord(origin: DecisionOrigin, raw: DecisionAsk): { d
     if (existing) {
       runThreadMutation(
         db,
-        "UPDATE decisions SET ask=?,owner_type=?,owner_id=?,blocks=?,scope_type=?,scope_id=?,updated_at=?,revision=revision+1 WHERE id=?",
+        "UPDATE decisions SET ask=?,owner_type=?,owner_id=?,blocks=?,scope_type=?,scope_id=?,revised_at=?,updated_at=?,revision=revision+1 WHERE id=?",
         input.ask,
         input.ownerType!,
         input.ownerId ?? null,
@@ -147,13 +149,14 @@ export function askDecisionRecord(origin: DecisionOrigin, raw: DecisionAsk): { d
         input.scope!.type,
         input.scope!.id,
         now,
+        now,
         id,
       );
     } else {
       runThreadMutation(
         db,
-        `INSERT INTO decisions(id,origin_type,origin_id,chat_id,session_key,key,status,owner_type,owner_id,ask,asked_by,asked_at,blocks,scope_type,scope_id,created_at,updated_at)
-        VALUES (?,?,?,?,?,?,'open',?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO decisions(id,origin_type,origin_id,chat_id,session_key,key,status,owner_type,owner_id,ask,asked_by,asked_at,revised_at,blocks,scope_type,scope_id,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,'open',?,?,?,?,?,?,?,?,?,?,?)`,
         id,
         origin.type,
         origin.id,
@@ -164,6 +167,7 @@ export function askDecisionRecord(origin: DecisionOrigin, raw: DecisionAsk): { d
         input.ownerId ?? null,
         input.ask,
         input.actor ?? null,
+        now,
         now,
         input.blocks ? 1 : 0,
         input.scope!.type,
@@ -179,7 +183,18 @@ export function askDecisionRecord(origin: DecisionOrigin, raw: DecisionAsk): { d
   });
 }
 
-export function answerDecisionRecord(id: string, raw: string, actor?: string): Decision {
+const ORIGIN_SCOPE: DecisionScope = { type: "origin", id: null };
+
+/**
+ * Record the answer. The scope it settles is explicit: a caller that does not pass one leaves the decision in its
+ * origin, so a proposed wide scope never takes effect without the path that checked its authority.
+ */
+export function answerDecisionRecord(
+  id: string,
+  raw: string,
+  actor?: string,
+  scope: DecisionScope = ORIGIN_SCOPE,
+): Decision {
   const answer = validateDecisionAnswer(raw);
   return decisionWrite((db) => {
     const old = getDecision(id);
@@ -188,10 +203,12 @@ export function answerDecisionRecord(id: string, raw: string, actor?: string): D
     const now = Date.now();
     runThreadMutation(
       db,
-      "UPDATE decisions SET status='answered',answer=?,answered_by=?,answered_at=?,updated_at=?,revision=revision+1 WHERE id=? AND status='open'",
+      "UPDATE decisions SET status='answered',answer=?,answered_by=?,answered_at=?,scope_type=?,scope_id=?,updated_at=?,revision=revision+1 WHERE id=? AND status='open'",
       answer,
       actor ?? null,
       now,
+      scope.type,
+      scope.id,
       now,
       id,
     );
@@ -235,11 +252,11 @@ export function recordDecisionAnswerSource(
   appendHistory(decision, "answer-source", actor, { decisionId: decision.id, ...source });
 }
 
-/** Settle the scope of an open decision as part of answering it; the answer's revision carries it. */
-export function setOpenDecisionScope(id: string, scope: DecisionScope): void {
+/** The task path answers through the task projection (origin scope); the checked scope is settled right after. */
+export function settleAnsweredDecisionScope(id: string, scope: DecisionScope): void {
   runThreadMutation(
     getDb(),
-    "UPDATE decisions SET scope_type=?,scope_id=? WHERE id=? AND status='open'",
+    "UPDATE decisions SET scope_type=?,scope_id=? WHERE id=? AND status='answered'",
     scope.type,
     scope.id,
     id,
@@ -283,7 +300,7 @@ export function supersedeDecisionRecord(oldId: string, newId: string, actor: str
     // An answer not yet handed to its thread is withdrawn: the waiting work must not resume on a replaced outcome.
     runThreadMutation(
       db,
-      "UPDATE decision_deliveries SET status='superseded' WHERE decision_id=? AND kind='answer' AND status IN ('pending','failed')",
+      "UPDATE decision_deliveries SET status='superseded' WHERE decision_id=? AND kind='answer' AND status IN ('pending','failed','published')",
       oldId,
     );
     const superseded = getDecision(oldId)!;

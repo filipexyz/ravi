@@ -91,7 +91,10 @@ async function deliver(candidate: DeliveryRow, deps: DecisionDeliveryDeps): Prom
   try {
     const decision = getDecision(row.decisionId)!;
     const { record, child, chat } = requireDecisionThread(decision.origin);
-    if (row.kind === "question" && (decision.status !== "open" || row.revision !== decision.revision)) {
+    if (
+      (row.kind === "question" && (decision.status !== "open" || row.revision !== decision.revision)) ||
+      (row.kind === "answer" && decision.status === "superseded")
+    ) {
       finish(row.id, claim, "superseded");
       return;
     }
@@ -212,6 +215,8 @@ export async function admitDecisionAnswer(
       throw new DecisionError("DECISION_ORIGIN_MISMATCH", "Decision delivery envelope differs.");
     }
     if (["delivered", "accepting", "uncertain"].includes(row.status)) return null;
+    // A replaced decision's answer never resumes work, even when its envelope was already published.
+    if (row.status === "superseded" || decision.status === "superseded") return null;
     const claim = randomUUID();
     runThreadMutation(
       db,

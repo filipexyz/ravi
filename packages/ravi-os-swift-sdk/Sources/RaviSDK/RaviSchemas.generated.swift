@@ -69217,6 +69217,9 @@ public enum RaviSchemas {
             ],
             "type": "string"
           },
+          "revisedAt": {
+            "type": "number"
+          },
           "revision": {
             "type": "number"
           },
@@ -69302,6 +69305,7 @@ public enum RaviSchemas {
           "ask",
           "askedBy",
           "askedAt",
+          "revisedAt",
           "answer",
           "answeredBy",
           "answeredAt",
@@ -69568,6 +69572,9 @@ public enum RaviSchemas {
             ],
             "type": "string"
           },
+          "revisedAt": {
+            "type": "number"
+          },
           "revision": {
             "type": "number"
           },
@@ -69653,6 +69660,7 @@ public enum RaviSchemas {
           "ask",
           "askedBy",
           "askedAt",
+          "revisedAt",
           "answer",
           "answeredBy",
           "answeredAt",
@@ -69913,6 +69921,9 @@ public enum RaviSchemas {
               ],
               "type": "string"
             },
+            "revisedAt": {
+              "type": "number"
+            },
             "revision": {
               "type": "number"
             },
@@ -69998,6 +70009,7 @@ public enum RaviSchemas {
             "ask",
             "askedBy",
             "askedAt",
+            "revisedAt",
             "answer",
             "answeredBy",
             "answeredAt",
@@ -70225,6 +70237,9 @@ public enum RaviSchemas {
             ],
             "type": "string"
           },
+          "revisedAt": {
+            "type": "number"
+          },
           "revision": {
             "type": "number"
           },
@@ -70310,6 +70325,7 @@ public enum RaviSchemas {
           "ask",
           "askedBy",
           "askedAt",
+          "revisedAt",
           "answer",
           "answeredBy",
           "answeredAt",
@@ -70555,6 +70571,9 @@ public enum RaviSchemas {
             ],
             "type": "string"
           },
+          "revisedAt": {
+            "type": "number"
+          },
           "revision": {
             "type": "number"
           },
@@ -70640,6 +70659,7 @@ public enum RaviSchemas {
           "ask",
           "askedBy",
           "askedAt",
+          "revisedAt",
           "answer",
           "answeredBy",
           "answeredAt",
@@ -70881,6 +70901,9 @@ public enum RaviSchemas {
             ],
             "type": "string"
           },
+          "revisedAt": {
+            "type": "number"
+          },
           "revision": {
             "type": "number"
           },
@@ -70966,6 +70989,7 @@ public enum RaviSchemas {
           "ask",
           "askedBy",
           "askedAt",
+          "revisedAt",
           "answer",
           "answeredBy",
           "answeredAt",
@@ -71272,6 +71296,9 @@ public enum RaviSchemas {
             ],
             "type": "string"
           },
+          "revisedAt": {
+            "type": "number"
+          },
           "revision": {
             "type": "number"
           },
@@ -71357,6 +71384,7 @@ public enum RaviSchemas {
           "ask",
           "askedBy",
           "askedAt",
+          "revisedAt",
           "answer",
           "answeredBy",
           "answeredAt",
