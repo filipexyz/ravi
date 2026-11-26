@@ -122,6 +122,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/db/runtime-state.ts": ["src/db/schema-owner.test.ts"],
   "src/db/state-boundary.ts": ["src/router/state-boundary.test.ts"],
   "src/router/": [
+    // session_asks: an open Ask lets the asked session answer the asker, and only answer.
+    "src/sessions/ask-grants.test.ts",
     // Daemon/consumer initialization exercises the router's journal/schema boundary.
     "src/db/schema-owner.test.ts",
     "src/db/journal-mode-retry.test.ts",
