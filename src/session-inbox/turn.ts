@@ -10,7 +10,12 @@
 
 import { classifyTurnProvenance, type TurnProvenanceInput } from "../runtime/turn-provenance.js";
 import { renderInboxBlock } from "./render.js";
-import { commitInboxReservation, releaseInboxReservation, reserveInboxItems } from "./store.js";
+import {
+  commitInboxReservation,
+  markInboxReservationSent,
+  releaseInboxReservation,
+  reserveInboxItems,
+} from "./store.js";
 
 export const INBOX_DRAIN_ON_HEARTBEAT_SETTING = "inbox.drainOnHeartbeat";
 export const INBOX_MAX_ITEMS_PER_TURN = 30;
@@ -54,9 +59,18 @@ export interface InboxTurnBlock {
   reason: InboxDrainReason;
   itemIds: string[];
   overflow: number;
+  /** The prompt was handed to the provider: the items are marked sent, still reserved. */
   commit: () => void;
+  /** The turn never started: the items return to pending. */
   release: (reason: string) => void;
+  /**
+   * The turn ended. Only a turn that completed (not interrupted, not aborted) delivers the items;
+   * any other end returns them to pending, so an aborted turn repeats them instead of losing them.
+   */
+  finish: (outcome: InboxTurnOutcome) => void;
 }
+
+export type InboxTurnOutcome = "completed" | "aborted";
 
 export interface PrepareInboxTurnInput {
   sessionName: string;
@@ -106,10 +120,14 @@ export function prepareInboxTurnBlock(input: PrepareInboxTurnInput): InboxTurnBl
     itemIds: reservation.items.map((item) => item.id),
     overflow: reservation.overflow,
     commit: () => {
-      commitInboxReservation(reservation.turnKey);
+      markInboxReservationSent(reservation.turnKey);
     },
     release: () => {
       releaseInboxReservation(reservation.turnKey);
+    },
+    finish: (outcome) => {
+      if (outcome === "completed") commitInboxReservation(reservation.turnKey);
+      else releaseInboxReservation(reservation.turnKey);
     },
   };
 }

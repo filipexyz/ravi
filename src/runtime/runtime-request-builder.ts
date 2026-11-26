@@ -38,6 +38,7 @@ import {
   INBOX_DRAIN_ON_HEARTBEAT_SETTING,
   type InboxTurnBlock,
   type InboxTurnMessage,
+  type InboxTurnOutcome,
   prepareInboxTurnBlock,
 } from "../session-inbox/turn.js";
 import {
@@ -197,6 +198,27 @@ export function composeInboxWithTurnPrompt(
       }
     },
   };
+}
+
+/** How a turn that carried an inbox block ended: only a clean end delivers the items. */
+export function inboxTurnOutcome(state: { interrupted: boolean; aborted: boolean }): InboxTurnOutcome {
+  return state.interrupted || state.aborted ? "aborted" : "completed";
+}
+
+/** Settles an inbox block at the end of its turn. Never throws: a failure is logged and counted. */
+export function settleInboxTurn(
+  inbox: Pick<InboxTurnBlock, "finish">,
+  state: { interrupted: boolean; aborted: boolean },
+): void {
+  try {
+    inbox.finish(inboxTurnOutcome(state));
+  } catch (error) {
+    inboxRenderFailures += 1;
+    runtimeRequestLog.warn("Session inbox settlement failed; a stale reservation returns the items later", {
+      failures: inboxRenderFailures,
+      error,
+    });
+  }
 }
 
 class RuntimeCrashRecoveryApprovalOwnershipChangedError extends Error {
@@ -917,6 +939,15 @@ async function buildRuntimeStartRequestInternal(
   };
   // Set by transformTurnPrompt and read by the trace of the same turn.
   let turnSignals: RuntimeTraceAdapterRequestInput["signals"] = null;
+  // The inbox block of the turn in flight, settled when the turn ends (runtime/session-inbox).
+  let currentInboxTurn: InboxTurnBlock | null = null;
+  // A release before the turn starts settles the block once; afterTurnEnd must not settle it again.
+  const wrapInboxRelease =
+    (inbox: InboxTurnBlock) =>
+    (reason: string): void => {
+      if (currentInboxTurn && currentInboxTurn.itemIds === inbox.itemIds) currentInboxTurn = null;
+      inbox.release(reason);
+    };
   const traceTurnStart = async (input: { combinedPrompt: string; deliverableMessages: RuntimeUserMessage[] }) => {
     // A restored retry can expire before its first handoff. Its startup lease
     // is then abandoned by the host; a successor must reserve its own attempt.
@@ -1280,13 +1311,24 @@ async function buildRuntimeStartRequestInternal(
     afterTurnEnd: () => {
       stopActiveContextLease?.();
       stopActiveContextLease = undefined;
+      // The inbox block is confirmed only by a turn that completed (runtime/session-inbox).
+      const inboxTurn = currentInboxTurn;
+      currentInboxTurn = null;
+      if (inboxTurn) {
+        settleInboxTurn(inboxTurn, {
+          interrupted: streamingSession.interrupted === true,
+          aborted: streamingSession.abortController.signal.aborted,
+        });
+      }
     },
     transformTurnPrompt: ({ combinedPrompt, deliverableMessages }) => {
       // Deferred notices open the turn that may drain them (runtime/session-inbox). They become
       // part of the current request, so a recovered context still wraps them.
       const inbox = prepareInboxForTurn(sessionName, deliverableMessages, dbSessionKey ?? null);
       if (inbox) combinedPrompt = `${inbox.block}\n\n${combinedPrompt}`;
-      return composeInboxWithTurnPrompt(inbox, applySignalsToTurnPrompt(combinedPrompt, deliverableMessages));
+      currentInboxTurn = inbox ? { ...inbox, release: wrapInboxRelease(inbox) } : null;
+      const inboxForTurn = currentInboxTurn;
+      return composeInboxWithTurnPrompt(inboxForTurn, applySignalsToTurnPrompt(combinedPrompt, deliverableMessages));
     },
     traceTurnStart,
   });

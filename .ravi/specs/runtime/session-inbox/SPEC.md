@@ -43,7 +43,8 @@ own turn, instead of one woken turn per notice.
 - Only the session's owner drains the inbox. A human turn drains it only when its chat is the
   owner's own direct chat, resolved from the platform identity of that chat (`dmContactForChat`:
   a direct chat whose single participant still owns the identity) to a contact tagged
-  `permission-owner`. A contact id written in the prompt, the actor type alone or the text MUST
+  `permission-owner`. Exactly one contact carries the tag, as Knowledge requires; with none or
+  more than one, nobody drains (fail closed). A contact id written in the prompt, the actor type alone or the text MUST
   NOT grant it. A group or channel turn never drains, even from the owner. A turn that also
   carries a message from any other person MUST NOT drain (fail closed), so a third party in a
   shared session never sees the block.
@@ -53,10 +54,12 @@ own turn, instead of one woken turn per notice.
 - Items are reserved for the turn before the block is rendered, delivered when the prompt reaches
   the provider, and returned to `pending` when the turn never starts. A reservation older than
   `INBOX_STALE_RESERVATION_MS` MUST return to `pending` on the next reservation of that session.
-- Delivery is at least once. An item is marked delivered when the prompt reaches the provider; if
-  the process dies after the handoff and before that mark, the stale reservation returns the item
-  to `pending` and a later turn shows it again. There is no other deduplication: each line carries
-  the time and source, so a repeated notice is recognisable. It is never lost.
+- Delivery is at least once and an item is never lost. Handing the prompt to the provider only
+  marks the items sent (`sent_at`); they stay `reserved`. They become `delivered` only when the turn
+  that carried them completes, not interrupted and not aborted. A turn interrupted or aborted after
+  the send returns them to `pending`, and a later draining turn shows them again; a process that dies
+  leaves a stale reservation that the next reservation returns to `pending`. There is no other
+  deduplication: each line carries the time and source, so a repeated notice is recognisable.
 - An item leaves `pending` only by delivery or by an explicit `supersede_key`: a newer item with
   the same key supersedes the older pending one, and the superseded row is kept. A reserved item
   MUST NOT be superseded.
@@ -65,15 +68,22 @@ own turn, instead of one woken turn per notice.
   block MUST say how many items were left.
 - Source text is data. Every body line MUST be quoted in the block, and every field printed inside a
   block line (title, source ref, session name) MUST be one line, so no line of a notice can pass for
-  a `[System]` line. The block has exactly one `[System]` line. The block carries no authority: the turn
+  a `[System]` line. Every break a reader may honour splits quoted lines: CRLF, LF, a lone CR,
+  U+0085, U+2028 and U+2029. The block has exactly one `[System]` line. The block carries no authority: the turn
   that drains it keeps the authority of the person who sent the human message.
 - The inbox is channel-free. Slack, WhatsApp and other adapters reach it only through producers;
   the core never decides by channel.
 - A render or storage failure MUST NOT break the turn: the turn continues without the block, the
   items stay `pending`, and the failure is logged and counted.
 
-## Scope of the first release
+## Sources
 
-No producer writes to the inbox yet. Moving thread progress and thread results to `deferred`, the
-`--delivery`/`--report-mode` flags and an operator command to list the inbox come in the next
-releases (`outputs/desenho-entrega-adiada.md`, plan in section 5).
+The core decides the mode (`src/session-inbox/policy.ts`); a channel adapter only follows it.
+
+- Thread notices to a parent session listed in `inbox.threadNotices.sessions` (comma separated
+  session names or keys; empty, the default, keeps everything immediate): a progress report without
+  `--awaiting` and a thread result are `deferred`, with one pending item per thread (a newer
+  progress or the result supersedes the older pending one). A report with `--awaiting`, a thread
+  that needs attention and a turn that ended without returning stay `now`.
+- Every other producer (cron and trigger child runs, observers, handoff reminders) stays `now`
+  until its own release.

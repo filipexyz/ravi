@@ -49,6 +49,8 @@ export interface InboxItem {
   reservedAt: number | null;
   deliveredAt: number | null;
   supersededBy: string | null;
+  /** When the prompt carrying the item was handed to the provider; null until then. */
+  sentAt?: number | null;
 }
 
 export class InboxUsageError extends Error {
@@ -77,11 +79,18 @@ export function ensureInboxSchema(): void {
       reserved_turn TEXT,
       reserved_at INTEGER,
       delivered_at INTEGER,
-      superseded_by TEXT
+      superseded_by TEXT,
+      sent_at INTEGER
     );
     CREATE INDEX IF NOT EXISTS idx_session_inbox_target_state
       ON session_inbox(target_session_name, state, created_at);
   `);
+  try {
+    getDb().exec("ALTER TABLE session_inbox ADD COLUMN sent_at INTEGER");
+  } catch (error) {
+    // The column already exists (a database created after it was added): nothing to do.
+    if (!/duplicate column/i.test(String(error))) throw error;
+  }
   schemaPath = path;
 }
 
@@ -100,6 +109,7 @@ function rowToItem(row: Record<string, unknown>): InboxItem {
     reservedAt: row.reserved_at == null ? null : Number(row.reserved_at),
     deliveredAt: row.delivered_at == null ? null : Number(row.delivered_at),
     supersededBy: (row.superseded_by as string | null) ?? null,
+    sentAt: row.sent_at == null ? null : Number(row.sent_at),
   };
 }
 
@@ -117,9 +127,9 @@ export function enqueueInboxItem(input: InboxItemInput): InboxItem {
     throw new InboxUsageError(`Unknown sourceKind: ${String(input.sourceKind)}`);
   }
   // One line, like the title: the source ref is printed inside the block line.
-  const sourceRef = requireText(input.sourceRef, "sourceRef").replace(/\s+/g, " ");
+  const sourceRef = requireText(input.sourceRef, "sourceRef").replace(/[\s\u0085]+/g, " ");
   // The title is one line in the rendered block: no line of it may pass for a line of the block.
-  const title = requireText(input.title, "title").replace(/\s+/g, " ");
+  const title = requireText(input.title, "title").replace(/[\s\u0085]+/g, " ");
   const rawBody = requireText(input.body, "body");
   const body =
     rawBody.length > INBOX_MAX_BODY_CHARS
@@ -199,7 +209,7 @@ export function reserveInboxItems(input: ReserveInboxInput): InboxReservation {
   let overflow = 0;
   db.transaction(() => {
     db.prepare(
-      `UPDATE session_inbox SET state = 'pending', reserved_turn = NULL, reserved_at = NULL
+      `UPDATE session_inbox SET state = 'pending', reserved_turn = NULL, reserved_at = NULL, sent_at = NULL
        WHERE target_session_name = ? AND state = 'reserved' AND reserved_at < ?`,
     ).run(input.targetSessionName, now - INBOX_STALE_RESERVATION_MS);
     const pending = (
@@ -240,7 +250,19 @@ export function reserveInboxItems(input: ReserveInboxInput): InboxReservation {
   return { turnKey, items, overflow };
 }
 
-/** The block reached the provider: the reserved items are delivered. */
+/**
+ * The prompt with the block was handed to the provider. The items stay `reserved`: a turn aborted
+ * after this point may never have shown them, so delivery is only confirmed when the turn ends.
+ */
+export function markInboxReservationSent(turnKey: string, now = Date.now()): number {
+  ensureInboxSchema();
+  const result = getDb()
+    .prepare("UPDATE session_inbox SET sent_at = ? WHERE reserved_turn = ? AND state = 'reserved'")
+    .run(now, turnKey);
+  return Number(result.changes ?? 0);
+}
+
+/** The turn that carried the block completed: the reserved items are delivered. */
 export function commitInboxReservation(turnKey: string, now = Date.now()): number {
   ensureInboxSchema();
   const result = getDb()
@@ -257,7 +279,7 @@ export function releaseInboxReservation(turnKey: string): number {
   ensureInboxSchema();
   const result = getDb()
     .prepare(
-      `UPDATE session_inbox SET state = 'pending', reserved_turn = NULL, reserved_at = NULL
+      `UPDATE session_inbox SET state = 'pending', reserved_turn = NULL, reserved_at = NULL, sent_at = NULL
        WHERE reserved_turn = ? AND state = 'reserved'`,
     )
     .run(turnKey);
@@ -281,7 +303,7 @@ export function renderedInboxBody(item: Pick<InboxItem, "id" | "body">): string 
 /** What one item adds to the rendered block: title, body as rendered, quote prefixes and labels. */
 export function renderedInboxItemBytes(item: Pick<InboxItem, "id" | "title" | "body" | "sourceRef">): number {
   const body = renderedInboxBody(item);
-  const lines = body.split(/\r?\n/).length;
+  const lines = body.split(/\r\n|[\n\r\u0085\u2028\u2029]/).length;
   return (
     Buffer.byteLength(item.title) +
     Buffer.byteLength(item.sourceRef) +

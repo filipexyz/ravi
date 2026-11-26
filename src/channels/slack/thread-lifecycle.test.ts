@@ -23,7 +23,9 @@ import {
 import { runGhFollowMaintenance } from "../../hooks/gh-follow-sweep.js";
 import { askDecisionRecord } from "../../decisions/store.js";
 import { dbCreateAgent } from "../../router/router-db.js";
-import { dbUpsertChat } from "../../router/router-db.js";
+import { dbSetSetting, dbUpsertChat } from "../../router/router-db.js";
+import { INBOX_THREAD_NOTICES_SETTING } from "../../session-inbox/policy.js";
+import { listInboxItems } from "../../session-inbox/store.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import {
   closeSlackThread,
@@ -680,6 +682,58 @@ describe("Slack thread lifecycle", () => {
         }),
       },
     ]);
+  });
+
+  it("defers progress and results to the parent's inbox when the parent opted in; awaiting stays immediate", async () => {
+    const fixture = seedPendingCreation();
+    const prompts: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const dependencies = {
+      publishPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {
+        prompts.push({ sessionName, payload });
+      }),
+      publishEvent: mock(async () => {}),
+    };
+    await finalizeSlackThreadCreation(fixture.requestId, dependencies);
+    prompts.length = 0;
+    const child = getSession(`ravi-parent:thread:${fixture.threadTs}`)!;
+    dbSetSetting(INBOX_THREAD_NOTICES_SETTING, "ravi-parent");
+
+    await reportSlackThreadProgress(child, "passo 1", dependencies);
+    await reportSlackThreadProgress(child, "passo 2", dependencies);
+    expect(prompts).toHaveLength(0);
+    let pending = listInboxItems({ targetSessionName: "ravi-parent", states: ["pending"] });
+    expect(pending.map((item) => item.body.split("\n")[0])).toEqual(["passo 2"]);
+
+    await reportSlackThreadProgress(child, "preciso de revisão", dependencies, { awaiting: true });
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]?.payload.prompt).toContain("preciso de revisão");
+
+    const closed = await closeSlackThread(child, "pronto", dependencies);
+    expect(closed.parentReturnDelivered).toBe(true);
+    expect(prompts).toHaveLength(1);
+    pending = listInboxItems({ targetSessionName: "ravi-parent", states: ["pending"] });
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.title).toContain("concluída");
+    expect(pending[0]?.body.split("\n")[0]).toBe("pronto");
+  });
+
+  it("keeps every notice immediate while the parent is not listed", async () => {
+    const fixture = seedPendingCreation();
+    const prompts: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const dependencies = {
+      publishPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {
+        prompts.push({ sessionName, payload });
+      }),
+      publishEvent: mock(async () => {}),
+    };
+    await finalizeSlackThreadCreation(fixture.requestId, dependencies);
+    prompts.length = 0;
+    const child = getSession(`ravi-parent:thread:${fixture.threadTs}`)!;
+    dbSetSetting(INBOX_THREAD_NOTICES_SETTING, "other-session");
+    await reportSlackThreadProgress(child, "passo 1", dependencies);
+    await closeSlackThread(child, "pronto", dependencies);
+    expect(prompts).toHaveLength(2);
+    expect(listInboxItems({ targetSessionName: "ravi-parent" })).toHaveLength(0);
   });
 
   it("preserves a pending parent completion when inbound reopens the thread", async () => {
