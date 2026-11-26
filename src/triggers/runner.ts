@@ -1018,6 +1018,7 @@ export class TriggerRunner {
         source,
         _trigger: true,
         _triggerId: trigger.id,
+        _triggerTopic: event.topic,
         _triggerAuthority: authority,
       });
     }
