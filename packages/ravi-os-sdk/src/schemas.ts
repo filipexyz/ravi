@@ -108107,7 +108107,16 @@ export const SessionsResetReturnSchema = {
 /** JSON Schema for the input body of `sessions.retained.list`. */
 export const SessionsRetainedListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of saved refusals to skip",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -108162,6 +108171,56 @@ export const SessionsRetainedListReturnSchema = {
       },
       "type": "array"
     },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
     "total": {
       "type": "number"
     },
@@ -108172,6 +108231,7 @@ export const SessionsRetainedListReturnSchema = {
   "required": [
     "ttlMinutes",
     "total",
+    "pagination",
     "items"
   ],
   "type": "object"

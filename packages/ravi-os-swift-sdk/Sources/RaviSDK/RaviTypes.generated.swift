@@ -29583,19 +29583,46 @@ public struct SessionsResetOptions: Codable, Sendable {
 
 public typealias SessionsResetReturn = [String: RaviJSON]
 
+public struct SessionsRetainedListOptions: Codable, Sendable {
+  public var limit: String?
+  public var offset: String?
+
+  public init(limit: String? = nil, offset: String? = nil) {
+    self.limit = limit
+    self.offset = offset
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case limit = "limit"
+    case offset = "offset"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
 public struct SessionsRetainedListReturn: Codable, Sendable {
   public var items: [RaviJSON]
+  public var pagination: RaviJSON
   public var total: Double
   public var ttlMinutes: Double
 
-  public init(items: [RaviJSON], total: Double, ttlMinutes: Double) {
+  public init(items: [RaviJSON], pagination: RaviJSON, total: Double, ttlMinutes: Double) {
     self.items = items
+    self.pagination = pagination
     self.total = total
     self.ttlMinutes = ttlMinutes
   }
 
   enum CodingKeys: String, CodingKey {
     case items = "items"
+    case pagination = "pagination"
     case total = "total"
     case ttlMinutes = "ttlMinutes"
   }

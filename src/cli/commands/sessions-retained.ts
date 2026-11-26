@@ -3,6 +3,8 @@ import { z } from "zod";
 import { Arg, Command, CommandAccess, Group, Option, Returns, Scope } from "../decorators.js";
 import { contractDryRun } from "../agent-contract.js";
 import { fail } from "../context.js";
+import { buildCliOffsetPagination, parseCliListLimit, parseCliListOffset } from "../pagination.js";
+import { offsetPaginationReturnSchema } from "./operational-return-schemas.js";
 import { markLocalInboxItem } from "../../inbox/local-db.js";
 import { publishSessionPrompt } from "../../omni/session-stream.js";
 import {
@@ -29,6 +31,7 @@ const retainedStartReturnSchema = z.object({
 const retainedListReturnSchema = z.object({
   ttlMinutes: z.number(),
   total: z.number(),
+  pagination: offsetPaginationReturnSchema,
   items: z.array(retainedStartReturnSchema),
 });
 
@@ -69,10 +72,24 @@ export class SessionRetainedCommands {
   @Command({ name: "list", description: "List saved capacity refusals and what the daemon will do with each" })
   @CommandAccess({ kind: "read", resource: "sessions.retained", action: "list", risk: "low" })
   @Returns(retainedListReturnSchema)
-  list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+  list(
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of saved refusals to skip" }) offset?: string,
+  ) {
     const now = Date.now();
-    const items = listRetainedStarts().map((item) => describe(item, now));
-    const payload = { ttlMinutes: RETAINED_START_TTL_MS / 60_000, total: items.length, items };
+    const all = listRetainedStarts();
+    const pageLimit = parseCliListLimit(limit);
+    const pageOffset = parseCliListOffset(offset);
+    const items = all.slice(pageOffset, pageOffset + pageLimit).map((item) => describe(item, now));
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "sessions", "retained", "list"],
+      limit: pageLimit,
+      offset: pageOffset,
+      returned: items.length,
+      total: all.length,
+    });
+    const payload = { ttlMinutes: RETAINED_START_TTL_MS / 60_000, total: all.length, pagination, items };
     if (asJson) {
       printJson(payload);
       return payload;

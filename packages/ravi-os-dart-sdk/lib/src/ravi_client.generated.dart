@@ -8934,8 +8934,9 @@ class SessionsRetainedNamespace {
 
   final RaviTransport _transport;
 
-  Future<SessionsRetainedListReturn> list() async {
+  Future<SessionsRetainedListReturn> list([SessionsRetainedListOptions options = const SessionsRetainedListOptions()]) async {
     final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
     return _transport.callJson(
       groupSegments: const ["sessions", "retained"],
       command: "list",

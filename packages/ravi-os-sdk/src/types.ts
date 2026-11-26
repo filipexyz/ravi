@@ -21023,7 +21023,10 @@ export type SessionsResetInput = {
 export type SessionsResetReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.retained.list`. */
-export type SessionsRetainedListInput = Record<string, never>;
+export type SessionsRetainedListInput = {
+  limit?: string;
+  offset?: string;
+};
 
 /** Return shape for `sessions.retained.list`. */
 export type SessionsRetainedListReturn = {
@@ -21036,6 +21039,16 @@ export type SessionsRetainedListReturn = {
     sessionName: string;
     status: string;
   }>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
   total: number;
   ttlMinutes: number;
 };

@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "6a5c272f6e6af7d8"
+    "version": "828aef0d1ccf8ea5"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -123769,6 +123769,27 @@
     "/api/v1/sessions/retained/list": {
       "post": {
         "operationId": "sessions.retained.list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of saved refusals to skip",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
         "responses": {
           "200": {
             "content": {
@@ -123823,6 +123844,56 @@
                       },
                       "type": "array"
                     },
+                    "pagination": {
+                      "additionalProperties": {},
+                      "properties": {
+                        "hasMore": {
+                          "type": "boolean"
+                        },
+                        "limit": {
+                          "type": "number"
+                        },
+                        "nextCommand": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "nextOffset": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "offset": {
+                          "type": "number"
+                        },
+                        "returned": {
+                          "type": "number"
+                        },
+                        "total": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "limit",
+                        "offset",
+                        "returned",
+                        "total",
+                        "hasMore",
+                        "nextOffset",
+                        "nextCommand"
+                      ],
+                      "type": "object"
+                    },
                     "total": {
                       "type": "number"
                     },
@@ -123833,6 +123904,7 @@
                   "required": [
                     "ttlMinutes",
                     "total",
+                    "pagination",
                     "items"
                   ],
                   "type": "object"

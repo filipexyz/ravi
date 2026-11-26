@@ -6299,8 +6299,9 @@ public struct SessionsRetainedNamespace: Sendable {
     self.transport = transport
   }
 
-  public func list() async throws -> SessionsRetainedListReturn {
-    let requestBody: [String: RaviJSON] = [:]
+  public func list(_ options: SessionsRetainedListOptions = .init()) async throws -> SessionsRetainedListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["sessions","retained"], command: "list", body: requestBody, as: SessionsRetainedListReturn.self)
   }
 

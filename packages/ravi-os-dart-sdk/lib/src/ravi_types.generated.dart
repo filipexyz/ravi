@@ -25267,16 +25267,34 @@ typedef SessionsResetReturn = Map<String, RaviJson>;
 
 SessionsResetReturn sessionsResetReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
 
+class SessionsRetainedListOptions {
+  const SessionsRetainedListOptions({this.limit, this.offset});
+
+  final String? limit;
+  final String? offset;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+  }
+}
+
 class SessionsRetainedListReturn {
-  const SessionsRetainedListReturn({required this.items, required this.total, required this.ttlMinutes});
+  const SessionsRetainedListReturn({required this.items, required this.pagination, required this.total, required this.ttlMinutes});
 
   final List<RaviJson> items;
+  final RaviJson pagination;
   final double total;
   final double ttlMinutes;
 
   factory SessionsRetainedListReturn.fromJson(Map<String, Object?> json) {
     return SessionsRetainedListReturn(
       items: raviJsonAsList(json["items"], RaviJson.from),
+      pagination: RaviJson.from(json["pagination"]),
       total: raviJsonAsDouble(json["total"]),
       ttlMinutes: raviJsonAsDouble(json["ttlMinutes"]),
     );

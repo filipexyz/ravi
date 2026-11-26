@@ -109394,7 +109394,16 @@ class RaviSchemas {
   static const sessionsRetainedListInputSchema = r'''
 {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of saved refusals to skip",
+      "type": "string"
+    }
+  },
   "type": "object"
 }
 ''';
@@ -109450,6 +109459,56 @@ class RaviSchemas {
       },
       "type": "array"
     },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
     "total": {
       "type": "number"
     },
@@ -109460,6 +109519,7 @@ class RaviSchemas {
   "required": [
     "ttlMinutes",
     "total",
+    "pagination",
     "items"
   ],
   "type": "object"

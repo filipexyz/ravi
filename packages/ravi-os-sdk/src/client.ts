@@ -8053,11 +8053,14 @@ export class RaviClient {
     },
     retained: {
       /** List saved capacity refusals and what the daemon will do with each */
-      list: async (): Promise<SessionsRetainedListReturn> => {
+      list: async (options?: {
+        limit?: string;
+        offset?: string;
+      }): Promise<SessionsRetainedListReturn> => {
         return this.transport.call({
           groupSegments: ["sessions","retained"],
           command: "list",
-          body: {},
+          body: { ...(options ?? {}) },
         });
       },
       /** Put one saved request back on its session's prompt queue (dry-run unless --execute) */
