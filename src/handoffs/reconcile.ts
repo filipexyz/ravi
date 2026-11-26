@@ -273,7 +273,9 @@ export function handoffKindLabel(kind: Handoff["kind"]): string {
 export function describeHandoff(handoff: Handoff, childName: string, now: number): string {
   const ref = handoff.ref ? ` (${handoff.ref})` : "";
   const note = handoff.note ? `: ${handoff.note}` : "";
-  return `- ${childName} espera ${handoffKindLabel(handoff.kind)}${ref} há ${formatHandoffAge(handoff, now)}${note} [${handoff.id}]`;
+  // A recorded decision is answered with `ravi decisions answer <id>`: the id is what the reader needs.
+  const decision = handoff.decisionId ? ` (decisão ${handoff.decisionId})` : "";
+  return `- ${childName} espera ${handoffKindLabel(handoff.kind)}${ref} há ${formatHandoffAge(handoff, now)}${note}${decision} [${handoff.id}]`;
 }
 
 function errorMessage(error: unknown): string {

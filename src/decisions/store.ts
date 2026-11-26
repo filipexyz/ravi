@@ -188,16 +188,55 @@ export function answerDecisionRecord(id: string, raw: string, actor?: string): D
   });
 }
 
-function appendHistory(decision: Decision, type: "asked" | "answered", actor?: string): void {
+function appendHistory(
+  decision: Decision,
+  type: "asked" | "answered" | "superseded" | "answer-source",
+  actor?: string,
+  snapshot: unknown = decision,
+): void {
   runThreadMutation(
     getDb(),
     "INSERT INTO decision_history(decision_id,type,actor,snapshot_json,created_at) VALUES (?,?,?,?,?)",
     decision.id,
     type,
     actor ?? null,
-    JSON.stringify(decision),
+    JSON.stringify(snapshot),
     Date.now(),
   );
+}
+
+/** The verified source of an answer, kept as structured history so a free-text label can never imitate it. */
+export function recordDecisionAnswerSource(
+  decision: Decision,
+  source: { contactId: string; messageId: string },
+  actor: string,
+): void {
+  appendHistory(decision, "answer-source", actor, { decisionId: decision.id, ...source });
+}
+
+/**
+ * A wait that asked this decision was retired without an answer (a newer report replaced it, or the parent
+ * acknowledged it): the open question is superseded so it no longer blocks the thread, and its unsent question
+ * notice is dropped. History keeps the question. A no-op when the decision is no longer open.
+ */
+export function retireDecisionForWait(decisionId: string, reason: string, now = Date.now()): boolean {
+  return decisionWrite((db) => {
+    const current = getDecision(decisionId);
+    if (!current || current.status !== "open") return false;
+    runThreadMutation(
+      db,
+      "UPDATE decisions SET status='superseded', updated_at=? WHERE id=? AND status='open'",
+      now,
+      decisionId,
+    );
+    runThreadMutation(
+      db,
+      "UPDATE decision_deliveries SET status='superseded' WHERE decision_id=? AND kind='question' AND status IN ('pending','failed')",
+      decisionId,
+    );
+    appendHistory(getDecision(decisionId)!, "superseded", reason);
+    return true;
+  });
 }
 
 function enqueueDelivery(decision: Decision, kind: "question" | "answer"): void {
@@ -215,4 +254,22 @@ function enqueueDelivery(decision: Decision, kind: "question" | "answer"): void 
 export function decisionWrite<T>(fn: (db: ReturnType<typeof getDb>) => T): T {
   const db = getDb();
   return db.inTransaction ? fn(db) : executeWrite(db, fn);
+}
+
+/** Run the write that records a decision's wait; if it fails, retire the decision so it never blocks alone. */
+export async function retireDecisionIfWaitFails<T>(
+  decisionId: string | null | undefined,
+  write: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await write();
+  } catch (error) {
+    // Only an orphan is retired: a same-ref replacement that failed leaves the original wait (and its decision).
+    if (
+      decisionId &&
+      !getDb().query("SELECT 1 FROM session_handoffs WHERE decision_id = ? AND status = 'open' LIMIT 1").get(decisionId)
+    )
+      retireDecisionForWait(decisionId, "wait not recorded");
+    throw error;
+  }
 }

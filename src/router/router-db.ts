@@ -2041,6 +2041,22 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
     -- One row per thread: the last return it sent its parent, and the single follow-up
     -- (nudge, then Inform) owed for the last turn that ended without one. Written only by
     -- this release (thread-parent-return.ts); no legacy writer, so it is outside the fence.
+    -- Open asks: 'ravi sessions ask' records that one session asked another, so the asked
+    -- session may send 'ravi sessions answer' back to the asker without general access to it.
+    -- Channel-free: keyed by session keys. Written only by this release (src/sessions/ask-grants.ts).
+    CREATE TABLE IF NOT EXISTS session_asks (
+      id TEXT PRIMARY KEY,
+      origin_session_key TEXT NOT NULL,
+      target_session_key TEXT NOT NULL,
+      sender TEXT,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      -- The incarnation of each session: a session recreated under the same key does not inherit the grant.
+      origin_session_created_at INTEGER NOT NULL,
+      target_session_created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_session_asks_pair ON session_asks(target_session_key, origin_session_key, expires_at);
+
     -- Handoffs: a child session (a thread) declares it waits for its parent session to act
     -- (review, decision, merge, dispatch, instruction). Channel-free: keyed by session keys.
     -- Written only by this release (src/handoffs); no legacy writer, so it is outside the fence.
@@ -3537,6 +3553,8 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
   migrateTriggerSessionCheck(db);
   migrateTriggerOwner(db);
   ensureColumn(db, "triggers", "thread_visible", "INTEGER NOT NULL DEFAULT 0");
+  // Additive and nullable: a decision wait points at the decision that holds its question and answer.
+  ensureColumn(db, "session_handoffs", "decision_id", "TEXT");
 
   // Migration: add account_id column to cron_jobs
   const cronColumns = db.prepare("PRAGMA table_info(cron_jobs)").all() as Array<{ name: string }>;
@@ -8397,6 +8415,14 @@ export function dbReleaseChannelBackendIngressPublication(input: {
 export function dbGetChatMessage(id: string): ChatMessageRecord | null {
   const row = getDb().prepare("SELECT * FROM chat_messages WHERE id = ?").get(id) as ChatMessageRow | undefined;
   return row ? rowToChatMessage(row) : null;
+}
+
+/** Every stored message with this provider message id (a provider id is unique only within its chat). */
+export function dbListChatMessagesByProviderId(providerMessageId: string): ChatMessageRecord[] {
+  const rows = getDb()
+    .prepare("SELECT * FROM chat_messages WHERE provider_message_id = ? LIMIT 20")
+    .all(providerMessageId) as ChatMessageRow[];
+  return rows.map(rowToChatMessage);
 }
 
 export function dbGetChatMessageWithSortKey(id: string): ChatMessageWithSortKey | null {

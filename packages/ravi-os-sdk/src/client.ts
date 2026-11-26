@@ -4245,6 +4245,7 @@ export class RaviClient {
     answer: async (id: string, options?: {
       by?: string;
       execute?: boolean;
+      sourceMessage?: string;
       text?: string;
     }): Promise<DecisionsAnswerReturn> => {
       return this.transport.call({

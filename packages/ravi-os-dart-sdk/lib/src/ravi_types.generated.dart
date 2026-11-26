@@ -13906,10 +13906,11 @@ class DaemonUninstallReturn {
 DaemonUninstallReturn daemonUninstallReturnFromJson(Object? json) => DaemonUninstallReturn.fromJsonValue(json);
 
 class DecisionsAnswerOptions {
-  const DecisionsAnswerOptions({this.by, this.execute, this.text});
+  const DecisionsAnswerOptions({this.by, this.execute, this.sourceMessage, this.text});
 
   final String? by;
   final bool? execute;
+  final String? sourceMessage;
   final String? text;
 
   void encodeBody(Map<String, RaviJson> into) {
@@ -13918,6 +13919,9 @@ class DecisionsAnswerOptions {
     }
     if (execute != null) {
       into["execute"] = RaviJson.from(execute);
+    }
+    if (sourceMessage != null) {
+      into["sourceMessage"] = RaviJson.from(sourceMessage);
     }
     if (text != null) {
       into["text"] = RaviJson.from(text);
@@ -25932,11 +25936,12 @@ class SessionsThreadSendOptions {
 }
 
 class SessionsThreadSendReturn {
-  const SessionsThreadSendReturn({required this.actionId, this.delivery, required this.messageId, required this.reopened, required this.requestId, required this.status, required this.thread});
+  const SessionsThreadSendReturn({required this.actionId, this.delivery, required this.messageId, this.openDecisionWaits, required this.reopened, required this.requestId, required this.status, required this.thread});
 
   final String actionId;
   final RaviJson? delivery;
   final String messageId;
+  final List<RaviJson>? openDecisionWaits;
   final bool reopened;
   final String requestId;
   final String status;
@@ -25947,6 +25952,7 @@ class SessionsThreadSendReturn {
       actionId: raviJsonAsString(json["actionId"]),
       delivery: json["delivery"] == null ? null : RaviJson.from(json["delivery"]),
       messageId: raviJsonAsString(json["messageId"]),
+      openDecisionWaits: json["openDecisionWaits"] == null ? null : raviJsonAsList(json["openDecisionWaits"], RaviJson.from),
       reopened: raviJsonAsBool(json["reopened"]),
       requestId: raviJsonAsString(json["requestId"]),
       status: raviJsonAsString(json["status"]),

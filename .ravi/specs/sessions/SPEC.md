@@ -114,6 +114,15 @@ Sessions do NOT own:
 - A chat attached to a session is not by itself permission to read or mutate
   that session.
 - Hidden sessions SHOULD appear missing on direct lookup.
+- `sessions ask` MUST record the Ask (`session_asks`, origin and asked session
+  keys, 7-day window). While it is open, the asked session MAY run
+  `sessions answer` to the asker without `access` to it, and MUST NOT gain
+  anything else: read, recap, info, send, ask, execute, inform and every setter
+  still need access. An answer sent through an Ask MUST NOT take `--channel` or
+  `--to`, and a caller that was not asked, or whose Ask closed, MUST get the
+  same "Session not found" as an unknown session. The sender named in the Ask
+  text grants nothing. Origin: 26/11, an agent asked by a session it could not
+  see was refused the exact answer command the Ask told it to run.
 
 - `sessions read` and `sessions recap` for a thread MUST return only that child's durable session history. An empty thread MUST remain empty; shared platform chat ids, message metadata and parent provider transcripts MUST NOT be used as silent fallback.
 

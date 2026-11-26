@@ -33,9 +33,15 @@ normative: false
   over a reply stays one request (with and without timestamps); `drain` publishes pending speech once.
 - `src/voice/door.test.ts`: live gets sanitized context (no secret-looking tokens, paths or links
   from the screen text); ending a live call drains pending speech while the call is still `active`.
-- Live delegation order (`engines.test.ts`): the model talking before it delegates does not lose the
-  request; speech after the delegation's `offset_ms` stays for the next request; answered speech is
-  shown as conversation only after the window; append chunks stay at or under 900 characters (also
-  when a sentence ends exactly at the limit); a window ending while a delegation settles does not
-  erase its request; each reply's window shows only what that reply answered; the offset splits an
-  utterance without a pause.
+- Append chunks stay at or under 900 characters, also when a sentence ends exactly at the limit.
+- Live delegation (`engines.test.ts`): everything since the previous delegation reaches it, split at
+  `offset_ms` (also inside one utterance); review repro S1-S3 at any delay; a paused request the
+  model acknowledged arrives whole; speech shows once (`displayText` excludes what is on screen); a
+  closed sideband starts no work. `door.test.ts`: a replaced sideband's late delegation is ignored.
+- Review of #1026 (`engines.test.ts`, `door.test.ts`): "E aí" answered and "para" 60 s later delegates
+  only "para", and the door cancels the running turn from the last utterance; an answered "não"
+  never flips a later request; speech before a pause over `REQUEST_GAP_MS` is conversation; answered
+  speech is dropped from the pending parts.
+- Review of #1026 @6621657: new speech while a delegation settles never erases its request (pruning
+  waits for pending delegations); words kept after the offset never reopen a closed utterance; a
+  sideband replaced while the transcript is published starts no turn (`door.test.ts`).

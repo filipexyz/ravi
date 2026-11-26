@@ -16325,17 +16325,20 @@ public struct DaemonUninstallReturn: Codable, Sendable {
 public struct DecisionsAnswerOptions: Codable, Sendable {
   public var by: String?
   public var execute: Bool?
+  public var sourceMessage: String?
   public var text: String?
 
-  public init(by: String? = nil, execute: Bool? = nil, text: String? = nil) {
+  public init(by: String? = nil, execute: Bool? = nil, sourceMessage: String? = nil, text: String? = nil) {
     self.by = by
     self.execute = execute
+    self.sourceMessage = sourceMessage
     self.text = text
   }
 
   enum CodingKeys: String, CodingKey {
     case by = "by"
     case execute = "execute"
+    case sourceMessage = "sourceMessage"
     case text = "text"
   }
 
@@ -16345,6 +16348,9 @@ public struct DecisionsAnswerOptions: Codable, Sendable {
     }
     if let value = self.execute {
       body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.sourceMessage {
+      body["sourceMessage"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.text {
       body["text"] = try RaviJSON.fromEncodable(value)
@@ -30387,15 +30393,17 @@ public struct SessionsThreadSendReturn: Codable, Sendable {
   public var actionId: String
   public var delivery: RaviJSON?
   public var messageId: String
+  public var openDecisionWaits: [RaviJSON]?
   public var reopened: Bool
   public var requestId: String
   public var status: String
   public var thread: RaviJSON
 
-  public init(actionId: String, delivery: RaviJSON? = nil, messageId: String, reopened: Bool, requestId: String, status: String, thread: RaviJSON) {
+  public init(actionId: String, delivery: RaviJSON? = nil, messageId: String, openDecisionWaits: [RaviJSON]? = nil, reopened: Bool, requestId: String, status: String, thread: RaviJSON) {
     self.actionId = actionId
     self.delivery = delivery
     self.messageId = messageId
+    self.openDecisionWaits = openDecisionWaits
     self.reopened = reopened
     self.requestId = requestId
     self.status = status
@@ -30406,6 +30414,7 @@ public struct SessionsThreadSendReturn: Codable, Sendable {
     case actionId = "actionId"
     case delivery = "delivery"
     case messageId = "messageId"
+    case openDecisionWaits = "openDecisionWaits"
     case reopened = "reopened"
     case requestId = "requestId"
     case status = "status"
