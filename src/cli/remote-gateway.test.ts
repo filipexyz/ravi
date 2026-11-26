@@ -2543,7 +2543,7 @@ describe("Library refusals over the gateway", () => {
 describe("pages read refusals over the gateway", () => {
   it("keeps the public-only refusal and the turn rule that decided it", async () => {
     const message =
-      "https://acme.ravi.page/weekly is not public. Private Ravi Pages are read only on the operator's own turns (terminal, their direct chat, their routines). This turn is not the operator's own: the owner's direct chat runs in a session other people's chats share (dmScope main, a route that names the session, or another chat attached to it).";
+      "https://acme.ravi.page/weekly is not public. Private Ravi Pages are read only on the operator's own turns (terminal, their direct chat, their routines). This turn is not the operator's own: the owner's direct chat runs in a session other people's chats can reach (another person's chat attached to it, a route that sends a group, a thread or several chats into it, or a second contact tagged as owner).";
     const local = new ContractError("pages read", "PAGE_ACCESS_DENIED", message, 3, {
       ...errorDiagnostic(message, { operation: "pages read" }),
       ...{

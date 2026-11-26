@@ -11,7 +11,7 @@
 // src/router/commit-matched-route.test.ts).
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { evaluateOwnerDmGuard, isOperatorChosenDestination } from "./owner-dm-guard.js";
+import { evaluateOwnerDmGuard } from "./owner-dm-guard.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   commitMatchedRoute,
@@ -73,18 +73,7 @@ function inbound(config: RouterConfig, user: string, contactId: string, threadId
   const matched = match(config, user, threadId);
   const landingSessionKey = previewCommittedSessionKey(matched, { threadId });
   const guard = evaluateOwnerDmGuard(
-    {
-      peerKind: "dm",
-      sessionKey: landingSessionKey,
-      senderContactId: contactId,
-      explicit: isOperatorChosenDestination({
-        routePattern: matched.route?.pattern,
-        routeSessionKey: landingSessionKey,
-        attachExplicit: false,
-        attachSessionKey: null,
-        landingSessionKey,
-      }),
-    },
+    { peerKind: "dm", sessionKey: landingSessionKey, senderContactId: contactId },
     owners,
   );
   const committed = guard.blocked ? null : commit(matched, user, threadId);
@@ -126,19 +115,38 @@ describe("owner DM guard on the session the commit lands in", () => {
     expect(owner.committed?.sessionKey).toBe(`${OWNER_SESSION}:thread:${THREAD}`);
   });
 
-  it("treats a glob route as a wildcard, not as the operator naming the colleague", () => {
-    const config = configWith("main", { pattern: "U0*", accountId: "acc", agent: "main", session: "main" });
+  it("holds a colleague whatever route sends them to the owner's session: glob or literal", () => {
+    for (const pattern of ["U0*", PEER_USER]) {
+      const config = configWith("main", { pattern, accountId: "acc", agent: "main", session: "main" });
 
-    expect(inbound(config, PEER_USER, PEER_CONTACT).guard.blocked).toBe(true);
+      expect(inbound(config, PEER_USER, PEER_CONTACT).guard).toEqual({
+        blocked: true,
+        reason: "non_owner_dm_to_owner_session",
+        ownerCount: 1,
+      });
+    }
+    const config = configWith("main", { pattern: "U0*", accountId: "acc", agent: "main", session: "main" });
     expect(inbound(config, OWNER_USER, OWNER_CONTACT).guard.blocked).toBe(false);
   });
 
-  it("respects a literal route that sends the colleague to the owner's session on purpose", () => {
-    const config = configWith("per-peer", { pattern: PEER_USER, accountId: "acc", agent: "main", session: "main" });
+  it("holds a colleague a literal route names even without forcing a session, while the agent's DMs share one", () => {
+    const config = configWith("main", { pattern: PEER_USER, accountId: "acc", agent: "main" });
 
     const peer = inbound(config, PEER_USER, PEER_CONTACT);
-    expect(peer.guard).toEqual({ blocked: false, reason: "explicit" });
-    expect(peer.committed?.sessionKey).toBe(OWNER_SESSION);
+    expect(peer.landingSessionKey).toBe(OWNER_SESSION);
+    expect(peer.guard.blocked).toBe(true);
+    expect(peer.committed).toBeNull();
+  });
+
+  it("lets a literal route give the colleague a session of their own", () => {
+    for (const route of [
+      { pattern: PEER_USER, accountId: "acc", agent: "main", dmScope: "per-peer" as const },
+      { pattern: PEER_USER, accountId: "acc", agent: "ponte", session: "ponte-colleague" },
+    ]) {
+      const peer = inbound(configWith("main", route), PEER_USER, PEER_CONTACT);
+      expect(peer.guard).toEqual({ blocked: false, reason: "not_owner_session" });
+      expect(peer.committed?.sessionKey).not.toBe(OWNER_SESSION);
+    }
   });
 
   it("previews the same key the commit lands in", () => {

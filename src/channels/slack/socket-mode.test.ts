@@ -6438,14 +6438,18 @@ describe("Slack owner DM guard", () => {
   }
 
   function attachPeerChatBySystem(): void {
+    attachPeerChat("system");
+  }
+
+  function attachPeerChat(attachedByType: "system" | "agent" | "user"): void {
     const chat = dbUpsertChat({ channel: "slack", instanceId: accountId, platformChatId: "D0PEER", chatType: "dm" });
     getOrCreateSession("agent:main:main", "main", "/tmp/main");
     attachChatToSession({
       sessionKey: "agent:main:main",
       chatId: chat.id,
       role: "primary",
-      attachedByType: "system",
-      attachedReason: "inbound-route",
+      attachedByType,
+      attachedReason: attachedByType === "system" ? "inbound-route" : "test-explicit-attach",
     });
   }
 
@@ -6488,6 +6492,43 @@ describe("Slack owner DM guard", () => {
     await service(routerConfig(), published).handleEnvelope(dm("Ev-peer-sub", "D0PEER", peerUser, "1713000000.000250"));
 
     expect(published).toHaveLength(0);
+  });
+
+  it("holds a colleague whose chat a person or an agent attached to the owner's session", async () => {
+    for (const attachedByType of ["agent", "user"] as const) {
+      await cleanupIsolatedRaviState(stateDir);
+      stateDir = await createIsolatedRaviState("ravi-slack-owner-dm-attach-");
+      seedAgent("main", "/tmp/main");
+      seedAgent("ponte", "/tmp/ponte");
+      configStore.refresh();
+      dbUpsertInstance({ name: accountId, instanceId: accountId, channel: "slack", dmPolicy: "open" });
+      seedContacts({ tagOwner: true });
+      attachPeerChat(attachedByType);
+      expect(listSessionSubscriptions("agent:main:main").map((subscription) => subscription.attachedByType)).toEqual([
+        attachedByType,
+      ]);
+      const published: Array<{ sessionName: string }> = [];
+
+      await service(routerConfig(), published).handleEnvelope(
+        dm(`Ev-peer-explicit-${attachedByType}`, "D0PEER", peerUser, "1713000000.000260"),
+      );
+
+      expect(published).toHaveLength(0);
+    }
+  });
+
+  it("holds a colleague even when a literal route names them and forces the owner's session", async () => {
+    seedContacts({ tagOwner: true });
+    getOrCreateSession("agent:main:main", "main", "/tmp/main", { name: "main" });
+    const published: Array<{ sessionName: string }> = [];
+    const config = routerConfig([{ pattern: peerUser, accountId, agent: "main", channel: "slack", session: "main" }]);
+
+    await service(config, published).handleEnvelope(
+      dm("Ev-peer-literal-main", "D0PEER", peerUser, "1713000000.000270"),
+    );
+
+    expect(published).toHaveLength(0);
+    expect(listAccountPendingContacts(accountId)).toMatchObject([{ accountId, phone: peerUser }]);
   });
 
   it("routes a colleague with an explicit route to that route's agent", async () => {

@@ -1,8 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import {
   evaluateOwnerDmGuard,
-  isOperatorChosenDestination,
-  isPeerNamingRoutePattern,
+  isAgentSharedDmSessionKey,
+  isDirectPeerRoutePattern,
+  isSharedDmSessionPrivateToOwner,
   isSharedOwnerSessionKey,
 } from "./owner-dm-guard.js";
 
@@ -20,63 +21,44 @@ describe("owner DM guard", () => {
 
   it("lets the owner into the shared session", () => {
     expect(
-      evaluateOwnerDmGuard(
-        { peerKind: "dm", sessionKey: "agent:main:main", senderContactId: OWNER, explicit: false },
-        owners,
-      ),
+      evaluateOwnerDmGuard({ peerKind: "dm", sessionKey: "agent:main:main", senderContactId: OWNER }, owners),
     ).toEqual({ blocked: false, reason: "owner" });
   });
 
-  it("holds a colleague who would land in the shared session", () => {
-    expect(
-      evaluateOwnerDmGuard(
-        { peerKind: "dm", sessionKey: "agent:main:main", senderContactId: PEER, explicit: false },
-        owners,
-      ),
-    ).toEqual({ blocked: true, reason: "non_owner_dm_to_owner_session", ownerCount: 1 });
+  it("holds a colleague who would land in the shared session, or in a thread under it", () => {
+    for (const sessionKey of ["agent:main:main", "agent:main:main:thread:1763555555.000100"]) {
+      expect(evaluateOwnerDmGuard({ peerKind: "dm", sessionKey, senderContactId: PEER }, owners)).toEqual({
+        blocked: true,
+        reason: "non_owner_dm_to_owner_session",
+        ownerCount: 1,
+      });
+    }
   });
 
   it("holds an unresolved sender: an unknown contact is never the owner", () => {
     for (const senderContactId of [null, undefined, "", "  "]) {
       expect(
-        evaluateOwnerDmGuard(
-          { peerKind: "dm", sessionKey: "agent:main:main", senderContactId, explicit: false },
-          owners,
-        ).blocked,
+        evaluateOwnerDmGuard({ peerKind: "dm", sessionKey: "agent:main:main", senderContactId }, owners).blocked,
       ).toBe(true);
     }
   });
 
-  it("respects a destination the operator chose for that conversation", () => {
-    expect(
-      evaluateOwnerDmGuard(
-        { peerKind: "dm", sessionKey: "agent:main:main", senderContactId: PEER, explicit: true },
-        owners,
-      ),
-    ).toEqual({ blocked: false, reason: "explicit" });
-  });
-
   it("does not touch per-peer sessions, groups or channels", () => {
     expect(
-      evaluateOwnerDmGuard(
-        { peerKind: "dm", sessionKey: "agent:main:dm:U9", senderContactId: PEER, explicit: false },
-        owners,
-      ),
+      evaluateOwnerDmGuard({ peerKind: "dm", sessionKey: "agent:main:dm:U9", senderContactId: PEER }, owners),
     ).toEqual({ blocked: false, reason: "not_owner_session" });
     for (const peerKind of ["group", "channel"]) {
-      expect(
-        evaluateOwnerDmGuard(
-          { peerKind, sessionKey: "agent:main:main", senderContactId: PEER, explicit: false },
-          owners,
-        ),
-      ).toEqual({ blocked: false, reason: "not_dm" });
+      expect(evaluateOwnerDmGuard({ peerKind, sessionKey: "agent:main:main", senderContactId: PEER }, owners)).toEqual({
+        blocked: false,
+        reason: "not_dm",
+      });
     }
   });
 
   it("keeps the legacy behaviour while no owner is tagged", () => {
     expect(
       evaluateOwnerDmGuard(
-        { peerKind: "dm", sessionKey: "agent:main:main", senderContactId: PEER, explicit: false },
+        { peerKind: "dm", sessionKey: "agent:main:main", senderContactId: PEER },
         { ownerContactIds: () => [] },
       ),
     ).toEqual({ blocked: false, reason: "no_owner_configured" });
@@ -85,17 +67,14 @@ describe("owner DM guard", () => {
   it("treats any tagged owner as the owner when several are tagged", () => {
     const team = { ownerContactIds: () => [OWNER, PEER] };
     expect(
-      evaluateOwnerDmGuard(
-        { peerKind: "dm", sessionKey: "agent:main:main", senderContactId: PEER, explicit: false },
-        team,
-      ).blocked,
+      evaluateOwnerDmGuard({ peerKind: "dm", sessionKey: "agent:main:main", senderContactId: PEER }, team).blocked,
     ).toBe(false);
   });
 
   it("fails closed when the owner set cannot be read", () => {
     expect(
       evaluateOwnerDmGuard(
-        { peerKind: "dm", sessionKey: "agent:main:main", senderContactId: OWNER, explicit: false },
+        { peerKind: "dm", sessionKey: "agent:main:main", senderContactId: OWNER },
         {
           ownerContactIds: () => {
             throw new Error("db locked");
@@ -106,45 +85,98 @@ describe("owner DM guard", () => {
   });
 });
 
-describe("owner DM guard: what counts as the operator's choice", () => {
-  const SHARED = "agent:main:main";
-  const BRIDGE = "agent:ponte:slack:ravi-slack:dm:U0PEER";
+describe("owner DM guard: the shared session as the owner's own direct session", () => {
+  const SHARED = { sessionKey: "agent:main:main", sessionName: "main", contactId: OWNER, chatId: "chat_owner_dm" };
+  const OWN_CHATS = new Set(["chat_owner_dm", "chat_owner_thread", "chat_owner_whatsapp"]);
+  const deps = {
+    ownerContactIds: () => [OWNER],
+    routePatternsForSessionName: () => ["5511999999999", "U0OWNER"],
+    attachedChatIds: () => ["chat_owner_dm", "chat_owner_thread", "chat_owner_whatsapp"],
+    isContactsDirectChat: (chatId: string, contactId: string) => contactId === OWNER && OWN_CHATS.has(chatId),
+  };
 
-  it("counts only a literal route pattern as naming the peer; any glob is a wildcard", () => {
-    for (const pattern of ["U0PEER001", "5511999999999", "thread:1763555555.000100"]) {
-      expect(isPeerNamingRoutePattern(pattern)).toBe(true);
-    }
-    for (const pattern of ["*", "U0*", "*999", "*99*", "", "  ", null, undefined]) {
-      expect(isPeerNamingRoutePattern(pattern)).toBe(false);
+  it("matches only the exact shared key, never a thread under it or a per-peer key", () => {
+    expect(isAgentSharedDmSessionKey("agent:main:main")).toBe(true);
+    for (const key of [
+      "agent:main:main:thread:1763555555.000100",
+      "agent:main:dm:U9",
+      "agent::main",
+      "main",
+      "",
+      null,
+      undefined,
+    ]) {
+      expect(isAgentSharedDmSessionKey(key)).toBe(false);
     }
   });
 
-  it("lets a literal route vouch only for the session it sends the message to", () => {
-    const literal = { routePattern: "U0PEER", attachExplicit: false, attachSessionKey: null };
-    expect(isOperatorChosenDestination({ ...literal, routeSessionKey: SHARED, landingSessionKey: SHARED })).toBe(true);
-    // Routing's earlier attach reroutes the DM to the shared session: the route chose the bridge.
-    expect(isOperatorChosenDestination({ ...literal, routeSessionKey: BRIDGE, landingSessionKey: SHARED })).toBe(false);
+  it("counts a route as safe only when it reaches one direct peer", () => {
+    for (const pattern of ["5511999999999", "U0OWNER", "178035101794451", "lid:178035101794451"]) {
+      expect(isDirectPeerRoutePattern(pattern)).toBe(true);
+    }
+    for (const pattern of ["*", "5511*", "*999", "group:120363", "GROUP:C0CHAN", "thread:1763.1", "", " ", null]) {
+      expect(isDirectPeerRoutePattern(pattern)).toBe(false);
+    }
+  });
+
+  it("is the sole owner's when only their own chats are attached and only direct routes name it", () => {
+    expect(isSharedDmSessionPrivateToOwner(SHARED, deps)).toBe(true);
+  });
+
+  it("is never private to someone who is not the owner", () => {
+    expect(isSharedDmSessionPrivateToOwner({ ...SHARED, contactId: PEER }, deps)).toBe(false);
+  });
+
+  it("is nobody's while no owner, or more than one, is tagged, or the owners cannot be read", () => {
+    for (const ownerContactIds of [
+      () => [],
+      () => [OWNER, PEER],
+      () => {
+        throw new Error("db locked");
+      },
+    ]) {
+      expect(isSharedDmSessionPrivateToOwner(SHARED, { ...deps, ownerContactIds })).toBe(false);
+    }
+  });
+
+  it("is not private while another person's chat is attached to it", () => {
     expect(
-      isOperatorChosenDestination({
-        ...literal,
-        routePattern: "U0*",
-        routeSessionKey: SHARED,
-        landingSessionKey: SHARED,
+      isSharedDmSessionPrivateToOwner(SHARED, {
+        ...deps,
+        attachedChatIds: () => ["chat_owner_dm", "chat_colleague_dm"],
       }),
     ).toBe(false);
   });
 
-  it("lets an explicit attach vouch only for the attached session", () => {
-    const attach = { routePattern: "*", routeSessionKey: SHARED, attachSessionKey: SHARED };
-    expect(isOperatorChosenDestination({ ...attach, attachExplicit: true, landingSessionKey: SHARED })).toBe(true);
-    expect(isOperatorChosenDestination({ ...attach, attachExplicit: false, landingSessionKey: SHARED })).toBe(false);
+  it("is not private while a route sends a group, a thread or a glob into it", () => {
+    for (const pattern of ["group:120363", "thread:1763.1", "*", "U0*"]) {
+      expect(
+        isSharedDmSessionPrivateToOwner(SHARED, {
+          ...deps,
+          routePatternsForSessionName: () => ["5511999999999", pattern],
+        }),
+      ).toBe(false);
+    }
+  });
+
+  it("trusts the turn's own chat without asking who owns it", () => {
+    const isContactsDirectChat = (chatId: string) => chatId !== "chat_turn";
     expect(
-      isOperatorChosenDestination({
-        ...attach,
-        attachExplicit: true,
-        attachSessionKey: BRIDGE,
-        landingSessionKey: SHARED,
-      }),
-    ).toBe(false);
+      isSharedDmSessionPrivateToOwner(
+        { ...SHARED, chatId: "chat_turn" },
+        { ...deps, attachedChatIds: () => ["chat_turn", "chat_owner_dm"], isContactsDirectChat },
+      ),
+    ).toBe(true);
+  });
+
+  it("refuses any other session shape, an empty speaker or an unnamed session", () => {
+    for (const input of [
+      { ...SHARED, sessionKey: "agent:main:main:thread:1763555555.000100" },
+      { ...SHARED, sessionKey: "agent:main:dm:U0OWNER" },
+      { ...SHARED, contactId: " " },
+      { ...SHARED, sessionName: "" },
+    ]) {
+      expect(isSharedDmSessionPrivateToOwner(input, deps)).toBe(false);
+    }
   });
 });

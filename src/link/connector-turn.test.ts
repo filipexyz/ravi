@@ -13,6 +13,7 @@ import { TriggerRunner } from "../triggers/runner.js";
 import type { Trigger } from "../triggers/types.js";
 import type { ContextRecord } from "../router/router-db.js";
 import { writeCachedActorBinding } from "../cloud-auth/actor-bindings.js";
+import { createContact } from "../contacts.js";
 import {
   dbCanonicalizeDmChatForContact,
   dbCreateAgent,
@@ -20,6 +21,7 @@ import {
   dbCreateSessionChatSubscription,
   dbGetAgent,
   dbUpsertChat,
+  dbUpsertChatParticipant,
 } from "../router/router-db.js";
 import { attachChatToSession, getOrCreateSession } from "../router/sessions.js";
 import {
@@ -1001,16 +1003,16 @@ describe("connector turn classification", () => {
       }
     });
 
-    it("refuses the session all direct chats share (dmScope main), a group key and an unknown session", () => {
+    it("refuses the shared session while no owner is tagged, a group key and an unknown session", () => {
       for (const sessionKey of ["agent:main:main", "agent:main:whatsapp:group:120363", "custom-session", undefined]) {
         const result = classify(ownerTurn({ sessionKey, sessionName: "main" }));
         const error = expectBlocked(result, "CONNECTOR_GROUP_BLOCKED");
         expect(error.details).toMatchObject({
           source: "connector-turn",
           chatLine:
-            "I can't use your Gmail in this conversation: other people's chats share its session. Give each person their own session (dmScope per-peer), then ask me again.",
+            "I can't use your Gmail in this conversation: other people's chats can reach its session. Move their chats out of it, then ask me again.",
           chatLinePt:
-            "Não posso usar o seu Gmail nesta conversa: as conversas de outras pessoas compartilham a sessão dela. Dê a cada pessoa a própria sessão (dmScope per-peer) e me peça de novo.",
+            "Não posso usar o seu Gmail nesta conversa: conversas de outras pessoas chegam à sessão dela. Tire essas conversas da sessão e me peça de novo.",
           replyTo: "same_chat",
         });
         expect(error.message).toContain("Do not retry");
@@ -1031,7 +1033,7 @@ describe("connector turn classification", () => {
         chatLine: error.details?.chatLine,
         replyTo: "same_chat",
         suggestedAction:
-          "reply in this chat with the chat line, and do not retry until Luis gives each person their own session (dmScope per-peer)",
+          "reply in this chat with the chat line, and do not retry until Luis moves the other chats out of this session (ravi sessions subscriptions <session> lists the attached ones)",
       });
 
       // A block without its own next step keeps the code's catalog one.
@@ -1090,6 +1092,129 @@ describe("connector turn classification", () => {
       const shared = exec("shared", true);
       expect(shared.ok).toBe(true);
       if (shared.ok) expect(shared.route).toMatchObject({ mode: "shared", turn: { conversation: "dm" } });
+    });
+  });
+
+  describe("the owner's own direct chat in the agent's shared session (dmScope main)", () => {
+    // An agent's DMs share `agent:<id>:main`. The owner DM guard
+    // (src/channels/owner-dm-guard.ts) lets only owners' DMs land there, so it
+    // is the sole owner's own direct session while nothing else writes in it.
+    const SHARED = { sessionKey: "agent:main:main", sessionName: "main" };
+
+    function seedOwner(phone = "5511999999999"): string {
+      return createContact({ phone, name: "Luis", status: "allowed", tags: ["permission-owner"] }).id;
+    }
+
+    /** A direct chat stored the way Slack stores one: no canonical contact key, one participant. */
+    function directChat(platformChatId: string, contactId: string) {
+      const chat = dbUpsertChat({ channel: "slack", instanceId: "ravi-slack", platformChatId, chatType: "dm" });
+      dbUpsertChatParticipant({ chatId: chat.id, contactId });
+      return chat;
+    }
+
+    function threadIn(platformChatId: string, threadTs: string, contactId: string) {
+      const chat = dbUpsertChat({
+        channel: "slack",
+        instanceId: "ravi-slack",
+        platformChatId: `${platformChatId}#${threadTs}`,
+        chatType: "thread",
+      });
+      dbUpsertChatParticipant({ chatId: chat.id, contactId });
+      return chat;
+    }
+
+    function attach(chatId: string, role: "primary" | "input" = "input") {
+      getOrCreateSession(SHARED.sessionKey, "main", stateDir ?? "/tmp");
+      dbCreateSessionChatSubscription({ sessionKey: SHARED.sessionKey, chatId, role });
+    }
+
+    function ownerInMain(ownerId: string, chatId: string) {
+      return turnContext(
+        {
+          actorPrincipal: `contact:${ownerId}`,
+          consoleUserId: "user_luis",
+          consoleOrgId: "org_1",
+          agentIdentityCompartment: `dm:${chatId}`,
+        },
+        SHARED,
+      );
+    }
+
+    /** The owner's DM, threads inside it and their WhatsApp DM all in the shared session, as in production. */
+    function seedOwnersMain(): { ownerId: string; dmId: string } {
+      const ownerId = seedOwner();
+      const dm = directChat("D0OWNERDM", ownerId);
+      attach(dm.id, "primary");
+      attach(threadIn("D0OWNERDM", "1795563951.064449", ownerId).id);
+      attach(upsertDirectChat("5511999999999@s.whatsapp.net", ownerId).id);
+      dbCreateRoute({ pattern: "5511999999999", accountId: "wa-main", agent: "main", session: "main" });
+      return { ownerId, dmId: dm.id };
+    }
+
+    it("counts the sole owner's own direct chat there as the operator's turn", () => {
+      const { ownerId, dmId } = seedOwnersMain();
+
+      const result = classify(ownerInMain(ownerId, dmId));
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.turn).toMatchObject({ speaker: { kind: "owner", contactId: ownerId }, conversation: "dm" });
+      }
+    });
+
+    it("refuses it while another person's direct chat is attached to it", () => {
+      const { ownerId, dmId } = seedOwnersMain();
+      const colleague = createContact({ phone: "5511988887777", name: "Colleague", status: "allowed" });
+      attach(directChat("D0COLLEAGUE", colleague.id).id);
+
+      const result = classify(ownerInMain(ownerId, dmId));
+
+      expectBlocked(result, "CONNECTOR_GROUP_BLOCKED");
+      if (!result.ok) expect(result).toMatchObject({ speakerIsOwner: true, sharedSession: true });
+    });
+
+    it("refuses it while a thread of another person's direct chat is attached to it", () => {
+      const { ownerId, dmId } = seedOwnersMain();
+      const colleague = createContact({ phone: "5511988887777", name: "Colleague", status: "allowed" });
+      directChat("D0COLLEAGUE", colleague.id);
+      attach(threadIn("D0COLLEAGUE", "1793801758.307339", colleague.id).id);
+
+      expectBlocked(classify(ownerInMain(ownerId, dmId)), "CONNECTOR_GROUP_BLOCKED");
+    });
+
+    for (const pattern of ["group:120363", "thread:1781574894.010449", "*", "d0bafq90a78*"]) {
+      it(`refuses it while a route sends ${pattern} into it by name`, () => {
+        const { ownerId, dmId } = seedOwnersMain();
+        dbCreateRoute({ pattern, accountId: "ravi-slack", agent: "main", session: "main" });
+
+        expectBlocked(classify(ownerInMain(ownerId, dmId)), "CONNECTOR_GROUP_BLOCKED");
+      });
+    }
+
+    it("refuses it while no owner, or a second one, is tagged", () => {
+      const { ownerId, dmId } = seedOwnersMain();
+      createContact({ phone: "5511977776666", name: "Partner", status: "allowed", tags: ["permission-owner"] });
+
+      expectBlocked(classify(ownerInMain(ownerId, dmId)), "CONNECTOR_GROUP_BLOCKED");
+    });
+
+    it("never lets a contact other than the owner use the owner's account there", () => {
+      const { dmId } = seedOwnersMain();
+      const colleague = createContact({ phone: "5511988887777", name: "Colleague", status: "allowed" });
+
+      const result = classify(
+        turnContext(
+          {
+            actorPrincipal: `contact:${colleague.id}`,
+            consoleUserId: "user_ana",
+            consoleOrgId: "org_1",
+            agentIdentityCompartment: `dm:${dmId}`,
+          },
+          SHARED,
+        ),
+      );
+
+      expectBlocked(result, "CONNECTOR_SPEAKER_NOT_OWNER");
     });
   });
 
