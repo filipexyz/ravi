@@ -110,7 +110,32 @@ describe("sessions answer through an open Ask, with the real store", () => {
       turnOf("asked", ASKED, () =>
         new SessionCommands().answer(ASKER, "resposta", undefined, undefined, undefined, barrier, steer, immediate),
       ),
-    ).rejects.toThrow("--barrier, --steer and --immediate are refused");
+    ).rejects.toMatchObject({ code: "PERMISSION_DENIED", message: expect.stringContaining("--barrier, --steer") });
     expect(published).toHaveLength(0);
+  });
+
+  it("refuses --channel and --to through an Ask as a permission denial", async () => {
+    setup();
+    await ask();
+    await expect(
+      turnOf("asked", ASKED, () => new SessionCommands().answer(ASKER, "resposta", undefined, "whatsapp")),
+    ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+    expect(published).toHaveLength(0);
+  });
+
+  it("leaves an answer from a caller with access to the asker as it was: approval source and barrier", async () => {
+    setup();
+    updateSessionSource(ASKED, { channel: "whatsapp", accountId: "luis", chatId: "5511900000001@s.whatsapp.net" });
+    // Unscoped: the operator's own answer, with full access to the asker.
+    await runWithContext({ sessionKey: ASKED, sessionName: "asked-main", suppressCliOutput: true }, () =>
+      new SessionCommands().answer(ASKER, "resposta", undefined, undefined, undefined, undefined, true),
+    );
+    expect(published).toHaveLength(1);
+    expect(published[0]?.payload._approvalSource).toEqual({
+      channel: "whatsapp",
+      accountId: "luis",
+      chatId: "5511900000001@s.whatsapp.net",
+    });
+    expect(published[0]?.payload.deliveryBarrier).not.toBe("after_response");
   });
 });

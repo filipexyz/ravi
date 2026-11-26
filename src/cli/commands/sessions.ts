@@ -7165,17 +7165,25 @@ export class SessionCommands {
       fail(`Session not found: ${nameOrKey}`);
       return null;
     }
+    // The caller was asked, so the session is no secret here: these refusals are permission
+    // denials with their own code, unlike the "not found" given to a caller never asked.
     if (channel || to) {
-      fail("An answer sent through an open Ask goes back where the Ask came from: --channel and --to are refused.");
-      return null;
+      throw new CliExpectedError(
+        "An answer sent through an open Ask goes back where the Ask came from: --channel and --to are refused.",
+        "PERMISSION_DENIED",
+        1,
+        "Run the answer without --channel and --to.",
+      );
     }
     // Delivering an answer is not choosing when to cut into the asker's turn: it waits for the
     // asker's response like any answer.
     if (overrides.barrier || overrides.steer || overrides.immediate) {
-      fail(
+      throw new CliExpectedError(
         "An answer sent through an open Ask waits for the asker's current response: --barrier, --steer and --immediate are refused.",
+        "PERMISSION_DENIED",
+        1,
+        "Run the answer without --barrier, --steer and --immediate.",
       );
-      return null;
     }
     return { session, throughAsk: true };
   }
