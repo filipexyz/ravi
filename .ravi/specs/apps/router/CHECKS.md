@@ -21,6 +21,10 @@ ravi specs sync --json
 - A script operation MUST see no `require`, `process`, `fetch`, `std`, `os` or
   timers; an endless loop, a memory bomb and deep recursion MUST end with
   `APP_SCRIPT_LIMIT` (`src/apps/script-sandbox.test.ts`).
+- A script MUST be killed by the host when a native builtin never polls the
+  interrupt handler, MUST NOT grow past its memory cap even when it catches
+  out-of-memory errors, and deeply nested input MUST end that run only
+  (`src/apps/script-sandbox.test.ts`).
 - A script operation MUST refuse an input folder outside the working directory
   or behind a symbolic link, output paths with `..` or a leading `/`, and any
   `handoff` flag it did not declare (`src/apps/script-sandbox.test.ts`,

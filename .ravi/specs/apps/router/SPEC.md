@@ -325,8 +325,16 @@ link. It MUST NOT declare `command`.
   and context per run, with no module loader, no `std`/`os`, no timers and no
   host functions. It MUST NOT be able to reach the disk, the network, the
   environment or another process.
-- Each run MUST be bounded: 64 MiB of memory, 1 MiB of stack, 5 seconds, 4 MiB
-  of input, 8 MiB of output, 500 input and 500 output files.
+- Each run MUST happen in its own short-lived child process with an empty
+  environment, on its own WebAssembly instance whose memory has a hard maximum
+  (the heap limit plus fixed headroom). The host MUST kill that process when
+  the time limit (plus a fixed startup allowance) passes. QuickJS's interrupt
+  handler and heap limit are only a first line: native builtins that never
+  poll and many small allocations are stopped by the kill and the memory cap.
+  Nothing from one run is reused by another.
+- Each run MUST be bounded: 64 MiB of heap, 256 KiB of stack, 5 seconds, 4 MiB
+  of input, 8 MiB of output (checked inside the sandbox before the text is
+  copied out), 500 input and 500 output files.
 - The script MUST define a global `main(input)` that returns synchronously.
   `input` is `{args, files}`; the return value is `{files?, args?, result?,
   log?}`. Output paths MUST be relative package-style paths and contents text.

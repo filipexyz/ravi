@@ -64,6 +64,36 @@ describe("script sandbox", () => {
     expect(["APP_SCRIPT_LIMIT", "APP_SCRIPT_FAILED"]).toContain(error.code);
   });
 
+  it("kills a native builtin that never polls the interrupt handler", async () => {
+    const started = Date.now();
+    const error = await scriptError(
+      `function main() { return { result: Array.prototype.includes.call({ length: 2 ** 40 }, 1) }; }`,
+      {
+        timeoutMs: 300,
+        startupMs: 2_000,
+      },
+    );
+    expect(error.code).toBe("APP_SCRIPT_LIMIT");
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
+  it("caps memory spent in many small allocations, even when the script catches the error", async () => {
+    const error = await scriptError(
+      `function main() { var a = []; for (;;) { try { a.push(new Array(100000).fill(0)); } catch (e) {} } }`,
+      { memoryBytes: 16 * 1024 * 1024, timeoutMs: 2_000 },
+    );
+    expect(error.code).toBe("APP_SCRIPT_LIMIT");
+  });
+
+  it("survives deeply nested JSON without touching the host", async () => {
+    const error = await scriptError(
+      `function main() { return { result: JSON.parse("[".repeat(100000) + "]".repeat(100000)) }; }`,
+    );
+    expect(["APP_SCRIPT_LIMIT", "APP_SCRIPT_FAILED"]).toContain(error.code);
+    const ok = await runAppScript(`function main() { return { result: 1 }; }`, { args: [], files: {} });
+    expect(ok.result).toBe(1);
+  });
+
   it("refuses unsafe output paths and non-text files", async () => {
     for (const path of ["../x", "/etc/passwd", ".hidden", "a//b", "a\\\\b"]) {
       const error = await scriptError(`function main() { return { files: { ${JSON.stringify(path)}: "x" } }; }`);

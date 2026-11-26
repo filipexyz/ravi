@@ -6,16 +6,25 @@
  * host functions: the script cannot touch the disk, the network, the
  * environment or another process. It receives one JSON value and returns one
  * JSON value; the router decides what, if anything, happens with the result.
- * Memory, stack, run time and input/output size are bounded.
+ *
+ * Every run happens in a fresh child process (`script-runner.ts`) on its own
+ * WebAssembly instance with a hard memory maximum, and the host kills that
+ * process when the time limit passes. QuickJS's own limits are only the polite
+ * first line: some native builtins never poll the interrupt handler, and its
+ * memory accounting under Emscripten refuses only single oversized allocations.
  */
 
-import variant from "@jitl/quickjs-singlefile-cjs-release-sync";
-import { newQuickJSWASMModuleFromVariant, type QuickJSWASMModule } from "quickjs-emscripten-core";
-
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 export const APP_SCRIPT_LIMITS = Object.freeze({
   memoryBytes: 64 * 1024 * 1024,
-  stackBytes: 1024 * 1024,
+  stackBytes: 256 * 1024,
   timeoutMs: 5_000,
+  /** Time for the child process to start and load the interpreter, on top of timeoutMs. */
+  startupMs: 2_000,
   sourceBytes: 256 * 1024,
   inputBytes: 4 * 1024 * 1024,
   inputFiles: 500,
@@ -56,14 +65,6 @@ const PATH_SEGMENT = /^[A-Za-z0-9_][A-Za-z0-9._-]*$/;
 export function isSafeScriptPath(path: string): boolean {
   if (!path || path.length > 200) return false;
   return path.split("/").every((segment) => PATH_SEGMENT.test(segment));
-}
-
-let modulePromise: Promise<QuickJSWASMModule> | null = null;
-
-function quickjs(): Promise<QuickJSWASMModule> {
-  // A fresh module per process; every run still gets its own runtime and context.
-  modulePromise ??= newQuickJSWASMModuleFromVariant(variant as never);
-  return modulePromise;
 }
 
 function truncate(text: string, max: number): string {
@@ -146,6 +147,82 @@ function checkOutput(raw: string, limits: AppScriptLimits): AppScriptOutput {
   return { files, args, result: value.result ?? null, log };
 }
 
+/** The runner file: next to the bundle when built, next to this file in a source checkout. */
+function runnerPath(): string {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const bundled = join(here, "app-script-runner.js");
+  if (existsSync(bundled)) return bundled;
+  const source = join(here, "script-runner.ts");
+  if (existsSync(source)) return source;
+  throw new AppScriptError("APP_SCRIPT_FAILED", "The app script runner is missing from this Ravi installation.");
+}
+
+interface RunnerReply {
+  ok: boolean;
+  raw?: string;
+  code?: string;
+  message?: string;
+}
+
+function runInChild(request: string, limits: AppScriptLimits): Promise<RunnerReply> {
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn(process.execPath, [runnerPath()], {
+      cwd: tmpdir(),
+      env: {},
+      stdio: ["pipe", "pipe", "ignore"],
+      shell: false,
+    });
+    const maxReply = limits.outputBytes * 2 + 64 * 1024;
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let killedFor: "time" | "output" | null = null;
+    const timer = setTimeout(() => {
+      killedFor = "time";
+      child.kill("SIGKILL");
+    }, limits.timeoutMs + limits.startupMs);
+    child.stdout.on("data", (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > maxReply) {
+        killedFor ??= "output";
+        child.kill("SIGKILL");
+        return;
+      }
+      chunks.push(chunk);
+    });
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      reject(new AppScriptError("APP_SCRIPT_FAILED", "The app script runner could not start.", { cause: error }));
+    });
+    child.on("close", (code, signal) => {
+      clearTimeout(timer);
+      if (killedFor === "time") {
+        reject(new AppScriptError("APP_SCRIPT_LIMIT", `The script ran longer than ${limits.timeoutMs} ms.`));
+        return;
+      }
+      if (killedFor === "output") {
+        reject(new AppScriptError("APP_SCRIPT_LIMIT", `The script returned more than ${limits.outputBytes} bytes.`));
+        return;
+      }
+      const text = Buffer.concat(chunks).toString("utf8").trim();
+      try {
+        resolvePromise(JSON.parse(text) as RunnerReply);
+      } catch (error) {
+        reject(
+          new AppScriptError(
+            "APP_SCRIPT_LIMIT",
+            `The script's sandbox process ended without a result (${signal ?? `exit ${code}`}).`,
+            { cause: error },
+          ),
+        );
+      }
+    });
+    child.stdin.on("error", () => {
+      // no-cause: the child exiting early closes stdin; the close handler reports why.
+    });
+    child.stdin.end(request);
+  });
+}
+
 /**
  * Run `main(input)` from `source` and return its checked output. The script
  * must define a global function `main` that returns synchronously.
@@ -160,62 +237,23 @@ export async function runAppScript(
     throw new AppScriptError("APP_SCRIPT_LIMIT", `The script is larger than ${limits.sourceBytes} bytes.`);
   }
   const inputJson = checkInput(input, limits);
-  const module = await quickjs();
-  const runtime = module.newRuntime();
-  try {
-    runtime.setMemoryLimit(limits.memoryBytes);
-    runtime.setMaxStackSize(limits.stackBytes);
-    const deadline = Date.now() + limits.timeoutMs;
-    let interrupted = false;
-    runtime.setInterruptHandler(() => {
-      if (Date.now() > deadline) interrupted = true;
-      return interrupted;
-    });
-    const context = runtime.newContext();
-    try {
-      const evaluate = (code: string, filename: string) => {
-        const result = context.evalCode(code, filename, { type: "global", strict: true });
-        if (result.error) {
-          const dumped = context.dump(result.error);
-          result.error.dispose();
-          if (interrupted) {
-            throw new AppScriptError("APP_SCRIPT_LIMIT", `The script ran longer than ${limits.timeoutMs} ms.`);
-          }
-          const message = isRecord(dumped)
-            ? `${String(dumped.name ?? "Error")}: ${String(dumped.message ?? "")}`
-            : String(dumped);
-          if (/out of memory|stack overflow/i.test(message)) {
-            throw new AppScriptError("APP_SCRIPT_LIMIT", `The script hit a sandbox limit: ${truncate(message, 200)}`);
-          }
-          throw new AppScriptError("APP_SCRIPT_FAILED", `The script failed: ${truncate(message, 500)}`);
-        }
-        return result.value;
-      };
-
-      evaluate(source, "app-script.js").dispose();
-      const inputHandle = context.newString(inputJson);
-      context.setProp(context.global, "__raviInput", inputHandle);
-      inputHandle.dispose();
-      const output = evaluate(
-        `(() => {
-          if (typeof main !== "function") throw new TypeError("the script must define a global function main(input)");
-          const input = JSON.parse(globalThis.__raviInput);
-          delete globalThis.__raviInput;
-          const value = main(input);
-          if (value && typeof value.then === "function") throw new TypeError("main must return synchronously");
-          const text = JSON.stringify(value === undefined ? {} : value);
-          if (typeof text !== "string") throw new TypeError("main must return a JSON object");
-          return text;
-        })()`,
-        "ravi-script-entry.js",
-      );
-      const raw = context.getString(output);
-      output.dispose();
-      return checkOutput(raw, limits);
-    } finally {
-      context.dispose();
-    }
-  } finally {
-    runtime.dispose();
+  const reply = await runInChild(
+    JSON.stringify({
+      source,
+      input: inputJson,
+      limits: {
+        memoryBytes: limits.memoryBytes,
+        stackBytes: limits.stackBytes,
+        timeoutMs: limits.timeoutMs,
+        outputBytes: limits.outputBytes,
+      },
+    }),
+    limits,
+  );
+  if (!reply.ok || typeof reply.raw !== "string") {
+    const code =
+      reply.code === "APP_SCRIPT_LIMIT" || reply.code === "APP_SCRIPT_FAILED" ? reply.code : "APP_SCRIPT_FAILED";
+    throw new AppScriptError(code, String(reply.message ?? "The script failed."));
   }
+  return checkOutput(reply.raw, limits);
 }

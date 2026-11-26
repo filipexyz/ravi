@@ -34,7 +34,7 @@
     "gen:plugins": "bun scripts/gen-plugins.ts",
     "prebuild": "bun run gen:commands",
     "build": "bun run build:cli && bun run build:tui && bun run gen:plugins",
-    "build:cli": "bun build src/cli/index.ts --outdir dist/bundle --target bun --minify --keep-names --sourcemap=linked --external ink --external react --external '@anthropic-ai/*' --external openai --external '@google/*' --external nats --external '@elevenlabs/*' --external e2b && bun build src/bridge/stdio.ts --outfile dist/bundle/bridge-stdio.js --target bun --minify && bun build src/bridge/codex-hook.ts --outfile dist/bundle/bridge-hook.js --target bun --minify",
+    "build:cli": "bun build src/cli/index.ts --outdir dist/bundle --target bun --minify --keep-names --sourcemap=linked --external ink --external react --external '@anthropic-ai/*' --external openai --external '@google/*' --external nats --external '@elevenlabs/*' --external e2b && bun build src/bridge/stdio.ts --outfile dist/bundle/bridge-stdio.js --target bun --minify && bun build src/bridge/codex-hook.ts --outfile dist/bundle/bridge-hook.js --target bun --minify && bun build src/apps/script-runner.ts --outfile dist/bundle/app-script-runner.js --target bun --minify",
     "build:tui": "bun build src/tui/index.tsx --outdir dist/tui --target bun --keep-names --sourcemap=linked --external '@opentui/core' --external '@opentui/react' --external react --external nats",
     "prepack": "bun run build",
     "start": "bun src/index.ts",
