@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock, setSystemTime, spyOn } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getOrCreateSession, resolveSession } from "../router/sessions.js";
@@ -494,6 +494,44 @@ describe("CronRunner agent job outcome tracking", () => {
     const [closed] = failures();
     expect(closed?.status).toBe("done");
     expect(listLocalInboxEvents(closed!.id).some((event) => event.eventType === "cron.failure.resolved")).toBe(true);
+  });
+
+  it("an older run that completes ok does not close the alert of a newer run that already failed", async () => {
+    const job = createAgentJob();
+    const runner = new CronRunner();
+    const { listLocalInboxItems } = await import("../inbox/local-db.js");
+    const openFailures = () =>
+      listLocalInboxItems({ sourceDomain: "cron" }).filter(
+        (item) => item.sourceType === "run_failed" && item.sourceId === job.id,
+      );
+
+    const start = Date.now();
+    setSystemTime(new Date(start));
+    await runner.triggerJob(job.id);
+    const older = publishCalls.length - 1;
+    setSystemTime(new Date(start + 60_000));
+    await runner.triggerJob(job.id);
+    const newer = publishCalls.length - 1;
+
+    // The newer run fails first, then the older one completes ok.
+    await runner.handleRuntimeEvent(
+      runtimeEvent(publishCalls[newer]!.sessionName, {
+        type: "turn.failed",
+        error: "boom",
+        _turnProvenance: cronProvenance(job.id, newer),
+      }),
+    );
+    expect(openFailures()).toHaveLength(1);
+    // The older run's outcome is processed later still: order comes from admission, not processing time.
+    setSystemTime(new Date(start + 120_000));
+    await runner.handleRuntimeEvent(
+      runtimeEvent(publishCalls[older]!.sessionName, {
+        type: "turn.complete",
+        _turnProvenance: cronProvenance(job.id, older),
+      }),
+    );
+    setSystemTime();
+    expect(openFailures()).toHaveLength(1);
   });
 
   it("keeps failed one-shots and deletes them only after a successful turn", async () => {

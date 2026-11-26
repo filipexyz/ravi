@@ -535,7 +535,7 @@ export class CronRunner {
       if (await notifyCronFailure(cronRunNotification(settled), state.lastError ?? "Agent turn failed"))
         markCronRunReported(settled.id);
     } else if (state.lastStatus === "ok") {
-      resolveCronFailureAlerts(settled.job_id, Date.now());
+      resolveCronFailureAlerts(settled.job_id, settled.admitted_at);
     }
     // After the owner's notice: a parent that cannot be reached never delays it.
     try {

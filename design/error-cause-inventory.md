@@ -1201,11 +1201,11 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cron | src/cron/automation-notice.ts | 144 | fixed | binding retained / no recognized error surface | src/cron/automation-notice.ts:d154d5d261162fbd60b1fd73 |
 | cron | src/cron/automation-notice.ts | 154 | fixed | binding retained / no recognized error surface | src/cron/automation-notice.ts:a95b6dd11f31a709f9f4d9c0 |
 | cron | src/cron/failure-ack.ts | 41 | fixed | binding retained / no recognized error surface | src/cron/failure-ack.ts:b37b4f870b6889fac9a7567e |
-| cron | src/cron/failure-notification.ts | 140 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:4cb6e58727fdbb4445ff76f1 |
-| cron | src/cron/failure-notification.ts | 304 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:9f4862c94ad1cdce954f6824 |
-| cron | src/cron/failure-notification.ts | 346 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:98c131f44f660ecbd2faaadd |
-| cron | src/cron/failure-notification.ts | 413 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:872eccb90cc73e208afc46cb |
-| cron | src/cron/failure-notification.ts | 518 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:cf7e5fa6a76d578e3ee226d1 |
+| cron | src/cron/failure-notification.ts | 148 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:4cb6e58727fdbb4445ff76f1 |
+| cron | src/cron/failure-notification.ts | 312 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:9f4862c94ad1cdce954f6824 |
+| cron | src/cron/failure-notification.ts | 354 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:98c131f44f660ecbd2faaadd |
+| cron | src/cron/failure-notification.ts | 421 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:872eccb90cc73e208afc46cb |
+| cron | src/cron/failure-notification.ts | 526 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:cf7e5fa6a76d578e3ee226d1 |
 | cron | src/cron/runner.ts | 165 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:a67e22487d87b0d4e3fabe92 |
 | cron | src/cron/runner.ts | 222 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:e319db265d99dc0086b354de |
 | cron | src/cron/runner.ts | 214 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:4ebc8da0b22c5db05a579b9f |
@@ -1432,7 +1432,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | inbox | src/inbox/inbox-runner.ts | 772 | fixed | binding retained / no recognized error surface | src/inbox/inbox-runner.ts:4167c82862f2fd76a34d0dff |
 | inbox | src/inbox/inbox-runner.ts | 796 | fixed | binding retained / no recognized error surface | src/inbox/inbox-runner.ts:8b690d93412b255706dacedb |
 | inbox | src/inbox/inbox-runner.ts | 815 | fixed | binding retained / no recognized error surface | src/inbox/inbox-runner.ts:f8008a9ac80749ae267a7619 |
-| inbox | src/inbox/local-db.ts | 481 | triaged-follow-up | catch-without-binding | src/inbox/local-db.ts:f07c6dd0d753813085053dee |
+| inbox | src/inbox/local-db.ts | 492 | triaged-follow-up | catch-without-binding | src/inbox/local-db.ts:f07c6dd0d753813085053dee |
 | inbox | src/inbox/local-events.ts | 69 | fixed | binding retained / no recognized error surface | src/inbox/local-events.ts:351686dbaab5803abe98d7d7 |
 | inbox | src/inbox/mail-enrichment.ts | 175 | triaged-follow-up | catch-without-binding | src/inbox/mail-enrichment.ts:b6d0d49647fba552e5ab48a6 |
 | index.ts | src/index.ts | 34 | fixed | binding retained / no recognized error surface | src/index.ts:0bbc6928f13db49810d3186a |

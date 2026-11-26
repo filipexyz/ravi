@@ -258,14 +258,14 @@ export function listLocalInboxItems(input: ListLocalInboxItemsInput = {}): Local
 }
 
 /**
- * Open items (not done/archived/dismissed) of one exact source that happened at or before `occurredAtOrBefore`.
+ * Open items (not done/archived/dismissed) of one exact source that happened strictly before `occurredBefore`.
  * Unpaged on purpose: a caller resolving a source's alerts must see all of them, not the first page.
  */
 export function listOpenLocalInboxItemsForSource(input: {
   sourceDomain: string;
   sourceType: string;
   sourceId: string;
-  occurredAtOrBefore: number;
+  occurredBefore: number;
 }): LocalInboxItem[] {
   ensureLocalInboxSchema();
   const rows = getDb()
@@ -273,10 +273,10 @@ export function listOpenLocalInboxItemsForSource(input: {
       `SELECT * FROM inbox_items
         WHERE source_domain = ? AND source_type = ? AND source_id = ?
           AND status NOT IN ('done','archived','dismissed')
-          AND COALESCE(occurred_at, created_at) <= ?
+          AND COALESCE(occurred_at, created_at) < ?
         ORDER BY COALESCE(occurred_at, created_at) ASC`,
     )
-    .all(input.sourceDomain, input.sourceType, input.sourceId, input.occurredAtOrBefore) as LocalInboxItemRow[];
+    .all(input.sourceDomain, input.sourceType, input.sourceId, input.occurredBefore) as LocalInboxItemRow[];
   return rows.map(rowToItem);
 }
 
@@ -287,11 +287,22 @@ export function findLocalInboxItemByDedupeKey(dedupeKey: string): LocalInboxItem
   return row ? rowToItem(row) : null;
 }
 
+const TERMINAL_INBOX_STATUSES: ReadonlySet<LocalInboxStatus> = new Set(["done", "archived", "dismissed"]);
+
+/** Current status of an item without marking it seen or appending an event; null when it does not exist. */
+export function peekLocalInboxItemStatus(id: string): LocalInboxStatus | null {
+  ensureLocalInboxSchema();
+  const row = getDb().prepare(`SELECT status FROM inbox_items WHERE id = ?`).get(id) as { status: string } | undefined;
+  return row ? (row.status as LocalInboxStatus) : null;
+}
+
 export function readLocalInboxItem(id: string): { item: LocalInboxItem; events: LocalInboxEvent[] } {
   ensureLocalInboxSchema();
   const row = getDb().prepare(`SELECT * FROM inbox_items WHERE id = ?`).get(id) as LocalInboxItemRow | undefined;
   if (!row) throw new Error(`Inbox item not found: ${id}`);
-  markLocalInboxItem(id, "seen", { eventType: "seen" });
+  // Reading history must not reopen it: a closed item stays closed, its events are still returned.
+  if (!TERMINAL_INBOX_STATUSES.has(row.status as LocalInboxStatus))
+    markLocalInboxItem(id, "seen", { eventType: "seen" });
   return {
     item: rowToItem((getDb().prepare(`SELECT * FROM inbox_items WHERE id = ?`).get(id) as LocalInboxItemRow) ?? row),
     events: listLocalInboxEvents(id),

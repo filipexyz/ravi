@@ -106,6 +106,11 @@ RAVI_CONTEXT_KEY=<viewer-ctx> ravi cron disable <other-agent-job-id> --json
 - `bun test src/runtime/delivery-queue.test.ts src/runtime/turn-provenance.test.ts src/runtime/prompt-subscription.test.ts` verifies run separation, continuation identity and pre-turn failure provenance.
 - `bun test src/runtime/intake-failure.test.ts` MUST pass a persisted cron run through the real cold launcher with an incompatible model and with a missing agent, then recreate the runner and verify the terminal state and retained one-shot. A permanent intake drop MUST preserve the original run identity.
 
+## Failure Alerts MUST Resolve When The Job Recovers
+
+- `bun test src/cron/failure-notification.test.ts` MUST prove: a successful run closes every open failure of its job admitted before it, one `cron.failure.resolved` event each, more than one page of items included; a failure admitted after (or in the same millisecond as) the successful run stays open; another job's failures and items a person closed are untouched; reading a resolved item keeps it `done`; recording a delivery outcome (sent or failed) after the job recovered does not reopen the item.
+- `bun test src/cron/runner.test.ts` MUST prove the runner wiring: re-dispatch keeps the alert open, the completed turn closes it with `cron.failure.resolved`, and an older run that completes ok after a newer run failed leaves the newer alert open.
+
 ## Failure Acknowledgement MUST Only Settle
 
 - `bun test src/cron/failure-ack.test.ts` MUST prove `cron ack-failures` groups pending
