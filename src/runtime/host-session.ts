@@ -309,6 +309,14 @@ export interface RuntimeMessageStashOptions {
   crashRecovery?: RuntimeCrashRecoveryCoordinator;
   /** Reconcile an ambiguously delivered turn before deciding whether it may be retried. */
   reconcileCurrentTurn?: boolean;
+  /**
+   * Keep the messages of a superseded turn that left no effect (no tool started, no output, no input
+   * mutation). A superseded turn is normally dropped because its prompt is already in the provider
+   * history; when the turn is stopped before the provider checked the prompt and the runtime restarts,
+   * that prompt exists nowhere else, and dropping it loses a person's message. Re-sending a prompt the
+   * provider did see is a duplicate; losing one it did not see is not recoverable.
+   */
+  keepSupersededTurnWithoutEffects?: boolean;
 }
 
 export function stashPendingRuntimeMessages(
@@ -318,9 +326,20 @@ export function stashPendingRuntimeMessages(
   options: RuntimeMessageStashOptions = {},
 ): number {
   const safety = getRuntimeTurnReplaySafety(session, options.crashRecovery);
-  const replayableMessages = options.reconcileCurrentTurn
-    ? getReplayablePendingRuntimeMessages(session)
-    : getCrashRecoveryReplayablePendingRuntimeMessages(session, options.crashRecovery);
+  const keepSupersededTurn =
+    options.keepSupersededTurnWithoutEffects === true &&
+    session.currentTurnSuperseded === true &&
+    session.currentCrashRecoveryTerminal?.status !== "complete" &&
+    !safety.startedTool &&
+    !safety.materializedOutput &&
+    !safety.inputMutated &&
+    session.currentTurnToolStarted !== true &&
+    session.currentTurnInputMutated !== true;
+  const replayableMessages = keepSupersededTurn
+    ? session.pendingMessages
+    : options.reconcileCurrentTurn
+      ? getReplayablePendingRuntimeMessages(session)
+      : getCrashRecoveryReplayablePendingRuntimeMessages(session, options.crashRecovery);
   if (replayableMessages.length === 0) {
     return 0;
   }
