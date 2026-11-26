@@ -38,6 +38,18 @@ describe("ravi rules stay inside the agent workspace", () => {
     expect(files).toEqual([]);
   });
 
+  it("loads rules from an in-workspace directory whose name starts with two dots", async () => {
+    const cwd = tempDir("ravi-rules-ws-");
+    mkdirSync(join(cwd, "..shared-rules"), { recursive: true });
+    writeFileSync(join(cwd, "..shared-rules", "style.md"), "Use short sentences.\n");
+    mkdirSync(join(cwd, ".ravi"), { recursive: true });
+    symlinkSync(join(cwd, "..shared-rules"), join(cwd, ".ravi", "rules"));
+
+    const files = await loadRaviRuleFiles(cwd);
+
+    expect(files.map((file) => file.content)).toEqual(["Use short sentences."]);
+  });
+
   it("refuses an import whose destination directory is a symlink out of the workspace", async () => {
     const cwd = tempDir("ravi-rules-ws-");
     const outside = tempDir("ravi-rules-outside-");

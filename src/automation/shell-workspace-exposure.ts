@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { isAbsolute, normalize, relative } from "node:path";
+import { isAbsolute, normalize, relative, sep } from "node:path";
 
 export interface ShellAutomationLike {
   kind: "cron" | "trigger";
@@ -57,8 +57,16 @@ export function findShellAutomationsInAgentWorkspaces(
   return exposures;
 }
 
+// A path word: single-quoted, double-quoted, or bare with backslash escapes.
+// The command is only parsed, never run.
+const PATH_WORD = /'((?:~|\/)[^']*)'|"((?:~|\/)[^"]*)"|((?:~|\/)(?:\\.|[^\s;&|'"`<>()\\])+)/g;
+
 function absolutePathsIn(command: string, home: string): string[] {
-  const tokens = command.match(/(?:~|\/)[^\s;&|'"`<>()]+/g) ?? [];
+  const tokens: string[] = [];
+  for (const match of command.matchAll(PATH_WORD)) {
+    const word = match[1] ?? match[2] ?? match[3]?.replace(/\\(.)/g, "$1");
+    if (word) tokens.push(word);
+  }
   return tokens.map((token) => normalize(expandTilde(token, home))).filter((token) => isAbsolute(token));
 }
 
@@ -68,5 +76,5 @@ function expandTilde(path: string, home: string): string {
 
 function isUnder(path: string, root: string): boolean {
   const rel = relative(root, path);
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+  return rel === "" || !(rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel));
 }

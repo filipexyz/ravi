@@ -2130,7 +2130,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/ravi-env-file.ts | 431 | no-cause | No raw OS error/cause or env bytes cross the writer boundary. Post-rename failures are uncertain. | src/runtime/ravi-env-file.ts:a017511db09a91335a72ffe8 |
 | runtime-chat | src/runtime/ravi-env-file.ts | 441 | no-cause | Descriptor cleanup cannot change the known write result or leak secret-bearing OS diagnostics. | src/runtime/ravi-env-file.ts:c9470c9b2467433f9ffb2ed0 |
 | runtime-chat | src/runtime/ravi-rules.ts | 103 | no-cause | a path that cannot be resolved (missing, dangling link, no access) is treated as outside; nothing is reported. | src/runtime/ravi-rules.ts:7427b75535b5ed87be13dbad |
-| runtime-chat | src/runtime/ravi-rules.ts | 342 | triaged-follow-up | catch-without-binding | src/runtime/ravi-rules.ts:d1548e705d2c1cc203c2b699 |
+| runtime-chat | src/runtime/ravi-rules.ts | 343 | triaged-follow-up | catch-without-binding | src/runtime/ravi-rules.ts:d1548e705d2c1cc203c2b699 |
 | runtime-chat | src/runtime/restart-turn-recovery.ts | 460 | fixed | binding retained / no recognized error surface | src/runtime/restart-turn-recovery.ts:71ae2a80a02d3e77b36e6b33 |
 | runtime-chat | src/runtime/restart-turn-recovery.ts | 479 | fixed | binding retained / no recognized error surface | src/runtime/restart-turn-recovery.ts:d449f88dfcdbcab9f736b604 |
 | runtime-chat | src/runtime/restart-turn-recovery.ts | 585 | fixed | binding retained / no recognized error surface | src/runtime/restart-turn-recovery.ts:cc3763325d82ce16ac9fc87b |

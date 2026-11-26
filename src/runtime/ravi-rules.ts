@@ -1,7 +1,7 @@
 import { constants } from "node:fs";
 import { mkdir, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, extname, isAbsolute, join, relative } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, sep } from "node:path";
 import type { PromptContextSection } from "../prompt-builder.js";
 
 const RAVI_RULES_SEGMENTS = [".ravi", "rules"] as const;
@@ -106,7 +106,8 @@ async function realPathInside(path: string, root: string): Promise<string | null
     return null;
   }
   const rel = relative(realRoot, realPath);
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel)) ? realPath : null;
+  const escapes = rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
+  return escapes ? null : realPath;
 }
 
 export async function loadRaviRuleFilesFromDir(rulesDir: string): Promise<RaviRuleFile[]> {

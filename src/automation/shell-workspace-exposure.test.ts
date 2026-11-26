@@ -6,6 +6,7 @@ const agents = [
   { id: "workflows", cwd: "~/ravi/ravi-workflows" },
   { id: "main", cwd: "/Users/op/ravi/main" },
   { id: "homeless", cwd: "~" },
+  { id: "spaced", cwd: "/Users/op/My Agent" },
 ];
 
 describe("shell automations that run inside an agent workspace", () => {
@@ -25,6 +26,32 @@ describe("shell automations that run inside an agent workspace", () => {
       HOME,
     );
     expect(found.map((item) => [item.id, item.agentId])).toEqual([["c1", "main"]]);
+  });
+
+  it("reads quoted and escaped paths to a workspace whose name has a space", () => {
+    const found = findShellAutomationsInAgentWorkspaces(
+      [
+        { kind: "cron", id: "single", shellCommand: "bun '/Users/op/My Agent/watch.ts'" },
+        { kind: "cron", id: "double", shellCommand: 'bun "/Users/op/My Agent/watch.ts"' },
+        { kind: "cron", id: "escaped", shellCommand: "bun /Users/op/My\\ Agent/watch.ts" },
+      ],
+      agents,
+      HOME,
+    );
+    expect(found.map((item) => [item.id, item.agentId, item.path])).toEqual([
+      ["single", "spaced", "/Users/op/My Agent/watch.ts"],
+      ["double", "spaced", "/Users/op/My Agent/watch.ts"],
+      ["escaped", "spaced", "/Users/op/My Agent/watch.ts"],
+    ]);
+  });
+
+  it("treats a name starting with two dots as inside the workspace", () => {
+    const found = findShellAutomationsInAgentWorkspaces(
+      [{ kind: "cron", id: "dots", shellCommand: "bun /Users/op/ravi/main/..cache/run.ts" }],
+      agents,
+      HOME,
+    );
+    expect(found.map((item) => item.agentId)).toEqual(["main"]);
   });
 
   it("ignores disabled automations, commands outside any workspace and a workspace at home", () => {
