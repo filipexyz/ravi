@@ -45,7 +45,8 @@ export function decisionFromRow(row: DecisionRow): Decision {
     ask: row.ask,
     askedBy: row.asked_by,
     askedAt: row.asked_at,
-    revisedAt: row.revised_at ?? row.asked_at,
+    // Rows from before `revised_at` existed: a re-asked one (revision > 1) takes its last change as the cutoff.
+    revisedAt: row.revised_at ?? (row.revision > 1 ? row.updated_at : row.asked_at),
     answer: row.answer,
     answeredBy: row.answered_by,
     answeredAt: row.answered_at,
@@ -297,10 +298,11 @@ export function supersedeDecisionRecord(oldId: string, newId: string, actor: str
       now,
       oldId,
     );
-    // An answer not yet handed to its thread is withdrawn: the waiting work must not resume on a replaced outcome.
+    // An answer not yet admitted is withdrawn, including one being published: the publication's completion only
+    // updates a row still `publishing`, and admission refuses a superseded decision.
     runThreadMutation(
       db,
-      "UPDATE decision_deliveries SET status='superseded' WHERE decision_id=? AND kind='answer' AND status IN ('pending','failed','published')",
+      "UPDATE decision_deliveries SET status='superseded' WHERE decision_id=? AND kind='answer' AND status IN ('pending','failed','publishing','published')",
       oldId,
     );
     const superseded = getDecision(oldId)!;

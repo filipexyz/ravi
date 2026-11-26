@@ -10,8 +10,6 @@ export const DECISIONS_SECTION_ID = "decisions.in_force";
 export const DECISIONS_SECTION_TITLE = "Decisions in Force";
 
 const QUESTION_MAX = 280;
-/** Wide answers are capped at answer time; only a thread's own long answer can exceed this. */
-const ANSWER_MAX = 2000;
 
 export const DECISIONS_PROMPT_UNAVAILABLE_NOTE =
   "Decisions snapshot unavailable: the local store returned a database capacity error. " +
@@ -22,11 +20,12 @@ function bound(text: string, max: number): string {
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
 
-/** Whitespace inside an answer is kept: JSON quoting carries newlines and exact spacing. */
+/**
+ * The whole answer, whitespace kept (JSON quoting carries it): a turn never follows a cut decision. Answers wider than
+ * their thread are capped at answer time; a thread's own answer reaches only that thread.
+ */
 function boundAnswer(text: string): string {
-  const answer = text.trim();
-  if (answer.length <= ANSWER_MAX) return answer;
-  return `${answer.slice(0, ANSWER_MAX)} [the answer continues; its full text was delivered to this thread when it was answered]`;
+  return text.trim();
 }
 
 function renderDecision(decision: Decision): string {

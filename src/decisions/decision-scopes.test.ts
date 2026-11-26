@@ -18,7 +18,7 @@ import {
   supersedeDecision,
 } from "./service.js";
 import { answerDecisionRecord, decisionWrite, getDecision, listDecisionsInForce } from "./store.js";
-import { admitDecisionAnswer } from "./delivery.js";
+import { admitDecisionAnswer, reconcileDecisionDeliveries } from "./delivery.js";
 import { buildDecisionsInForceSection, refreshDecisionsForTurn } from "./prompt.js";
 import { parseDecisionScope } from "./model.js";
 import type { Decision, DecisionOrigin } from "./types.js";
@@ -400,7 +400,7 @@ describe("review follow-ups (#1030)", () => {
     }
   });
 
-  it("an answer beyond its thread must fit the turn context; a long thread answer is marked as cut", async () => {
+  it("an answer beyond its thread must fit the turn context; a thread's own long answer reaches it whole", async () => {
     const origin = await thread();
     const decision = await ask(origin, "deploy");
     await expect(
@@ -408,11 +408,10 @@ describe("review follow-ups (#1030)", () => {
         scope: parseDecisionScope("org"),
       }),
     ).rejects.toMatchObject({ code: "DECISION_INVALID_ANSWER" });
-    await answerDecision(decision.id, "y".repeat(WIDE_DECISION_ANSWER_MAX + 50));
+    const long = `${"y".repeat(WIDE_DECISION_ANSWER_MAX + 50)} exceto em produção`;
+    await answerDecision(decision.id, long);
     const section = buildDecisionsInForceSection({ agentId: "main", sessionKey: origin.sessionKey! })!;
-    expect(section).toContain(
-      "[the answer continues; its full text was delivered to this thread when it was answered]",
-    );
+    expect(section).toContain(JSON.stringify(long));
   });
 
   it("an older answer cannot replace a newer one", async () => {
@@ -475,7 +474,11 @@ describe("CodeRabbit follow-ups (#1030)", () => {
     const origin = await thread();
     const decision = await ask(origin, "deploy");
     decisionWrite((db) =>
-      runThreadMutation(db, "UPDATE decisions SET asked_at=asked_at-10000 WHERE id=?", decision.id),
+      runThreadMutation(
+        db,
+        "UPDATE decisions SET asked_at=asked_at-10000,revised_at=revised_at-10000 WHERE id=?",
+        decision.id,
+      ),
     );
     const beforeRevision = ownerSays(`${decision.id} sim`, { providerTimestamp: decision.askedAt - 5000 });
     const reasked = await runWithContext(caller(origin.sessionKey!), () =>
@@ -554,5 +557,72 @@ describe("CodeRabbit follow-ups (#1030)", () => {
     expect(await ids("agent: main")).toEqual([agentScoped.id]);
     expect(await ids("thread")).toEqual([inThread.id]);
     expect(await ids("task")).toEqual([]);
+  });
+});
+
+describe("CodeRabbit second round (#1030)", () => {
+  it("a decision re-asked before revised_at existed takes its last change as the source cutoff", async () => {
+    const origin = await thread();
+    const decision = await ask(origin, "legacy");
+    decisionWrite((db) =>
+      runThreadMutation(
+        db,
+        "UPDATE decisions SET revised_at=NULL,revision=2,asked_at=asked_at-20000,updated_at=asked_at-5000 WHERE id=?",
+        decision.id,
+      ),
+    );
+    const legacy = getDecision(decision.id)!;
+    expect(legacy.revisedAt).toBe(legacy.askedAt + 15000);
+    const between = ownerSays(`${decision.id} sim`, { providerTimestamp: legacy.askedAt + 10000 });
+    expect(() => resolveDecisionAnswerSource(legacy, between.id)).toThrow(
+      expect.objectContaining({ code: "DECISION_SOURCE_NOT_OWNER" }),
+    );
+  });
+
+  it("an answer whose publication is in flight when it is replaced ends superseded and is never admitted", async () => {
+    const origin = await thread();
+    const old = await operatorAnswer(origin, "old", "thread");
+    let release: () => void = () => {};
+    let published: Record<string, unknown> | null = null;
+    let entered: () => void = () => {};
+    const inFlight = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const reconcile = reconcileDecisionDeliveries(
+      {
+        publishPrompt: (async (_name: string, payload: Record<string, unknown>) => {
+          if ((payload as { _decisionDeliveryId?: string })._decisionDeliveryId?.startsWith(`decision:${old.id}:`)) {
+            published = payload;
+            entered();
+            await new Promise<void>((resolve) => {
+              release = resolve;
+            });
+          }
+        }) as never,
+        publishOutbound: async () => ({ ok: true }),
+      },
+      old.id,
+    );
+    await inFlight;
+    const statusOf = () =>
+      (
+        getDb().query("SELECT status FROM decision_deliveries WHERE decision_id=? AND kind='answer'").get(old.id) as {
+          status: string;
+        }
+      ).status;
+    expect(statusOf()).toBe("publishing");
+    const next = await operatorAnswer(origin, "next", "thread");
+    supersedeDecision(old.id, next.id);
+    release();
+    await reconcile;
+    expect(statusOf()).toBe("superseded");
+    let handled = 0;
+    const session = getSession(origin.sessionKey!)!;
+    expect(
+      await admitDecisionAnswer(session.name ?? session.sessionKey, published as never, async () => {
+        handled += 1;
+      }),
+    ).toBe(true);
+    expect(handled).toBe(0);
   });
 });
