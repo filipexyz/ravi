@@ -83,6 +83,7 @@ class RaviClient {
   TranscribeNamespace get transcribe => TranscribeNamespace(_transport);
   TriggersNamespace get triggers => TriggersNamespace(_transport);
   VideoNamespace get video => VideoNamespace(_transport);
+  VoiceNamespace get voice => VoiceNamespace(_transport);
   WatchNamespace get watch => WatchNamespace(_transport);
   WhatsappNamespace get whatsapp => WhatsappNamespace(_transport);
   WidgetsNamespace get widgets => WidgetsNamespace(_transport);
@@ -11139,6 +11140,359 @@ class VideoNamespace {
       command: "analyze",
       body: requestBody,
       decode: videoAnalyzeReturnFromJson,
+    );
+  }
+}
+
+class VoiceNamespace {
+  const VoiceNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  VoiceCallsNamespace get calls => VoiceCallsNamespace(_transport);
+
+  VoiceDevicesNamespace get devices => VoiceDevicesNamespace(_transport);
+
+  VoiceEnginesNamespace get engines => VoiceEnginesNamespace(_transport);
+
+  VoiceProfilesNamespace get profiles => VoiceProfilesNamespace(_transport);
+
+  VoiceTargetsNamespace get targets => VoiceTargetsNamespace(_transport);
+
+  VoiceVoicesNamespace get voices => VoiceVoicesNamespace(_transport);
+}
+
+class VoiceCallsNamespace {
+  const VoiceCallsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<VoiceCallsApproveReturn> approve(String call, String approval, [VoiceCallsApproveOptions options = const VoiceCallsApproveOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["call"] = RaviJson.from(call);
+    requestBody["approval"] = RaviJson.from(approval);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["voice", "calls"],
+      command: "approve",
+      body: requestBody,
+      decode: voiceCallsApproveReturnFromJson,
+    );
+  }
+
+  Future<VoiceCallsAudioReturn> audio(String call, String item, [VoiceCallsAudioOptions options = const VoiceCallsAudioOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["call"] = RaviJson.from(call);
+    requestBody["item"] = RaviJson.from(item);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["voice", "calls"],
+      command: "audio",
+      body: requestBody,
+      decode: voiceCallsAudioReturnFromJson,
+    );
+  }
+
+  Future<VoiceCallsCancelTurnReturn> cancelTurn(String call, [VoiceCallsCancelTurnOptions options = const VoiceCallsCancelTurnOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["call"] = RaviJson.from(call);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["voice", "calls"],
+      command: "cancel-turn",
+      body: requestBody,
+      decode: voiceCallsCancelTurnReturnFromJson,
+    );
+  }
+
+  Future<VoiceCallsConnectReturn> connect(String call, [VoiceCallsConnectOptions options = const VoiceCallsConnectOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["call"] = RaviJson.from(call);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["voice", "calls"],
+      command: "connect",
+      body: requestBody,
+      decode: voiceCallsConnectReturnFromJson,
+    );
+  }
+
+  Future<VoiceCallsDenyReturn> deny(String call, String approval) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["call"] = RaviJson.from(call);
+    requestBody["approval"] = RaviJson.from(approval);
+    return _transport.callJson(
+      groupSegments: const ["voice", "calls"],
+      command: "deny",
+      body: requestBody,
+      decode: voiceCallsDenyReturnFromJson,
+    );
+  }
+
+  Future<VoiceCallsEndReturn> end(String call) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["call"] = RaviJson.from(call);
+    return _transport.callJson(
+      groupSegments: const ["voice", "calls"],
+      command: "end",
+      body: requestBody,
+      decode: voiceCallsEndReturnFromJson,
+    );
+  }
+
+  Future<VoiceCallsEventsReturn> events(String call, [VoiceCallsEventsOptions options = const VoiceCallsEventsOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["call"] = RaviJson.from(call);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["voice", "calls"],
+      command: "events",
+      body: requestBody,
+      decode: voiceCallsEventsReturnFromJson,
+    );
+  }
+
+  Future<VoiceCallsListReturn> list([VoiceCallsListOptions options = const VoiceCallsListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["voice", "calls"],
+      command: "list",
+      body: requestBody,
+      decode: voiceCallsListReturnFromJson,
+    );
+  }
+
+  Future<VoiceCallsPushReturn> push(String call, [VoiceCallsPushOptions options = const VoiceCallsPushOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["call"] = RaviJson.from(call);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["voice", "calls"],
+      command: "push",
+      body: requestBody,
+      decode: voiceCallsPushReturnFromJson,
+    );
+  }
+
+  Future<VoiceCallsSendReturn> send(String call, List<String> text, [VoiceCallsSendOptions options = const VoiceCallsSendOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["call"] = RaviJson.from(call);
+    requestBody["text"] = RaviJson.from(text);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["voice", "calls"],
+      command: "send",
+      body: requestBody,
+      decode: voiceCallsSendReturnFromJson,
+    );
+  }
+
+  Future<VoiceCallsShowReturn> show(String call) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["call"] = RaviJson.from(call);
+    return _transport.callJson(
+      groupSegments: const ["voice", "calls"],
+      command: "show",
+      body: requestBody,
+      decode: voiceCallsShowReturnFromJson,
+    );
+  }
+
+  Future<VoiceCallsSilenceReturn> silence(String call) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["call"] = RaviJson.from(call);
+    return _transport.callJson(
+      groupSegments: const ["voice", "calls"],
+      command: "silence",
+      body: requestBody,
+      decode: voiceCallsSilenceReturnFromJson,
+    );
+  }
+
+  Future<VoiceCallsStartReturn> start(String session, [VoiceCallsStartOptions options = const VoiceCallsStartOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["session"] = RaviJson.from(session);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["voice", "calls"],
+      command: "start",
+      body: requestBody,
+      decode: voiceCallsStartReturnFromJson,
+    );
+  }
+
+  Future<VoiceCallsTranscriptReturn> transcript(String call) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["call"] = RaviJson.from(call);
+    return _transport.callJson(
+      groupSegments: const ["voice", "calls"],
+      command: "transcript",
+      body: requestBody,
+      decode: voiceCallsTranscriptReturnFromJson,
+    );
+  }
+}
+
+class VoiceDevicesNamespace {
+  const VoiceDevicesNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<VoiceDevicesListReturn> list([VoiceDevicesListOptions options = const VoiceDevicesListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["voice", "devices"],
+      command: "list",
+      body: requestBody,
+      decode: voiceDevicesListReturnFromJson,
+    );
+  }
+
+  Future<VoiceDevicesPairReturn> pair([VoiceDevicesPairOptions options = const VoiceDevicesPairOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["voice", "devices"],
+      command: "pair",
+      body: requestBody,
+      decode: voiceDevicesPairReturnFromJson,
+    );
+  }
+
+  Future<VoiceDevicesRevokeReturn> revoke(String device) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["device"] = RaviJson.from(device);
+    return _transport.callJson(
+      groupSegments: const ["voice", "devices"],
+      command: "revoke",
+      body: requestBody,
+      decode: voiceDevicesRevokeReturnFromJson,
+    );
+  }
+}
+
+class VoiceEnginesNamespace {
+  const VoiceEnginesNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<VoiceEnginesCheckReturn> check() async {
+    final requestBody = <String, RaviJson>{};
+    return _transport.callJson(
+      groupSegments: const ["voice", "engines"],
+      command: "check",
+      body: requestBody,
+      decode: voiceEnginesCheckReturnFromJson,
+    );
+  }
+
+  Future<VoiceEnginesListReturn> list([VoiceEnginesListOptions options = const VoiceEnginesListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["voice", "engines"],
+      command: "list",
+      body: requestBody,
+      decode: voiceEnginesListReturnFromJson,
+    );
+  }
+}
+
+class VoiceProfilesNamespace {
+  const VoiceProfilesNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<VoiceProfilesCreateReturn> create(String id, [VoiceProfilesCreateOptions options = const VoiceProfilesCreateOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["voice", "profiles"],
+      command: "create",
+      body: requestBody,
+      decode: voiceProfilesCreateReturnFromJson,
+    );
+  }
+
+  Future<VoiceProfilesDeleteReturn> delete(String id) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    return _transport.callJson(
+      groupSegments: const ["voice", "profiles"],
+      command: "delete",
+      body: requestBody,
+      decode: voiceProfilesDeleteReturnFromJson,
+    );
+  }
+
+  Future<VoiceProfilesListReturn> list([VoiceProfilesListOptions options = const VoiceProfilesListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["voice", "profiles"],
+      command: "list",
+      body: requestBody,
+      decode: voiceProfilesListReturnFromJson,
+    );
+  }
+
+  Future<VoiceProfilesShowReturn> show(String id) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    return _transport.callJson(
+      groupSegments: const ["voice", "profiles"],
+      command: "show",
+      body: requestBody,
+      decode: voiceProfilesShowReturnFromJson,
+    );
+  }
+
+  Future<VoiceProfilesUpdateReturn> update(String id, [VoiceProfilesUpdateOptions options = const VoiceProfilesUpdateOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["voice", "profiles"],
+      command: "update",
+      body: requestBody,
+      decode: voiceProfilesUpdateReturnFromJson,
+    );
+  }
+}
+
+class VoiceTargetsNamespace {
+  const VoiceTargetsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<VoiceTargetsListReturn> list([VoiceTargetsListOptions options = const VoiceTargetsListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["voice", "targets"],
+      command: "list",
+      body: requestBody,
+      decode: voiceTargetsListReturnFromJson,
+    );
+  }
+}
+
+class VoiceVoicesNamespace {
+  const VoiceVoicesNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<VoiceVoicesListReturn> list([VoiceVoicesListOptions options = const VoiceVoicesListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["voice", "voices"],
+      command: "list",
+      body: requestBody,
+      decode: voiceVoicesListReturnFromJson,
     );
   }
 }

@@ -55,6 +55,11 @@ Required capability materializers:
 - Runtime code MUST call the provider-runtime facade for authorization.
 - Runtime context creation MUST materialize subject capabilities through the
   registered materializer chain.
+- The permission registry and the contact-policy provider import each other
+  through contacts and the router. Nothing at module level in
+  `provider-registry.ts` MAY read an export of another provider module; the
+  default materializer list MUST be built on first use. Loading any module of
+  `src/permissions` first MUST NOT fail with a temporal-dead-zone error.
 - Bootstrap agent and automation contexts MUST receive the exact read-only
   `read:context:codex-bash-hook` capability so Codex can enforce Bash policy;
   this MUST NOT grant the broader `execute:group:context` capability.
@@ -288,7 +293,12 @@ Required capability materializers:
   path-qualified command MUST resolve (symlinks followed) to an existing
   executable under a trusted root (system and package-manager prefixes, the
   host PATH directories, `RAVI_BASH_TRUSTED_EXECUTABLE_ROOTS`); otherwise it is
-  `untrusted_executable_path`. A relative path needs a fixed working directory
+  `untrusted_executable_path`. A default root MUST be a fixed system or
+  package-manager directory, never a parent of one: uutils coreutils (Ubuntu
+  25.10+) is trusted as `/usr/lib/cargo/bin/coreutils` only, so `ls`, `env` and
+  `sort` keep working while its parent (sudo-rs, `su`) and prefix-alike
+  siblings stay untrusted. Root membership MUST stop at a path segment, not a
+  string prefix. A relative path needs a fixed working directory
   (no `cd`/`pushd`/`popd` in the command). A bare name resolves through the host
   PATH; a cwd-relative PATH entry is untrusted. A binary whose real name is a
   shell or interpreter under another name is `indirect_execution`. The always

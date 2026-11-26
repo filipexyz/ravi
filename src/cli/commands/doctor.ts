@@ -89,6 +89,13 @@ import {
   resolveNatsUrl,
   type NatsExposureReport,
 } from "../../security/nats-exposure.js";
+import {
+  isRiskyOmniDbAuth,
+  omniDatabaseUrlFromConfig,
+  probeOmniDatabaseAuth,
+  type OmniDbAuthReport,
+} from "../../security/omni-db-auth.js";
+import { readOmniConfig } from "../../omni-config.js";
 import { inspectStateDirPermissions } from "../../security/state-dir-permissions.js";
 
 export type DoctorSeverity = "error" | "warn" | "info";
@@ -266,6 +273,8 @@ type DoctorDeps = {
   statDisk: (path: string) => DiskUsageStat | null;
   probeDir: (path: string) => DiskProbeResult;
   probeNatsExposure: () => Promise<NatsExposureReport>;
+  /** Whether Omni's own database logs Omni's user in without a password. */
+  probeOmniDatabaseAuth: () => Promise<OmniDbAuthReport>;
   inspectStateDirPermissions: typeof inspectStateDirPermissions;
   inspectKnowledgeExposure: typeof inspectKnowledgeExposure;
   knowledgeSettings: typeof knowledgeSettings;
@@ -284,6 +293,8 @@ export interface InspectDoctorOptions {
   domain?: string | null;
   /** Async NATS probe result; inspectDoctor is synchronous, so runDoctor probes first. */
   natsExposure?: NatsExposureReport | null;
+  /** Async probe of Omni's database authentication, for the same reason. */
+  omniDbAuth?: OmniDbAuthReport | null;
   /** The runner's adapter health, probed by runDoctor for the same reason. */
   runnerAdapters?: readonly ChannelAdapterHealth[] | null;
   /** The PM2 read runDoctor already made to find the runner's PID, so the check and the probe agree and PM2 is read once. */
@@ -344,6 +355,7 @@ const DEFAULT_DEPS: DoctorDeps = {
   statDisk: defaultStatDisk,
   probeDir: defaultProbeDir,
   probeNatsExposure: () => probeNatsExposure(resolveNatsUrl()),
+  probeOmniDatabaseAuth: () => probeOmniDatabaseAuth(omniDatabaseUrlFromConfig(readOmniConfig())),
   inspectStateDirPermissions,
   inspectKnowledgeExposure,
   knowledgeSettings,
@@ -513,6 +525,7 @@ export function inspectDoctor(overrides: Partial<DoctorDeps> = {}, options: Insp
   addCheck(checks, () => buildStateDirCheck(stateDir, deps));
   addCheck(checks, () => buildStateDirPermissionsCheck(stateDir, deps));
   addCheck(checks, () => buildNatsExposureCheck(options.natsExposure ?? null));
+  addCheck(checks, () => buildOmniDbAuthCheck(options.omniDbAuth ?? null));
   addCheck(checks, () => buildDiskSpaceCheck(stateDir, deps));
   addCheck(checks, () => buildRaviDbCheck(raviDbPath, deps));
   addCheck(checks, () => buildInsightsDbCheck(insightsDbPath, deps));
@@ -671,6 +684,7 @@ export async function runDoctor(
 ): Promise<DoctorReport> {
   const deps = { ...DEFAULT_DEPS, ...overrides };
   const natsExposure = await probeDoctorNatsExposure(deps, options.domain);
+  const omniDbAuth = await probeDoctorOmniDbAuth(deps, options.domain);
   const managedRuntime = readDoctorManagedRuntime(deps, options.domain);
   const runnerAdapters = await probeDoctorRunnerAdapters(
     deps.probeChannelRunnerAdapters,
@@ -680,6 +694,7 @@ export async function runDoctor(
   const report = inspectDoctor(overrides, {
     domain: options.domain,
     natsExposure,
+    omniDbAuth,
     runnerAdapters,
     ...(managedRuntime !== undefined ? { managedRuntime } : {}),
   });
@@ -704,6 +719,20 @@ async function probeDoctorNatsExposure(
   try {
     return await deps.probeNatsExposure();
   } catch {
+    return null;
+  }
+}
+
+async function probeDoctorOmniDbAuth(
+  deps: DoctorDeps,
+  domain: string | null | undefined,
+): Promise<OmniDbAuthReport | null> {
+  const normalized = domain?.trim();
+  if (normalized && normalized !== "runtime") return null;
+  try {
+    return await deps.probeOmniDatabaseAuth();
+  } catch {
+    // no-cause: the probe never throws by contract; a throw here means "not probed", shown as a skipped check.
     return null;
   }
 }
@@ -1317,6 +1346,48 @@ function buildNatsExposureCheck(report: NatsExposureReport | null): LegacyDoctor
     ...(report.remediation.length > 0 ? { fixHint: report.remediation.join("; ") } : {}),
     data,
   };
+}
+
+function buildOmniDbAuthCheck(report: OmniDbAuthReport | null): LegacyDoctorCheck {
+  const base = {
+    id: "runtime.omni_db_auth",
+    domain: "runtime",
+    title: "Omni database authentication",
+  };
+  if (!report) {
+    return { ...base, status: "skip", summary: "Omni's database authentication was not probed" };
+  }
+  const data = {
+    status: report.status,
+    databaseUrl: report.databaseUrl,
+    host: report.host,
+    port: report.port,
+    user: report.user,
+    database: report.database,
+    passwordlessAddresses: report.passwordlessAddresses,
+    addresses: report.addresses,
+  };
+  const details = [
+    `status: ${report.status}`,
+    ...(report.databaseUrl ? [`database url: ${report.databaseUrl}`] : []),
+    ...report.addresses.map((item) => `address ${item.address}: ${item.state} (plaintext probe, no TLS)`),
+    ...report.remediation.map((step) => `remediation: ${step}`),
+  ];
+  if (isRiskyOmniDbAuth(report.status)) {
+    return {
+      ...base,
+      status: "fail",
+      severity: "warn",
+      summary: report.message,
+      details,
+      fixHint: report.remediation.join("; "),
+      data,
+    };
+  }
+  if (report.status === "requires_credentials") {
+    return { ...base, status: "ok", summary: report.message, details, data };
+  }
+  return { ...base, status: "skip", summary: report.message, details, data };
 }
 
 const DISK_CRITICAL_FREE_BYTES = 1 * 1024 ** 3; // 1 GiB

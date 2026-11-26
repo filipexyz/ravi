@@ -37,6 +37,7 @@ runtime.dirty_worktree
 runtime.schema_missing
 runtime.migration_unverifiable
 runtime.disk_space_low
+runtime.omni_db_auth
 routes.agent_missing
 routes.instance_missing
 routes.duplicate_effective_route
@@ -85,6 +86,12 @@ channels.runner_release
   `runtime.disk_space_low` at `warn`.
 - Healthy free space and a passing smoke test on all targets emits
   `runtime.disk_space_low` at `pass`.
+- An Omni database that lets Omni's user in without a password on any probed
+  loopback address emits `runtime.omni_db_auth` as a warning with the
+  scram-sha-256 remediation and the state of every address. One where an address
+  asks for a password and the other refuses before authentication emits it at
+  `pass`; one where an address asks for a password and the other accepts without
+  one emits the warning.
 
 ## False Positive Guards
 
@@ -106,6 +113,14 @@ channels.runner_release
 - `bun test src/security/nats-exposure.test.ts` MUST distinguish thrown/null
   enumeration failures from a successful empty list and refuse private startup
   for the failures.
+- `bun test src/security/omni-db-auth.test.ts` MUST probe a real loopback TCP
+  server and cover trust, SCRAM, a pre-auth ErrorResponse, a split reply, an HTTP
+  answer, nothing listening, a timeout on one localhost address, a TLS-only URL,
+  an IPv4-mapped loopback host, a malformed percent escape and password or
+  secret query parameters in the printed URL. AuthenticationOk on any probed address
+  warns; `pass` needs every answering address to ask for a password or refuse
+  before authentication. A non-PostgreSQL answer, a timeout or a TLS-only URL
+  MUST stay a skipped check, never `pass`.
 - `bun test src/cli/commands/doctor.test.ts` MUST cover NATS exposure and state
   directory findings with injected dependencies and preserve read-only behavior.
 

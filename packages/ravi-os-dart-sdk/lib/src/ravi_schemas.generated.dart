@@ -139015,6 +139015,2727 @@ class RaviSchemas {
 }
 ''';
 
+  static const voiceCallsApproveInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "approval": {
+      "description": "Approval id (from turn.approval_requested)",
+      "type": "string"
+    },
+    "call": {
+      "description": "Call id",
+      "type": "string"
+    },
+    "digest": {
+      "description": "Approval digest shown in the call",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Actually approve; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
+    "version": {
+      "description": "Approval version shown in the call",
+      "type": "string"
+    }
+  },
+  "required": [
+    "approval",
+    "call"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsApproveReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "approvalId": {
+      "type": "string"
+    },
+    "callId": {
+      "type": "string"
+    },
+    "decision": {
+      "enum": [
+        "approved",
+        "rejected",
+        "pending"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "callId",
+    "approvalId",
+    "decision"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsAudioInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "call": {
+      "description": "Call id",
+      "type": "string"
+    },
+    "item": {
+      "description": "Audio item id (from agent.transcript)",
+      "type": "string"
+    },
+    "out": {
+      "description": "Write the clip to this file instead of returning base64",
+      "type": "string"
+    }
+  },
+  "required": [
+    "call",
+    "item"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsAudioReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "audioBase64": {
+      "type": "string"
+    },
+    "bytes": {
+      "type": "number"
+    },
+    "callId": {
+      "type": "string"
+    },
+    "item": {
+      "type": "string"
+    },
+    "mime": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "callId",
+    "item",
+    "mime",
+    "bytes"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsCancelTurnInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "call": {
+      "description": "Call id",
+      "type": "string"
+    },
+    "turn": {
+      "description": "Turn id (from turn.accepted)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "call"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsCancelTurnReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "callId": {
+      "type": "string"
+    },
+    "cancelRequested": {
+      "const": true,
+      "type": "boolean"
+    },
+    "turnId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "callId",
+    "turnId",
+    "cancelRequested"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsConnectInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "call": {
+      "description": "Call id",
+      "type": "string"
+    },
+    "offer": {
+      "description": "WebRTC SDP offer (live mode)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "call"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsConnectReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "callId": {
+      "type": "string"
+    },
+    "connectionKind": {
+      "enum": [
+        "none",
+        "webrtc",
+        "room"
+      ],
+      "type": "string"
+    },
+    "lastSeq": {
+      "type": "number"
+    },
+    "roomToken": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "roomUrl": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sdpAnswer": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "callId",
+    "connectionKind",
+    "sdpAnswer",
+    "roomUrl",
+    "roomToken",
+    "lastSeq"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsDenyInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "approval": {
+      "description": "Approval id (from turn.approval_requested)",
+      "type": "string"
+    },
+    "call": {
+      "description": "Call id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "approval",
+    "call"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsDenyReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "approvalId": {
+      "type": "string"
+    },
+    "callId": {
+      "type": "string"
+    },
+    "decision": {
+      "enum": [
+        "approved",
+        "rejected",
+        "pending"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "callId",
+    "approvalId",
+    "decision"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsEndInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "call": {
+      "description": "Call id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "call"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsEndReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "callId": {
+      "type": "string"
+    },
+    "ended": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "callId",
+    "ended"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsEventsInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "after": {
+      "description": "Only events after this sequence number",
+      "type": "string"
+    },
+    "call": {
+      "description": "Call id",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Maximum events (default 500)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "call"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsEventsReturnSchema = r'''
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "callId": {
+      "type": "string"
+    },
+    "events": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "callId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "data": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "seq": {
+            "type": "number"
+          },
+          "type": {
+            "enum": [
+              "call.snapshot",
+              "call.state",
+              "call.ended",
+              "agent.state",
+              "work.state",
+              "work.tool",
+              "user.transcript",
+              "agent.transcript",
+              "turn.accepted",
+              "turn.completed",
+              "turn.approval_requested",
+              "turn.approval_resolved",
+              "usage",
+              "error"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "callId",
+          "seq",
+          "type",
+          "data",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "lastSeq": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "callId",
+    "events",
+    "lastSeq"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsListInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "active": {
+      "description": "Only calls that have not ended",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Items to skip (default: 0)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const voiceCallsListReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "calls": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentState": {
+            "enum": [
+              "listening",
+              "thinking",
+              "speaking",
+              "idle"
+            ],
+            "type": "string"
+          },
+          "connectionKind": {
+            "enum": [
+              "none",
+              "webrtc",
+              "room"
+            ],
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "endedAt": {
+            "type": "string"
+          },
+          "endedReason": {
+            "type": "string"
+          },
+          "engine": {
+            "enum": [
+              "push",
+              "live",
+              "handsfree",
+              "mock"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "push",
+              "live",
+              "handsfree",
+              "mock"
+            ],
+            "type": "string"
+          },
+          "profileId": {
+            "type": "string"
+          },
+          "sessionName": {
+            "type": "string"
+          },
+          "speaker": {
+            "additionalProperties": false,
+            "properties": {
+              "contactId": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "operator",
+                  "device",
+                  "guest"
+                ],
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "type": "object"
+          },
+          "state": {
+            "enum": [
+              "starting",
+              "active",
+              "ending",
+              "ended"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "usage": {
+            "additionalProperties": false,
+            "properties": {
+              "audioInSeconds": {
+                "type": "number"
+              },
+              "audioOutSeconds": {
+                "type": "number"
+              },
+              "charactersSpoken": {
+                "type": "number"
+              },
+              "engineSeconds": {
+                "type": "number"
+              },
+              "estimatedCostUsd": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "audioInSeconds",
+              "audioOutSeconds",
+              "charactersSpoken",
+              "engineSeconds",
+              "estimatedCostUsd"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "sessionName",
+          "mode",
+          "engine",
+          "profileId",
+          "state",
+          "agentState",
+          "speaker",
+          "connectionKind",
+          "usage",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "calls",
+    "total",
+    "pagination"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsPushInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "audio": {
+      "description": "Audio clip file",
+      "type": "string"
+    },
+    "audioData": {
+      "description": "Audio clip as base64 (SDK and apps)",
+      "type": "string"
+    },
+    "call": {
+      "description": "Call id",
+      "type": "string"
+    },
+    "mime": {
+      "description": "Audio type, e.g. audio/webm",
+      "type": "string"
+    }
+  },
+  "required": [
+    "call"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsPushReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "callId": {
+      "type": "string"
+    },
+    "text": {
+      "type": "string"
+    },
+    "turnId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "callId",
+    "turnId",
+    "text"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsSendInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "call": {
+      "description": "Call id",
+      "type": "string"
+    },
+    "guest": {
+      "description": "Mark the speaker as a guest (third party)",
+      "type": "string"
+    },
+    "text": {
+      "description": "What to say",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "call",
+    "text"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsSendReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "callId": {
+      "type": "string"
+    },
+    "text": {
+      "type": "string"
+    },
+    "turnId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "callId",
+    "turnId",
+    "text"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsShowInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "call": {
+      "description": "Call id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "call"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsShowReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "call": {
+      "additionalProperties": false,
+      "properties": {
+        "agentState": {
+          "enum": [
+            "listening",
+            "thinking",
+            "speaking",
+            "idle"
+          ],
+          "type": "string"
+        },
+        "connectionKind": {
+          "enum": [
+            "none",
+            "webrtc",
+            "room"
+          ],
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "endedAt": {
+          "type": "string"
+        },
+        "endedReason": {
+          "type": "string"
+        },
+        "engine": {
+          "enum": [
+            "push",
+            "live",
+            "handsfree",
+            "mock"
+          ],
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "push",
+            "live",
+            "handsfree",
+            "mock"
+          ],
+          "type": "string"
+        },
+        "profileId": {
+          "type": "string"
+        },
+        "sessionName": {
+          "type": "string"
+        },
+        "speaker": {
+          "additionalProperties": false,
+          "properties": {
+            "contactId": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "operator",
+                "device",
+                "guest"
+              ],
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        "state": {
+          "enum": [
+            "starting",
+            "active",
+            "ending",
+            "ended"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "usage": {
+          "additionalProperties": false,
+          "properties": {
+            "audioInSeconds": {
+              "type": "number"
+            },
+            "audioOutSeconds": {
+              "type": "number"
+            },
+            "charactersSpoken": {
+              "type": "number"
+            },
+            "engineSeconds": {
+              "type": "number"
+            },
+            "estimatedCostUsd": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "audioInSeconds",
+            "audioOutSeconds",
+            "charactersSpoken",
+            "engineSeconds",
+            "estimatedCostUsd"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "sessionName",
+        "mode",
+        "engine",
+        "profileId",
+        "state",
+        "agentState",
+        "speaker",
+        "connectionKind",
+        "usage",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "engine": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "additionalProperties": false,
+          "properties": {
+            "bargeIn": {
+              "type": "boolean"
+            },
+            "exactSpeech": {
+              "type": "boolean"
+            },
+            "needs": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "serverAudio": {
+              "type": "boolean"
+            },
+            "streamingAudio": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "bargeIn",
+            "streamingAudio",
+            "exactSpeech",
+            "serverAudio",
+            "needs"
+          ],
+          "type": "object"
+        },
+        "id": {
+          "enum": [
+            "push",
+            "live",
+            "handsfree",
+            "mock"
+          ],
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "capabilities"
+      ],
+      "type": "object"
+    },
+    "lastSeq": {
+      "type": "number"
+    },
+    "openApprovals": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "approvalId": {
+            "type": "string"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "approvalId",
+          "version",
+          "digest",
+          "text"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "turns": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "speaker": {
+            "additionalProperties": false,
+            "properties": {
+              "contactId": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "operator",
+                  "device",
+                  "guest"
+                ],
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "type": "object"
+          },
+          "state": {
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "failed",
+              "cancelled"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "state",
+          "speaker",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "call",
+    "engine",
+    "turns",
+    "openApprovals",
+    "lastSeq"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsSilenceInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "call": {
+      "description": "Call id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "call"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsSilenceReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "callId": {
+      "type": "string"
+    },
+    "silenced": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "callId",
+    "silenced"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsStartInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "mode": {
+      "description": "push|live|handsfree|mock (default: the profile's)",
+      "type": "string"
+    },
+    "offer": {
+      "description": "WebRTC SDP offer (live mode)",
+      "type": "string"
+    },
+    "profile": {
+      "description": "Voice profile (default: default)",
+      "type": "string"
+    },
+    "session": {
+      "description": "Session name or key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "session"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsStartReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "callId": {
+      "type": "string"
+    },
+    "capabilities": {
+      "additionalProperties": false,
+      "properties": {
+        "bargeIn": {
+          "type": "boolean"
+        },
+        "exactSpeech": {
+          "type": "boolean"
+        },
+        "needs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "serverAudio": {
+          "type": "boolean"
+        },
+        "streamingAudio": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "bargeIn",
+        "streamingAudio",
+        "exactSpeech",
+        "serverAudio",
+        "needs"
+      ],
+      "type": "object"
+    },
+    "connectionKind": {
+      "enum": [
+        "none",
+        "webrtc",
+        "room"
+      ],
+      "type": "string"
+    },
+    "lastSeq": {
+      "type": "number"
+    },
+    "mode": {
+      "enum": [
+        "push",
+        "live",
+        "handsfree",
+        "mock"
+      ],
+      "type": "string"
+    },
+    "profileId": {
+      "type": "string"
+    },
+    "roomToken": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "roomUrl": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sdpAnswer": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sessionName": {
+      "type": "string"
+    },
+    "state": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "callId",
+    "connectionKind",
+    "sdpAnswer",
+    "roomUrl",
+    "roomToken",
+    "lastSeq",
+    "sessionName",
+    "mode",
+    "profileId",
+    "state",
+    "capabilities"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsTranscriptInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "call": {
+      "description": "Call id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "call"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsTranscriptReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "callId": {
+      "type": "string"
+    },
+    "lines": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "type": "string"
+          },
+          "seq": {
+            "type": "number"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "text",
+          "seq"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "callId",
+    "lines"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceDevicesListInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "all": {
+      "description": "Include revoked devices",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Items to skip (default: 0)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const voiceDevicesListReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "devices": {
+      "items": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "contactId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "lastSeenAt": {
+                "type": "string"
+              },
+              "revoked": {
+                "type": "boolean"
+              },
+              "sessions": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "id",
+              "label",
+              "contactId",
+              "sessions",
+              "createdAt",
+              "expiresAt",
+              "revoked"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "devices",
+    "total",
+    "pagination"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceDevicesPairInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "description": "The person this device speaks for",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Actually pair and print the key once; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
+    "label": {
+      "description": "Device name, e.g. 'iPhone'",
+      "type": "string"
+    },
+    "session": {
+      "description": "Sessions it may call (comma-separated; '*' only for the owner)",
+      "type": "string"
+    },
+    "worker": {
+      "description": "Issue a hands-free worker key instead of a person's device key",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const voiceDevicesPairReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "contextKey": {
+      "type": "string"
+    },
+    "device": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "contactId": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "string"
+            },
+            "expiresAt": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "lastSeenAt": {
+              "type": "string"
+            },
+            "revoked": {
+              "type": "boolean"
+            },
+            "sessions": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "label",
+            "contactId",
+            "sessions",
+            "createdAt",
+            "expiresAt",
+            "revoked"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "shownOnce": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "device",
+    "contextKey",
+    "shownOnce"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceDevicesRevokeInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "device": {
+      "description": "Device id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "device"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceDevicesRevokeReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "device": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "contactId": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "string"
+            },
+            "expiresAt": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "lastSeenAt": {
+              "type": "string"
+            },
+            "revoked": {
+              "type": "boolean"
+            },
+            "sessions": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "label",
+            "contactId",
+            "sessions",
+            "createdAt",
+            "expiresAt",
+            "revoked"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "endDeferred": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "endRequested": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "device",
+    "endRequested",
+    "endDeferred"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceEnginesCheckInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+}
+''';
+
+  static const voiceEnginesCheckReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "checks": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "engine": {
+            "enum": [
+              "push",
+              "live",
+              "handsfree",
+              "mock"
+            ],
+            "type": "string"
+          },
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "ready": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "engine",
+          "ready",
+          "missing",
+          "notes"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "checks"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceEnginesListInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Items to skip (default: 0)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const voiceEnginesListReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "engines": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "capabilities": {
+            "additionalProperties": false,
+            "properties": {
+              "bargeIn": {
+                "type": "boolean"
+              },
+              "exactSpeech": {
+                "type": "boolean"
+              },
+              "needs": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "serverAudio": {
+                "type": "boolean"
+              },
+              "streamingAudio": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "bargeIn",
+              "streamingAudio",
+              "exactSpeech",
+              "serverAudio",
+              "needs"
+            ],
+            "type": "object"
+          },
+          "connectionKind": {
+            "enum": [
+              "none",
+              "webrtc",
+              "room"
+            ],
+            "type": "string"
+          },
+          "costPerMinuteUsd": {
+            "type": "number"
+          },
+          "id": {
+            "enum": [
+              "push",
+              "live",
+              "handsfree",
+              "mock"
+            ],
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "connectionKind",
+          "capabilities",
+          "costPerMinuteUsd"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "engines",
+    "total",
+    "pagination"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceProfilesCreateInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "allowGuests": {
+      "description": "Accept third-party speakers (speech only, never control)",
+      "type": "boolean"
+    },
+    "delivery": {
+      "description": "speak|when_idle|silent",
+      "type": "string"
+    },
+    "id": {
+      "description": "Profile id (letters, digits, - and _)",
+      "type": "string"
+    },
+    "label": {
+      "description": "Display name",
+      "type": "string"
+    },
+    "language": {
+      "description": "Language, e.g. pt or en",
+      "type": "string"
+    },
+    "liveModel": {
+      "description": "GPT-Live model",
+      "type": "string"
+    },
+    "liveVoice": {
+      "description": "GPT-Live voice",
+      "type": "string"
+    },
+    "maxCallCost": {
+      "description": "End a call at this estimated cost",
+      "type": "string"
+    },
+    "maxCallMinutes": {
+      "description": "End calls after this many minutes",
+      "type": "string"
+    },
+    "maxDailyCost": {
+      "description": "Refuse and end calls past this daily cost",
+      "type": "string"
+    },
+    "mode": {
+      "description": "push|live|handsfree|mock",
+      "type": "string"
+    },
+    "ttsModel": {
+      "description": "ElevenLabs model id",
+      "type": "string"
+    },
+    "voice": {
+      "description": "ElevenLabs voice id (push and hands-free)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceProfilesCreateReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "profile": {
+      "additionalProperties": false,
+      "properties": {
+        "allowGuests": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "delivery": {
+          "enum": [
+            "speak",
+            "when_idle",
+            "silent"
+          ],
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "language": {
+          "type": "string"
+        },
+        "liveModel": {
+          "type": "string"
+        },
+        "liveVoice": {
+          "type": "string"
+        },
+        "maxCallCostUsd": {
+          "type": "number"
+        },
+        "maxCallMinutes": {
+          "type": "number"
+        },
+        "maxDailyCostUsd": {
+          "type": "number"
+        },
+        "mode": {
+          "enum": [
+            "push",
+            "live",
+            "handsfree",
+            "mock"
+          ],
+          "type": "string"
+        },
+        "ttsModel": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "voice": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "mode",
+        "language",
+        "delivery",
+        "allowGuests",
+        "maxCallMinutes",
+        "maxCallCostUsd",
+        "maxDailyCostUsd",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "profile"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceProfilesDeleteInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Profile id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceProfilesDeleteReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "deleted": {
+      "const": true,
+      "type": "boolean"
+    },
+    "id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "deleted"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceProfilesListInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Items to skip (default: 0)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const voiceProfilesListReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "profiles": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "allowGuests": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "delivery": {
+            "enum": [
+              "speak",
+              "when_idle",
+              "silent"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "language": {
+            "type": "string"
+          },
+          "liveModel": {
+            "type": "string"
+          },
+          "liveVoice": {
+            "type": "string"
+          },
+          "maxCallCostUsd": {
+            "type": "number"
+          },
+          "maxCallMinutes": {
+            "type": "number"
+          },
+          "maxDailyCostUsd": {
+            "type": "number"
+          },
+          "mode": {
+            "enum": [
+              "push",
+              "live",
+              "handsfree",
+              "mock"
+            ],
+            "type": "string"
+          },
+          "ttsModel": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "voice": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "mode",
+          "language",
+          "delivery",
+          "allowGuests",
+          "maxCallMinutes",
+          "maxCallCostUsd",
+          "maxDailyCostUsd",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "profiles",
+    "total",
+    "pagination"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceProfilesShowInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Profile id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceProfilesShowReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "profile": {
+      "additionalProperties": false,
+      "properties": {
+        "allowGuests": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "delivery": {
+          "enum": [
+            "speak",
+            "when_idle",
+            "silent"
+          ],
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "language": {
+          "type": "string"
+        },
+        "liveModel": {
+          "type": "string"
+        },
+        "liveVoice": {
+          "type": "string"
+        },
+        "maxCallCostUsd": {
+          "type": "number"
+        },
+        "maxCallMinutes": {
+          "type": "number"
+        },
+        "maxDailyCostUsd": {
+          "type": "number"
+        },
+        "mode": {
+          "enum": [
+            "push",
+            "live",
+            "handsfree",
+            "mock"
+          ],
+          "type": "string"
+        },
+        "ttsModel": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "voice": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "mode",
+        "language",
+        "delivery",
+        "allowGuests",
+        "maxCallMinutes",
+        "maxCallCostUsd",
+        "maxDailyCostUsd",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "profile"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceProfilesUpdateInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "allowGuests": {
+      "description": "Accept third-party speakers",
+      "type": "boolean"
+    },
+    "delivery": {
+      "description": "speak|when_idle|silent",
+      "type": "string"
+    },
+    "id": {
+      "description": "Profile id",
+      "type": "string"
+    },
+    "label": {
+      "description": "Display name",
+      "type": "string"
+    },
+    "language": {
+      "description": "Language, e.g. pt or en",
+      "type": "string"
+    },
+    "liveModel": {
+      "description": "GPT-Live model",
+      "type": "string"
+    },
+    "liveVoice": {
+      "description": "GPT-Live voice",
+      "type": "string"
+    },
+    "maxCallCost": {
+      "description": "End a call at this estimated cost",
+      "type": "string"
+    },
+    "maxCallMinutes": {
+      "description": "End calls after this many minutes",
+      "type": "string"
+    },
+    "maxDailyCost": {
+      "description": "Refuse and end calls past this daily cost",
+      "type": "string"
+    },
+    "mode": {
+      "description": "push|live|handsfree|mock",
+      "type": "string"
+    },
+    "noGuests": {
+      "default": false,
+      "description": "Stop accepting third-party speakers",
+      "type": "boolean"
+    },
+    "ttsModel": {
+      "description": "ElevenLabs model id",
+      "type": "string"
+    },
+    "voice": {
+      "description": "ElevenLabs voice id (push and hands-free)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceProfilesUpdateReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "profile": {
+      "additionalProperties": false,
+      "properties": {
+        "allowGuests": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "delivery": {
+          "enum": [
+            "speak",
+            "when_idle",
+            "silent"
+          ],
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "language": {
+          "type": "string"
+        },
+        "liveModel": {
+          "type": "string"
+        },
+        "liveVoice": {
+          "type": "string"
+        },
+        "maxCallCostUsd": {
+          "type": "number"
+        },
+        "maxCallMinutes": {
+          "type": "number"
+        },
+        "maxDailyCostUsd": {
+          "type": "number"
+        },
+        "mode": {
+          "enum": [
+            "push",
+            "live",
+            "handsfree",
+            "mock"
+          ],
+          "type": "string"
+        },
+        "ttsModel": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "voice": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "mode",
+        "language",
+        "delivery",
+        "allowGuests",
+        "maxCallMinutes",
+        "maxCallCostUsd",
+        "maxDailyCostUsd",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "profile"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceTargetsListInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Items to skip (default: 0)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const voiceTargetsListReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "targets": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "activeCalls": {
+            "type": "number"
+          },
+          "agentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionName",
+          "agentId",
+          "activeCalls"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "targets",
+    "total",
+    "pagination"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceVoicesListInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Items to skip (default: 0)",
+      "type": "string"
+    },
+    "search": {
+      "description": "Filter by name or description",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const voiceVoicesListReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    },
+    "voices": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "name": {
+            "type": "string"
+          },
+          "voiceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "voiceId",
+          "name"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "voices",
+    "total",
+    "pagination"
+  ],
+  "type": "object"
+}
+''';
+
   static const watchConnectorsInputSchema = r'''
 {
   "additionalProperties": false,

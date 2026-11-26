@@ -25,11 +25,14 @@ concurrency:
 jobs:
   release:
     name: Version And Publish SDK
-    runs-on: ubuntu-latest
+    # Pinned to the image the test shards run on (ci.yml). `ubuntu-latest` moved to 26.04, where coreutils is the Rust
+    # uutils build under /usr/lib/cargo/bin/coreutils, outside the Bash guard's trusted roots, so the pre-push suite
+    # of the version bump failed there on 2026-11-25 (run 45684222557).
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       id-token: write
-    timeout-minutes: 15
+    timeout-minutes: 45
 
     env:
       SDK_PACKAGE_PATH: packages/ravi-os-sdk/package.json
@@ -76,6 +79,14 @@ jobs:
           PREFIX="${{ github.event.inputs.prefix }}"
           if [ -z "$PREFIX" ]; then
             PREFIX=$(jq -r '.version | split(".") | .[0]' "$SDK_PACKAGE_PATH")
+            # The push of a bump can be declined, so the manifest of the branch may be behind the registry. An omitted
+            # prefix never moves `latest` back to an older major: it follows the registry when that is ahead.
+            PACKAGE=$(jq -r '.name' "$SDK_PACKAGE_PATH")
+            REGISTRY_MAJOR=$(npm view "$PACKAGE" version 2>/dev/null | cut -d. -f1 || true)
+            if echo "$REGISTRY_MAJOR" | grep -Eq '^[0-9]+$' && [ "$REGISTRY_MAJOR" -gt "$PREFIX" ]; then
+              echo "Registry major ${REGISTRY_MAJOR} is ahead of the manifest major ${PREFIX}; using ${REGISTRY_MAJOR}."
+              PREFIX="$REGISTRY_MAJOR"
+            fi
           fi
           if ! echo "$PREFIX" | grep -Eq '^[0-9]+$'; then
             echo "Resolved prefix '$PREFIX' is not numeric" >&2
@@ -134,7 +145,24 @@ jobs:
           fi
 
           git commit -m "chore(sdk-version): bump to ${VERSION} [skip ci]"
-          git push origin "HEAD:refs/heads/${BRANCH}"
+
+          # A declined push is not a failed release. The ruleset of `dev` requires the Quality Gate check on every
+          # new commit, so a direct push of the bump is declined (GH013) after the pre-push suite already ran. The
+          # version is derived from npm, not from this file, so building and publishing do not need the push.
+          # Any other failure of the push, the pre-push suite included, still fails the job.
+          push_rc=0
+          push_out=$(git push origin "HEAD:refs/heads/${BRANCH}" 2>&1) || push_rc=$?
+          echo "$push_out"
+          if [ "$push_rc" -ne 0 ]; then
+            # Only the server's own lines count: the log of the pre-push suite is in $push_out too, and a test
+            # that mentions a rule or a protected branch must not turn a red suite into a warning.
+            if echo "$push_out" | grep -Eq '^remote: error: GH(013|006):'; then
+              echo "::warning::Direct push to ${BRANCH} declined by the repository rules. The bump is not saved in the branch; its package.json stays behind npm and the version keeps coming from the registry. The release goes on."
+            else
+              echo "::error::The push of the version bump failed for a reason other than the repository rules (pre-push checks included)."
+              exit "$push_rc"
+            fi
+          fi
 
       - name: Build SDK
         working-directory: ${{ env.SDK_DIR }}

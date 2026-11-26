@@ -19,7 +19,7 @@ import { currentConsoleInvocation } from "./console-context.js";
 import { CALLER_CWD_HEADER, parseCallerCwd } from "../../cli/caller-cwd.js";
 import { dispatch } from "./dispatcher.js";
 import { errorResponse, internalError, json, methodNotAllowed, notFound, unauthorized } from "./errors.js";
-import { corsHeaders, withCorsHeaders } from "./cors.js";
+import { preflightHeaders, withCorsHeaders } from "./cors.js";
 import { raviHttpServeOptions } from "./http-serve.js";
 import { handleStreamingRequest } from "./streaming/handler.js";
 import type { StreamingGatewayConfig } from "./streaming/types.js";
@@ -111,7 +111,11 @@ export async function handleGatewayRequest(request: Request, ctx: GatewayHandler
   const requestedHeaders = request.headers.get("access-control-request-headers");
   // Shared CORS wrapper: OPTIONS preflight and every /api/v1 response, including SSE.
   if (request.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders(origin, requestedHeaders) });
+    const requestPrivateNetwork = request.headers.get("access-control-request-private-network");
+    return new Response(null, {
+      status: 204,
+      headers: preflightHeaders(origin, requestedHeaders, requestPrivateNetwork),
+    });
   }
   const startedAt = Date.now();
   const cmd = ctx.table.byPath.get(url.pathname);

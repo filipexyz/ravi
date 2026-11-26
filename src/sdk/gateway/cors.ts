@@ -11,6 +11,13 @@
  *
  * Preflight and actual responses share {@link corsHeaders} so SSE
  * `GET /api/v1/_stream/*` gets the same headers as command POSTs.
+ *
+ * Private Network Access (compatibility): browsers that still use the older
+ * PNA preflight send `Access-Control-Request-Private-Network: true` when a
+ * public HTTPS page calls 127.0.0.1. Chrome 142+ asks the user for Local
+ * Network Access permission instead, which the gateway cannot grant. {@link preflightHeaders} answers
+ * `Access-Control-Allow-Private-Network: true` only when the origin is
+ * already allowed above; it never widens the allowlist.
  */
 
 export const CORS_ALLOW_METHODS = "GET, POST, OPTIONS";
@@ -111,4 +118,24 @@ export function withCorsHeaders(
   const merged = new Headers(response.headers);
   for (const [key, value] of Object.entries(extra)) merged.set(key, value);
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers: merged });
+}
+
+/**
+ * Headers for an OPTIONS preflight: {@link corsHeaders}, plus
+ * `Access-Control-Allow-Private-Network: true` when the browser asked for
+ * private network access and the origin is allowed. An origin outside the
+ * allowlist gets no CORS header at all, private network or not.
+ */
+export function preflightHeaders(
+  origin: string | null,
+  requestedHeaders: string | null,
+  requestPrivateNetwork: string | null,
+  env: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  const headers = corsHeaders(origin, requestedHeaders, env);
+  if (Object.keys(headers).length === 0) return headers;
+  if (requestPrivateNetwork?.trim().toLowerCase() === "true") {
+    headers["Access-Control-Allow-Private-Network"] = "true";
+  }
+  return headers;
 }

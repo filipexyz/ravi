@@ -144,6 +144,24 @@ describe("knowledgeAudienceForPrompt", () => {
     ).toBe("none");
   });
 
+  it("a relay from a person's credential is that person, never the operator's terminal or relay", () => {
+    // The voice door publishes exactly this: a CLI-destination relay carrying a paired person's key.
+    const prompt: RuntimeLaunchPrompt = {
+      prompt: "q",
+      _cliDestination: true,
+      _turnOrigin: buildSessionRelayTurnOrigin("send", { contextId: "ctx_person_key" }),
+    };
+    const stranger = deps({ personCredential: () => ({ contactId: CLIENT, usable: true }) });
+    expect(knowledgeAudienceForPrompt(prompt, ctx, stranger)).toBe("none");
+    // The linked owner's own key in the operator's own session reads as the operator.
+    const owner = deps({ personCredential: () => ({ contactId: OWNER, usable: true }) });
+    expect(knowledgeAudienceForPrompt(prompt, ctx, owner)).toBe("operator");
+    expect(knowledgeAudienceForPrompt(prompt, ctx, { ...owner, isOperatorSession: () => false })).toBe("none");
+    expect(
+      knowledgeAudienceForPrompt(prompt, ctx, deps({ personCredential: () => ({ contactId: OWNER, usable: false }) })),
+    ).toBe("none");
+  });
+
   it("gives operator only for a run admitted as the operator's own cron", () => {
     const run = (jobId: string, ownerPrincipal?: string, ownerIsOperator = false) => ({
       prompt: "r",

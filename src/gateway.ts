@@ -22,6 +22,7 @@ import { TrackedWorkDrain, type WorkDrainProof, type WorkDrainStatus } from "./r
  *   ravi.config.changed        -> reload router config
  */
 
+import { deliverVoiceApprovalRequest, VOICE_CHANNEL } from "./voice/approvals.js";
 import { LIBRARY_REQUEST_CHANNEL } from "./library/request-channel.js";
 import {
   type GuardedSession,
@@ -366,6 +367,8 @@ type DirectSendRequest = {
    * their DM with the app when they are not in it) instead of posting it.
    */
   privateTo?: readonly string[];
+  /** Set by the approval service: the approval request this message shows. */
+  approvalRequestId?: string;
 };
 
 type MediaSendRequest = {
@@ -2105,6 +2108,18 @@ export class Gateway {
   }
 
   private async handleDirectSendEvent(data: DirectSendRequest): Promise<void> {
+    // Voice calls are not chats: only approval requests for an open call reach them.
+    if (data.channel === VOICE_CHANNEL) {
+      let result: { success: boolean; messageId?: string; error?: string };
+      try {
+        result = await deliverVoiceApprovalRequest(data);
+      } catch (error) {
+        log.warn("Voice approval delivery failed", { error });
+        result = { success: false, error: "Voice approval delivery failed." };
+      }
+      if (data.replyTopic) await this.emitEvent(data.replyTopic, result);
+      return;
+    }
     // Knowledge egress guard for packet conversations, text and poll alike.
     const guarded = guardedSessionForChat(data.channel, data.to);
     if (guarded) {

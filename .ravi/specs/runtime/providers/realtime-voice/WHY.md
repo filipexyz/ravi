@@ -3,6 +3,10 @@ id: runtime/providers/realtime-voice
 mode: why
 ---
 
+## SUPERSEDED — 2026-11-24
+
+Replaced by the `voice` spec: the session is the brain and the realtime model is only the ears and mouth (engine `live`). Nothing below is normative.
+
 # Why
 
 Realtime voice behaves like a runtime because it executes an agent turn: it receives input, applies system prompt and model config, calls tools, emits assistant output, handles interruption, and has session state. That is the same ownership shape as Codex, Claude, and Pi.

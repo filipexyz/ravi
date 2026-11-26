@@ -1070,6 +1070,10 @@ async function waitForProviderCapacityRetry(
  * not establish remote delivery or exactly-once execution.
  */
 export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): Promise<void> {
+  // The loop owns its slot until its own cleanup settles it, including the
+  // window after `done` is set while the provider is still closing. Slot
+  // sweepers read this flag instead of treating `done` alone as abandoned.
+  options.streaming.eventLoopActive = true;
   const {
     runId,
     sessionName,
@@ -2301,6 +2305,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     const augmented = {
       ...event,
       ...(streaming.currentBridgeTurnId ? { _bridgeTurnId: streaming.currentBridgeTurnId } : {}),
+      // The waiting producers whose prompts this physical turn carries (voice door ownership).
+      _correlationIds: streaming.currentTurnCorrelationIds ?? [],
       ...(streaming.currentSource ? { _source: streaming.currentSource } : {}),
       ...(!streaming.suppressChatEmit && !isObserverRuntimeSessionName(sessionName) && streaming.currentReplyTarget
         ? { _replyTarget: streaming.currentReplyTarget }
@@ -5602,18 +5608,48 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
     // Feedback can yield to a replacement. Decide ownership only after every
     // cleanup await, immediately before releasing the slot and its queued work.
-    if (ownsRuntimeSlot()) {
-      streamingSessions.delete(sessionName);
-      try {
-        if (restartStashedReason && restartStashedSession) {
-          await restartStashedSession({
-            sessionName,
-            reason: restartStashedReason,
-          });
+    try {
+      if (ownsRuntimeSlot()) {
+        streamingSessions.delete(sessionName);
+        try {
+          if (restartStashedReason && restartStashedSession) {
+            await restartStashedSession({
+              sessionName,
+              reason: restartStashedReason,
+            });
+          }
+        } finally {
+          drainPendingStarts();
         }
-      } finally {
-        drainPendingStarts();
+      } else if (restartStashedReason) {
+        // Someone else released the slot before this cleanup finished. A live
+        // replacement re-injects the stash when it starts; with no replacement
+        // the stash waits for the next prompt. Never skip that restart silently.
+        const replacementOwnsSlot = streamingSessions.has(sessionName);
+        const stashedQueueSize = stashedMessages.get(sessionName)?.length ?? 0;
+        log.warn("Skipping stashed recovery restart: the runtime slot was released before cleanup finished", {
+          runId,
+          sessionName,
+          reason: restartStashedReason,
+          stashedQueueSize,
+          replacementOwnsSlot,
+        });
+        recordTraceEvent({
+          provider: runtimeSession.provider,
+          model,
+          eventType: "dispatch.restart_skipped",
+          eventGroup: "dispatch",
+          status: "skipped",
+          payloadJson: {
+            reason: restartStashedReason,
+            skippedReason: "runtime_slot_released",
+            stashedQueueSize,
+            replacementOwnsSlot,
+          },
+        });
       }
+    } finally {
+      streaming.eventLoopActive = false;
     }
   }
 }

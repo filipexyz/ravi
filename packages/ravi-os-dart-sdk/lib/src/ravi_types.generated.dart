@@ -33927,6 +33927,962 @@ class VideoAnalyzeReturn {
 
 VideoAnalyzeReturn videoAnalyzeReturnFromJson(Object? json) => VideoAnalyzeReturn.fromJsonValue(json);
 
+class VoiceCallsApproveOptions {
+  const VoiceCallsApproveOptions({this.digest, this.execute, this.version});
+
+  final String? digest;
+  final bool? execute;
+  final String? version;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (digest != null) {
+      into["digest"] = RaviJson.from(digest);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (version != null) {
+      into["version"] = RaviJson.from(version);
+    }
+  }
+}
+
+class VoiceCallsApproveReturn {
+  const VoiceCallsApproveReturn({required this.approvalId, required this.callId, required this.decision});
+
+  final String approvalId;
+  final String callId;
+  final String decision;
+
+  factory VoiceCallsApproveReturn.fromJson(Map<String, Object?> json) {
+    return VoiceCallsApproveReturn(
+      approvalId: raviJsonAsString(json["approvalId"]),
+      callId: raviJsonAsString(json["callId"]),
+      decision: raviJsonAsString(json["decision"]),
+    );
+  }
+
+  static VoiceCallsApproveReturn fromJsonValue(Object? json) {
+    return VoiceCallsApproveReturn.fromJson(raviJsonObject(json, "VoiceCallsApproveReturn"));
+  }
+}
+
+VoiceCallsApproveReturn voiceCallsApproveReturnFromJson(Object? json) => VoiceCallsApproveReturn.fromJsonValue(json);
+
+class VoiceCallsAudioOptions {
+  const VoiceCallsAudioOptions({this.out});
+
+  final String? out;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (out != null) {
+      into["out"] = RaviJson.from(out);
+    }
+  }
+}
+
+class VoiceCallsAudioReturn {
+  const VoiceCallsAudioReturn({this.audioBase64, required this.bytes, required this.callId, required this.item, required this.mime, this.path});
+
+  final String? audioBase64;
+  final double bytes;
+  final String callId;
+  final String item;
+  final String mime;
+  final String? path;
+
+  factory VoiceCallsAudioReturn.fromJson(Map<String, Object?> json) {
+    return VoiceCallsAudioReturn(
+      audioBase64: json["audioBase64"] == null ? null : raviJsonAsString(json["audioBase64"]),
+      bytes: raviJsonAsDouble(json["bytes"]),
+      callId: raviJsonAsString(json["callId"]),
+      item: raviJsonAsString(json["item"]),
+      mime: raviJsonAsString(json["mime"]),
+      path: json["path"] == null ? null : raviJsonAsString(json["path"]),
+    );
+  }
+
+  static VoiceCallsAudioReturn fromJsonValue(Object? json) {
+    return VoiceCallsAudioReturn.fromJson(raviJsonObject(json, "VoiceCallsAudioReturn"));
+  }
+}
+
+VoiceCallsAudioReturn voiceCallsAudioReturnFromJson(Object? json) => VoiceCallsAudioReturn.fromJsonValue(json);
+
+class VoiceCallsCancelTurnOptions {
+  const VoiceCallsCancelTurnOptions({this.turn});
+
+  final String? turn;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (turn != null) {
+      into["turn"] = RaviJson.from(turn);
+    }
+  }
+}
+
+class VoiceCallsCancelTurnReturn {
+  const VoiceCallsCancelTurnReturn({required this.callId, required this.cancelRequested, required this.turnId});
+
+  final String callId;
+  final bool cancelRequested;
+  final String turnId;
+
+  factory VoiceCallsCancelTurnReturn.fromJson(Map<String, Object?> json) {
+    return VoiceCallsCancelTurnReturn(
+      callId: raviJsonAsString(json["callId"]),
+      cancelRequested: raviJsonAsBool(json["cancelRequested"]),
+      turnId: raviJsonAsString(json["turnId"]),
+    );
+  }
+
+  static VoiceCallsCancelTurnReturn fromJsonValue(Object? json) {
+    return VoiceCallsCancelTurnReturn.fromJson(raviJsonObject(json, "VoiceCallsCancelTurnReturn"));
+  }
+}
+
+VoiceCallsCancelTurnReturn voiceCallsCancelTurnReturnFromJson(Object? json) => VoiceCallsCancelTurnReturn.fromJsonValue(json);
+
+class VoiceCallsConnectOptions {
+  const VoiceCallsConnectOptions({this.offer});
+
+  final String? offer;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (offer != null) {
+      into["offer"] = RaviJson.from(offer);
+    }
+  }
+}
+
+class VoiceCallsConnectReturn {
+  const VoiceCallsConnectReturn({required this.callId, required this.connectionKind, required this.lastSeq, required this.roomToken, required this.roomUrl, required this.sdpAnswer});
+
+  final String callId;
+  final String connectionKind;
+  final double lastSeq;
+  final RaviJson roomToken;
+  final RaviJson roomUrl;
+  final RaviJson sdpAnswer;
+
+  factory VoiceCallsConnectReturn.fromJson(Map<String, Object?> json) {
+    return VoiceCallsConnectReturn(
+      callId: raviJsonAsString(json["callId"]),
+      connectionKind: raviJsonAsString(json["connectionKind"]),
+      lastSeq: raviJsonAsDouble(json["lastSeq"]),
+      roomToken: RaviJson.from(json["roomToken"]),
+      roomUrl: RaviJson.from(json["roomUrl"]),
+      sdpAnswer: RaviJson.from(json["sdpAnswer"]),
+    );
+  }
+
+  static VoiceCallsConnectReturn fromJsonValue(Object? json) {
+    return VoiceCallsConnectReturn.fromJson(raviJsonObject(json, "VoiceCallsConnectReturn"));
+  }
+}
+
+VoiceCallsConnectReturn voiceCallsConnectReturnFromJson(Object? json) => VoiceCallsConnectReturn.fromJsonValue(json);
+
+class VoiceCallsDenyReturn {
+  const VoiceCallsDenyReturn({required this.approvalId, required this.callId, required this.decision});
+
+  final String approvalId;
+  final String callId;
+  final String decision;
+
+  factory VoiceCallsDenyReturn.fromJson(Map<String, Object?> json) {
+    return VoiceCallsDenyReturn(
+      approvalId: raviJsonAsString(json["approvalId"]),
+      callId: raviJsonAsString(json["callId"]),
+      decision: raviJsonAsString(json["decision"]),
+    );
+  }
+
+  static VoiceCallsDenyReturn fromJsonValue(Object? json) {
+    return VoiceCallsDenyReturn.fromJson(raviJsonObject(json, "VoiceCallsDenyReturn"));
+  }
+}
+
+VoiceCallsDenyReturn voiceCallsDenyReturnFromJson(Object? json) => VoiceCallsDenyReturn.fromJsonValue(json);
+
+class VoiceCallsEndReturn {
+  const VoiceCallsEndReturn({required this.callId, required this.ended});
+
+  final String callId;
+  final bool ended;
+
+  factory VoiceCallsEndReturn.fromJson(Map<String, Object?> json) {
+    return VoiceCallsEndReturn(
+      callId: raviJsonAsString(json["callId"]),
+      ended: raviJsonAsBool(json["ended"]),
+    );
+  }
+
+  static VoiceCallsEndReturn fromJsonValue(Object? json) {
+    return VoiceCallsEndReturn.fromJson(raviJsonObject(json, "VoiceCallsEndReturn"));
+  }
+}
+
+VoiceCallsEndReturn voiceCallsEndReturnFromJson(Object? json) => VoiceCallsEndReturn.fromJsonValue(json);
+
+class VoiceCallsEventsOptions {
+  const VoiceCallsEventsOptions({this.after, this.limit});
+
+  final String? after;
+  final String? limit;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (after != null) {
+      into["after"] = RaviJson.from(after);
+    }
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+  }
+}
+
+class VoiceCallsEventsReturn {
+  const VoiceCallsEventsReturn({required this.callId, required this.events, required this.lastSeq});
+
+  final String callId;
+  final List<RaviJson> events;
+  final double lastSeq;
+
+  factory VoiceCallsEventsReturn.fromJson(Map<String, Object?> json) {
+    return VoiceCallsEventsReturn(
+      callId: raviJsonAsString(json["callId"]),
+      events: raviJsonAsList(json["events"], RaviJson.from),
+      lastSeq: raviJsonAsDouble(json["lastSeq"]),
+    );
+  }
+
+  static VoiceCallsEventsReturn fromJsonValue(Object? json) {
+    return VoiceCallsEventsReturn.fromJson(raviJsonObject(json, "VoiceCallsEventsReturn"));
+  }
+}
+
+VoiceCallsEventsReturn voiceCallsEventsReturnFromJson(Object? json) => VoiceCallsEventsReturn.fromJsonValue(json);
+
+class VoiceCallsListOptions {
+  const VoiceCallsListOptions({this.active, this.limit, this.offset});
+
+  final bool? active;
+  final String? limit;
+  final String? offset;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (active != null) {
+      into["active"] = RaviJson.from(active);
+    }
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+  }
+}
+
+class VoiceCallsListReturn {
+  const VoiceCallsListReturn({required this.calls, required this.pagination, required this.total});
+
+  final List<RaviJson> calls;
+  final RaviJson pagination;
+  final double total;
+
+  factory VoiceCallsListReturn.fromJson(Map<String, Object?> json) {
+    return VoiceCallsListReturn(
+      calls: raviJsonAsList(json["calls"], RaviJson.from),
+      pagination: RaviJson.from(json["pagination"]),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static VoiceCallsListReturn fromJsonValue(Object? json) {
+    return VoiceCallsListReturn.fromJson(raviJsonObject(json, "VoiceCallsListReturn"));
+  }
+}
+
+VoiceCallsListReturn voiceCallsListReturnFromJson(Object? json) => VoiceCallsListReturn.fromJsonValue(json);
+
+class VoiceCallsPushOptions {
+  const VoiceCallsPushOptions({this.audio, this.audioData, this.mime});
+
+  final String? audio;
+  final String? audioData;
+  final String? mime;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (audio != null) {
+      into["audio"] = RaviJson.from(audio);
+    }
+    if (audioData != null) {
+      into["audioData"] = RaviJson.from(audioData);
+    }
+    if (mime != null) {
+      into["mime"] = RaviJson.from(mime);
+    }
+  }
+}
+
+class VoiceCallsPushReturn {
+  const VoiceCallsPushReturn({required this.callId, required this.text, required this.turnId});
+
+  final String callId;
+  final String text;
+  final RaviJson turnId;
+
+  factory VoiceCallsPushReturn.fromJson(Map<String, Object?> json) {
+    return VoiceCallsPushReturn(
+      callId: raviJsonAsString(json["callId"]),
+      text: raviJsonAsString(json["text"]),
+      turnId: RaviJson.from(json["turnId"]),
+    );
+  }
+
+  static VoiceCallsPushReturn fromJsonValue(Object? json) {
+    return VoiceCallsPushReturn.fromJson(raviJsonObject(json, "VoiceCallsPushReturn"));
+  }
+}
+
+VoiceCallsPushReturn voiceCallsPushReturnFromJson(Object? json) => VoiceCallsPushReturn.fromJsonValue(json);
+
+class VoiceCallsSendOptions {
+  const VoiceCallsSendOptions({this.guest});
+
+  final String? guest;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (guest != null) {
+      into["guest"] = RaviJson.from(guest);
+    }
+  }
+}
+
+class VoiceCallsSendReturn {
+  const VoiceCallsSendReturn({required this.callId, required this.text, required this.turnId});
+
+  final String callId;
+  final String text;
+  final String turnId;
+
+  factory VoiceCallsSendReturn.fromJson(Map<String, Object?> json) {
+    return VoiceCallsSendReturn(
+      callId: raviJsonAsString(json["callId"]),
+      text: raviJsonAsString(json["text"]),
+      turnId: raviJsonAsString(json["turnId"]),
+    );
+  }
+
+  static VoiceCallsSendReturn fromJsonValue(Object? json) {
+    return VoiceCallsSendReturn.fromJson(raviJsonObject(json, "VoiceCallsSendReturn"));
+  }
+}
+
+VoiceCallsSendReturn voiceCallsSendReturnFromJson(Object? json) => VoiceCallsSendReturn.fromJsonValue(json);
+
+class VoiceCallsShowReturn {
+  const VoiceCallsShowReturn({required this.call, required this.engine, required this.lastSeq, required this.openApprovals, required this.turns});
+
+  final RaviJson call;
+  final RaviJson engine;
+  final double lastSeq;
+  final List<RaviJson> openApprovals;
+  final List<RaviJson> turns;
+
+  factory VoiceCallsShowReturn.fromJson(Map<String, Object?> json) {
+    return VoiceCallsShowReturn(
+      call: RaviJson.from(json["call"]),
+      engine: RaviJson.from(json["engine"]),
+      lastSeq: raviJsonAsDouble(json["lastSeq"]),
+      openApprovals: raviJsonAsList(json["openApprovals"], RaviJson.from),
+      turns: raviJsonAsList(json["turns"], RaviJson.from),
+    );
+  }
+
+  static VoiceCallsShowReturn fromJsonValue(Object? json) {
+    return VoiceCallsShowReturn.fromJson(raviJsonObject(json, "VoiceCallsShowReturn"));
+  }
+}
+
+VoiceCallsShowReturn voiceCallsShowReturnFromJson(Object? json) => VoiceCallsShowReturn.fromJsonValue(json);
+
+class VoiceCallsSilenceReturn {
+  const VoiceCallsSilenceReturn({required this.callId, required this.silenced});
+
+  final String callId;
+  final bool silenced;
+
+  factory VoiceCallsSilenceReturn.fromJson(Map<String, Object?> json) {
+    return VoiceCallsSilenceReturn(
+      callId: raviJsonAsString(json["callId"]),
+      silenced: raviJsonAsBool(json["silenced"]),
+    );
+  }
+
+  static VoiceCallsSilenceReturn fromJsonValue(Object? json) {
+    return VoiceCallsSilenceReturn.fromJson(raviJsonObject(json, "VoiceCallsSilenceReturn"));
+  }
+}
+
+VoiceCallsSilenceReturn voiceCallsSilenceReturnFromJson(Object? json) => VoiceCallsSilenceReturn.fromJsonValue(json);
+
+class VoiceCallsStartOptions {
+  const VoiceCallsStartOptions({this.mode, this.offer, this.profile});
+
+  final String? mode;
+  final String? offer;
+  final String? profile;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (mode != null) {
+      into["mode"] = RaviJson.from(mode);
+    }
+    if (offer != null) {
+      into["offer"] = RaviJson.from(offer);
+    }
+    if (profile != null) {
+      into["profile"] = RaviJson.from(profile);
+    }
+  }
+}
+
+class VoiceCallsStartReturn {
+  const VoiceCallsStartReturn({required this.callId, required this.capabilities, required this.connectionKind, required this.lastSeq, required this.mode, required this.profileId, required this.roomToken, required this.roomUrl, required this.sdpAnswer, required this.sessionName, required this.state});
+
+  final String callId;
+  final RaviJson capabilities;
+  final String connectionKind;
+  final double lastSeq;
+  final String mode;
+  final String profileId;
+  final RaviJson roomToken;
+  final RaviJson roomUrl;
+  final RaviJson sdpAnswer;
+  final String sessionName;
+  final String state;
+
+  factory VoiceCallsStartReturn.fromJson(Map<String, Object?> json) {
+    return VoiceCallsStartReturn(
+      callId: raviJsonAsString(json["callId"]),
+      capabilities: RaviJson.from(json["capabilities"]),
+      connectionKind: raviJsonAsString(json["connectionKind"]),
+      lastSeq: raviJsonAsDouble(json["lastSeq"]),
+      mode: raviJsonAsString(json["mode"]),
+      profileId: raviJsonAsString(json["profileId"]),
+      roomToken: RaviJson.from(json["roomToken"]),
+      roomUrl: RaviJson.from(json["roomUrl"]),
+      sdpAnswer: RaviJson.from(json["sdpAnswer"]),
+      sessionName: raviJsonAsString(json["sessionName"]),
+      state: raviJsonAsString(json["state"]),
+    );
+  }
+
+  static VoiceCallsStartReturn fromJsonValue(Object? json) {
+    return VoiceCallsStartReturn.fromJson(raviJsonObject(json, "VoiceCallsStartReturn"));
+  }
+}
+
+VoiceCallsStartReturn voiceCallsStartReturnFromJson(Object? json) => VoiceCallsStartReturn.fromJsonValue(json);
+
+class VoiceCallsTranscriptReturn {
+  const VoiceCallsTranscriptReturn({required this.callId, required this.lines});
+
+  final String callId;
+  final List<RaviJson> lines;
+
+  factory VoiceCallsTranscriptReturn.fromJson(Map<String, Object?> json) {
+    return VoiceCallsTranscriptReturn(
+      callId: raviJsonAsString(json["callId"]),
+      lines: raviJsonAsList(json["lines"], RaviJson.from),
+    );
+  }
+
+  static VoiceCallsTranscriptReturn fromJsonValue(Object? json) {
+    return VoiceCallsTranscriptReturn.fromJson(raviJsonObject(json, "VoiceCallsTranscriptReturn"));
+  }
+}
+
+VoiceCallsTranscriptReturn voiceCallsTranscriptReturnFromJson(Object? json) => VoiceCallsTranscriptReturn.fromJsonValue(json);
+
+class VoiceDevicesListOptions {
+  const VoiceDevicesListOptions({this.all, this.limit, this.offset});
+
+  final bool? all;
+  final String? limit;
+  final String? offset;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (all != null) {
+      into["all"] = RaviJson.from(all);
+    }
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+  }
+}
+
+class VoiceDevicesListReturn {
+  const VoiceDevicesListReturn({required this.devices, required this.pagination, required this.total});
+
+  final List<RaviJson> devices;
+  final RaviJson pagination;
+  final double total;
+
+  factory VoiceDevicesListReturn.fromJson(Map<String, Object?> json) {
+    return VoiceDevicesListReturn(
+      devices: raviJsonAsList(json["devices"], RaviJson.from),
+      pagination: RaviJson.from(json["pagination"]),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static VoiceDevicesListReturn fromJsonValue(Object? json) {
+    return VoiceDevicesListReturn.fromJson(raviJsonObject(json, "VoiceDevicesListReturn"));
+  }
+}
+
+VoiceDevicesListReturn voiceDevicesListReturnFromJson(Object? json) => VoiceDevicesListReturn.fromJsonValue(json);
+
+class VoiceDevicesPairOptions {
+  const VoiceDevicesPairOptions({this.contact, this.execute, this.label, this.session, this.worker});
+
+  final String? contact;
+  final bool? execute;
+  final String? label;
+  final String? session;
+  final bool? worker;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (contact != null) {
+      into["contact"] = RaviJson.from(contact);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (label != null) {
+      into["label"] = RaviJson.from(label);
+    }
+    if (session != null) {
+      into["session"] = RaviJson.from(session);
+    }
+    if (worker != null) {
+      into["worker"] = RaviJson.from(worker);
+    }
+  }
+}
+
+class VoiceDevicesPairReturn {
+  const VoiceDevicesPairReturn({required this.contextKey, required this.device, required this.shownOnce});
+
+  final String contextKey;
+  final RaviJson device;
+  final bool shownOnce;
+
+  factory VoiceDevicesPairReturn.fromJson(Map<String, Object?> json) {
+    return VoiceDevicesPairReturn(
+      contextKey: raviJsonAsString(json["contextKey"]),
+      device: RaviJson.from(json["device"]),
+      shownOnce: raviJsonAsBool(json["shownOnce"]),
+    );
+  }
+
+  static VoiceDevicesPairReturn fromJsonValue(Object? json) {
+    return VoiceDevicesPairReturn.fromJson(raviJsonObject(json, "VoiceDevicesPairReturn"));
+  }
+}
+
+VoiceDevicesPairReturn voiceDevicesPairReturnFromJson(Object? json) => VoiceDevicesPairReturn.fromJsonValue(json);
+
+class VoiceDevicesRevokeReturn {
+  const VoiceDevicesRevokeReturn({required this.device, required this.endDeferred, required this.endRequested});
+
+  final RaviJson device;
+  final List<String> endDeferred;
+  final List<String> endRequested;
+
+  factory VoiceDevicesRevokeReturn.fromJson(Map<String, Object?> json) {
+    return VoiceDevicesRevokeReturn(
+      device: RaviJson.from(json["device"]),
+      endDeferred: raviJsonAsList(json["endDeferred"], raviJsonAsString),
+      endRequested: raviJsonAsList(json["endRequested"], raviJsonAsString),
+    );
+  }
+
+  static VoiceDevicesRevokeReturn fromJsonValue(Object? json) {
+    return VoiceDevicesRevokeReturn.fromJson(raviJsonObject(json, "VoiceDevicesRevokeReturn"));
+  }
+}
+
+VoiceDevicesRevokeReturn voiceDevicesRevokeReturnFromJson(Object? json) => VoiceDevicesRevokeReturn.fromJsonValue(json);
+
+class VoiceEnginesCheckReturn {
+  const VoiceEnginesCheckReturn({required this.checks});
+
+  final List<RaviJson> checks;
+
+  factory VoiceEnginesCheckReturn.fromJson(Map<String, Object?> json) {
+    return VoiceEnginesCheckReturn(
+      checks: raviJsonAsList(json["checks"], RaviJson.from),
+    );
+  }
+
+  static VoiceEnginesCheckReturn fromJsonValue(Object? json) {
+    return VoiceEnginesCheckReturn.fromJson(raviJsonObject(json, "VoiceEnginesCheckReturn"));
+  }
+}
+
+VoiceEnginesCheckReturn voiceEnginesCheckReturnFromJson(Object? json) => VoiceEnginesCheckReturn.fromJsonValue(json);
+
+class VoiceEnginesListOptions {
+  const VoiceEnginesListOptions({this.limit, this.offset});
+
+  final String? limit;
+  final String? offset;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+  }
+}
+
+class VoiceEnginesListReturn {
+  const VoiceEnginesListReturn({required this.engines, required this.pagination, required this.total});
+
+  final List<RaviJson> engines;
+  final RaviJson pagination;
+  final double total;
+
+  factory VoiceEnginesListReturn.fromJson(Map<String, Object?> json) {
+    return VoiceEnginesListReturn(
+      engines: raviJsonAsList(json["engines"], RaviJson.from),
+      pagination: RaviJson.from(json["pagination"]),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static VoiceEnginesListReturn fromJsonValue(Object? json) {
+    return VoiceEnginesListReturn.fromJson(raviJsonObject(json, "VoiceEnginesListReturn"));
+  }
+}
+
+VoiceEnginesListReturn voiceEnginesListReturnFromJson(Object? json) => VoiceEnginesListReturn.fromJsonValue(json);
+
+class VoiceProfilesCreateOptions {
+  const VoiceProfilesCreateOptions({this.allowGuests, this.delivery, this.label, this.language, this.liveModel, this.liveVoice, this.maxCallCost, this.maxCallMinutes, this.maxDailyCost, this.mode, this.ttsModel, this.voice});
+
+  final bool? allowGuests;
+  final String? delivery;
+  final String? label;
+  final String? language;
+  final String? liveModel;
+  final String? liveVoice;
+  final String? maxCallCost;
+  final String? maxCallMinutes;
+  final String? maxDailyCost;
+  final String? mode;
+  final String? ttsModel;
+  final String? voice;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (allowGuests != null) {
+      into["allowGuests"] = RaviJson.from(allowGuests);
+    }
+    if (delivery != null) {
+      into["delivery"] = RaviJson.from(delivery);
+    }
+    if (label != null) {
+      into["label"] = RaviJson.from(label);
+    }
+    if (language != null) {
+      into["language"] = RaviJson.from(language);
+    }
+    if (liveModel != null) {
+      into["liveModel"] = RaviJson.from(liveModel);
+    }
+    if (liveVoice != null) {
+      into["liveVoice"] = RaviJson.from(liveVoice);
+    }
+    if (maxCallCost != null) {
+      into["maxCallCost"] = RaviJson.from(maxCallCost);
+    }
+    if (maxCallMinutes != null) {
+      into["maxCallMinutes"] = RaviJson.from(maxCallMinutes);
+    }
+    if (maxDailyCost != null) {
+      into["maxDailyCost"] = RaviJson.from(maxDailyCost);
+    }
+    if (mode != null) {
+      into["mode"] = RaviJson.from(mode);
+    }
+    if (ttsModel != null) {
+      into["ttsModel"] = RaviJson.from(ttsModel);
+    }
+    if (voice != null) {
+      into["voice"] = RaviJson.from(voice);
+    }
+  }
+}
+
+class VoiceProfilesCreateReturn {
+  const VoiceProfilesCreateReturn({required this.profile});
+
+  final RaviJson profile;
+
+  factory VoiceProfilesCreateReturn.fromJson(Map<String, Object?> json) {
+    return VoiceProfilesCreateReturn(
+      profile: RaviJson.from(json["profile"]),
+    );
+  }
+
+  static VoiceProfilesCreateReturn fromJsonValue(Object? json) {
+    return VoiceProfilesCreateReturn.fromJson(raviJsonObject(json, "VoiceProfilesCreateReturn"));
+  }
+}
+
+VoiceProfilesCreateReturn voiceProfilesCreateReturnFromJson(Object? json) => VoiceProfilesCreateReturn.fromJsonValue(json);
+
+class VoiceProfilesDeleteReturn {
+  const VoiceProfilesDeleteReturn({required this.deleted, required this.id});
+
+  final bool deleted;
+  final String id;
+
+  factory VoiceProfilesDeleteReturn.fromJson(Map<String, Object?> json) {
+    return VoiceProfilesDeleteReturn(
+      deleted: raviJsonAsBool(json["deleted"]),
+      id: raviJsonAsString(json["id"]),
+    );
+  }
+
+  static VoiceProfilesDeleteReturn fromJsonValue(Object? json) {
+    return VoiceProfilesDeleteReturn.fromJson(raviJsonObject(json, "VoiceProfilesDeleteReturn"));
+  }
+}
+
+VoiceProfilesDeleteReturn voiceProfilesDeleteReturnFromJson(Object? json) => VoiceProfilesDeleteReturn.fromJsonValue(json);
+
+class VoiceProfilesListOptions {
+  const VoiceProfilesListOptions({this.limit, this.offset});
+
+  final String? limit;
+  final String? offset;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+  }
+}
+
+class VoiceProfilesListReturn {
+  const VoiceProfilesListReturn({required this.pagination, required this.profiles, required this.total});
+
+  final RaviJson pagination;
+  final List<RaviJson> profiles;
+  final double total;
+
+  factory VoiceProfilesListReturn.fromJson(Map<String, Object?> json) {
+    return VoiceProfilesListReturn(
+      pagination: RaviJson.from(json["pagination"]),
+      profiles: raviJsonAsList(json["profiles"], RaviJson.from),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static VoiceProfilesListReturn fromJsonValue(Object? json) {
+    return VoiceProfilesListReturn.fromJson(raviJsonObject(json, "VoiceProfilesListReturn"));
+  }
+}
+
+VoiceProfilesListReturn voiceProfilesListReturnFromJson(Object? json) => VoiceProfilesListReturn.fromJsonValue(json);
+
+class VoiceProfilesShowReturn {
+  const VoiceProfilesShowReturn({required this.profile});
+
+  final RaviJson profile;
+
+  factory VoiceProfilesShowReturn.fromJson(Map<String, Object?> json) {
+    return VoiceProfilesShowReturn(
+      profile: RaviJson.from(json["profile"]),
+    );
+  }
+
+  static VoiceProfilesShowReturn fromJsonValue(Object? json) {
+    return VoiceProfilesShowReturn.fromJson(raviJsonObject(json, "VoiceProfilesShowReturn"));
+  }
+}
+
+VoiceProfilesShowReturn voiceProfilesShowReturnFromJson(Object? json) => VoiceProfilesShowReturn.fromJsonValue(json);
+
+class VoiceProfilesUpdateOptions {
+  const VoiceProfilesUpdateOptions({this.allowGuests, this.delivery, this.label, this.language, this.liveModel, this.liveVoice, this.maxCallCost, this.maxCallMinutes, this.maxDailyCost, this.mode, this.noGuests, this.ttsModel, this.voice});
+
+  final bool? allowGuests;
+  final String? delivery;
+  final String? label;
+  final String? language;
+  final String? liveModel;
+  final String? liveVoice;
+  final String? maxCallCost;
+  final String? maxCallMinutes;
+  final String? maxDailyCost;
+  final String? mode;
+  final bool? noGuests;
+  final String? ttsModel;
+  final String? voice;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (allowGuests != null) {
+      into["allowGuests"] = RaviJson.from(allowGuests);
+    }
+    if (delivery != null) {
+      into["delivery"] = RaviJson.from(delivery);
+    }
+    if (label != null) {
+      into["label"] = RaviJson.from(label);
+    }
+    if (language != null) {
+      into["language"] = RaviJson.from(language);
+    }
+    if (liveModel != null) {
+      into["liveModel"] = RaviJson.from(liveModel);
+    }
+    if (liveVoice != null) {
+      into["liveVoice"] = RaviJson.from(liveVoice);
+    }
+    if (maxCallCost != null) {
+      into["maxCallCost"] = RaviJson.from(maxCallCost);
+    }
+    if (maxCallMinutes != null) {
+      into["maxCallMinutes"] = RaviJson.from(maxCallMinutes);
+    }
+    if (maxDailyCost != null) {
+      into["maxDailyCost"] = RaviJson.from(maxDailyCost);
+    }
+    if (mode != null) {
+      into["mode"] = RaviJson.from(mode);
+    }
+    if (noGuests != null) {
+      into["noGuests"] = RaviJson.from(noGuests);
+    }
+    if (ttsModel != null) {
+      into["ttsModel"] = RaviJson.from(ttsModel);
+    }
+    if (voice != null) {
+      into["voice"] = RaviJson.from(voice);
+    }
+  }
+}
+
+class VoiceProfilesUpdateReturn {
+  const VoiceProfilesUpdateReturn({required this.profile});
+
+  final RaviJson profile;
+
+  factory VoiceProfilesUpdateReturn.fromJson(Map<String, Object?> json) {
+    return VoiceProfilesUpdateReturn(
+      profile: RaviJson.from(json["profile"]),
+    );
+  }
+
+  static VoiceProfilesUpdateReturn fromJsonValue(Object? json) {
+    return VoiceProfilesUpdateReturn.fromJson(raviJsonObject(json, "VoiceProfilesUpdateReturn"));
+  }
+}
+
+VoiceProfilesUpdateReturn voiceProfilesUpdateReturnFromJson(Object? json) => VoiceProfilesUpdateReturn.fromJsonValue(json);
+
+class VoiceTargetsListOptions {
+  const VoiceTargetsListOptions({this.limit, this.offset});
+
+  final String? limit;
+  final String? offset;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+  }
+}
+
+class VoiceTargetsListReturn {
+  const VoiceTargetsListReturn({required this.pagination, required this.targets, required this.total});
+
+  final RaviJson pagination;
+  final List<RaviJson> targets;
+  final double total;
+
+  factory VoiceTargetsListReturn.fromJson(Map<String, Object?> json) {
+    return VoiceTargetsListReturn(
+      pagination: RaviJson.from(json["pagination"]),
+      targets: raviJsonAsList(json["targets"], RaviJson.from),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static VoiceTargetsListReturn fromJsonValue(Object? json) {
+    return VoiceTargetsListReturn.fromJson(raviJsonObject(json, "VoiceTargetsListReturn"));
+  }
+}
+
+VoiceTargetsListReturn voiceTargetsListReturnFromJson(Object? json) => VoiceTargetsListReturn.fromJsonValue(json);
+
+class VoiceVoicesListOptions {
+  const VoiceVoicesListOptions({this.limit, this.offset, this.search});
+
+  final String? limit;
+  final String? offset;
+  final String? search;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+    if (search != null) {
+      into["search"] = RaviJson.from(search);
+    }
+  }
+}
+
+class VoiceVoicesListReturn {
+  const VoiceVoicesListReturn({required this.pagination, required this.total, required this.voices});
+
+  final RaviJson pagination;
+  final double total;
+  final List<RaviJson> voices;
+
+  factory VoiceVoicesListReturn.fromJson(Map<String, Object?> json) {
+    return VoiceVoicesListReturn(
+      pagination: RaviJson.from(json["pagination"]),
+      total: raviJsonAsDouble(json["total"]),
+      voices: raviJsonAsList(json["voices"], RaviJson.from),
+    );
+  }
+
+  static VoiceVoicesListReturn fromJsonValue(Object? json) {
+    return VoiceVoicesListReturn.fromJson(raviJsonObject(json, "VoiceVoicesListReturn"));
+  }
+}
+
+VoiceVoicesListReturn voiceVoicesListReturnFromJson(Object? json) => VoiceVoicesListReturn.fromJsonValue(json);
+
 class WatchConnectorsOptions {
   const WatchConnectorsOptions({this.provider});
 

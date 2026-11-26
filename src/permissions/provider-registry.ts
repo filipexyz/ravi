@@ -119,13 +119,18 @@ export function listRegisteredPermissionProviderIds(): string[] {
   return Object.keys(PROVIDER_REGISTRY);
 }
 
-const DEFAULT_CAPABILITY_MATERIALIZERS: PermissionProvider[] = [
-  runtimeBootstrapProvider,
-  agentDefaultCapabilitiesProvider,
-  agentIdentityPermissionsProvider,
-  contactPolicyPermissionsProvider,
-];
+// Built on first use, not at module load. This module and the contact-policy provider import each other
+// through contacts and the router, so an array literal evaluated here reads `contactPolicyPermissionsProvider`
+// while it is still in its temporal dead zone whenever the contact-policy module is loaded first (or the load
+// order flips under load, as it did in the SDK release run of 2026-11-25).
+let defaultCapabilityMaterializers: PermissionProvider[] | null = null;
 
 export function getConfiguredCapabilityMaterializers(): PermissionProvider[] {
-  return DEFAULT_CAPABILITY_MATERIALIZERS;
+  defaultCapabilityMaterializers ??= [
+    runtimeBootstrapProvider,
+    agentDefaultCapabilitiesProvider,
+    agentIdentityPermissionsProvider,
+    contactPolicyPermissionsProvider,
+  ];
+  return defaultCapabilityMaterializers;
 }

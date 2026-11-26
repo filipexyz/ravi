@@ -22,6 +22,11 @@
 - Bootstrap agent and automation contexts can run the read-only Codex Bash
   policy hook without receiving the broader context command group.
 - Contact permission tags materialize through `contact-policy-permissions`.
+- A fresh process whose first import is `contact-policy-permissions-provider`,
+  `provider-registry` or `provider-runtime` loads without a temporal-dead-zone
+  error and `getConfiguredCapabilityMaterializers()` lists
+  `contact-policy-permissions` (`src/permissions/provider-runtime.test.ts`,
+  "Permission provider registry load order").
 - External resolved contact turns use `authorityMode=agent-identity` and do
   not require contact/surface capabilities for bootstrap tool authority.
 - Agent-identity denials resolve to `agent:<executorAgentId>` as the recurring
@@ -88,7 +93,10 @@ Quoting regressions (`bun test src/bash/`):
   override), `heredoc_quoted_body_is_not_commands`,
   `substitution_and_redirect_allowed_when_command_authorized` (`printf
   "$(date)"`, `echo $(git ...)`, `ls | sort > out` with Write, `diff <(...)`),
-  `unknown_parse_fails_closed_with_named_error`, and regressions for keywords
+  `unknown_parse_fails_closed_with_named_error`,
+  `uutils_coreutils_root_is_trusted_and_nothing_beside_it` (the uutils
+  multicall layout resolves under `/usr/lib/cargo/bin/coreutils`; `sudo`, `su`,
+  `coreutilsx` and copies elsewhere stay untrusted), and regressions for keywords
   (#813), disguised substitutions (#767/#776), quoted assignment values and env
   spoofing inside substitutions.
 - Quoted/escaped executable names, inline flags and piped interpreter receivers

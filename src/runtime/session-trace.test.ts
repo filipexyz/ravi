@@ -1721,6 +1721,7 @@ describe("runtime session trace instrumentation", () => {
       prompt: "first overlapping send",
       deliveryBarrier: "after_response",
       _turnOrigin: buildSessionRelayTurnOrigin("send"),
+      _correlationId: "corr-first",
     });
     const streaming = makeStreamingSession({
       agentMode: "active",
@@ -1797,6 +1798,7 @@ describe("runtime session trace instrumentation", () => {
           _agentId: AGENT_ID,
           deliveryBarrier: "after_response",
           deliveryBarrierSource: "default",
+          _correlationId: "corr-second",
         });
         queuedDuringInFlight = streaming.pendingMessages.some((message) =>
           message.message.content.includes("second overlapping send"),
@@ -1853,6 +1855,8 @@ describe("runtime session trace instrumentation", () => {
           entry.data.type === "turn.interrupted"),
     );
     expect(runtimeTerminals.map((entry) => entry.data.type)).toEqual(["turn.complete", "turn.complete"]);
+    // Each terminal names only the prompts its own physical turn consumed (voice door ownership).
+    expect(runtimeTerminals.map((entry) => entry.data._correlationIds)).toEqual([["corr-first"], ["corr-second"]]);
 
     const history = getRecentHistory(SESSION_NAME, 10);
     expect(history.filter((message) => message.role === "user").map((message) => message.content)).toEqual(

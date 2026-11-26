@@ -1,0 +1,21 @@
+{
+  "name": "@ravi-os/voice-worker",
+  "private": true,
+  "version": "0.261124.0",
+  "description": "Hands-free Ravi voice worker: joins a call's LiveKit room, hears the person and speaks the session's replies.",
+  "type": "module",
+  "main": "./src/worker.ts",
+  "scripts": {
+    "dev": "node --experimental-strip-types src/worker.ts dev",
+    "start": "node --experimental-strip-types src/worker.ts start"
+  },
+  "dependencies": {
+    "@livekit/agents": "^1.10.0",
+    "@livekit/agents-plugin-elevenlabs": "^1.0.0",
+    "@livekit/agents-plugin-openai": "^1.0.0",
+    "@livekit/agents-plugin-silero": "^1.0.0",
+    "@ravi-os/sdk": ">=0.261009.1"
+  },
+  "engines": { "node": ">=24" },
+  "license": "MIT"
+}

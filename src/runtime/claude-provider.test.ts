@@ -555,6 +555,47 @@ describe("createClaudeRuntimeProvider", () => {
     expect(findEventsByType(events, "turn.failed")).toHaveLength(0);
   });
 
+  it("does not complete the prompt on the result of a notification turn Claude Code drains first on resume", async () => {
+    // Incident 25/11 (cassia-omie): an interrupt stopped a background subagent.
+    // On resume Claude Code first drained the queued task notification as a
+    // turn of its own (no model call, zero usage), then answered the prompt.
+    nextMessages = [
+      { type: "system", subtype: "task_notification", task_id: "a1ef4daa6088ccece", status: "stopped" },
+      { type: "result", subtype: "success", is_error: false, session_id: "claude-session-resume", usage: zeroUsage },
+      { type: "assistant", message: { content: [{ type: "text", text: "Aqui, respondendo a mensagem." }] } },
+      {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        session_id: "claude-session-resume",
+        usage: { input_tokens: 120, output_tokens: 30, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+      },
+    ];
+
+    const events = await runSingleTurn();
+
+    expect(findEventsByType(events, "assistant.message").map((event) => event.text)).toEqual([
+      "Aqui, respondendo a mensagem.",
+    ]);
+    const completes = findEventsByType(events, "turn.complete");
+    expect(completes).toHaveLength(1);
+    expect(completes[0]?.usage?.outputTokens).toBe(30);
+    expect(findEventsByType(events, "turn.failed")).toHaveLength(0);
+  });
+
+  it("keeps a zero-usage result after prompt content as the prompt's own result even after a notification", async () => {
+    nextMessages = [
+      { type: "assistant", message: { content: [{ type: "text", text: "resposta" }] } },
+      { type: "system", subtype: "task_notification", task_id: "t1", status: "completed" },
+      { type: "result", subtype: "success", is_error: false, session_id: "claude-session-x", usage: zeroUsage },
+    ];
+
+    const events = await runSingleTurn();
+
+    expect(findEventsByType(events, "assistant.message").map((event) => event.text)).toEqual(["resposta"]);
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(1);
+  });
+
   it("synthesizes a failed turn when the provider stream ends without a terminal result", async () => {
     nextMessages = [
       {

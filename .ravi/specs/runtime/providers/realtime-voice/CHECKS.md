@@ -3,6 +3,10 @@ id: runtime/providers/realtime-voice
 mode: checks
 ---
 
+## SUPERSEDED — 2026-11-24
+
+Replaced by the `voice` spec: the session is the brain and the realtime model is only the ears and mouth (engine `live`). Nothing below is normative.
+
 # Checks
 
 ## Static Checks

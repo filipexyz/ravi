@@ -1,0 +1,371 @@
+/**
+ * `live` engine: OpenAI GPT-Live with `delegation: client`.
+ *
+ * The app holds the WebRTC media directly with OpenAI. The daemon posts the
+ * app's SDP offer, owns the only sideband and turns each delegation into a
+ * session turn. Facts below come from OpenAI's GPT-Live docs as read on
+ * 2026-11-24 (pesquisa/v1-facts-openai-gemini.md); the field name of the
+ * append payload (`text`) was not shown verbatim there.
+ */
+import WebSocket from "ws";
+import type { VoiceEngineDescriptor } from "./types.js";
+import { envHas } from "./types.js";
+
+export const LIVE_API_BASE = "https://api.openai.com/v1/live/sessions";
+export const LIVE_DEFAULT_MODEL = "gpt-live-1.1";
+export const LIVE_DEFAULT_VOICE = "marin";
+/** US$ 0.05 per active minute (standby is US$ 0.02). */
+export const LIVE_USD_PER_ACTIVE_MINUTE = 0.05;
+/** Appends are capped at 500 tokens; keep each chunk well under it. */
+const APPEND_CHUNK_CHARS = 1500;
+/** Wait this long after a delegation for the transcript that triggered it to settle. */
+export const DELEGATION_SETTLE_MS = 900;
+/** Events that carry reflected audio. They are dropped on arrival, never stored or published. */
+const AUDIO_EVENTS = new Set(["session.input_audio.append", "session.output_audio.delta"]);
+
+export function liveApiKey(env: NodeJS.ProcessEnv = process.env): string | null {
+  return env.RAVI_VOICE_OPENAI_API_KEY?.trim() || null;
+}
+
+export const liveEngine: VoiceEngineDescriptor = {
+  id: "live",
+  label: "Live (OpenAI GPT-Live, delegação para a sessão)",
+  connectionKind: "webrtc",
+  capabilities: {
+    bargeIn: true,
+    streamingAudio: true,
+    exactSpeech: false,
+    serverAudio: false,
+    needs: ["RAVI_VOICE_OPENAI_API_KEY"],
+  },
+  costPerMinuteUsd: LIVE_USD_PER_ACTIVE_MINUTE,
+  check(env = process.env) {
+    const missing = envHas(env, "RAVI_VOICE_OPENAI_API_KEY") ? [] : ["RAVI_VOICE_OPENAI_API_KEY"];
+    const notes = [
+      "Uses its own key, never OPENAI_API_KEY (Codex inherits that one). Give the key's project a spend limit.",
+      "The voice model paraphrases; it never reads the session's text word for word.",
+      "A daemon restart ends live calls: the sideband cannot reconnect.",
+    ];
+    return { engine: "live", ready: missing.length === 0, missing, notes };
+  },
+};
+
+export function buildLiveInstructions(input: { language: string; sessionLabel: string }): string {
+  const lang = input.language.toLowerCase().startsWith("pt") ? "Brazilian Portuguese" : input.language;
+  return [
+    `You are the voice of a Ravi session called "${input.sessionLabel}". Speak ${lang}. Keep answers short.`,
+    "",
+    "Delegation policy:",
+    "- Delegate everything about the person's work, files, messages, calendar, tasks, code or anything you would need to look up. The session behind you does the work and is the only source of facts about it.",
+    "- Never claim that something was done, sent, saved or found unless the session told you so.",
+    "- Do not delegate greetings, small talk, or a repeat of a result the session already gave in this call.",
+    "",
+    "Approvals: never treat a spoken yes as approval. Tell the person to tap the approval on screen.",
+    "If the person says stop or cancel, say it is cancelled only after the session confirms.",
+  ].join("\n");
+}
+
+export interface CreateLiveSessionInput {
+  apiKey: string;
+  sdpOffer: string;
+  instructions: string;
+  model?: string;
+  voice?: string;
+  /** Text-only history seeded at start (max 128 messages). */
+  history?: Array<{ role: "user" | "assistant" | "developer"; text: string }>;
+  fetchImpl?: typeof fetch;
+}
+
+export interface CreatedLiveSession {
+  sessionId: string;
+  sdpAnswer: string;
+}
+
+export async function createLiveSession(input: CreateLiveSessionInput): Promise<CreatedLiveSession> {
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const body = {
+    session: {
+      model: input.model ?? LIVE_DEFAULT_MODEL,
+      instructions: input.instructions,
+      ...(input.history?.length
+        ? {
+            input: input.history.slice(-128).map((item) => ({
+              role: item.role,
+              content: [{ type: item.role === "assistant" ? "output_text" : "input_text", text: item.text }],
+            })),
+          }
+        : {}),
+      audio: { output: { voice: input.voice ?? LIVE_DEFAULT_VOICE } },
+      delegation: { type: "client" },
+      store: false,
+      // Untrusted frontend: the browser may neither send events nor read the seeded context.
+      client: { data_channel: { allowed_client_events: [], allowed_server_events: [] } },
+    },
+    transport: { type: "webrtc", sdp: input.sdpOffer },
+  };
+  const response = await fetchImpl(LIVE_API_BASE, {
+    method: "POST",
+    headers: { authorization: `Bearer ${input.apiKey}`, "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const raw = await response.text();
+  if (!response.ok) {
+    throw new Error(`GPT-Live session create failed (${response.status}): ${redactBody(raw)}`);
+  }
+  const parsed = safeJson(raw) as { session?: { id?: unknown }; transport?: { sdp?: unknown } } | null;
+  const sessionId = typeof parsed?.session?.id === "string" ? parsed.session.id : "";
+  const sdpAnswer = typeof parsed?.transport?.sdp === "string" ? parsed.transport.sdp : "";
+  if (!sessionId || !sdpAnswer) throw new Error("GPT-Live session create returned no session id or SDP answer");
+  return { sessionId, sdpAnswer };
+}
+
+export async function closeLiveSession(input: {
+  apiKey: string;
+  sessionId: string;
+  fetchImpl?: typeof fetch;
+}): Promise<void> {
+  const fetchImpl = input.fetchImpl ?? fetch;
+  try {
+    await fetchImpl(`${LIVE_API_BASE}/${encodeURIComponent(input.sessionId)}/close`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${input.apiKey}` },
+      signal: AbortSignal.timeout(5000),
+    });
+  } catch {
+    // no-cause: best effort; the sideband close below ends the session too.
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sideband
+// ---------------------------------------------------------------------------
+
+export interface LiveSocket {
+  send(data: string): void;
+  close(): void;
+  on(event: "message", listener: (data: unknown) => void): unknown;
+  on(event: "close", listener: () => void): unknown;
+  on(event: "error", listener: (error: Error) => void): unknown;
+  on(event: "open", listener: () => void): unknown;
+}
+
+export interface LiveSidebandHandlers {
+  /** A delegation settled: the person asked for work. */
+  onDelegation(input: { delegationId: string; text: string }): void;
+  onUserTranscript(text: string): void;
+  onAgentTranscript(text: string): void;
+  onUsage(input: { seconds: number; activeSeconds?: number }): void;
+  onClosed(reason: string): void;
+  onError(error: Error): void;
+}
+
+export interface LiveSidebandOptions {
+  apiKey: string;
+  sessionId: string;
+  handlers: LiveSidebandHandlers;
+  socketFactory?: (url: string, headers: Record<string, string>) => LiveSocket;
+  settleMs?: number;
+  setTimer?: (fn: () => void, ms: number) => unknown;
+}
+
+/**
+ * The daemon's sideband. It is the only writer of appends. Reflected audio is
+ * dropped on arrival. Delegations are deduped by id and settled so the user
+ * transcript that triggered them is complete.
+ */
+export class LiveSideband {
+  private socket: LiveSocket | null = null;
+  private userBuffer = "";
+  /** The last finished utterance, kept until a delegation takes it. */
+  private completedUtterance = "";
+  private agentBuffer = "";
+  private readonly seenDelegations = new Set<string>();
+  private closed = false;
+
+  constructor(private readonly options: LiveSidebandOptions) {}
+
+  connect(): void {
+    const url = `${LIVE_API_BASE.replace(/^https:/, "wss:")}/${encodeURIComponent(this.options.sessionId)}/attach`;
+    const headers = { authorization: `Bearer ${this.options.apiKey}` };
+    const factory =
+      this.options.socketFactory ?? ((target, h) => new WebSocket(target, { headers: h }) as unknown as LiveSocket);
+    const socket = factory(url, headers);
+    this.socket = socket;
+    socket.on("message", (data) => this.handleRaw(data));
+    socket.on("close", () => this.finish("sideband_closed"));
+    socket.on("error", (error) => this.options.handlers.onError(error));
+  }
+
+  /** Spoken update for the person (paraphrased by the voice model). */
+  commentary(text: string, delegationId: string | null): void {
+    this.append("session.commentary.append", text, delegationId);
+  }
+
+  /** Silent context for the voice model. */
+  thinking(text: string, delegationId: string | null): void {
+    this.append("session.thinking.append", text, delegationId);
+  }
+
+  close(): void {
+    if (this.closed) return;
+    try {
+      this.socket?.send(JSON.stringify({ type: "session.close" }));
+    } catch {
+      // no-cause: closing a socket that already dropped.
+    }
+    try {
+      this.socket?.close();
+    } catch {
+      // no-cause: closing a socket that already dropped.
+    }
+    this.finish("closed_by_door");
+  }
+
+  /** Visible for tests. */
+  handleRaw(data: unknown): void {
+    const text = typeof data === "string" ? data : Buffer.isBuffer(data) ? data.toString("utf8") : String(data);
+    // Drop reflected audio before parsing the (large) payload.
+    if (
+      text.length > 512 &&
+      /"type"\s*:\s*"session\.(?:input_audio\.append|output_audio\.delta)"/.test(text.slice(0, 200))
+    ) {
+      return;
+    }
+    const event = safeJson(text) as Record<string, unknown> | null;
+    if (!event || typeof event.type !== "string") return;
+    this.handleEvent(event);
+  }
+
+  private handleEvent(event: Record<string, unknown>): void {
+    const type = event.type as string;
+    if (AUDIO_EVENTS.has(type)) return;
+    switch (type) {
+      case "session.input_transcript.delta":
+        this.userBuffer += stringField(event, "delta");
+        return;
+      case "session.input_transcript.done":
+      case "session.input_transcript.completed":
+        this.flushUser();
+        return;
+      case "session.output_transcript.delta":
+        this.agentBuffer += stringField(event, "delta");
+        if (/[.!?…]\s*$/.test(this.agentBuffer)) this.flushAgent();
+        return;
+      case "session.output_transcript.done":
+      case "session.output_transcript.completed":
+        this.flushAgent();
+        return;
+      case "session.delegation.created": {
+        const delegation = (event.delegation as Record<string, unknown> | undefined) ?? event;
+        const id = stringField(delegation, "id") || stringField(event, "delegation_id");
+        if (!id || this.seenDelegations.has(id)) return;
+        this.seenDelegations.add(id);
+        const setTimer = this.options.setTimer ?? ((fn: () => void, ms: number) => setTimeout(fn, ms));
+        // Cancel the automatic "I'm checking" with an empty thinking append; the
+        // door speaks its own acknowledgement from real session events.
+        this.thinking("", id);
+        setTimer(() => {
+          const text = this.takeUserText();
+          this.options.handlers.onDelegation({ delegationId: id, text });
+        }, this.options.settleMs ?? DELEGATION_SETTLE_MS);
+        return;
+      }
+      case "session.usage.updated": {
+        const usage = (event.usage as Record<string, unknown> | undefined) ?? event;
+        const seconds = numberField(usage, "seconds");
+        const activeSeconds = numberField(usage, "active_seconds");
+        if (seconds !== null) {
+          this.options.handlers.onUsage({ seconds, ...(activeSeconds !== null ? { activeSeconds } : {}) });
+        }
+        return;
+      }
+      case "session.closed":
+        this.finish("provider_closed");
+        return;
+      case "error":
+        this.options.handlers.onError(new Error(stringField(event, "message") || "GPT-Live error"));
+        return;
+      default:
+        return;
+    }
+  }
+
+  private takeUserText(): string {
+    // Words still streaming win; otherwise the utterance that finished before
+    // (or while) the delegation settled. Either is consumed once.
+    const open = this.userBuffer.trim();
+    this.userBuffer = "";
+    if (open) this.options.handlers.onUserTranscript(open);
+    const text = open || this.completedUtterance;
+    this.completedUtterance = "";
+    return text;
+  }
+
+  private flushUser(): void {
+    // A finished user utterance is recorded now. If no delegation takes it, it
+    // was conversation the voice model handled on its own.
+    const text = this.userBuffer.trim();
+    if (!text) return;
+    this.userBuffer = "";
+    this.completedUtterance = text;
+    this.options.handlers.onUserTranscript(text);
+  }
+
+  private flushAgent(): void {
+    const text = this.agentBuffer.trim();
+    this.agentBuffer = "";
+    if (text) this.options.handlers.onAgentTranscript(text);
+  }
+
+  private append(type: string, text: string, delegationId: string | null): void {
+    if (this.closed || !this.socket) return;
+    const chunks = text ? chunkText(text, APPEND_CHUNK_CHARS) : [""];
+    for (const chunk of chunks) {
+      this.socket.send(JSON.stringify({ type, delegation_id: delegationId, text: chunk }));
+    }
+  }
+
+  private finish(reason: string): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.flushAgent();
+    this.options.handlers.onClosed(reason);
+  }
+}
+
+export function chunkText(text: string, max: number): string[] {
+  const out: string[] = [];
+  let rest = text.trim();
+  while (rest.length > max) {
+    let cut = rest.lastIndexOf(". ", max);
+    if (cut < max / 2) cut = rest.lastIndexOf(" ", max);
+    if (cut < max / 2) cut = max;
+    out.push(rest.slice(0, cut + 1).trim());
+    rest = rest.slice(cut + 1).trim();
+  }
+  if (rest) out.push(rest);
+  return out;
+}
+
+function safeJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    // no-cause: a non-JSON provider frame is ignored, not an error.
+    return null;
+  }
+}
+
+function redactBody(raw: string): string {
+  return raw.replace(/sk-[A-Za-z0-9_-]{8,}/g, "sk-…").slice(0, 300);
+}
+
+function stringField(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  return typeof value === "string" ? value : "";
+}
+
+function numberField(record: Record<string, unknown>, key: string): number | null {
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}

@@ -112,6 +112,7 @@ export * from "./transcribe.js";
 export * from "./triggers.js";
 export * from "./update.js";
 export * from "./video.js";
+export * from "./voice.js";
 export * from "./watch.js";
 export * from "./whatsapp-dm.js";
 export * from "./widgets.js";

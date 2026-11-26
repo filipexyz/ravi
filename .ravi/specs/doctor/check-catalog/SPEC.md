@@ -53,6 +53,30 @@ Each check MUST declare:
 
 Checks MUST NOT mutate state.
 
+## Omni Database Authentication
+
+- `runtime.omni_db_auth` MUST warn when Omni's database (`server.databaseUrl`
+  in Omni's config) lets Omni's user log in without a credential: a PostgreSQL
+  `trust` rule exposes every WhatsApp message to any process on the host.
+- The probe MUST send only a StartupMessage, never a password or a query, and
+  MUST answer an AuthenticationOk with Terminate. It MUST probe only loopback
+  hosts; a remote database is reported as `remote`, not probed.
+- The verdict is per probed address, with states `accepts_without_password`,
+  `password_required`, `rejected` (ErrorResponse before authentication),
+  `no_listener` (connection actively refused) and `no_answer` (timeout or a
+  non-PostgreSQL answer). The output MUST list the state of every address.
+- Any address in `accepts_without_password` MUST warn. The check is `pass` only
+  when no answering address accepts without a password and every address is
+  `password_required`, `rejected` or `no_listener`, with at least one answering.
+  A `no_answer` address, a TLS-only URL (`sslmode=require|verify-ca|verify-full`)
+  or an unparseable URL MUST stay a skipped check, never `pass`.
+- The probe is plaintext (no SSLRequest): the verdict covers connections without
+  TLS only, and the output and message MUST say so. A `hostssl` rule is not seen.
+- The URL MUST be printed with its password and any secret-looking query
+  parameter redacted.
+- Ravi does not install that database, so the check reports and never rewrites
+  pg_hba.conf.
+
 ## NATS Exposure And State Directory
 
 - `runtime.nats_exposure` MUST report network exposure using bounded probes and
