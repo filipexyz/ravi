@@ -250,6 +250,12 @@ export class VoiceDoorService {
     call: VoiceCall,
     message: Extract<VoiceControlMessage, { op: "utterance" }>,
     delegationId?: string,
+    /** Live: the part of `text` not already on screen; "" shows nothing new. */
+    displayText?: string,
+    /** Live: the last utterance; spoken cancel and deny are read from it, not from the whole request. */
+    controlText?: string,
+    /** Live: false once the sideband that delegated was replaced; checked again after every await. */
+    stillCurrent?: () => boolean,
   ): Promise<void> {
     const text = message.text.trim();
     const speaker = normalizeSpeaker(message.speaker, call.speaker);
@@ -260,7 +266,12 @@ export class VoiceDoorService {
       });
     }
     if (!text) return;
-    await this.emitOpen(call.id, "user.transcript", { text, speaker, turnId: message.turnId }, this.sink);
+    const shown = displayText === undefined ? text : displayText.trim();
+    if (shown)
+      await this.emitOpen(call.id, "user.transcript", { text: shown, speaker, turnId: message.turnId }, this.sink);
+    // The sideband may have been replaced while the transcript was published:
+    // a retired sideband neither cancels nor starts work.
+    if (stillCurrent && !stillCurrent()) return;
 
     const profile = this.profileFor(call);
     if (speaker.kind === "guest" && !profile.allowGuests) {
@@ -275,7 +286,7 @@ export class VoiceDoorService {
 
     // Spoken cancel and deny are allowed (never a spoken approval), only from the person.
     if (speaker.kind !== "guest") {
-      const control = classifySpokenControl(text);
+      const control = classifySpokenControl(controlText?.trim() || text);
       const runtime = this.runtime(call.id);
       if (control === "cancel" && (runtime.running || runtime.queue.length > 0)) {
         const target = runtime.running?.turn.id ?? runtime.queue[runtime.queue.length - 1]?.turn.id;
@@ -290,6 +301,7 @@ export class VoiceDoorService {
       }
     }
 
+    if (stillCurrent && !stillCurrent()) return;
     const turn = insertVoiceTurn({
       id: message.turnId || newTurnId(),
       callId: call.id,
@@ -379,7 +391,14 @@ export class VoiceDoorService {
     running.release = (kind) => resolveTerminal(kind);
     runtime.running = running;
     updateVoiceTurnState(turn.id, "running", this.now());
-    await this.emitOpen(call.id, "turn.accepted", { turnId: turn.id, sessionName: call.sessionName }, this.sink);
+    // The full request text rides on turn.accepted, so a turn can be matched to
+    // what was said even when the live transcript was already on screen.
+    await this.emitOpen(
+      call.id,
+      "turn.accepted",
+      { turnId: turn.id, sessionName: call.sessionName, text: turn.text },
+      this.sink,
+    );
     await this.setAgentState(call.id, "thinking");
 
     const sessionName = call.sessionName;
@@ -646,9 +665,11 @@ export class VoiceDoorService {
     runtime.providerSessionId = providerSessionId;
     const self: { sideband: SidebandLike | null } = { sideband: null };
     const handlers: LiveSidebandHandlers = {
-      onDelegation: ({ delegationId, text }) => {
+      onDelegation: ({ delegationId, text, displayText, lastUtterance }) => {
+        // A sideband that was replaced, or a call that is ending, starts no work.
+        if (!self.sideband || runtime.sideband !== self.sideband) return;
         const current = getVoiceCall(call.id);
-        if (!current || current.state === "ended") return;
+        if (!current || current.state === "ended" || current.state === "ending") return;
         if (!text) {
           runtime.sideband?.thinking("The request was not heard clearly. Ask the person to repeat it.", delegationId);
           return;
@@ -657,6 +678,12 @@ export class VoiceDoorService {
           current,
           { op: "utterance", callId: call.id, turnId: newTurnId(), text, speaker: current.speaker as never },
           delegationId,
+          displayText,
+          lastUtterance,
+          () => {
+            const state = getVoiceCall(call.id)?.state;
+            return !!self.sideband && runtime.sideband === self.sideband && state !== "ending" && state !== "ended";
+          },
         );
       },
       onUserTranscript: (text) => {
