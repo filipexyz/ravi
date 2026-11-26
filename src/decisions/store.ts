@@ -319,12 +319,14 @@ export const DECISIONS_IN_FORCE_LIMIT = 20;
  * session this is. Superseded decisions and open questions never count. Newest first.
  */
 export function listDecisionsInForce(input: {
+  /** Org decisions only reach agents that work for the org (see the prompt section); false leaves them out. */
+  includeOrg?: boolean;
   agentId?: string | null;
   projectId?: string | null;
   sessionKey?: string | null;
   limit?: number;
 }): Decision[] {
-  const clauses = ["scope_type = 'org'"];
+  const clauses = input.includeOrg === false ? ["0"] : ["scope_type = 'org'"];
   const params: string[] = [];
   if (input.agentId) {
     clauses.push("(scope_type = 'agent' AND scope_id = ?)");

@@ -311,10 +311,40 @@ export function decisionScopeLiteral(scope: DecisionScope): string {
   return scope.type === "org" ? "org" : `${scope.type}:${scope.id}`;
 }
 
-function mentionsScope(text: string, scope: DecisionScope): boolean {
-  const literal = decisionScopeLiteral(scope).toLowerCase();
-  const escaped = literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(^|[^a-z0-9_:-])${escaped}($|[^a-z0-9_:-])`).test(text.toLowerCase());
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const NEGATION = "(?:não|nao|not|no|nunca|never)";
+
+/**
+ * The owner names the audience next to the decision: `<id> <scope>` (separated only by spaces or `:,;-`). A negation
+ * right before the id or right after the scope ("não dec_x org", "dec_x org não") never widens; in doubt, no.
+ */
+export function ownerApprovesScope(text: string, decisionId: string, scope: DecisionScope): boolean {
+  const lower = text.toLowerCase();
+  const pattern = new RegExp(
+    `(^|[^a-z0-9_])${escapeRegExp(decisionId.toLowerCase())}[\\s:,;-]*${escapeRegExp(decisionScopeLiteral(scope).toLowerCase())}(?![a-z0-9_]|[:.-][a-z0-9])`,
+    "g",
+  );
+  for (const match of lower.matchAll(pattern)) {
+    const before = lower.slice(0, match.index + match[1]!.length);
+    const after = lower.slice(match.index + match[0].length);
+    if (new RegExp(`${NEGATION}[\\s:,;-]*$`).test(before)) continue;
+    if (new RegExp(`^[\\s:,;.-]*${NEGATION}(?![a-z])`).test(after)) continue;
+    return true;
+  }
+  return false;
+}
+
+function normalizeForContainment(text: string): string {
+  return text.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/** The installation's owner: a contact tagged `permission-owner` now, read at answer time (same resolution as #1029). */
+export function isInstallationOwner(contactId: string | null | undefined): boolean {
+  if (!contactId) return false;
+  return findContactsByTag(OWNER_CONTACT_TAG).some((contact) => contact.id === contactId);
 }
 
 /**
@@ -325,17 +355,25 @@ export function assertDecisionScopeAuthority(
   scope: DecisionScope,
   source: DecisionAnswerSource | null,
   decisionId: string,
+  answerText?: string,
 ): void {
   if (scope.type === "origin" || isLocalOperatorCaller()) return;
-  // The owner approves the audience, not only the answer: the message names this decision and the scope.
-  if (source?.namesDecision && mentionsScope(source.text, scope)) return;
+  // Only the installation's owner widens: a decision's `--owner` is chosen by whoever asks, so it never authorizes.
+  // The owner approves the audience (`<id> <scope>`) and the words: the recorded answer is in the same message.
+  if (
+    source &&
+    isInstallationOwner(source.contactId) &&
+    ownerApprovesScope(source.text, decisionId, scope) &&
+    (answerText === undefined || normalizeForContainment(source.text).includes(normalizeForContainment(answerText)))
+  )
+    return;
   const literal = decisionScopeLiteral(scope);
   throw new DecisionError(
     "DECISION_SCOPE_NOT_AUTHORIZED",
-    `A decision for ${literal} needs the owner's message naming the decision id and "${literal}" as --source-message, or the local operator.`,
+    `A decision for ${literal} needs the installation owner's message with "${decisionId} ${literal}" and the answer text, as --source-message, or the local operator.`,
     {
       exitCode: 2,
-      suggestedAction: `Ask the owner to reply "${decisionId} ${literal}", or keep the default thread scope.`,
+      suggestedAction: `Ask the owner to reply "${decisionId} ${literal}: <answer>", or keep the default thread scope.`,
     },
   );
 }
@@ -347,7 +385,7 @@ export function assertDecisionScopeAuthority(
  */
 export function assertSupersedeAuthority(
   old: Decision,
-  replacement: { scope: DecisionScope; hasOwnerSource: boolean; answeredAt: number | null },
+  replacement: { scope: DecisionScope; ownerSourced: boolean; answeredAt: number | null },
 ): void {
   if (old.status !== "answered")
     throw new DecisionError("DECISION_NOT_ANSWERED", "Only an answered decision can be replaced.", { exitCode: 2 });
@@ -363,10 +401,7 @@ export function assertSupersedeAuthority(
     return;
   }
   if (isLocalOperatorCaller()) return;
-  if (
-    replacement.hasOwnerSource &&
-    (replacement.scope.type === "org" || sameDecisionScope(replacement.scope, old.scope))
-  )
+  if (replacement.ownerSourced && (replacement.scope.type === "org" || sameDecisionScope(replacement.scope, old.scope)))
     return;
   throw new DecisionError(
     "DECISION_SCOPE_NOT_AUTHORIZED",
@@ -407,7 +442,7 @@ export function checkDecisionAnswer(
   const source =
     sourceMessage !== undefined ? resolveDecisionAnswerSource(decision, sourceMessage, options.sourceQuote) : null;
   const scope = options.scope ?? decision.scope;
-  assertDecisionScopeAuthority(scope, source, decision.id);
+  assertDecisionScopeAuthority(scope, source, decision.id, text);
   if (scope.type !== "origin" && text !== undefined && text.trim().length > WIDE_DECISION_ANSWER_MAX)
     throw new DecisionError(
       "DECISION_INVALID_ANSWER",
@@ -420,7 +455,11 @@ export function checkDecisionAnswer(
     if (!replaced) notFound();
     if (replaced.id === decision.id)
       throw new DecisionError("DECISION_NOT_ANSWERED", "A decision cannot replace itself.", { exitCode: 2 });
-    assertSupersedeAuthority(replaced, { scope, hasOwnerSource: Boolean(source), answeredAt: Date.now() });
+    assertSupersedeAuthority(replaced, {
+      scope,
+      ownerSourced: Boolean(source && isInstallationOwner(source.contactId)),
+      answeredAt: Date.now(),
+    });
   }
   return { source, scope, replaced };
 }
@@ -522,7 +561,11 @@ export function checkSupersede(oldId: string, replacementId: string): { old: Dec
     throw new DecisionError("DECISION_NOT_ANSWERED", "The replacement must be answered first.", { exitCode: 2 });
   assertSupersedeAuthority(old, {
     scope: replacement.scope,
-    hasOwnerSource: Boolean(replacement.sourceMessageId),
+    // The recorded source's author is the decision's human owner; it counts only if that is the installation owner.
+    ownerSourced:
+      Boolean(replacement.sourceMessageId) &&
+      replacement.ownerType === "human" &&
+      isInstallationOwner(replacement.ownerId),
     answeredAt: replacement.answeredAt,
   });
   return { old, replacement };

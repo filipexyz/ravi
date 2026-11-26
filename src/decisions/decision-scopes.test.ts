@@ -19,7 +19,9 @@ import {
 } from "./service.js";
 import { answerDecisionRecord, decisionWrite, getDecision, listDecisionsInForce } from "./store.js";
 import { admitDecisionAnswer, reconcileDecisionDeliveries } from "./delivery.js";
-import { buildDecisionsInForceSection, refreshDecisionsForTurn } from "./prompt.js";
+import { ORG_DECISIONS_AGENT_TAG, buildDecisionsInForceSection, refreshDecisionsForTurn } from "./prompt.js";
+import { createContact } from "../contacts.js";
+import { attachTagSlugsToAsset } from "../tags/helpers.js";
 import { parseDecisionScope } from "./model.js";
 import type { Decision, DecisionOrigin } from "./types.js";
 
@@ -33,6 +35,9 @@ beforeEach(async () => {
     RAVI_SESSION_NAME: process.env.RAVI_SESSION_NAME,
   };
   for (const key of Object.keys(savedEnv)) delete process.env[key];
+  // The installation's owner (tag `permission-owner`), and `main` working for the org.
+  OWNER = createContact({ phone: "5511900000990", name: "Owner", tags: ["permission-owner"], status: "allowed" }).id;
+  attachTagSlugsToAsset({ assetType: "agent", assetId: "main", tags: [ORG_DECISIONS_AGENT_TAG], source: "test" });
 });
 afterEach(async () => {
   for (const [key, value] of Object.entries(savedEnv)) if (value !== undefined) process.env[key] = value;
@@ -40,7 +45,7 @@ afterEach(async () => {
   state = null;
 });
 
-const OWNER = "contact-owner";
+let OWNER = "";
 const PARENT = "decision-parent";
 
 function caller(
@@ -222,7 +227,7 @@ describe("a decision's scope", () => {
         answerDecision(decision.id, "Sim", undefined, otherScope.id, { scope: parseDecisionScope("org") }),
       ),
     ).rejects.toMatchObject({ code: "DECISION_SCOPE_NOT_AUTHORIZED" });
-    const msg = ownerSays(`${decision.id}: sim, vale pra org`);
+    const msg = ownerSays(`${decision.id} org: sim`);
     const answered = await asParent(() =>
       answerDecision(decision.id, "Sim", undefined, msg.id, { scope: parseDecisionScope("org") }),
     );
@@ -294,7 +299,8 @@ describe("decisions in force for a turn", () => {
     expect(section).not.toContain("Resposta other-thread");
     expect(section).not.toContain("still-open");
     expect(section).not.toContain(OWNER);
-    expect(buildDecisionsInForceSection({ agentId: "other-agent" })).toContain(org.id);
+    // An agent not tagged as working for the org (a client-facing one) never carries org decisions.
+    expect(buildDecisionsInForceSection({ agentId: "other-agent" }) ?? "").not.toContain(org.id);
   });
 
   it("keeps the 20 newest", async () => {
@@ -348,7 +354,7 @@ describe("superseding a decision", () => {
     expect(getDecision(old.id)?.status).toBe("answered");
     expect(getDecision(next.id)?.status).toBe("open");
 
-    const msg = ownerSays(`${next.id}: troca a regra da org`);
+    const msg = ownerSays(`${next.id} org: troca`);
     await asParent(() =>
       answerDecision(next.id, "Troca", undefined, msg.id, { scope: parseDecisionScope("org"), supersedes: old.id }),
     );
@@ -624,5 +630,107 @@ describe("CodeRabbit second round (#1030)", () => {
       }),
     ).toBe(true);
     expect(handled).toBe(0);
+  });
+});
+
+describe("independent review of c67913f (#1030)", () => {
+  it("B1: a designated owner who is not the installation owner never widens", async () => {
+    const origin = await thread();
+    const stranger = createContact({ phone: "5511900000991", name: "Cliente", status: "allowed" }).id;
+    const { decision } = await runWithContext(caller(origin.sessionKey!), () =>
+      askDecision(origin, {
+        key: "client-rule",
+        ask: "Vale pra todos?",
+        ownerType: "human",
+        ownerId: stranger,
+        scope: parseDecisionScope("org"),
+      }),
+    );
+    const msg = ownerSays(`${decision.id} org: sim`, { contactId: stranger });
+    await expect(
+      asParent(() => answerDecision(decision.id, "sim", undefined, msg.id, { scope: parseDecisionScope("org") })),
+    ).rejects.toMatchObject({ code: "DECISION_SCOPE_NOT_AUTHORIZED" });
+    // Their word still answers the decision in its own thread.
+    const answered = await asParent(() =>
+      answerDecision(decision.id, "sim", undefined, msg.id, { scope: parseDecisionScope("thread") }),
+    );
+    expect(answered.scope).toEqual({ type: "origin", id: null });
+  });
+
+  it("B1: a replacement sourced by a non-owner cannot replace an org decision", async () => {
+    const origin = await thread();
+    const old = await operatorAnswer(origin, "old", "org");
+    const stranger = createContact({ phone: "5511900000992", name: "Cliente", status: "allowed" }).id;
+    const { decision: next } = await runWithContext(caller(origin.sessionKey!), () =>
+      askDecision(origin, { key: "next", ask: "Troca?", ownerType: "human", ownerId: stranger }),
+    );
+    const msg = ownerSays(`${next.id} org: troca`, { contactId: stranger });
+    await expect(
+      asParent(() => answerDecision(next.id, "troca", undefined, msg.id, { supersedes: old.id })),
+    ).rejects.toMatchObject({ code: "DECISION_SCOPE_NOT_AUTHORIZED" });
+    const replacement = await asParent(() => answerDecision(next.id, "troca", undefined, msg.id));
+    await expect(asParent(async () => supersedeDecision(old.id, replacement.id))).rejects.toMatchObject({
+      code: "DECISION_SCOPE_NOT_AUTHORIZED",
+    });
+    expect(getDecision(old.id)?.status).toBe("answered");
+  });
+
+  it("B1: an operator-widened replacement whose source is not the installation owner does not let an agent replace", async () => {
+    const origin = await thread();
+    const old = await operatorAnswer(origin, "old", "org");
+    const stranger = createContact({ phone: "5511900000993", name: "Cliente", status: "allowed" }).id;
+    const { decision: next } = await runWithContext(caller(origin.sessionKey!), () =>
+      askDecision(origin, { key: "next", ask: "Troca?", ownerType: "human", ownerId: stranger }),
+    );
+    const msg = ownerSays(`${next.id} org: troca`, { contactId: stranger });
+    // The operator may widen with any source; the source still is not the installation owner's word.
+    const replacement = await answerDecision(next.id, "troca", undefined, msg.id, { scope: parseDecisionScope("org") });
+    expect(replacement.sourceMessageId).toBe(msg.id);
+    await expect(asParent(async () => supersedeDecision(old.id, replacement.id))).rejects.toMatchObject({
+      code: "DECISION_SCOPE_NOT_AUTHORIZED",
+    });
+  });
+
+  it("N1: the owner's message must contain the recorded answer", async () => {
+    const decision = await ask(await thread(), "deploy");
+    const msg = ownerSays(`${decision.id} org: sem confirmação em grupos`);
+    await expect(
+      asParent(() =>
+        answerDecision(decision.id, "Confirmar sempre em grupos", undefined, msg.id, {
+          scope: parseDecisionScope("org"),
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "DECISION_SCOPE_NOT_AUTHORIZED" });
+    const answered = await asParent(() =>
+      answerDecision(decision.id, "Sem confirmação em grupos", undefined, msg.id, {
+        scope: parseDecisionScope("org"),
+      }),
+    );
+    expect(answered.scope).toEqual({ type: "org", id: null });
+  });
+
+  it("N2: a negation or a scope away from the id never widens", async () => {
+    const decision = await ask(await thread(), "deploy");
+    for (const text of [
+      `${decision.id}, não org: sim`,
+      `${decision.id} org não, sim`,
+      `não ${decision.id} org, sim`,
+      `${decision.id} sim, mas org fica de fora`,
+    ]) {
+      const msg = ownerSays(text);
+      await expect(
+        asParent(() => answerDecision(decision.id, "sim", undefined, msg.id, { scope: parseDecisionScope("org") })),
+      ).rejects.toMatchObject({ code: "DECISION_SCOPE_NOT_AUTHORIZED" });
+    }
+  });
+
+  it("N3: org decisions reach only agents tagged as working for the org", async () => {
+    const origin = await thread();
+    const org = await operatorAnswer(origin, "org-rule", "org");
+    const clientOwn = await operatorAnswer(origin, "client-own", "agent:client-agent");
+    const clientSection = buildDecisionsInForceSection({ agentId: "client-agent" })!;
+    expect(clientSection).toContain(clientOwn.id);
+    expect(clientSection).not.toContain(org.id);
+    expect(buildDecisionsInForceSection({ agentId: "main" })).toContain(org.id);
   });
 });

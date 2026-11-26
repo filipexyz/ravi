@@ -41,14 +41,14 @@ Task mantém `parked` derivado de pergunta aberta, blocking, dona human, em task
 
 ## Escopo, fonte e substituição
 
-Toda decisão tem escopo: `thread` (a origem, padrão), `agent:<id>`, `project:<id>` ou `org`. Quem pergunta propõe (`ask --scope`); a resposta fixa (`answer --scope`), ampliando ou estreitando. Respondida, a decisão entra no contexto de todo turno que ela cobre (org, o agent do turno, a própria thread), das mais novas para as mais antigas, no máximo 20; uma sessão já aberta recebe a lista nova no turno seguinte. Decisão de projeto fica gravada e listável, mas ainda não entra no turno.
+Toda decisão tem escopo: `thread` (a origem, padrão), `agent:<id>`, `project:<id>` ou `org`. Quem pergunta propõe (`ask --scope`); a resposta fixa (`answer --scope`), ampliando ou estreitando. Respondida, a decisão entra no contexto de todo turno que ela cobre (org só para agents com a tag `org-internal` — agente de cliente nunca recebe —, o agent do turno, a própria thread), das mais novas para as mais antigas, no máximo 20; uma sessão já aberta recebe a lista nova no turno seguinte. Decisão de projeto fica gravada e listável, mas ainda não entra no turno.
 
 A fonte (`--source-message`) precisa ser uma mensagem do dono depois da pergunta, no chat da decisão ou numa DM, amarrada a esta decisão: cita o id da decisão ou contém o trecho passado em `--source-quote`. O trecho fica gravado na decisão.
 
-Ampliar além da thread exige que a mensagem do dono cite o id da decisão **e** o escopo literal (`org`, `agent:<id>`, `project:<id>`), por exemplo `dec_abc org`; trecho solto não amplia. Ou o operador local no terminal (automação disparada pelo daemon não conta). Agent nenhum amplia por conta própria, por maior que seja o grant (`DECISION_SCOPE_NOT_AUTHORIZED`). Resposta ampla cabe em 2000 caracteres.
+Ampliar além da thread exige uma mensagem do **dono da instalação** (contato com a tag `permission-owner`; o `--owner` da pergunta não conta) com o id e o escopo lado a lado e o texto da resposta, por exemplo `dec_abc org: sem confirmação em grupos`; negação ("não org") e trecho solto não ampliam. Ou o operador local no terminal (automação disparada pelo daemon não conta). Agent nenhum amplia por conta própria, por maior que seja o grant (`DECISION_SCOPE_NOT_AUTHORIZED`). Resposta ampla cabe em 2000 caracteres.
 
 ```bash
-# A mensagem do dono diz, por exemplo: "<id> org: sem confirmação em grupos"
+# A mensagem do dono da instalação diz: "<id> org: sem confirmação em grupos" (a resposta gravada está nela)
 ravi decisions answer <id> --text "Sem confirmação em grupos" --scope org \
   --source-message <msg-do-dono> --execute --json
 # Substitui uma decisão respondida; a antiga sai do contexto e mantém o histórico
@@ -58,7 +58,7 @@ ravi decisions supersede <id-antigo> --by <id-novo> --execute --json
 ravi decisions list --scope org --answered-since 2026-11-26T00:00:00-03:00 --json
 ```
 
-Substituir uma decisão de thread pede a mesma autoridade de responder nela (o worker que espera não substitui); substituir uma mais ampla pede o operador ou uma substituta com fonte do dono no mesmo escopo ou na org. A substituta precisa ter sido respondida depois da antiga; a resposta antiga ainda não entregue à thread é retirada.
+Substituir uma decisão de thread pede a mesma autoridade de responder nela (o worker que espera não substitui); substituir uma mais ampla pede o operador ou uma substituta com fonte do dono da instalação no mesmo escopo ou na org. A substituta precisa ter sido respondida depois da antiga; a resposta antiga ainda não entregue à thread é retirada.
 
 ## Thread e entrega
 

@@ -1276,9 +1276,9 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | decisions | src/decisions/delivery.ts | 151 | fixed | binding retained / no recognized error surface | src/decisions/delivery.ts:97fe4c572fb465b96175a072 |
 | decisions | src/decisions/delivery.ts | 176 | triaged-follow-up | catch-without-binding | src/decisions/delivery.ts:7b0a35781f7aa52edcfabc1d |
 | decisions | src/decisions/delivery.ts | 235 | fixed | binding retained / no recognized error surface | src/decisions/delivery.ts:036f5bdac76af5c3a7ff7485 |
-| decisions | src/decisions/prompt.ts | 53 | fixed | binding retained / no recognized error surface | src/decisions/prompt.ts:e36095d5d6b570a28b2547b2 |
+| decisions | src/decisions/prompt.ts | 66 | fixed | binding retained / no recognized error surface | src/decisions/prompt.ts:e36095d5d6b570a28b2547b2 |
 | decisions | src/decisions/service.ts | 134 | triaged-follow-up | catch-without-binding | src/decisions/service.ts:9976a2926e156eebf70c85c0 |
-| decisions | src/decisions/store.ts | 401 | fixed | binding retained / no recognized error surface | src/decisions/store.ts:9d27ea0e13e9df13e080e49b |
+| decisions | src/decisions/store.ts | 403 | fixed | binding retained / no recognized error surface | src/decisions/store.ts:9d27ea0e13e9df13e080e49b |
 | devin | src/devin/client.ts | 172 | triaged-follow-up | catch-without-binding | src/devin/client.ts:f9738c424b2304727de29663 |
 | devin | src/devin/store.ts | 30 | fixed | binding retained / no recognized error surface | src/devin/store.ts:e4170fde61eed61beeec45e0 |
 | devin | src/devin/store.ts | 33 | no-cause | Cleanup must not replace the setup error rethrown below; the handle was never cached. | src/devin/store.ts:b40d3a30c5dc4e85f5659411 |

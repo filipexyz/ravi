@@ -8,6 +8,7 @@ import { dbCreateAgent, dbUpdateAgent, type ContextCapability } from "../router/
 import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { decisionWrite } from "../decisions/store.js";
+import { attachTagSlugsToAsset } from "../tags/helpers.js";
 import { runThreadMutation } from "../threads/schema-fence.js";
 
 describe("buildRuntimeSystemPrompt", () => {
@@ -623,6 +624,7 @@ describe("buildRuntimeSystemPrompt decisions in force", () => {
   }
 
   it("carries the org and agent decisions as quoted data; a sentinel and another agent's decision stay out", async () => {
+    attachTagSlugsToAsset({ assetType: "agent", assetId: "main", tags: ["org-internal"], source: "test" });
     recordAnswered("dec_org", "org", null, "Sem confirmação em grupos.");
     recordAnswered("dec_other", "agent", "other", "Regra de outro agente.");
     const cwd = mkdtempSync(join(tmpdir(), "ravi-runtime-system-prompt-"));

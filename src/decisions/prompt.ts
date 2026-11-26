@@ -1,5 +1,6 @@
 import { isSqliteCapacityError } from "../db/write-retry.js";
 import { logger } from "../utils/logger.js";
+import { canonicalTagSlugsForAsset } from "../tags/helpers.js";
 import { formatDecisionScope } from "./model.js";
 import { DECISIONS_IN_FORCE_LIMIT, listDecisionsInForce } from "./store.js";
 import type { Decision } from "./types.js";
@@ -7,6 +8,17 @@ import type { Decision } from "./types.js";
 const log = logger.child("decisions:prompt");
 
 export const DECISIONS_SECTION_ID = "decisions.in_force";
+
+/**
+ * Org decisions reach only agents tagged as working for the org. Without the tag (client-facing agents, or any agent
+ * nobody classified) a turn carries just its agent's own and its thread's decisions: the owner approving "org" does
+ * not see client audiences, so the default is closed.
+ */
+export const ORG_DECISIONS_AGENT_TAG = "org-internal";
+
+function agentReceivesOrgDecisions(agentId: string): boolean {
+  return canonicalTagSlugsForAsset("agent", agentId).includes(ORG_DECISIONS_AGENT_TAG);
+}
 export const DECISIONS_SECTION_TITLE = "Decisions in Force";
 
 const QUESTION_MAX = 280;
@@ -46,6 +58,7 @@ export function buildDecisionsInForceSection(input: { agentId: string; sessionKe
   let decisions: Decision[];
   try {
     decisions = listDecisionsInForce({
+      includeOrg: agentReceivesOrgDecisions(input.agentId),
       agentId: input.agentId,
       sessionKey: input.sessionKey ?? null,
       limit: DECISIONS_IN_FORCE_LIMIT,
