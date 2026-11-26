@@ -61,7 +61,17 @@ entered the session, and the feature spec `runtime/providers/realtime-voice` (ar
   discard them, never log them and never publish them on NATS.
 - In `live`, the voice model may converse and may be wrong. Anything about the workspace or the work
   MUST be delegated to the session; the session's answers reach the voice model only through
-  `session.commentary.append` (speak) or `session.thinking.append` (silent).
+  `session.commentary.append` (speak) or `session.thinking.append` (silent). Appends carry their text
+  in `content` (an append with any other field is rejected, and the voice model then never hears the
+  result). Provider `error` events nest their details under `error`; the door MUST publish the
+  provider's `code` and `message`, never a generic text.
+- GPT-Live transcripts stream as deltas with no done event. A pause longer than 1.2 s between user
+  deltas, or the voice model starting to answer, ends an utterance. A delegation MUST take every
+  utterance said since the voice model last answered on its own, in order (nothing the person said is
+  dropped); utterances the model answered are shown as conversation. Each utterance is published once
+  (the delegated text with its turn id).
+- GPT-Live usage reports billable seconds only. In `live`, `audioInSeconds`, `audioOutSeconds` and
+  `charactersSpoken` stay 0 by design; cost comes from `engineSeconds`.
 - The `handsfree` worker is a stateless media worker. It has no database access, joins rooms with a
   token the daemon mints, and talks to the daemon only through the gateway with the call's device
   credential.

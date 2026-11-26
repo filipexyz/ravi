@@ -4,8 +4,10 @@
  * The app holds the WebRTC media directly with OpenAI. The daemon posts the
  * app's SDP offer, owns the only sideband and turns each delegation into a
  * session turn. Facts below come from OpenAI's GPT-Live docs as read on
- * 2026-11-24 (pesquisa/v1-facts-openai-gemini.md); the field name of the
- * append payload (`text`) was not shown verbatim there.
+ * 2026-11-24 (pesquisa/v1-facts-openai-gemini.md) and re-checked against the
+ * sideband reference on 2026-11-26: appends carry their text in `content`;
+ * transcripts stream as deltas with `start_ms`/`end_ms` and have no done
+ * event; errors nest their details under `error`.
  */
 import WebSocket from "ws";
 import type { VoiceEngineDescriptor } from "./types.js";
@@ -20,6 +22,8 @@ export const LIVE_USD_PER_ACTIVE_MINUTE = 0.05;
 const APPEND_CHUNK_CHARS = 1500;
 /** Wait this long after a delegation for the transcript that triggered it to settle. */
 export const DELEGATION_SETTLE_MS = 900;
+/** A pause longer than this between transcript deltas starts a new utterance. */
+export const UTTERANCE_GAP_MS = 1200;
 /** Events that carry reflected audio. They are dropped on arrival, never stored or published. */
 const AUDIO_EVENTS = new Set(["session.input_audio.append", "session.output_audio.delta"]);
 
@@ -53,7 +57,9 @@ export const liveEngine: VoiceEngineDescriptor = {
 export function buildLiveInstructions(input: { language: string; sessionLabel: string }): string {
   const lang = input.language.toLowerCase().startsWith("pt") ? "Brazilian Portuguese" : input.language;
   return [
-    `You are the voice of a Ravi session called "${input.sessionLabel}". Speak ${lang}. Keep answers short.`,
+    `You are Ravi, the person's assistant, speaking for the Ravi session "${input.sessionLabel}". Speak ${lang}. Keep answers short.`,
+    "You are not a generic assistant: behind you is a Ravi session with tools (messages, files, code, tasks, calendar, pages, bases).",
+    "When asked what you can do, which tools or which session you have, delegate the question instead of listing generic skills.",
     "",
     "Delegation policy:",
     "- Delegate everything about the person's work, files, messages, calendar, tasks, code or anything you would need to look up. The session behind you does the work and is the only source of facts about it.",
@@ -156,7 +162,36 @@ export interface LiveSidebandHandlers {
   onAgentTranscript(text: string): void;
   onUsage(input: { seconds: number; activeSeconds?: number }): void;
   onClosed(reason: string): void;
-  onError(error: Error): void;
+  onError(error: LiveProviderError): void;
+}
+
+/** A provider `error` event, with the fields the provider sent. */
+export class LiveProviderError extends Error {
+  constructor(
+    message: string,
+    readonly providerCode: string | null = null,
+    readonly providerType: string | null = null,
+    readonly param: string | null = null,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
+    this.name = "LiveProviderError";
+  }
+}
+
+/** Reads `{ type: "error", error: { type, code, message, param } }`; falls back to top-level fields. */
+export function liveProviderError(event: Record<string, unknown>): LiveProviderError {
+  const nested = event.error && typeof event.error === "object" ? (event.error as Record<string, unknown>) : {};
+  const code = stringField(nested, "code") || stringField(event, "code");
+  const type = stringField(nested, "type");
+  const message = stringField(nested, "message") || stringField(event, "message");
+  const param = stringField(nested, "param");
+  return new LiveProviderError(
+    message || (code ? `GPT-Live error: ${code}` : "GPT-Live error"),
+    code || null,
+    type || null,
+    param || null,
+  );
 }
 
 export interface LiveSidebandOptions {
@@ -176,8 +211,20 @@ export interface LiveSidebandOptions {
 export class LiveSideband {
   private socket: LiveSocket | null = null;
   private userBuffer = "";
-  /** The last finished utterance, kept until a delegation takes it. */
-  private completedUtterance = "";
+  /** End of the last user transcript delta, when the provider sent it. */
+  private userLastEndMs: number | null = null;
+  /**
+   * Finished utterances since the voice model last answered on its own. A
+   * delegation takes all of them (nothing the person said is dropped); the
+   * model answering means they were conversation, so they are shown then.
+   */
+  private pendingUtterances: string[] = [];
+  /** Delegations created but not yet settled. */
+  private pendingDelegations = 0;
+  /** A model reply is being transcribed (timestamps decide when one ends). */
+  private replyOpen = false;
+  /** End of the last model transcript delta, when the provider sent it. */
+  private agentLastEndMs: number | null = null;
   private agentBuffer = "";
   private readonly seenDelegations = new Set<string>();
   private closed = false;
@@ -193,7 +240,9 @@ export class LiveSideband {
     this.socket = socket;
     socket.on("message", (data) => this.handleRaw(data));
     socket.on("close", () => this.finish("sideband_closed"));
-    socket.on("error", (error) => this.options.handlers.onError(error));
+    socket.on("error", (error) =>
+      this.options.handlers.onError(new LiveProviderError(error.message, null, null, null, { cause: error })),
+    );
   }
 
   /** Spoken update for the person (paraphrased by the voice model). */
@@ -204,6 +253,16 @@ export class LiveSideband {
   /** Silent context for the voice model. */
   thinking(text: string, delegationId: string | null): void {
     this.append("session.thinking.append", text, delegationId);
+  }
+
+  /**
+   * Publish what the person said that no delegation or reply took yet. The
+   * door calls this before it marks the call as ending, while transcripts are
+   * still accepted (a goodbye said right before hanging up is kept).
+   */
+  drain(): void {
+    this.finishUtterance();
+    this.emitConversation();
   }
 
   close(): void {
@@ -240,19 +299,45 @@ export class LiveSideband {
     const type = event.type as string;
     if (AUDIO_EVENTS.has(type)) return;
     switch (type) {
-      case "session.input_transcript.delta":
+      case "session.input_transcript.delta": {
+        // No done event exists: a pause between deltas ends the utterance.
+        const startMs = numberField(event, "start_ms");
+        if (this.userBuffer.trim() && startMs !== null && this.userLastEndMs !== null) {
+          if (startMs - this.userLastEndMs > UTTERANCE_GAP_MS) this.finishUtterance();
+        }
         this.userBuffer += stringField(event, "delta");
+        const endMs = numberField(event, "end_ms");
+        if (endMs !== null) this.userLastEndMs = endMs;
         return;
+      }
       case "session.input_transcript.done":
       case "session.input_transcript.completed":
-        this.flushUser();
+        this.finishUtterance();
         return;
-      case "session.output_transcript.delta":
+      case "session.output_transcript.delta": {
+        // Only the START of a model reply ends the person's utterance. Later
+        // deltas of the same reply are not boundaries: words the person says
+        // over a reply (a barge-in) stay one request.
+        const startMs = numberField(event, "start_ms");
+        const replyStarts =
+          startMs !== null && this.agentLastEndMs !== null
+            ? startMs - this.agentLastEndMs > UTTERANCE_GAP_MS
+            : !this.replyOpen;
+        if (replyStarts) {
+          this.finishUtterance();
+          // If no delegation is waiting for it, what was said was conversation.
+          if (this.pendingDelegations === 0) this.emitConversation();
+        }
+        this.replyOpen = true;
+        const endMs = numberField(event, "end_ms");
+        if (endMs !== null) this.agentLastEndMs = endMs;
         this.agentBuffer += stringField(event, "delta");
         if (/[.!?…]\s*$/.test(this.agentBuffer)) this.flushAgent();
         return;
+      }
       case "session.output_transcript.done":
       case "session.output_transcript.completed":
+        this.replyOpen = false;
         this.flushAgent();
         return;
       case "session.delegation.created": {
@@ -260,11 +345,13 @@ export class LiveSideband {
         const id = stringField(delegation, "id") || stringField(event, "delegation_id");
         if (!id || this.seenDelegations.has(id)) return;
         this.seenDelegations.add(id);
+        this.pendingDelegations += 1;
         const setTimer = this.options.setTimer ?? ((fn: () => void, ms: number) => setTimeout(fn, ms));
         // Cancel the automatic "I'm checking" with an empty thinking append; the
         // door speaks its own acknowledgement from real session events.
         this.thinking("", id);
         setTimer(() => {
+          this.pendingDelegations = Math.max(0, this.pendingDelegations - 1);
           const text = this.takeUserText();
           this.options.handlers.onDelegation({ delegationId: id, text });
         }, this.options.settleMs ?? DELEGATION_SETTLE_MS);
@@ -283,7 +370,7 @@ export class LiveSideband {
         this.finish("provider_closed");
         return;
       case "error":
-        this.options.handlers.onError(new Error(stringField(event, "message") || "GPT-Live error"));
+        this.options.handlers.onError(liveProviderError(event));
         return;
       default:
         return;
@@ -291,24 +378,28 @@ export class LiveSideband {
   }
 
   private takeUserText(): string {
-    // Words still streaming win; otherwise the utterance that finished before
-    // (or while) the delegation settled. Either is consumed once.
-    const open = this.userBuffer.trim();
-    this.userBuffer = "";
-    if (open) this.options.handlers.onUserTranscript(open);
-    const text = open || this.completedUtterance;
-    this.completedUtterance = "";
+    // Everything said since the model last answered goes to the session, in
+    // order, including words still streaming. The door records it as the
+    // turn's transcript, so it is not published here (it would show twice).
+    this.finishUtterance();
+    const text = this.pendingUtterances.join(" ").trim();
+    this.pendingUtterances = [];
     return text;
   }
 
-  private flushUser(): void {
-    // A finished user utterance is recorded now. If no delegation takes it, it
-    // was conversation the voice model handled on its own.
+  /** Close the utterance being heard and keep it until a delegation or an answer takes it. */
+  private finishUtterance(): void {
     const text = this.userBuffer.trim();
-    if (!text) return;
     this.userBuffer = "";
-    this.completedUtterance = text;
-    this.options.handlers.onUserTranscript(text);
+    this.userLastEndMs = null;
+    if (text) this.pendingUtterances.push(text);
+  }
+
+  /** The model answered on its own: what was pending was conversation; show each once. */
+  private emitConversation(): void {
+    const pending = this.pendingUtterances;
+    this.pendingUtterances = [];
+    for (const text of pending) this.options.handlers.onUserTranscript(text);
   }
 
   private flushAgent(): void {
@@ -321,13 +412,15 @@ export class LiveSideband {
     if (this.closed || !this.socket) return;
     const chunks = text ? chunkText(text, APPEND_CHUNK_CHARS) : [""];
     for (const chunk of chunks) {
-      this.socket.send(JSON.stringify({ type, delegation_id: delegationId, text: chunk }));
+      this.socket.send(JSON.stringify({ type, delegation_id: delegationId, content: chunk }));
     }
   }
 
   private finish(reason: string): void {
     if (this.closed) return;
     this.closed = true;
+    this.finishUtterance();
+    this.emitConversation();
     this.flushAgent();
     this.options.handlers.onClosed(reason);
   }

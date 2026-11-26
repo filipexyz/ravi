@@ -2,7 +2,14 @@ import { describe, expect, it } from "bun:test";
 import { decodeJwt } from "jose";
 import { checkVoiceEngines } from "./index.js";
 import { mintLiveKitRoomToken } from "./handsfree.js";
-import { chunkText, createLiveSession, LiveSideband, type LiveSocket } from "./live.js";
+import {
+  buildLiveInstructions,
+  chunkText,
+  createLiveSession,
+  LiveProviderError,
+  LiveSideband,
+  type LiveSocket,
+} from "./live.js";
 import { createPushEngine } from "./push.js";
 
 describe("voice engines", () => {
@@ -138,9 +145,13 @@ describe("voice engines", () => {
     expect(timers).toHaveLength(1);
     timers[0]?.();
     expect(delegations).toEqual([{ delegationId: "d1", text: "manda o resumo pra Ana" }]);
-    expect(users).toEqual(["manda o resumo pra Ana"]);
+    // The door records the delegated text as the turn's transcript; the sideband does not repeat it.
+    expect(users).toEqual([]);
+    // The delegation cancelled the provider's own acknowledgement with an empty thinking append.
+    expect(sentFrames).toContainEqual({ type: "session.thinking.append", delegation_id: "d1", content: "" });
     sideband.commentary("Feito.", "d1");
-    expect(sentFrames.at(-1)).toEqual({ type: "session.commentary.append", delegation_id: "d1", text: "Feito." });
+    expect(sentFrames.at(-1)).toEqual({ type: "session.commentary.append", delegation_id: "d1", content: "Feito." });
+    expect(sentFrames.some((frame) => "text" in frame)).toBe(false);
     expect(JSON.stringify(sentFrames)).not.toContain("AAAA");
   });
 
@@ -185,7 +196,132 @@ describe("voice engines", () => {
       { delegationId: "d1", text: "agenda amanhã" },
       { delegationId: "d2", text: "e o tempo" },
     ]);
-    expect(users).toEqual(["agenda amanhã", "e o tempo"]);
+    expect(users).toEqual([]);
+  });
+
+  function harness() {
+    const listeners: Record<string, (value?: any) => void> = {};
+    const socket: LiveSocket = {
+      send: () => {},
+      close: () => {},
+      on: ((event: string, listener: (value?: any) => void) => {
+        listeners[event] = listener;
+      }) as LiveSocket["on"],
+    };
+    const timers: Array<() => void> = [];
+    const delegations: Array<{ delegationId: string; text: string }> = [];
+    const users: string[] = [];
+    const errors: LiveProviderError[] = [];
+    const sideband = new LiveSideband({
+      apiKey: "k",
+      sessionId: "ls_h",
+      socketFactory: () => socket,
+      setTimer: (fn) => timers.push(fn),
+      handlers: {
+        onDelegation: (input) => delegations.push(input),
+        onUserTranscript: (text) => users.push(text),
+        onAgentTranscript: () => {},
+        onUsage: () => {},
+        onClosed: () => {},
+        onError: (error) => errors.push(error),
+      },
+    });
+    sideband.connect();
+    const send = (event: Record<string, unknown>) => listeners.message?.(JSON.stringify(event));
+    return { sideband, send, timers, delegations, users, errors };
+  }
+
+  it("nothing said before a delegation is dropped: every utterance since the last answer goes, in order", () => {
+    const h = harness();
+    h.send({ type: "session.input_transcript.delta", delta: "olha a #1020", start_ms: 0, end_ms: 900 });
+    h.send({ type: "session.input_transcript.delta", delta: "e me diz se mergeou", start_ms: 4000, end_ms: 5200 });
+    h.send({ type: "session.delegation.created", delegation: { id: "d1" } });
+    h.timers[0]?.();
+    expect(h.delegations).toEqual([{ delegationId: "d1", text: "olha a #1020 e me diz se mergeou" }]);
+    // The door publishes the delegated text with the turn id; nothing is shown twice.
+    expect(h.users).toEqual([]);
+  });
+
+  it("speech the model already answered is not sent again with the next delegation", () => {
+    const h = harness();
+    h.send({ type: "session.input_transcript.delta", delta: "oi cara", start_ms: 0, end_ms: 800 });
+    h.send({ type: "session.output_transcript.delta", delta: "Oi! " });
+    h.send({ type: "session.input_transcript.delta", delta: "quais ferramentas tu tem", start_ms: 5000, end_ms: 6500 });
+    h.send({ type: "session.delegation.created", delegation: { id: "d1" } });
+    h.timers[0]?.();
+    expect(h.users).toEqual(["oi cara"]);
+    expect(h.delegations).toEqual([{ delegationId: "d1", text: "quais ferramentas tu tem" }]);
+  });
+
+  it("deltas close together stay one utterance", () => {
+    const h = harness();
+    h.send({ type: "session.input_transcript.delta", delta: "manda o resumo ", start_ms: 0, end_ms: 900 });
+    h.send({ type: "session.input_transcript.delta", delta: "pra Ana", start_ms: 1300, end_ms: 1900 });
+    h.send({ type: "session.delegation.created", delegation: { id: "d1" } });
+    h.timers[0]?.();
+    expect(h.delegations).toEqual([{ delegationId: "d1", text: "manda o resumo pra Ana" }]);
+  });
+
+  it("speech the model answers on its own is shown once as conversation", () => {
+    const h = harness();
+    h.send({ type: "session.input_transcript.delta", delta: "e aí", start_ms: 0, end_ms: 500 });
+    h.send({ type: "session.output_transcript.delta", delta: "Oi! " });
+    h.send({ type: "session.output_transcript.delta", delta: "Tudo certo." });
+    expect(h.users).toEqual(["e aí"]);
+  });
+
+  it("a barge-in over a reply stays one request (later reply deltas are not boundaries)", () => {
+    const h = harness();
+    h.send({ type: "session.output_transcript.delta", delta: "Vou mandar o ", start_ms: 0, end_ms: 600 });
+    h.send({ type: "session.input_transcript.delta", delta: "não ", start_ms: 650, end_ms: 900 });
+    h.send({ type: "session.output_transcript.delta", delta: "relatório", start_ms: 700, end_ms: 1100 });
+    h.send({ type: "session.input_transcript.delta", delta: "manda o relatório", start_ms: 1000, end_ms: 1800 });
+    h.send({ type: "session.delegation.created", delegation: { id: "d1" } });
+    h.timers[0]?.();
+    expect(h.delegations).toEqual([{ delegationId: "d1", text: "não manda o relatório" }]);
+    expect(h.users).toEqual([]);
+  });
+
+  it("without timestamps, only the first delta of a reply is a boundary", () => {
+    const h = harness();
+    h.send({ type: "session.output_transcript.delta", delta: "Vou mandar o " });
+    h.send({ type: "session.input_transcript.delta", delta: "não " });
+    h.send({ type: "session.output_transcript.delta", delta: "relatório" });
+    h.send({ type: "session.input_transcript.delta", delta: "manda o relatório" });
+    h.send({ type: "session.delegation.created", delegation: { id: "d1" } });
+    h.timers[0]?.();
+    expect(h.delegations).toEqual([{ delegationId: "d1", text: "não manda o relatório" }]);
+  });
+
+  it("drain publishes speech nobody took yet, once", () => {
+    const h = harness();
+    h.send({ type: "session.input_transcript.delta", delta: "até amanhã", start_ms: 0, end_ms: 700 });
+    h.sideband.drain();
+    h.sideband.close();
+    expect(h.users).toEqual(["até amanhã"]);
+  });
+
+  it("reads the provider error nested under error", () => {
+    const h = harness();
+    h.send({
+      type: "error",
+      error: {
+        type: "invalid_request_error",
+        code: "unknown_parameter",
+        message: "Unknown parameter: 'text'.",
+        param: "text",
+      },
+    });
+    expect(h.errors).toHaveLength(1);
+    expect(h.errors[0]?.message).toBe("Unknown parameter: 'text'.");
+    expect(h.errors[0]?.providerCode).toBe("unknown_parameter");
+    expect(h.errors[0]?.param).toBe("text");
+  });
+
+  it("names Ravi in the live instructions", () => {
+    const text = buildLiveInstructions({ language: "pt-BR", sessionLabel: "voz" });
+    expect(text).toContain("You are Ravi");
+    expect(text).toContain("Brazilian Portuguese");
   });
 
   it("chunks long appends", () => {

@@ -32,7 +32,7 @@ import type { ClipSpeechEngine } from "./engines/types.js";
 import { emitVoiceEvent, type VoiceControlMessage, type VoiceEventSink } from "./events.js";
 import { revokeVoiceDeviceContext } from "./authority.js";
 import { createVoiceTurnOwnership, noteVoiceTurnRuntimeEvent, type VoiceTurnOwnership } from "./turn-ownership.js";
-import { buildVoicePrompt, classifySpokenControl, extractSpokenLead } from "./speech.js";
+import { buildVoicePrompt, classifySpokenControl, extractSpokenLead, sanitizeForSpeech } from "./speech.js";
 import {
   addVoiceDailyUsage,
   deleteVoiceAudioForCall,
@@ -76,6 +76,8 @@ interface SidebandLike {
   connect(): void;
   commentary(text: string, delegationId: string | null): void;
   thinking(text: string, delegationId: string | null): void;
+  /** Publish pending speech while the call still accepts transcripts. */
+  drain?(): void;
   close(): void;
 }
 
@@ -537,14 +539,17 @@ export class VoiceDoorService {
   ): Promise<void> {
     if (!this.isOpen(call.id)) return;
     const runtime = this.runtime(call.id);
+    // The live model is a third party: it gets the sanitized text, never the raw screen text.
+    const liveContext = call.engine === "live" ? sanitizeForSpeech(fullText) : "";
     if (!spokenText || profile.delivery === "silent") {
-      if (call.engine === "live" && fullText) runtime.sideband?.thinking(fullText, running.delegationId ?? null);
+      if (liveContext) runtime.sideband?.thinking(liveContext, running.delegationId ?? null);
       await this.setAgentState(call.id, "listening");
       return;
     }
     if (call.engine === "live") {
       runtime.sideband?.commentary(spokenText, running.delegationId ?? null);
-      if (fullText && fullText !== spokenText) runtime.sideband?.thinking(fullText, running.delegationId ?? null);
+      if (liveContext && liveContext !== spokenText)
+        runtime.sideband?.thinking(liveContext, running.delegationId ?? null);
       await this.emitOpen(call.id, "agent.transcript", { text: spokenText, turnId: running.turn.id }, this.sink);
       await this.setAgentState(call.id, "listening");
       return;
@@ -675,7 +680,18 @@ export class VoiceDoorService {
         void this.endCall(call.id, reason === "closed_by_door" ? "ended" : reason);
       },
       onError: (error) => {
-        void this.emitOpen(call.id, "error", { code: "VOICE_LIVE_ERROR", message: error.message }, this.sink);
+        void this.emitOpen(
+          call.id,
+          "error",
+          {
+            code: "VOICE_LIVE_ERROR",
+            message: error.message,
+            ...(error.providerCode ? { providerCode: error.providerCode } : {}),
+            ...(error.providerType ? { providerType: error.providerType } : {}),
+            ...(error.param ? { param: error.param } : {}),
+          },
+          this.sink,
+        );
       },
     };
     const sideband = this.deps.createSideband
@@ -697,6 +713,8 @@ export class VoiceDoorService {
   async endCall(callId: string, reason: string): Promise<void> {
     const call = getVoiceCall(callId);
     if (!call || call.state === "ended") return;
+    // Words said right before hanging up are stored before the call stops accepting them.
+    this.calls.get(callId)?.sideband?.drain?.();
     updateVoiceCall(callId, { state: "ending" }, this.now());
     const runtime = this.calls.get(callId);
     if (runtime) {

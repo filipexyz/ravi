@@ -27,3 +27,9 @@ normative: false
   terminal carries only its own turn's `_correlationIds`.
 - The live sideband handler never emits `session.input_audio.append` or `session.output_audio.delta`
   payloads to NATS or the event store.
+- `src/voice/engines/engines.test.ts` (live sideband): appends carry `content`, never `text`; the
+  provider `error` is read from `error.{code,type,message,param}`; two utterances split by a pause
+  both reach the delegation, in order; speech the model already answered is not resent; a barge-in
+  over a reply stays one request (with and without timestamps); `drain` publishes pending speech once.
+- `src/voice/door.test.ts`: live gets sanitized context (no secret-looking tokens, paths or links
+  from the screen text); ending a live call drains pending speech while the call is still `active`.
