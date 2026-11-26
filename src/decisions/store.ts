@@ -255,3 +255,21 @@ export function decisionWrite<T>(fn: (db: ReturnType<typeof getDb>) => T): T {
   const db = getDb();
   return db.inTransaction ? fn(db) : executeWrite(db, fn);
 }
+
+/** Run the write that records a decision's wait; if it fails, retire the decision so it never blocks alone. */
+export async function retireDecisionIfWaitFails<T>(
+  decisionId: string | null | undefined,
+  write: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await write();
+  } catch (error) {
+    // Only an orphan is retired: a same-ref replacement that failed leaves the original wait (and its decision).
+    if (
+      decisionId &&
+      !getDb().query("SELECT 1 FROM session_handoffs WHERE decision_id = ? AND status = 'open' LIMIT 1").get(decisionId)
+    )
+      retireDecisionForWait(decisionId, "wait not recorded");
+    throw error;
+  }
+}

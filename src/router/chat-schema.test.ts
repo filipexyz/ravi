@@ -413,6 +413,20 @@ describe("identity chat schema", () => {
     });
     expect(dbListChatMessagesByProviderId("1795720122.922989")).toHaveLength(2);
     expect(dbListChatMessagesByProviderId("missing")).toEqual([]);
+    // A busy provider id is not cut at a handful of chats: callers filter the eligible ones themselves.
+    for (let i = 0; i < 5; i++) {
+      const chat = dbUpsertChat({ channel: "slack", instanceId: "i1", platformChatId: `G${i}`, chatType: "group" });
+      dbUpsertChatMessage({
+        chatId: chat.id,
+        channel: "slack",
+        instanceId: "i1",
+        providerMessageId: "1795720122.922989",
+        rawChatId: `G${i}`,
+        actorType: "contact",
+        contactId: `contact_${i}`,
+      });
+    }
+    expect(dbListChatMessagesByProviderId("1795720122.922989")).toHaveLength(7);
     const columns = getDb().prepare("PRAGMA table_info(session_handoffs)").all() as Array<{ name: string }>;
     expect(columns.map((c) => c.name)).toContain("decision_id");
   });

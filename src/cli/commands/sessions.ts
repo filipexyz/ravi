@@ -124,6 +124,7 @@ import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
 import { enforceCliCommandAccess, listCliCommandAccessCandidates } from "../command-access.js";
 import { canWithCapabilities } from "../../permissions/capability-snapshot.js";
 import { askDecisionForWait } from "../../decisions/service.js";
+import { retireDecisionIfWaitFails } from "../../decisions/store.js";
 import { redactText } from "../../session-trace/session-trace-db.js";
 import { CliExpectedError } from "../expected-error.js";
 import { resolveEffectiveSessionRuntime } from "../../runtime/runtime-selection.js";
@@ -803,6 +804,8 @@ export const sessionThreadSendReturnSchema = z
       })
       .strict()
       .optional(),
+    // Recorded decision waits this message did not close: only `decisions answer` closes them.
+    openDecisionWaits: z.array(z.object({ handoffId: z.string(), decisionId: z.string() }).strict()).optional(),
   })
   .strict();
 const threadRuntimeOverridesSchema = z
@@ -8532,14 +8535,18 @@ export class SessionCommands {
       try {
         // A dispatched review leaves nothing for the parent: the wait is recorded already closed, so observers
         // never see a wait that did not exist.
-        handoff = await declareHandoff({
-          ...pendingHandoff,
-          ...(reviewDispatch?.status === "dispatched"
-            ? { closedReason: `review dispatched: ${reviewDispatch.requestId}` }
-            : prClosure
-              ? { closedReason: prClosure.merged ? "PR merged" : "PR closed" }
-              : {}),
-        });
+        // A decision recorded without its wait would block the thread on its own: it is retired if this fails.
+        const wait = pendingHandoff;
+        handoff = await retireDecisionIfWaitFails(wait.decisionId, () =>
+          declareHandoff({
+            ...wait,
+            ...(reviewDispatch?.status === "dispatched"
+              ? { closedReason: `review dispatched: ${reviewDispatch.requestId}` }
+              : prClosure
+                ? { closedReason: prClosure.merged ? "PR merged" : "PR closed" }
+                : {}),
+          }),
+        );
       } catch (error) {
         handoffError = error instanceof Error ? error.message : String(error);
       }
@@ -8884,6 +8891,12 @@ export class SessionCommands {
         HANDOFF_KINDS_ANSWERED_BY_MESSAGE,
       );
     }
+    // A message does not answer a recorded decision: say so, instead of letting its wait remind everyone later.
+    const openDecisionWaits = result.record.childSessionKey
+      ? listHandoffs({ childSessionKey: result.record.childSessionKey })
+          .filter((h) => h.kind === "decision" && h.decisionId)
+          .map((h) => ({ handoffId: h.id, decisionId: h.decisionId! }))
+      : [];
     const payload = {
       status: "published" as const,
       actionId: "thread.send" as const,
@@ -8892,12 +8905,17 @@ export class SessionCommands {
       reopened: result.reopened,
       thread: summarizeSlackThread(result.record),
       delivery: { barrier: delivery.barrier, barrierSource: delivery.source },
+      ...(openDecisionWaits.length ? { openDecisionWaits } : {}),
     };
     if (asJson) printJson(payload);
     else {
       const name = result.record.childSessionName ?? result.record.requestId;
       const explicitBarrier = delivery.source === "explicit" ? ` (${delivery.barrier})` : "";
       console.log(`Sent to ${name}${result.reopened ? " (reopened)" : ""}${explicitBarrier}`);
+      for (const wait of openDecisionWaits)
+        console.log(
+          `Decision ${wait.decisionId} is still open: a message does not answer it. Record the answer with ravi decisions answer ${wait.decisionId} --text "..." --execute`,
+        );
     }
     return payload;
   }

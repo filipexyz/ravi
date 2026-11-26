@@ -30393,15 +30393,17 @@ public struct SessionsThreadSendReturn: Codable, Sendable {
   public var actionId: String
   public var delivery: RaviJSON?
   public var messageId: String
+  public var openDecisionWaits: [RaviJSON]?
   public var reopened: Bool
   public var requestId: String
   public var status: String
   public var thread: RaviJSON
 
-  public init(actionId: String, delivery: RaviJSON? = nil, messageId: String, reopened: Bool, requestId: String, status: String, thread: RaviJSON) {
+  public init(actionId: String, delivery: RaviJSON? = nil, messageId: String, openDecisionWaits: [RaviJSON]? = nil, reopened: Bool, requestId: String, status: String, thread: RaviJSON) {
     self.actionId = actionId
     self.delivery = delivery
     self.messageId = messageId
+    self.openDecisionWaits = openDecisionWaits
     self.reopened = reopened
     self.requestId = requestId
     self.status = status
@@ -30412,6 +30414,7 @@ public struct SessionsThreadSendReturn: Codable, Sendable {
     case actionId = "actionId"
     case delivery = "delivery"
     case messageId = "messageId"
+    case openDecisionWaits = "openDecisionWaits"
     case reopened = "reopened"
     case requestId = "requestId"
     case status = "status"
