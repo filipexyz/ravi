@@ -55,8 +55,11 @@ nothing else writes in it either.
   literal or glob route, with or without a forced session, and a chat attached
   by routing, a person or an agent all leave a non-owner's DM held.
 - To let a person talk to an agent, the owner gives them a session of their
-  own: a route whose pattern is their literal id with a forced session
-  (`--session <name>`), or a route or agent whose `dmScope` is not `main`.
+  own: a route whose pattern is their literal id with `--dm-scope per-peer`
+  (`--session <name>` can name that session), or an agent whose `dmScope` is
+  not `main`. A forced session name alone does not isolate a person on an
+  agent whose DMs share one session: until that session exists, the commit
+  lands in the shared key and names it after the route, so the DM stays held.
   Approving the held contact (`ravi instances pending approve`) allows the
   contact but creates no route, so the DM stays held until a route gives the
   person a session of their own.
@@ -91,9 +94,10 @@ nothing else writes in it either.
   - the speaker is the one contact tagged `permission-owner`. With two tagged
     owners both land there; with none, the guard admits everyone;
   - every active route that sends chats into the session by name
-    (`routes.session_name`) reaches one direct peer: a literal id, never a glob
-    (it also matches `group:` targets), a `group:` or a `thread:` pattern. This
-    guard covers direct messages only;
+    (`routes.session_name`, compared trimmed, as the router looks it up)
+    reaches one direct peer: a literal id, never a glob (it also matches
+    `group:` targets), a `group:` or a `thread:` pattern. This guard covers
+    direct messages only;
   - every chat attached to the session is the speaker's own direct chat or a
     thread inside it (`dbGetThreadParentChat`). An attached chat can also
     receive the session's answers.

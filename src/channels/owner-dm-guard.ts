@@ -13,8 +13,9 @@
 // lands. It admits only contacts tagged `permission-owner`, whatever a route
 // or an attached chat says: everyone else is held for owner review, the same
 // path a `pairing` DM takes. To let a person talk to an agent, the owner gives
-// them a session of their own (a route with `--session <name>`, or an agent
-// whose `dmScope` is not `main`).
+// them a session of their own: a route or agent whose `dmScope` is not `main`.
+// A forced session name alone does not isolate them: until that session
+// exists, the commit names the shared key after it.
 //
 // Since no one else's direct message can land there, the shared session is the
 // owner's own direct session as long as nothing else writes in it either
@@ -27,12 +28,7 @@
 import { findContactsByTag } from "../contacts.js";
 import { dmContactForChat } from "../knowledge/contacts.js";
 import { OWNER_CONTACT_TAG } from "../knowledge/owner.js";
-import {
-  dbGetChat,
-  dbGetThreadParentChat,
-  dbListRoutesBySessionName,
-  dbListSessionChatSubscriptions,
-} from "../router/router-db.js";
+import { dbGetChat, dbGetThreadParentChat, dbListRoutes, dbListSessionChatSubscriptions } from "../router/router-db.js";
 import { parseSessionKey } from "../router/session-key.js";
 import { logger } from "../utils/logger.js";
 
@@ -183,8 +179,17 @@ function defaultOwnerContactIds(): string[] {
   return findContactsByTag(OWNER_CONTACT_TAG).map((contact) => contact.id);
 }
 
+/**
+ * Patterns of every active route whose forced session is this one. The router
+ * trims a route's session name before it looks the session up
+ * (`commitMatchedRoute`), so a stored name with spaces around it still sends
+ * chats here; an exact `routes.session_name` match would miss it.
+ */
 function defaultRoutePatternsForSessionName(sessionName: string): string[] {
-  return dbListRoutesBySessionName(sessionName).map((route) => route.pattern);
+  const name = sessionName.trim();
+  return dbListRoutes()
+    .filter((route) => route.session?.trim() === name)
+    .map((route) => route.pattern);
 }
 
 function defaultAttachedChatIds(sessionKey: string): string[] {

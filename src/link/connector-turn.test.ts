@@ -1191,6 +1191,14 @@ describe("connector turn classification", () => {
       });
     }
 
+    it("refuses it while a group route names the session with spaces around the name", () => {
+      const { ownerId, dmId } = seedOwnersMain();
+      // The router trims a route's session name before it looks the session up.
+      dbCreateRoute({ pattern: "group:120363", accountId: "ravi-slack", agent: "main", session: " main " });
+
+      expectBlocked(classify(ownerInMain(ownerId, dmId)), "CONNECTOR_GROUP_BLOCKED");
+    });
+
     it("refuses it while no owner, or a second one, is tagged", () => {
       const { ownerId, dmId } = seedOwnersMain();
       createContact({ phone: "5511977776666", name: "Partner", status: "allowed", tags: ["permission-owner"] });

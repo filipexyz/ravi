@@ -138,6 +138,21 @@ describe("owner DM guard on the session the commit lands in", () => {
     expect(peer.committed).toBeNull();
   });
 
+  it("keeps holding a colleague whose route only names a session that does not exist yet, while the agent's DMs share one", () => {
+    // A forced name that does not exist yet names the shared key instead of
+    // making a new one; isolation comes from the DM scope.
+    const config = configWith("main", {
+      pattern: PEER_USER,
+      accountId: "acc",
+      agent: "main",
+      session: "colleague-new",
+    });
+
+    const peer = inbound(config, PEER_USER, PEER_CONTACT);
+    expect(peer.landingSessionKey).toBe(OWNER_SESSION);
+    expect(peer.guard.blocked).toBe(true);
+  });
+
   it("lets a literal route give the colleague a session of their own", () => {
     for (const route of [
       { pattern: PEER_USER, accountId: "acc", agent: "main", dmScope: "per-peer" as const },

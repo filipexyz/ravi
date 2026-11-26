@@ -2,11 +2,13 @@
 
 - A colleague says the bot ignores their DM: list held DMs with
   `ravi instances pending list <instance>`. Let them in with a session of
-  their own, for example a route to a dedicated agent with a forced session,
-  `ravi instances routes add <instance> <platform-user-id> <agent> --session <name>`.
-  A route into an agent whose DMs share one session (`dmScope: main`), with no
-  forced session, still holds them; approving the pending contact alone does
-  not route them.
+  their own, for example
+  `ravi instances routes add <instance> <platform-user-id> <agent> --dm-scope per-peer`
+  (add `--session <name>` to name it), or give a dedicated agent
+  `ravi agents set <agent> dmScope per-peer`. A route into an agent whose DMs
+  share one session (`dmScope: main`) still holds them, even with
+  `--session <name>`: a forced name that does not exist yet lands in the
+  shared key. Approving the pending contact alone does not route them.
 - The route exists and the DM is still held: the route sends the person into a
   shared session, or the colleague's chat is attached to the shared session
   from an earlier DM and that attach outranks the route. On Slack a route with

@@ -11,8 +11,12 @@
 - The guard MUST judge the key the commit lands in: a route that forces the
   shared session MUST NOT admit a colleague, and the preview MUST equal the
   committed key.
-- A route that gives the colleague a session of their own (a forced session,
-  or `dmScope` other than `main`) MUST still deliver to that route's agent.
+- A route that gives the colleague a session of their own (`dmScope` other
+  than `main`, or a forced session that already exists) MUST still deliver to
+  that route's agent; a forced name that does not exist yet on a shared-scope
+  agent MUST keep holding them.
+- A route that names the shared session with spaces around the name MUST
+  count like the trimmed name the router uses.
 - A cloud approval reply from a held colleague MUST reach the run.
 - With no owner tagged the shared session MUST keep its legacy behaviour.
 - An unreadable owner set MUST hold the DM.
