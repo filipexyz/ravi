@@ -1003,8 +1003,8 @@ describe("connector turn classification", () => {
       }
     });
 
-    it("refuses the shared session while no owner is tagged, a group key and an unknown session", () => {
-      for (const sessionKey of ["agent:main:main", "agent:main:whatsapp:group:120363", "custom-session", undefined]) {
+    it("refuses a group key and an unknown session", () => {
+      for (const sessionKey of ["agent:main:whatsapp:group:120363", "custom-session", undefined]) {
         const result = classify(ownerTurn({ sessionKey, sessionName: "main" }));
         const error = expectBlocked(result, "CONNECTOR_GROUP_BLOCKED");
         expect(error.details).toMatchObject({
@@ -1017,6 +1017,24 @@ describe("connector turn classification", () => {
         });
         expect(error.message).toContain("Do not retry");
         if (!result.ok) expect(result).toMatchObject({ speakerIsOwner: true, sharedSession: true });
+        if (!result.ok) expect(result.agentSharedSession).toBeUndefined();
+      }
+    });
+
+    it("refuses the agent's shared session while no owner is tagged, and says what to fix", () => {
+      const result = classify(ownerTurn({ sessionKey: "agent:main:main", sessionName: "main" }));
+      const error = expectBlocked(result, "CONNECTOR_GROUP_BLOCKED");
+      expect(error.details).toMatchObject({
+        source: "connector-turn",
+        chatLine:
+          "I can't use your Gmail in this conversation: other people's chats can reach its session, or you are not the only contact marked as owner. Fix that, then ask me again.",
+        chatLinePt:
+          "Não posso usar o seu Gmail nesta conversa: conversas de outras pessoas chegam à sessão dela, ou você não é o único contato marcado como dono. Corrija isso e me peça de novo.",
+        replyTo: "same_chat",
+      });
+      expect(error.message).toContain("the one contact tagged permission-owner");
+      if (!result.ok) {
+        expect(result).toMatchObject({ speakerIsOwner: true, sharedSession: true, agentSharedSession: true });
       }
     });
 
@@ -1033,7 +1051,7 @@ describe("connector turn classification", () => {
         chatLine: error.details?.chatLine,
         replyTo: "same_chat",
         suggestedAction:
-          "reply in this chat with the chat line, and do not retry until Luis moves the other chats out of this session (ravi sessions subscriptions <session> lists the attached ones)",
+          "reply in this chat with the chat line, and do not retry until Luis is the only contact tagged permission-owner and moves the other chats out of this session (ravi sessions subscriptions <session> lists the attached ones)",
       });
 
       // A block without its own next step keeps the code's catalog one.

@@ -6416,6 +6416,7 @@ describe("Slack owner DM guard", () => {
     options: {
       events?: Array<{ topic: string; payload: Record<string, unknown> }>;
       postMessage?: (input: Record<string, unknown>) => Promise<unknown>;
+      authTest?: () => Promise<{ ok: boolean; bot_id?: string; user_id?: string; team_id?: string }>;
     } = {},
   ): SlackSocketModeService {
     return new SlackSocketModeService({
@@ -6433,6 +6434,7 @@ describe("Slack owner DM guard", () => {
       webClient: {
         usersInfo: mock(async () => ({ ok: true, user: { id: peerUser } })),
         ...(options.postMessage ? { postMessage: options.postMessage } : {}),
+        ...(options.authTest ? { authTest: options.authTest } : {}),
       } as never,
     });
   }
@@ -6491,6 +6493,36 @@ describe("Slack owner DM guard", () => {
     const published: Array<{ sessionName: string }> = [];
     await service(routerConfig(), published).handleEnvelope(dm("Ev-peer-sub", "D0PEER", peerUser, "1713000000.000250"));
 
+    expect(published).toHaveLength(0);
+  });
+
+  it("holds another app's bot that DMs the bot, so it never receives the owner's session's answers", async () => {
+    seedContacts({ tagOwner: true });
+    const published: Array<{ sessionName: string }> = [];
+    const authTest = mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T123" }));
+
+    await service(routerConfig(), published, { authTest }).handleEnvelope({
+      envelope_id: "Ev-foreign-bot",
+      type: "events_api",
+      payload: {
+        type: "event_callback",
+        team_id: "T123",
+        event_id: "Ev-foreign-bot",
+        event_time: 1_713_000_000,
+        event: {
+          type: "message",
+          subtype: "bot_message",
+          channel: "D0BOTDM",
+          channel_type: "im",
+          bot_id: "BFOREIGN",
+          user: "UFOREIGNBOT",
+          text: "what did the owner read today?",
+          ts: "1713000000.000280",
+        },
+      },
+    });
+
+    expect(authTest).toHaveBeenCalled();
     expect(published).toHaveLength(0);
   });
 
