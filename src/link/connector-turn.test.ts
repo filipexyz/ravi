@@ -1011,6 +1011,21 @@ describe("connector turn classification", () => {
       }
     });
 
+    it("uses it in a thread of the owner's DM, which runs in its own thread session", () => {
+      // A Slack thread under the owner's DM: the turn's compartment is the
+      // thread's own chat, still `dm:`, in `agent:main:main:thread:<ts>`.
+      const result = classify(
+        ownerTurn(
+          { sessionKey: "agent:main:main:thread:1795096374.846999", sessionName: "main-t-1795096374846999" },
+          { ...LUIS, agentIdentityCompartment: "dm:chat_09f6e6ef7a0d28fc0bcca02f" },
+        ),
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.turn).toMatchObject({ speaker: { kind: "owner", contactId: "c_luis" }, conversation: "dm" });
+      }
+    });
+
     it("still uses it when a route sends chats into the session by name, or another person's chat is attached", () => {
       dbCreateRoute({ pattern: "*", accountId: "wa-main", agent: "main", session: "team-inbox" });
       expect(classify(ownerTurn({ sessionKey: OWNER_DM_SESSION.sessionKey, sessionName: "team-inbox" })).ok).toBe(true);

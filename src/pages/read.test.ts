@@ -130,6 +130,16 @@ describe("pageReadTurnBlock on real turn contexts", () => {
     expect(pageReadTurnBlock(deps(main))).toBeNull();
   });
 
+  it("counts the owner's own message in a thread of their DM", () => {
+    const thread = turnContext(
+      { ...ownerDm, agentIdentityCompartment: "dm:chat_09f6e6ef7a0d28fc0bcca02f" },
+      "agent:main:main:thread:1795096374.846999",
+      "main-t-1795096374846999",
+    );
+    expect(pageReadIsPublicOnly(deps(thread))).toBe(false);
+    expect(pageReadTurnBlock(deps(thread))).toBeNull();
+  });
+
   it("lets the owner read in a group: sharing there is the owner's choice", () => {
     const group = turnContext(
       { ...ownerDm, agentIdentityCompartment: "chat:120363012345678901@g.us" },
