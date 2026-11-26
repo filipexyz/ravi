@@ -104,6 +104,15 @@ for the channel.
 7. Every 10 minutes the watcher re-resolves cached bindings of the active
    installation (`GET /api/cli/link?contactId=`), drops revoked ones and
    refreshes live ones, and prunes finished local requests after 7 days.
+8. In the same pass the watcher brings in the login owner's own binding when
+   none is cached for this installation (a link approved on the Console that
+   never reached this machine, or a lost cache): it looks up the active
+   login's Console user (`GET /api/cli/link?consoleUserId=`), accepts only a
+   binding of this installation, confirms it again by contact and caches it
+   only if the cache for that contact is still empty for this installation.
+   No other person is looked up. With nothing cached, this pass uses the
+   stored session as it is: it never refreshes, hydrates or deletes the
+   active credentials from the background, and skips an expired session.
 
 Repeating `ravi link` while a request is pending sends a fresh link; the
 Console cancels the previous one.
