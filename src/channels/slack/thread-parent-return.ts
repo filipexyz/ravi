@@ -338,10 +338,11 @@ export function threadHasOpenHandoff(childSessionKey: string): boolean {
 /**
  * PR events a follow thread must answer with a return: a CI result and a PR ending. Comments and
  * reviews are not here: the follow prompt tells the thread to stay silent on a bot comment that asks nothing.
- * Topics are `ravi.watch.github.<eventType>`; a run that has not concluded never wakes a follow.
+ * Topics are `ravi.watch.github.<eventType>`; a run that has not concluded never wakes a follow. A run `cancelled`
+ * (a newer push replaced it by `concurrency`) or `skipped` says nothing about the PR: the run of the new head follows.
  */
 export const PR_FOLLOW_REPORT_TOPIC =
-  /^ravi\.watch\.github\.(?:workflow_run\.(?!requested$|in_progress$)[a-z_]+|pull_request\.(?:merged|closed))$/;
+  /^ravi\.watch\.github\.(?:workflow_run\.(?!requested$|in_progress$|cancelled$|skipped$)[a-z_]+|pull_request\.(?:merged|closed))$/;
 
 /** Event id prefix of the nudge sent for a silent CI wake; the watch stores the id, so it records the nudge's kind. */
 export const CI_WAKE_NUDGE_EVENT_PREFIX = "slack-thread-return-nudge-ci:";
