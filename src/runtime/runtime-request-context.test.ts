@@ -1335,6 +1335,43 @@ describe("runtime request context authority", () => {
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Bash")).toBe(true);
   });
 
+  it("persists delegated approval routing on launch and rotation without changing the relay actor", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+    const source = { channel: "telegram", accountId: "bot", chatId: "origin", threadId: "topic" };
+    const prompt = { prompt: "work", _turnOrigin: buildSessionRelayTurnOrigin("execute", { agentId: "origin-agent" }) };
+    const options = {
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: agent.cwd,
+      agent,
+      prompt,
+      runtimeProviderId: "codex" as const,
+      model: "test",
+      runtimeResolution,
+      approvalSource: source,
+    };
+    const built = buildRuntimeRequestContext(options);
+    expect(dbGetContext(built.runtimeContext.contextId)?.source).toEqual(source);
+    expect(built.runtimeContext.metadata?.actorPrincipal).toBe("agent:origin-agent");
+    const rotated = refreshRuntimeRequestContextForTurn({
+      ...options,
+      runtimeContext: built.runtimeContext,
+      toolContext: built.toolContext,
+      approvalSource: { ...source, chatId: "next-origin" },
+    });
+    expect(dbGetContext(rotated.contextId)?.source?.chatId).toBe("next-origin");
+    expect(rotated.metadata?.actorPrincipal).toBe("agent:origin-agent");
+    const plain = refreshRuntimeRequestContextForTurn({
+      ...options,
+      runtimeContext: rotated,
+      toolContext: built.toolContext,
+      prompt: { prompt: "local work" },
+      approvalSource: undefined,
+    });
+    expect(plain.source).toBeUndefined();
+  });
+
   it("narrows a relay produced by a contact-overlay turn to that turn's capabilities", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });

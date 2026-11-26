@@ -4,6 +4,12 @@ import { generateKeyPairSync, sign } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import * as approvalService from "../approval/service.js";
+import { getApprovalRequest, claimApprovalDecision } from "../approval/store.js";
+import { seedApprovalContact } from "../approval/test-support.js";
+import { setApprovalGrantorRouterConfigForTest } from "../channels/slack/grantors.js";
+import { getOrCreateSession } from "../router/sessions.js";
+import { buildRuntimeRequestContext } from "../runtime/runtime-request-context.js";
+import { buildSessionRelayTurnOrigin } from "../runtime/turn-origin.js";
 import * as contacts from "../contacts.js";
 import * as providerRuntime from "../permissions/provider-runtime.js";
 import { resolveSlackCredentialConfigFromEnv } from "../channels/slack/credentials.js";
@@ -17,6 +23,7 @@ import {
 } from "../permissions/external-authority-provider.js";
 import { PERMISSION_PROVIDER_IDS_SETTING } from "../permissions/provider-registry.js";
 import {
+  getDb,
   dbCreateAgent,
   dbDeleteAgent,
   dbDeleteContext,
@@ -79,6 +86,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  approvalService.setApprovalServiceDependenciesForTest();
+  setApprovalGrantorRouterConfigForTest();
   mock.restore();
   resetExternalAuthorityCacheForTests();
   closeCredentialsDb();
@@ -669,4 +678,141 @@ describe("credential approval on the author's own turn", () => {
     expect(approval).not.toHaveBeenCalled();
     expect(audits().at(-1)).toMatchObject({ approval_required: 0, result_status: "secret_resolved" });
   });
+});
+
+describe("credential approval origin and caller lifetime", () => {
+  it("explains a genuinely missing approval source", async () => {
+    await expect(asCaller(caller(), () => resolve("chat.postMessage"))).rejects.toMatchObject({
+      code: "approval_denied",
+      detail: "Não há chat de origem para pedir aprovação.",
+    });
+    expect(readSecret).not.toHaveBeenCalled();
+  });
+
+  it("fails closed with a fixed diagnostic when the origin adapter cannot deliver approval", async () => {
+    let requestId = "";
+    approvalService.setApprovalServiceDependenciesForTest({
+      nats: {
+        emit: async () => {},
+        subscribe: (() =>
+          (async function* () {})()) as approvalService.ApprovalServiceDependencies["nats"]["subscribe"],
+      },
+      requestReply: (async (_topic: string, data: Record<string, unknown>) => {
+        requestId = String(data.approvalRequestId);
+        throw new Error("no adapter, private transport detail");
+      }) as approvalService.ApprovalServiceDependencies["requestReply"],
+    });
+    await expect(
+      asCaller(caller(undefined, { source: { channel: "unsupported", accountId: "main", chatId: "origin" } }), () =>
+        resolve("chat.postMessage"),
+      ),
+    ).rejects.toMatchObject({
+      code: "approval_denied",
+      detail: approvalService.APPROVAL_REFUSAL_REASON.sendFailed,
+    });
+    expect(getApprovalRequest(requestId)?.status).toBe("expired");
+    expect(readSecret).not.toHaveBeenCalled();
+  });
+
+  for (const channel of ["slack", "whatsapp"]) {
+    for (const end of ["revoke", "expire", "delete", "ttl"] as const) {
+      it(`${channel}: relay opens a card at its origin and ${end} cancels it before a late approval`, async () => {
+        setApprovalGrantorRouterConfigForTest(() => ({ instances: {}, instanceToAccount: {} }));
+        seedApprovalContact({
+          phone: "5511987009699",
+          name: "Approver",
+          tags: ["permission-admin"],
+          slack: { userId: "UAPPROVER", instanceId: "main" },
+        });
+        const source = { channel, accountId: "main", chatId: "origin-chat", threadId: "origin-thread" };
+        getOrCreateSession("agent:broker-test-agent:origin", agentId, stateDir, { name: "broker-origin" });
+        getOrCreateSession("agent:broker-test-agent:relay", agentId, stateDir, { name: "broker-relay" });
+        const origin = caller(undefined, { source, sessionKey: "agent:broker-test-agent:origin" });
+        const { runtimeContext: context } = buildRuntimeRequestContext({
+          dbSessionKey: "agent:broker-test-agent:relay",
+          sessionName: "broker-relay",
+          sessionCwd: stateDir,
+          agent: { id: agentId, cwd: stateDir },
+          prompt: {
+            prompt: "send the document",
+            _turnOrigin: buildSessionRelayTurnOrigin("execute", {
+              agentId,
+              contextId: origin.contextId,
+              sessionKey: origin.sessionKey,
+            }),
+          },
+          runtimeProviderId: "codex",
+          model: "test-model",
+          runtimeResolution: {
+            options: {},
+            sources: { model: null, effort: null, thinking: null },
+            hasTaskRuntimeContext: false,
+          },
+        });
+        if (end === "ttl") {
+          context.expiresAt = Date.now() + 300;
+          getDb()
+            .prepare("UPDATE contexts SET expires_at = ? WHERE context_id = ?")
+            .run(context.expiresAt, context.contextId);
+        }
+        expect(context.source).toEqual(source);
+        expect(context.metadata?.actorPrincipal).toBe(`agent:${agentId}`);
+        let requestId = "";
+        let delivered!: () => void;
+        const delivery = new Promise<void>((resolve) => {
+          delivered = resolve;
+        });
+        const finalized: string[] = [];
+        approvalService.setApprovalServiceDependenciesForTest({
+          now: Date.now,
+          requestReply: (async (_topic: string, data: Record<string, unknown>) => {
+            requestId = String(data.approvalRequestId);
+            expect(data).toMatchObject({ channel, to: source.chatId, threadId: source.threadId });
+            expect(getApprovalRequest(requestId)).toMatchObject({
+              status: "pending",
+              callerContextId: context.contextId,
+            });
+            expect(getApprovalRequest(requestId)!.expiresAt).toBeLessThanOrEqual(context.expiresAt!);
+            delivered();
+            return { messageId: "card-1" };
+          }) as approvalService.ApprovalServiceDependencies["requestReply"],
+          nats: {
+            emit: async () => {},
+            subscribe: (() =>
+              (async function* () {})()) as approvalService.ApprovalServiceDependencies["nats"]["subscribe"],
+          },
+          finalizeSlackApproval: async (input) => {
+            finalized.push(input.requestId);
+          },
+        });
+        const result = asCaller(context, () => resolve("chat.postMessage")).catch((error) => error);
+        await delivery;
+        expect(readSecret).not.toHaveBeenCalled();
+        if (end === "revoke") revokeRuntimeContext(context.contextId);
+        else if (end === "delete") dbDeleteContext(context.contextId);
+        else if (end === "expire") {
+          getDb()
+            .prepare("UPDATE contexts SET expires_at = ? WHERE context_id = ?")
+            .run(Date.now() - 1, context.contextId);
+        }
+        if (end === "ttl") await result;
+        if (end === "revoke" || end === "delete") {
+          expect(getDb().query("SELECT status FROM approval_requests WHERE id = ?").get(requestId)).toEqual({
+            status: "expired",
+          });
+        }
+        // The durable request is terminal even before the waiter sees a click.
+        expect(getApprovalRequest(requestId)).toMatchObject({ status: "expired", decision: null });
+        expect(
+          claimApprovalDecision({ id: requestId, decision: "approved", decidedBy: "UAPPROVER", now: Date.now() }),
+        ).toBeNull();
+        expect(await result).toMatchObject({
+          code: "caller_invalid",
+          detail: expect.stringContaining("nova tentativa"),
+        });
+        expect(readSecret).not.toHaveBeenCalled();
+        if (channel === "slack") expect(finalized).toContain(requestId);
+      });
+    }
+  }
 });

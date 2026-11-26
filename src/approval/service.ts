@@ -20,6 +20,7 @@ import { buildAuditContextProvenance } from "../permissions/audit-provenance.js"
 import { buildAuthorizationGuidance, formatCanonicalCapability } from "../permissions/authorization-guidance.js";
 import {
   dbGetChat,
+  dbGetContext,
   dbUpdateContextCapabilities,
   type ContextCapability,
   type ContextRecord,
@@ -44,6 +45,7 @@ import {
   buildSlackPermissionGrantMessage,
 } from "./slack-blocks.js";
 import {
+  APPROVAL_CALLER_INVALID_REASON,
   attachApprovalRequestMessageId,
   claimApprovalDecision,
   createApprovalRequest,
@@ -149,6 +151,7 @@ export interface ApprovalTarget {
 }
 
 export interface CascadingApprovalOptions {
+  callerContextId?: string;
   resolvedSource?: ApprovalTarget;
   approvalSource?: ApprovalTarget;
   type: ApprovalRequestType;
@@ -184,6 +187,7 @@ export interface ContextAuthorizationResult {
 }
 
 export interface RequestApprovalOptions {
+  callerContextId?: string;
   timeoutMs?: number;
   type?: ApprovalRequestType;
   sessionName?: string;
@@ -207,8 +211,15 @@ export async function requestApproval(
   text: string,
   options?: RequestApprovalOptions,
 ): Promise<{ approved: boolean; reason?: string; messageId?: string }> {
-  const timeoutMs = options?.timeoutMs ?? DEFAULT_APPROVAL_TIMEOUT_MS;
   const now = approvalServiceDependencies.now();
+  const caller = options?.callerContextId ? dbGetContext(options.callerContextId) : undefined;
+  if (options?.callerContextId && (!caller || !isRuntimeContextLive(caller))) {
+    return { approved: false, reason: APPROVAL_REFUSAL_REASON.callerInvalid };
+  }
+  const timeoutMs = Math.min(
+    options?.timeoutMs ?? DEFAULT_APPROVAL_TIMEOUT_MS,
+    caller?.expiresAt ? Math.max(0, caller.expiresAt - now) : Infinity,
+  );
   const requestId = randomUUID();
   const type = options?.type ?? "permission";
   const slack = isSlackChannel(source.channel);
@@ -281,7 +292,7 @@ export async function requestApproval(
   const deliveryText =
     slackDelivery?.text ?? buildReactionApprovalText(type, text, options?.agentId, options?.delegated === true);
 
-  createApprovalRequest({
+  const created = createApprovalRequest({
     id: requestId,
     type,
     channel: source.channel,
@@ -291,6 +302,7 @@ export async function requestApproval(
     threadId: source.threadId,
     sessionName: options?.sessionName,
     agentId: options?.agentId,
+    callerContextId: options?.callerContextId,
     permission: options?.permission,
     objectType: options?.objectType,
     objectId: options?.objectId,
@@ -298,6 +310,8 @@ export async function requestApproval(
     createdAt: now,
     expiresAt: now + timeoutMs,
   });
+
+  if (created.status === "expired") return { approved: false, reason: APPROVAL_REFUSAL_REASON.callerInvalid };
 
   let sendResult: ApprovalDeliveryReply;
   try {
@@ -317,9 +331,16 @@ export async function requestApproval(
       Math.min(timeoutMs, DEFAULT_APPROVAL_DELIVERY_TIMEOUT_MS),
     );
   } catch (err) {
+    const current = getApprovalRequest(requestId);
     expireApprovalRequest(requestId, approvalServiceDependencies.now());
     log.warn("Failed to send approval request", { error: err });
-    return { approved: false, reason: err instanceof Error ? err.message : String(err) };
+    return {
+      approved: false,
+      reason:
+        current?.reason === APPROVAL_REFUSAL_REASON.callerInvalid
+          ? APPROVAL_REFUSAL_REASON.callerInvalid
+          : APPROVAL_REFUSAL_REASON.sendFailed,
+    };
   }
 
   const deliveries = parseApprovalDeliveries(sendResult.deliveries, approvalServiceDependencies.now());
@@ -345,7 +366,10 @@ export async function requestApproval(
     channel: source.channel,
     privateCards: deliveries.length,
   });
-  const result = await waitForApprovalResponse(requestId, timeoutMs);
+  const result = await waitForApprovalResponse(
+    requestId,
+    Math.max(0, now + timeoutMs - approvalServiceDependencies.now()),
+  );
   return { ...result, messageId };
 }
 
@@ -426,10 +450,12 @@ async function waitForExistingApproval(
  * drift from the allowlist.
  */
 export const APPROVAL_REFUSAL_REASON = {
-  sendFailed: "Falha ao enviar mensagem de aprovação.",
+  sendFailed:
+    "Não foi possível entregar o pedido de aprovação no canal de origem. Verifique a disponibilidade do canal e do adaptador de aprovação.",
   correlationFailed: "Falha ao correlacionar pedido de aprovação.",
   timeout: "Timeout — nenhuma resposta em 5 minutos.",
-  noSource: "No approval source available.",
+  noSource: "Não há chat de origem para pedir aprovação.",
+  callerInvalid: APPROVAL_CALLER_INVALID_REASON,
   grantNotRecorded: "The permission grant result could not be recorded.",
   grantNotApplied: "The permission grant could not be applied.",
 } as const;
@@ -505,7 +531,7 @@ export async function requestCascadingApproval(
   opts: CascadingApprovalOptions,
 ): Promise<{ approved: boolean; reason?: string; isDelegated: boolean }> {
   const targetSource = opts.resolvedSource ?? opts.approvalSource;
-  if (!targetSource) {
+  if (!targetSource?.channel || !targetSource.chatId) {
     if (opts.autoApproveWithoutSource !== false) {
       log.info(`${opts.type} auto-approved (no source available)`, { sessionName: opts.sessionName });
       return { approved: true, isDelegated: false };
@@ -532,6 +558,7 @@ export async function requestCascadingApproval(
 
   const result = await requestApproval(targetSource, opts.text, {
     timeoutMs: opts.timeoutMs,
+    callerContextId: opts.callerContextId,
     type: opts.type,
     sessionName: opts.sessionName,
     agentId: opts.agentId,
@@ -926,12 +953,24 @@ async function waitForApprovalResponse(
     const finish = (result: { approved: boolean; reason?: string }) => {
       if (settled) return;
       clearTimeout(timer);
+      clearInterval(callerTimer);
       cleanup();
       resolve(result);
     };
 
+    const checkCaller = () => {
+      if (settled) return true;
+      const current = getApprovalRequest(requestId);
+      if (current?.status !== "expired" || current.reason !== APPROVAL_REFUSAL_REASON.callerInvalid) return false;
+      void finalizeApprovalMessage(current, "expired").catch((error) => {
+        log.warn("Failed to finalize approval after caller ended", { requestId, error });
+      });
+      finish({ approved: false, reason: APPROVAL_REFUSAL_REASON.callerInvalid });
+      return true;
+    };
+    const callerTimer = getApprovalRequest(requestId)?.callerContextId ? setInterval(checkCaller, 100) : undefined;
     const timer = setTimeout(() => {
-      if (settled) return;
+      if (checkCaller()) return;
       const now = approvalServiceDependencies.now();
       const expired = expireApprovalRequest(requestId, now);
       if (expired) {
@@ -943,9 +982,11 @@ async function waitForApprovalResponse(
       finish({ approved: false, reason: APPROVAL_REFUSAL_REASON.timeout });
     }, timeoutMs);
 
+    if (checkCaller()) return;
     (async () => {
       try {
         for await (const event of stream) {
+          if (checkCaller()) return;
           const evaluation = evaluateApprovalInboundEvent(
             { topic: event.topic, data: event.data as Record<string, unknown> },
             approvalServiceDependencies.now(),

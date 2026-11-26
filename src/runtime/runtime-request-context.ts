@@ -4,6 +4,7 @@ import { logger } from "../utils/logger.js";
 import { resolveBridgeInvocation } from "../bridge/authority.js";
 import { assertBridgeProvider, isBridgeSessionRef } from "../bridge/isolation.js";
 import {
+  ContextSourceSchema,
   dbGetContext,
   dbGetAgent,
   dbGetSessionDefaultChatId,
@@ -486,13 +487,20 @@ function deriveRuntimeContextForPrompt(options: {
     return { ...bridge, metadata: { ...options.metadata, ...bridge.metadata } };
   }
   const identity = buildAgentIdentityRuntimeContextInputForPrompt(options);
+  const callerContextId = resolveRuntimeTurnOrigin(options.prompt._turnOrigin)?.callerContextId;
+  const callerSource = callerContextId ? dbGetContext(callerContextId)?.source : undefined;
+  const delegatedSource = ContextSourceSchema.safeParse(options.metadata.approvalSource);
   return {
     capabilities: identity.capabilities,
     metadata: {
       ...options.metadata,
       ...identity.metadata,
     },
-    source: buildContextSource(options.resolvedSource),
+    // A delegated approval destination is routing provenance, not a human
+    // actor or an authority grant. Keep identity derivation above unchanged.
+    source: buildContextSource(
+      options.resolvedSource ?? callerSource ?? (delegatedSource.success ? delegatedSource.data : undefined),
+    ),
   };
 }
 
