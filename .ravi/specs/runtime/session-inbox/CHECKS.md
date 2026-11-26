@@ -30,8 +30,15 @@ env -u RAVI_STATE_DIR -u RAVI_CONTEXT_KEY NATS_URL=nats://127.0.0.1:1 bun test s
 - A lone CR, U+0085, U+2028 and U+2029 split quoted lines; U+0085 stays out of titles and refs.
 - Two contacts tagged as owner: nobody drains.
 - The owner's real direct chat drains; a stranger's direct chat and a group do not (no injected lookups).
-- With the parent listed, thread progress and the result wait in its inbox (one per thread);
-  `--awaiting` stays immediate; an unlisted parent gets every notice immediately.
+- Only an explicit `complete` terminal of a sent turn delivers; failed, timeout, interrupted,
+  aborted, no terminal, or a turn that ended before the send return the items to `pending`.
+- An item released (or swept as stale) after a newer item with the same key is superseded by it.
+- A rename moves the pending items to the new name.
+- The channel runner refuses an unprepared inbox with `STATE_SCHEMA_NOT_READY: session-inbox` and
+  changes no schema; the daemon boot prepares it (`src/db/schema-owner.test.ts`).
+- With the parent listed and its default chat the owner's DM, thread progress and the result wait
+  in its inbox (one per thread); `--awaiting` stays immediate; an unlisted parent, or a listed one
+  the owner cannot reach in a DM, gets every notice immediately.
 
 ```bash
 env -u RAVI_STATE_DIR -u RAVI_CONTEXT_KEY NATS_URL=nats://127.0.0.1:1 bun test src/channels/slack/thread-lifecycle.test.ts -t "inbox|listed"

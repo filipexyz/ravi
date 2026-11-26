@@ -10,6 +10,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { initializeStateSchema } from "../db/schema-owner.js";
 import { getDb, getRaviDbPath } from "../router/router-db.js";
 
 export const INBOX_SOURCE_KINDS = ["thread", "child_run", "cron", "observer", "handoff", "system"] as const;
@@ -62,10 +63,24 @@ export class InboxUsageError extends Error {
 
 let schemaPath: string | null = null;
 
+/** State schema component of the inbox table in ravi.db (src/db/schema-owner.ts). */
+export const INBOX_SCHEMA_COMPONENT = "session-inbox";
+
+/**
+ * The daemon creates and migrates the table at boot (src/db/runtime-state.ts). A schema consumer
+ * (the operator CLI, the channel runner) only checks that this release prepared it and never runs
+ * the DDL.
+ */
 export function ensureInboxSchema(): void {
   const path = getRaviDbPath();
   if (schemaPath === path) return;
-  getDb().exec(`
+  const db = getDb();
+  initializeStateSchema(db, INBOX_SCHEMA_COMPONENT, () => migrateInboxSchema(db));
+  schemaPath = path;
+}
+
+function migrateInboxSchema(db: ReturnType<typeof getDb>): void {
+  db.exec(`
     CREATE TABLE IF NOT EXISTS session_inbox (
       id TEXT PRIMARY KEY,
       target_session_name TEXT NOT NULL,
@@ -86,12 +101,11 @@ export function ensureInboxSchema(): void {
       ON session_inbox(target_session_name, state, created_at);
   `);
   try {
-    getDb().exec("ALTER TABLE session_inbox ADD COLUMN sent_at INTEGER");
+    db.exec("ALTER TABLE session_inbox ADD COLUMN sent_at INTEGER");
   } catch (error) {
     // The column already exists (a database created after it was added): nothing to do.
     if (!/duplicate column/i.test(String(error))) throw error;
   }
-  schemaPath = path;
 }
 
 function rowToItem(row: Record<string, unknown>): InboxItem {
@@ -208,10 +222,12 @@ export function reserveInboxItems(input: ReserveInboxInput): InboxReservation {
   let items: InboxItem[] = [];
   let overflow = 0;
   db.transaction(() => {
-    db.prepare(
-      `UPDATE session_inbox SET state = 'pending', reserved_turn = NULL, reserved_at = NULL, sent_at = NULL
-       WHERE target_session_name = ? AND state = 'reserved' AND reserved_at < ?`,
-    ).run(input.targetSessionName, now - INBOX_STALE_RESERVATION_MS);
+    returnToPending(
+      db,
+      "target_session_name = ? AND reserved_at < ?",
+      input.targetSessionName,
+      now - INBOX_STALE_RESERVATION_MS,
+    );
     const pending = (
       db
         .prepare(
@@ -274,16 +290,53 @@ export function commitInboxReservation(turnKey: string, now = Date.now()): numbe
   return Number(result.changes ?? 0);
 }
 
-/** The turn never started: the reserved items return to `pending`. */
+/**
+ * A row that returns to `pending` after a newer row with the same `supersede_key` was written is
+ * superseded by the newest one, so a turn that did not deliver never brings back stale progress.
+ */
+function supersedeReturnedRows(db: ReturnType<typeof getDb>, ids: string[]): void {
+  const newest = db.prepare(
+    `SELECT id FROM session_inbox
+     WHERE target_session_name = ? AND supersede_key = ? AND id <> ?
+       AND (created_at > ? OR (created_at = ? AND id > ?))
+     ORDER BY created_at DESC, id DESC LIMIT 1`,
+  );
+  const supersede = db.prepare(
+    "UPDATE session_inbox SET state = 'superseded', superseded_by = ? WHERE id = ? AND state = 'pending'",
+  );
+  for (const id of ids) {
+    const row = db
+      .prepare("SELECT target_session_name, supersede_key, created_at FROM session_inbox WHERE id = ?")
+      .get(id) as { target_session_name: string; supersede_key: string | null; created_at: number } | undefined;
+    if (!row?.supersede_key) continue;
+    const newer = newest.get(row.target_session_name, row.supersede_key, id, row.created_at, row.created_at, id) as
+      | { id: string }
+      | undefined;
+    if (newer) supersede.run(newer.id, id);
+  }
+}
+
+function returnToPending(db: ReturnType<typeof getDb>, where: string, ...values: (string | number)[]): number {
+  const ids = (
+    db.prepare(`SELECT id FROM session_inbox WHERE state = 'reserved' AND ${where}`).all(...values) as {
+      id: string;
+    }[]
+  ).map((row) => row.id);
+  if (ids.length === 0) return 0;
+  const reset = db.prepare(
+    `UPDATE session_inbox SET state = 'pending', reserved_turn = NULL, reserved_at = NULL, sent_at = NULL
+     WHERE id = ? AND state = 'reserved'`,
+  );
+  for (const id of ids) reset.run(id);
+  supersedeReturnedRows(db, ids);
+  return ids.length;
+}
+
+/** The turn did not deliver: the reserved items return to `pending` (or to `superseded`). */
 export function releaseInboxReservation(turnKey: string): number {
   ensureInboxSchema();
-  const result = getDb()
-    .prepare(
-      `UPDATE session_inbox SET state = 'pending', reserved_turn = NULL, reserved_at = NULL, sent_at = NULL
-       WHERE reserved_turn = ? AND state = 'reserved'`,
-    )
-    .run(turnKey);
-  return Number(result.changes ?? 0);
+  const db = getDb();
+  return db.transaction(() => returnToPending(db, "reserved_turn = ?", turnKey))();
 }
 
 /** Rendered body cap per item: one notice never takes more than this of a turn's block. */

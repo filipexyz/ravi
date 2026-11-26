@@ -4,7 +4,11 @@ import { randomUUID } from "node:crypto";
 import { CliExpectedError } from "../../cli/expected-error.js";
 import { nats } from "../../nats.js";
 import { publishSessionPrompt, type PublishSessionPromptOptions } from "../../omni/session-stream.js";
-import { threadNoticeDelivery, threadNoticeSupersedeKey } from "../../session-inbox/policy.js";
+import {
+  type ThreadNoticePolicyDeps,
+  threadNoticeDelivery,
+  threadNoticeSupersedeKey,
+} from "../../session-inbox/policy.js";
 import { enqueueInboxItem } from "../../session-inbox/store.js";
 import { publishChannelSessionPrompt } from "../session-prompt.js";
 import { bindChildRunSession, isChildRunSurfaceRef, markChildRunLaunched } from "../../automation/child-runs.js";
@@ -140,6 +144,8 @@ export interface SlackThreadLifecycleDependencies {
   publishEvent: EventPublisher;
   /** Publishes the root card update; without it the card is left as is. */
   publishOutbound?: (job: ChannelOutboundJob) => Promise<unknown>;
+  /** Test seam: the inbox policy (runtime/session-inbox). */
+  inboxPolicy?: ThreadNoticePolicyDeps;
 }
 
 const DEFAULT_DEPENDENCIES: SlackThreadLifecycleDependencies = {
@@ -782,12 +788,15 @@ export async function deliverSlackThreadParentReturn(
     if (!record.closeResult || !record.parentEventId || !record.providerThreadId) {
       throw new Error(`Slack thread parent return is incomplete: ${record.requestId}`);
     }
-    const delivery = threadNoticeDelivery({
-      kind: "closed",
-      awaiting: false,
-      parentSessionName: parent.name,
-      parentSessionKey: parent.sessionKey,
-    });
+    const delivery = threadNoticeDelivery(
+      {
+        kind: "closed",
+        awaiting: false,
+        parentSessionName: parent.name,
+        parentSessionKey: parent.sessionKey,
+      },
+      dependencies.inboxPolicy,
+    );
     if (delivery === "deferred") {
       // The result waits for the owner's next turn and replaces a pending progress of the thread.
       enqueueInboxItem({
@@ -1087,12 +1096,15 @@ export async function reportSlackThreadProgress(
     );
   }
   const messageId = `slack-thread-report:${record.requestId}:${randomUUID()}`;
-  const delivery = threadNoticeDelivery({
-    kind: "progress",
-    awaiting: options.awaiting === true,
-    parentSessionName: parent.name,
-    parentSessionKey: parent.sessionKey,
-  });
+  const delivery = threadNoticeDelivery(
+    {
+      kind: "progress",
+      awaiting: options.awaiting === true,
+      parentSessionName: parent.name,
+      parentSessionKey: parent.sessionKey,
+    },
+    dependencies.inboxPolicy,
+  );
   if (delivery === "deferred") {
     // Informs without asking anything: it waits for the owner's next turn (runtime/session-inbox).
     enqueueInboxItem({

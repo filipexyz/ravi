@@ -64,8 +64,9 @@ export interface InboxTurnBlock {
   /** The turn never started: the items return to pending. */
   release: (reason: string) => void;
   /**
-   * The turn ended. Only a turn that completed (not interrupted, not aborted) delivers the items;
-   * any other end returns them to pending, so an aborted turn repeats them instead of losing them.
+   * The turn ended. Only a turn that completed after its prompt reached the provider delivers the
+   * items; any other end (including a turn that ended before `commit`) returns them to pending, so
+   * an aborted or failed turn repeats them instead of losing them.
    */
   finish: (outcome: InboxTurnOutcome) => void;
 }
@@ -114,6 +115,7 @@ export function prepareInboxTurnBlock(input: PrepareInboxTurnInput): InboxTurnBl
     releaseInboxReservation(reservation.turnKey);
     throw error;
   }
+  let sent = false;
   return {
     block,
     reason,
@@ -121,12 +123,14 @@ export function prepareInboxTurnBlock(input: PrepareInboxTurnInput): InboxTurnBl
     overflow: reservation.overflow,
     commit: () => {
       markInboxReservationSent(reservation.turnKey);
+      sent = true;
     },
     release: () => {
       releaseInboxReservation(reservation.turnKey);
     },
     finish: (outcome) => {
-      if (outcome === "completed") commitInboxReservation(reservation.turnKey);
+      // A turn whose preparation failed ends before the send: nothing reached the model.
+      if (outcome === "completed" && sent) commitInboxReservation(reservation.turnKey);
       else releaseInboxReservation(reservation.turnKey);
     },
   };

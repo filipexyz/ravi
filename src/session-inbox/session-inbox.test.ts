@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { closeRouterDb, dbSetSetting, dbUpsertChat, dbUpsertChatParticipant } from "../router/router-db.js";
+import { closeRouterDb, dbSetSetting, dbUpsertChat, dbUpsertChatParticipant, getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   composeInboxWithTurnPrompt,
@@ -12,6 +12,7 @@ import { threadNoticeDelivery } from "./policy.js";
 import { deliverToSession } from "./deliver.js";
 import { isInboxOwnerSession, isInboxOwnerTurn } from "./owner.js";
 import { renderInboxBlock } from "./render.js";
+import { getOrCreateSession, renameSessionName } from "../router/sessions.js";
 import {
   INBOX_MAX_RENDERED_BODY_BYTES,
   INBOX_STALE_RESERVATION_MS,
@@ -493,14 +494,14 @@ describe("an aborted turn repeats the items instead of losing them (review N3 of
       ...drain({ drainOnHeartbeat: false }),
     });
     third?.commit();
-    settleInboxTurn(third!, { interrupted: false, aborted: false });
+    settleInboxTurn(third!, { interrupted: false, aborted: false, terminalStatus: "complete" });
     expect(getInboxItem(a.id)?.state).toBe("delivered");
   });
 
   it("maps the session state to the outcome", () => {
-    expect(inboxTurnOutcome({ interrupted: false, aborted: false })).toBe("completed");
-    expect(inboxTurnOutcome({ interrupted: true, aborted: false })).toBe("aborted");
-    expect(inboxTurnOutcome({ interrupted: false, aborted: true })).toBe("aborted");
+    expect(inboxTurnOutcome({ interrupted: false, aborted: false, terminalStatus: "complete" })).toBe("completed");
+    expect(inboxTurnOutcome({ interrupted: true, aborted: false, terminalStatus: "complete" })).toBe("aborted");
+    expect(inboxTurnOutcome({ interrupted: false, aborted: true, terminalStatus: "complete" })).toBe("aborted");
   });
 });
 
@@ -579,34 +580,178 @@ describe("the real identity path (review N6 of 97d2cde)", () => {
 });
 
 describe("thread notice policy", () => {
-  const listed = (value: string | null) => ({ setting: () => value });
+  const listed = (value: string | null) => ({ setting: () => value, isOwnerSession: () => true });
   it("defers only informing kinds, only for listed parents, never when the parent must act", () => {
-    expect(threadNoticeDelivery({ kind: "progress", awaiting: false, parentSessionName: "main" }, listed("main"))).toBe(
-      "deferred",
-    );
     expect(
-      threadNoticeDelivery({ kind: "closed", awaiting: false, parentSessionName: "main" }, listed(" x , main ")),
+      threadNoticeDelivery(
+        { kind: "progress", awaiting: false, parentSessionName: "main", parentSessionKey: "agent:main:main" },
+        listed("main"),
+      ),
     ).toBe("deferred");
-    expect(threadNoticeDelivery({ kind: "progress", awaiting: true, parentSessionName: "main" }, listed("main"))).toBe(
-      "now",
-    );
     expect(
-      threadNoticeDelivery({ kind: "attention", awaiting: false, parentSessionName: "main" }, listed("main")),
+      threadNoticeDelivery(
+        { kind: "closed", awaiting: false, parentSessionName: "main", parentSessionKey: "agent:main:main" },
+        listed(" x , main "),
+      ),
+    ).toBe("deferred");
+    expect(
+      threadNoticeDelivery(
+        { kind: "progress", awaiting: true, parentSessionName: "main", parentSessionKey: "agent:main:main" },
+        listed("main"),
+      ),
     ).toBe("now");
     expect(
-      threadNoticeDelivery({ kind: "unreturned", awaiting: false, parentSessionName: "main" }, listed("main")),
+      threadNoticeDelivery(
+        { kind: "attention", awaiting: false, parentSessionName: "main", parentSessionKey: "agent:main:main" },
+        listed("main"),
+      ),
     ).toBe("now");
     expect(
-      threadNoticeDelivery({ kind: "progress", awaiting: false, parentSessionName: "other" }, listed("main")),
+      threadNoticeDelivery(
+        { kind: "unreturned", awaiting: false, parentSessionName: "main", parentSessionKey: "agent:main:main" },
+        listed("main"),
+      ),
     ).toBe("now");
-    expect(threadNoticeDelivery({ kind: "progress", awaiting: false, parentSessionName: "main" }, listed(null))).toBe(
-      "now",
-    );
+    expect(
+      threadNoticeDelivery(
+        { kind: "progress", awaiting: false, parentSessionName: "other", parentSessionKey: "agent:main:other" },
+        listed("main"),
+      ),
+    ).toBe("now");
+    expect(
+      threadNoticeDelivery(
+        { kind: "progress", awaiting: false, parentSessionName: "main", parentSessionKey: "agent:main:main" },
+        listed(null),
+      ),
+    ).toBe("now");
     expect(
       threadNoticeDelivery(
         { kind: "progress", awaiting: false, parentSessionKey: "agent:main:main" },
         listed("agent:main:main"),
       ),
     ).toBe("deferred");
+  });
+});
+
+describe("only an explicit complete end delivers (Devin review of 5406f26)", () => {
+  it("a failed, timed out or unrecorded end returns the items; only complete delivers", () => {
+    for (const terminalStatus of ["failed", "timeout", "interrupted", "aborted", null, undefined]) {
+      expect(inboxTurnOutcome({ interrupted: false, aborted: false, terminalStatus })).toBe("aborted");
+    }
+    const a = add("a");
+    const failed = prepareInboxTurnBlock({
+      sessionName: SESSION,
+      messages: [human],
+      ...drain({ drainOnHeartbeat: false }),
+    });
+    failed?.commit();
+    settleInboxTurn(failed!, { interrupted: false, aborted: false, terminalStatus: "failed" });
+    expect(getInboxItem(a.id)?.state).toBe("pending");
+  });
+
+  it("a turn that ends before its prompt was sent never delivers, even if called completed", () => {
+    const a = add("a");
+    const turn = prepareInboxTurnBlock({
+      sessionName: SESSION,
+      messages: [human],
+      ...drain({ drainOnHeartbeat: false }),
+    });
+    turn?.finish("completed");
+    expect(getInboxItem(a.id)?.state).toBe("pending");
+    expect(getInboxItem(a.id)?.sentAt ?? null).toBeNull();
+  });
+});
+
+describe("a returned item never revives stale progress (Devin review of 5406f26)", () => {
+  it("an item released after a newer one with the same key was written is superseded by it", () => {
+    const old = add("passo 1", { createdAt: 1, supersedeKey: "thread:r1" });
+    const turn = prepareInboxTurnBlock({
+      sessionName: SESSION,
+      messages: [human],
+      ...drain({ drainOnHeartbeat: false }),
+    });
+    expect(turn?.itemIds).toEqual([old.id]);
+    const newer = add("passo 2", { createdAt: 2, supersedeKey: "thread:r1" });
+    turn?.release("aborted");
+    expect(getInboxItem(old.id)?.state).toBe("superseded");
+    expect(getInboxItem(old.id)?.supersededBy).toBe(newer.id);
+    expect(getInboxItem(newer.id)?.state).toBe("pending");
+  });
+
+  it("without a newer item, or with another key, the released item returns to pending", () => {
+    const a = add("a", { createdAt: 1, supersedeKey: "thread:r1" });
+    const turn = prepareInboxTurnBlock({
+      sessionName: SESSION,
+      messages: [human],
+      ...drain({ drainOnHeartbeat: false }),
+    });
+    add("b", { createdAt: 2, supersedeKey: "thread:r2" });
+    turn?.finish("aborted");
+    expect(getInboxItem(a.id)?.state).toBe("pending");
+  });
+
+  it("the stale sweep applies the same rule", () => {
+    const old = add("passo 1", { createdAt: 1, supersedeKey: "thread:r1" });
+    const first = reserveInboxItems({ targetSessionName: SESSION, maxItems: 30, maxBytes: 16_384, now: 1_000 });
+    expect(first.items.map((item) => item.id)).toEqual([old.id]);
+    const newer = add("passo 2", { createdAt: 2, supersedeKey: "thread:r1" });
+    const second = reserveInboxItems({
+      targetSessionName: SESSION,
+      maxItems: 30,
+      maxBytes: 16_384,
+      now: 1_000 + INBOX_STALE_RESERVATION_MS + 1,
+    });
+    expect(second.items.map((item) => item.id)).toEqual([newer.id]);
+    expect(getInboxItem(old.id)?.state).toBe("superseded");
+  });
+});
+
+describe("a rename keeps the deferred notices (Devin review of 5406f26)", () => {
+  it("the pending items follow the session to its new name", () => {
+    const session = getOrCreateSession("agent:main:work", "main", "/tmp/main", { name: "work" });
+    const item = enqueueInboxItem({
+      targetSessionName: "work",
+      sourceKind: "thread",
+      sourceRef: "t",
+      title: "x",
+      body: "resultado",
+    });
+    renameSessionName(session.sessionKey, "engineering");
+    expect(countPendingInboxItems("work")).toBe(0);
+    expect(countPendingInboxItems("engineering")).toBe(1);
+    expect(getInboxItem(item.id)?.targetSessionName).toBe("engineering");
+  });
+});
+
+describe("the daemon owns the inbox schema (Devin review of 5406f26)", () => {
+  it("a schema consumer refuses an unprepared inbox and runs no DDL", () => {
+    const database = getDb();
+    const before = database.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY type, name").all();
+    const argv = process.argv;
+    process.argv = [argv[0]!, argv[1]!, "channels", "run"];
+    try {
+      expect(() => countPendingInboxItems(SESSION)).toThrow("STATE_SCHEMA_NOT_READY: session-inbox");
+    } finally {
+      process.argv = argv;
+    }
+    expect(database.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY type, name").all()).toEqual(before);
+  });
+});
+
+describe("a listed parent the owner cannot reach stays immediate (Devin review of 5406f26)", () => {
+  it("defers only when the parent's default chat is the owner's DM", () => {
+    const input = {
+      kind: "progress" as const,
+      awaiting: false,
+      parentSessionName: "eng",
+      parentSessionKey: "agent:main:eng",
+    };
+    expect(threadNoticeDelivery(input, { setting: () => "eng", isOwnerSession: () => false })).toBe("now");
+    expect(threadNoticeDelivery(input, { setting: () => "eng", isOwnerSession: () => true })).toBe("deferred");
+    expect(
+      threadNoticeDelivery({ ...input, parentSessionKey: null }, { setting: () => "eng", isOwnerSession: () => true }),
+    ).toBe("now");
+    // The real lookup: a session with no default chat is not reachable by the owner.
+    expect(threadNoticeDelivery(input, { setting: () => "eng" })).toBe("now");
   });
 });

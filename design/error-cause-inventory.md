@@ -452,22 +452,22 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | channels-slack | src/channels/slack/thread-instruction-delivery.ts | 55 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-instruction-delivery.ts:86caa88fda886e9f1d90ef1c |
 | channels-slack | src/channels/slack/thread-instruction-delivery.ts | 88 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-instruction-delivery.ts:f47d4f934b5335fdb1dc0240 |
 | channels-slack | src/channels/slack/thread-lifecycle-store.ts | 1045 | no-cause | A malformed origin only loses the WhatsApp return; the completion then stays in Slack, as before origins existed. | src/channels/slack/thread-lifecycle-store.ts:4698d4a028fe7f5e71a7700a |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 242 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:b911f7b0646fdb37c1036be1 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 250 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:bbcb0b19d6335b4ca2ed97d9 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 261 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3931e436098dcef7fb8f6040 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 282 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:0c07e521d00e171ade1709c5 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 295 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:b1f7078520b6527d71c97b7f |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 353 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:0badece10f83ff4d3d5ba9ac |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 412 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:7045053794e752ba9469e452 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 509 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:ff35a488b1d608b91dcc7f92 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 569 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:2c6a661603d61cec45ee5b83 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 684 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3480b77cb404aa4d76ef5053 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 725 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:b7a227b58d5b81458560c6ae |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 736 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:e7d3ca9c40c49e14573fc48b |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 747 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:79070e050ee994049ecf949b |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 761 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3830479576acbc9a4faf42e7 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 833 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3128594da318c7d29f0f5eb0 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 1298 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:168c889a92f9cf70994d3983 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 248 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:b911f7b0646fdb37c1036be1 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 256 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:bbcb0b19d6335b4ca2ed97d9 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 267 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3931e436098dcef7fb8f6040 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 288 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:0c07e521d00e171ade1709c5 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 301 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:b1f7078520b6527d71c97b7f |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 359 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:0badece10f83ff4d3d5ba9ac |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 418 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:7045053794e752ba9469e452 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 515 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:ff35a488b1d608b91dcc7f92 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 575 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:2c6a661603d61cec45ee5b83 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 690 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3480b77cb404aa4d76ef5053 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 731 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:b7a227b58d5b81458560c6ae |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 742 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:e7d3ca9c40c49e14573fc48b |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 753 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:79070e050ee994049ecf949b |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 767 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3830479576acbc9a4faf42e7 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 842 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3128594da318c7d29f0f5eb0 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 1310 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:168c889a92f9cf70994d3983 |
 | channels-slack | src/channels/slack/thread-requester.ts | 34 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-requester.ts:906a166dfda93a7451e16429 |
 | channels-slack | src/channels/slack/thread-requester.ts | 64 | triaged-follow-up | catch-without-binding | src/channels/slack/thread-requester.ts:518fbe45995656bbf2c7b34e |
 | channels-slack | src/channels/slack/thread-requester.ts | 73 | triaged-follow-up | catch-without-binding | src/channels/slack/thread-requester.ts:4e96a74ec3eda3554d5b7d4b |
@@ -1885,7 +1885,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | router | src/router/router-db.ts | 12102 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:015f3a21ffe76e22671668bf |
 | sessions | src/router/sessions.ts | 934 | fixed | binding retained / no recognized error surface | src/router/sessions.ts:7d1bb7744cf9f62680b55377 |
 | sessions | src/router/sessions.ts | 948 | triaged-follow-up | catch-without-binding | src/router/sessions.ts:4cea4fc40c424fe5e35e394b |
-| sessions | src/router/sessions.ts | 1570 | fixed | binding retained / no recognized error surface | src/router/sessions.ts:c6829bbd0def352b36c4b5d7 |
+| sessions | src/router/sessions.ts | 1575 | fixed | binding retained / no recognized error surface | src/router/sessions.ts:c6829bbd0def352b36c4b5d7 |
 | runtime-maintenance.ts | src/runtime-maintenance.ts | 53 | fixed | binding retained / no recognized error surface | src/runtime-maintenance.ts:ec83c4ff086c8ad1270aba4d |
 | runtime-maintenance.ts | src/runtime-maintenance.ts | 84 | fixed | binding retained / no recognized error surface | src/runtime-maintenance.ts:3ead593d159efce2b43803b9 |
 | runtime-maintenance.ts | src/runtime-maintenance.ts | 166 | fixed | binding retained / no recognized error surface | src/runtime-maintenance.ts:ce4fa75e77f0dbab1968ce07 |
@@ -2148,21 +2148,21 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/runtime-recovery-alert.ts | 70 | fixed | binding retained / no recognized error surface | src/runtime/runtime-recovery-alert.ts:1af4a0589a1041ffeccf4ee1 |
 | runtime-chat | src/runtime/runtime-recovery-alert.ts | 102 | fixed | binding retained / no recognized error surface | src/runtime/runtime-recovery-alert.ts:93f2b3d2b18f3fa43b75229f |
 | runtime-chat | src/runtime/runtime-request-builder.ts | 162 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:13bc416cb55b4ce5868455ff |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 215 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:3cf900cb1d26853bda3078df |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 334 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:028234050a59a66edab09af2 |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 374 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:51a46e76088c678f82acd7dc |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 400 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:ebf034c2d5826c4116f00eff |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 516 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:960da1d172cfc9d8affaf2b6 |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 519 | triaged-follow-up | rejection-without-binding | src/runtime/runtime-request-builder.ts:fe50d1206bebdad537025ec0 |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 902 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:b3b50aff43071847aa649325 |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 904 | triaged-follow-up | rejection-without-binding | src/runtime/runtime-request-builder.ts:1811a7ab1cda44b52fb4b036 |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 1098 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:a3e3e46ad92120dd20b659fb |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 1134 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:b67c3886f6623fc3c37f992b |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 1249 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:861b739b16846ea4c68047b8 |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 1381 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:71914b388ff510613feeba1f |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 1459 | triaged-follow-up | rejection-without-binding | src/runtime/runtime-request-builder.ts:97f069feec77376de9ce4cfe |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 1475 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:fceed3ce3c4bcb1014946096 |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 1485 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:e11eb49a2511c5a3e84172db |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 224 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:3cf900cb1d26853bda3078df |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 343 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:028234050a59a66edab09af2 |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 383 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:51a46e76088c678f82acd7dc |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 409 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:ebf034c2d5826c4116f00eff |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 525 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:960da1d172cfc9d8affaf2b6 |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 528 | triaged-follow-up | rejection-without-binding | src/runtime/runtime-request-builder.ts:fe50d1206bebdad537025ec0 |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 911 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:b3b50aff43071847aa649325 |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 913 | triaged-follow-up | rejection-without-binding | src/runtime/runtime-request-builder.ts:1811a7ab1cda44b52fb4b036 |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 1107 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:a3e3e46ad92120dd20b659fb |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 1143 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:b67c3886f6623fc3c37f992b |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 1258 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:861b739b16846ea4c68047b8 |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 1391 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:71914b388ff510613feeba1f |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 1469 | triaged-follow-up | rejection-without-binding | src/runtime/runtime-request-builder.ts:97f069feec77376de9ce4cfe |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 1485 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:fceed3ce3c4bcb1014946096 |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 1495 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:e11eb49a2511c5a3e84172db |
 | runtime-chat | src/runtime/runtime-request-context.ts | 121 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-context.ts:9c19b85e67a579c3b18fc384 |
 | runtime-chat | src/runtime/runtime-request-context.ts | 226 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-context.ts:fb0b243ac337da14f0ac5365 |
 | runtime-chat | src/runtime/runtime-request-context.ts | 516 | triaged-follow-up | catch-without-binding | src/runtime/runtime-request-context.ts:7206346edd25c13ff4d8a8d8 |
@@ -2274,8 +2274,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | sessions | src/session-followups/service.ts | 748 | fixed | binding retained / no recognized error surface | src/session-followups/service.ts:72f1cc56fbc8dbc2ea557bdc |
 | sessions | src/session-inbox/owner.ts | 53 | fixed | binding retained / no recognized error surface | src/session-inbox/owner.ts:60f4844a6ed1d15327be8ed7 |
 | sessions | src/session-inbox/owner.ts | 77 | fixed | binding retained / no recognized error surface | src/session-inbox/owner.ts:8cb58f3465420d94ba4d9ad0 |
-| sessions | src/session-inbox/store.ts | 90 | fixed | binding retained / no recognized error surface | src/session-inbox/store.ts:299010c635e57110f41d03bb |
-| sessions | src/session-inbox/turn.ts | 112 | fixed | binding retained / no recognized error surface | src/session-inbox/turn.ts:0b4777452ff3c2c8a32914a2 |
+| sessions | src/session-inbox/store.ts | 105 | fixed | binding retained / no recognized error surface | src/session-inbox/store.ts:2e66eb25f8497f7b10a1d58f |
+| sessions | src/session-inbox/turn.ts | 113 | fixed | binding retained / no recognized error surface | src/session-inbox/turn.ts:0b4777452ff3c2c8a32914a2 |
 | sessions | src/session-trace/cloud-trace-export.ts | 230 | fixed | binding retained / no recognized error surface | src/session-trace/cloud-trace-export.ts:6118dc9f8a08897fa338dbe7 |
 | sessions | src/session-trace/cloud-trace-export.ts | 778 | triaged-follow-up | catch-without-binding | src/session-trace/cloud-trace-export.ts:52f0dc39144af918c411ac4a |
 | sessions | src/session-trace/query.ts | 179 | triaged-follow-up | catch-without-binding | src/session-trace/query.ts:14202130aaa2cf2d2fd61990 |

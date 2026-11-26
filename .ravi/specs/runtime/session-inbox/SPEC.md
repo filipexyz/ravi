@@ -39,7 +39,11 @@ own turn, instead of one woken turn per notice.
 - The mode is decided by the producer and never by the text of the notice. A deferred item MUST
   NOT become urgent because of its content.
 - The inbox lives in the core state database (`session_inbox`), not in JetStream. A restart MUST
-  NOT lose a pending item.
+  NOT lose a pending item. The daemon creates and migrates the table at boot (state schema
+  component `session-inbox`); the operator CLI and the channel runner only check that this release
+  prepared it and MUST NOT run its DDL.
+- Items wait under the session name. A rename moves them to the new name in the same transaction
+  that moves routes and task assignments, so the renamed session still drains them.
 - Only the session's owner drains the inbox. A human turn drains it only when its chat is the
   owner's own direct chat, resolved from the platform identity of that chat (`dmContactForChat`:
   a direct chat whose single participant still owns the identity) to a contact tagged
@@ -56,13 +60,15 @@ own turn, instead of one woken turn per notice.
   `INBOX_STALE_RESERVATION_MS` MUST return to `pending` on the next reservation of that session.
 - Delivery is at least once and an item is never lost. Handing the prompt to the provider only
   marks the items sent (`sent_at`); they stay `reserved`. They become `delivered` only when the turn
-  that carried them completes, not interrupted and not aborted. A turn interrupted or aborted after
-  the send returns them to `pending`, and a later draining turn shows them again; a process that dies
+  that carried them was sent and recorded an explicit `complete` terminal, not interrupted and not
+  aborted. A turn that failed, timed out, was interrupted or aborted, ended before the send, or
+  recorded no terminal returns them to `pending`, and a later draining turn shows them again; a process that dies
   leaves a stale reservation that the next reservation returns to `pending`. There is no other
   deduplication: each line carries the time and source, so a repeated notice is recognisable.
 - An item leaves `pending` only by delivery or by an explicit `supersede_key`: a newer item with
   the same key supersedes the older pending one, and the superseded row is kept. A reserved item
-  MUST NOT be superseded.
+  MUST NOT be superseded while reserved; if it returns to `pending` after a newer item with the same
+  key was written, it is superseded by the newest one, so stale progress never comes back.
 - The block is capped per turn (`INBOX_MAX_ITEMS_PER_TURN`, `INBOX_MAX_BYTES_PER_TURN`). Items are
   taken oldest first; once one item does not fit, every newer item waits for a later turn. The
   block MUST say how many items were left.
@@ -81,9 +87,12 @@ own turn, instead of one woken turn per notice.
 The core decides the mode (`src/session-inbox/policy.ts`); a channel adapter only follows it.
 
 - Thread notices to a parent session listed in `inbox.threadNotices.sessions` (comma separated
-  session names or keys; empty, the default, keeps everything immediate): a progress report without
+  session names or keys; empty, the default, keeps everything immediate) whose default chat is the
+  owner's direct chat: a progress report without
   `--awaiting` and a thread result are `deferred`, with one pending item per thread (a newer
   progress or the result supersedes the older pending one). A report with `--awaiting`, a thread
-  that needs attention and a turn that ended without returning stay `now`.
+  that needs attention and a turn that ended without returning stay `now`. A listed parent the
+  owner cannot reach in a direct chat (a channel session, a group) would never drain, so its notices
+  stay `now`.
 - Every other producer (cron and trigger child runs, observers, handoff reminders) stays `now`
   until its own release.

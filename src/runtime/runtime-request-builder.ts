@@ -200,16 +200,25 @@ export function composeInboxWithTurnPrompt(
   };
 }
 
-/** How a turn that carried an inbox block ended: only a clean end delivers the items. */
-export function inboxTurnOutcome(state: { interrupted: boolean; aborted: boolean }): InboxTurnOutcome {
-  return state.interrupted || state.aborted ? "aborted" : "completed";
+export interface InboxTurnEndState {
+  interrupted: boolean;
+  aborted: boolean;
+  /** The first terminal status recorded for this physical turn, if any (crash recovery latch). */
+  terminalStatus?: string | null;
+}
+
+/**
+ * How a turn that carried an inbox block ended. Only an explicit `complete` terminal of the same
+ * turn delivers the items: a failed, timed out, interrupted or unrecorded end returns them, so a
+ * notice is repeated rather than lost.
+ */
+export function inboxTurnOutcome(state: InboxTurnEndState): InboxTurnOutcome {
+  if (state.interrupted || state.aborted) return "aborted";
+  return state.terminalStatus === "complete" ? "completed" : "aborted";
 }
 
 /** Settles an inbox block at the end of its turn. Never throws: a failure is logged and counted. */
-export function settleInboxTurn(
-  inbox: Pick<InboxTurnBlock, "finish">,
-  state: { interrupted: boolean; aborted: boolean },
-): void {
+export function settleInboxTurn(inbox: Pick<InboxTurnBlock, "finish">, state: InboxTurnEndState): void {
   try {
     inbox.finish(inboxTurnOutcome(state));
   } catch (error) {
@@ -1318,6 +1327,7 @@ async function buildRuntimeStartRequestInternal(
         settleInboxTurn(inboxTurn, {
           interrupted: streamingSession.interrupted === true,
           aborted: streamingSession.abortController.signal.aborted,
+          terminalStatus: streamingSession.currentCrashRecoveryTerminal?.status ?? null,
         });
       }
     },

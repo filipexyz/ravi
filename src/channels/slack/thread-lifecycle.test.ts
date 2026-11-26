@@ -692,6 +692,8 @@ describe("Slack thread lifecycle", () => {
         prompts.push({ sessionName, payload });
       }),
       publishEvent: mock(async () => {}),
+      // The owner reaches the parent in a DM (runtime/session-inbox).
+      inboxPolicy: { isOwnerSession: () => true },
     };
     await finalizeSlackThreadCreation(fixture.requestId, dependencies);
     prompts.length = 0;
@@ -715,6 +717,25 @@ describe("Slack thread lifecycle", () => {
     expect(pending).toHaveLength(1);
     expect(pending[0]?.title).toContain("concluída");
     expect(pending[0]?.body.split("\n")[0]).toBe("pronto");
+  });
+
+  it("keeps notices immediate for a listed parent the owner cannot reach in a DM", async () => {
+    const fixture = seedPendingCreation();
+    const prompts: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const dependencies = {
+      publishPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {
+        prompts.push({ sessionName, payload });
+      }),
+      publishEvent: mock(async () => {}),
+    };
+    await finalizeSlackThreadCreation(fixture.requestId, dependencies);
+    prompts.length = 0;
+    const child = getSession(`ravi-parent:thread:${fixture.threadTs}`)!;
+    dbSetSetting(INBOX_THREAD_NOTICES_SETTING, "ravi-parent");
+    await reportSlackThreadProgress(child, "passo 1", dependencies);
+    await closeSlackThread(child, "pronto", dependencies);
+    expect(prompts).toHaveLength(2);
+    expect(listInboxItems({ targetSessionName: "ravi-parent" })).toHaveLength(0);
   });
 
   it("keeps every notice immediate while the parent is not listed", async () => {

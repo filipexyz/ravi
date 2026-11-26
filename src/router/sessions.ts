@@ -1166,6 +1166,11 @@ export function renameSessionName(sessionKey: string, name: string): RenameSessi
           "UPDATE task_assignments SET session_name=? WHERE session_name=? AND status IN ('assigned','accepted','blocked')",
         ).run(newName, oldName);
       }
+      // Deferred notices wait under the session name (runtime/session-inbox): they follow it, or
+      // the next owner turn of the renamed session would never drain them.
+      if (oldName && db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_inbox'").get()) {
+        db.query("UPDATE session_inbox SET target_session_name=? WHERE target_session_name=?").run(newName, oldName);
+      }
       return oldName ? dbRenameRouteSessionName(oldName, newName) : 0;
     },
     { label: "router:renameSessionCanonical" },
