@@ -87,6 +87,7 @@ import { resolvePersistedUserText } from "./session-surface-hint.js";
 import { validateRuntimeSessionState } from "./session-state.js";
 import type { RuntimeResumeDecision } from "./session-resolver.js";
 import { buildRuntimeSystemPrompt } from "./runtime-system-prompt.js";
+import { DECISIONS_SECTION_ID, refreshDecisionsForTurn } from "../decisions/prompt.js";
 import {
   MODEL_BROKER_REQUIRED_SETTING,
   MODEL_BROKER_MIN_LEASE_REMAINING_MS,
@@ -808,6 +809,10 @@ async function buildRuntimeStartRequestInternal(
     allowedSkills,
   });
   const systemPromptSectionMetadata = buildRuntimeTracePromptSectionMetadata(systemPromptSections);
+  // What this runtime last carried of the decisions in force; live turns refresh it when it changes.
+  let decisionsCarried: string | null =
+    systemPromptSections.find((section) => section.id === DECISIONS_SECTION_ID)?.content ?? null;
+  const decisionsInput = { agentId: agent.id, sessionKey: runtimeContext.sessionKey ?? dbSessionKey };
   const pluginNames = runtimePlugins.map((plugin) => plugin.path);
   const mcpServerNames = Object.keys(mcpServers ?? {});
   const toolAccessMode = getRuntimeToolAccessMode(runtimeCapabilities, agent.id, runtimeContext);
@@ -1284,6 +1289,16 @@ async function buildRuntimeStartRequestInternal(
     transformTurnPrompt: ({ combinedPrompt, deliverableMessages }) => {
       // Deferred notices open the turn that may drain them (runtime/session-inbox). They become
       // part of the current request, so a recovered context still wraps them.
+      if (agent.mode !== "sentinel") {
+        try {
+          const refreshed = refreshDecisionsForTurn(decisionsInput, decisionsCarried);
+          decisionsCarried = refreshed.current;
+          if (refreshed.block) combinedPrompt = `${refreshed.block}\n\n${combinedPrompt}`;
+        } catch (error) {
+          // The launch snapshot stays in force; a failed refresh must not fail the turn.
+          runtimeRequestLog.warn("decisions refresh failed for turn", { sessionName, error: String(error) });
+        }
+      }
       const inbox = prepareInboxForTurn(sessionName, deliverableMessages, dbSessionKey ?? null);
       if (inbox) combinedPrompt = `${inbox.block}\n\n${combinedPrompt}`;
       return composeInboxWithTurnPrompt(inbox, applySignalsToTurnPrompt(combinedPrompt, deliverableMessages));

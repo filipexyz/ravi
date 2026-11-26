@@ -43,6 +43,23 @@ export function migrateDecisions(db: Database): void {
         UNIQUE(decision_id,kind,revision)
       );
     `);
+    const decisionColumns = new Set(
+      (db.query("PRAGMA table_info(decisions)").all() as Array<{ name: string }>).map((column) => column.name),
+    );
+    // Additive: rows written before scopes existed apply to their origin only.
+    const added: Array<[string, string]> = [
+      ["scope_type", "TEXT NOT NULL DEFAULT 'origin' CHECK(scope_type IN ('origin','agent','project','org'))"],
+      ["scope_id", "TEXT"],
+      ["revised_at", "INTEGER"],
+      ["source_message_id", "TEXT"],
+      ["source_excerpt", "TEXT"],
+      ["superseded_by", "TEXT"],
+    ];
+    for (const [name, definition] of added)
+      if (!decisionColumns.has(name)) db.exec(`ALTER TABLE decisions ADD COLUMN ${name} ${definition}`);
+    db.exec(
+      "CREATE INDEX IF NOT EXISTS decisions_in_force ON decisions(scope_type,scope_id,answered_at) WHERE status = 'answered'",
+    );
     const columns = db.query("PRAGMA table_info(decision_deliveries)").all() as Array<{ name: string }>;
     if (!columns.some((column) => column.name === "transport_message_id")) {
       db.exec("ALTER TABLE decision_deliveries ADD COLUMN transport_message_id TEXT");

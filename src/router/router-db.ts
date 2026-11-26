@@ -8418,10 +8418,31 @@ export function dbGetChatMessage(id: string): ChatMessageRecord | null {
 }
 
 /** Every stored message with this provider message id (a provider id is unique only within its chat). */
-export function dbListChatMessagesByProviderId(providerMessageId: string): ChatMessageRecord[] {
+/**
+ * Messages carrying a provider id. With `writtenBy`, only that contact's messages at or after `since` (provider
+ * time, read as seconds when below 10^12, else ingestion) in `chatId` or a direct chat: the filter runs before the limit, so an id repeated in other
+ * chats never hides the eligible one.
+ */
+export function dbListChatMessagesByProviderId(
+  providerMessageId: string,
+  writtenBy?: { contactId: string; since: number; chatId: string | null },
+): ChatMessageRecord[] {
+  if (!writtenBy) {
+    const rows = getDb()
+      .prepare("SELECT * FROM chat_messages WHERE provider_message_id = ? LIMIT 20")
+      .all(providerMessageId) as ChatMessageRow[];
+    return rows.map(rowToChatMessage);
+  }
   const rows = getDb()
-    .prepare("SELECT * FROM chat_messages WHERE provider_message_id = ? LIMIT 20")
-    .all(providerMessageId) as ChatMessageRow[];
+    .prepare(
+      `SELECT m.* FROM chat_messages m JOIN chats c ON c.id = m.chat_id
+       WHERE m.provider_message_id = ? AND m.actor_type = 'contact' AND m.contact_id = ?
+         AND COALESCE(CASE WHEN m.provider_timestamp < 1000000000000 THEN m.provider_timestamp * 1000
+                           ELSE m.provider_timestamp END, m.created_at) >= ?
+         AND (m.chat_id = ? OR c.chat_type = 'dm')
+       LIMIT 20`,
+    )
+    .all(providerMessageId, writtenBy.contactId, writtenBy.since, writtenBy.chatId) as ChatMessageRow[];
   return rows.map(rowToChatMessage);
 }
 

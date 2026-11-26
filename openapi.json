@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "c3450d047a073b1c"
+    "version": "d3d7b1a8921cc684"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -76022,8 +76022,20 @@
                     "description": "Decision id from ask/list",
                     "type": "string"
                   },
+                  "scope": {
+                    "description": "Where the answer applies: thread (default), agent:<id>, project:<id> or org; wider than the thread needs --source-message or the local operator",
+                    "type": "string"
+                  },
                   "sourceMessage": {
-                    "description": "The person's message that holds this answer (internal or provider message id). Recorded as provenance; it must be a message written by a person, and by the decision's owner when it names one",
+                    "description": "The owner's message that holds this answer (internal or provider message id), written after the question in its chat or a direct chat. Recorded as provenance; required to widen the scope",
+                    "type": "string"
+                  },
+                  "sourceQuote": {
+                    "description": "A passage of the source message that holds the answer; needed unless the message names the decision id",
+                    "type": "string"
+                  },
+                  "supersedes": {
+                    "description": "An answered decision this answer replaces",
                     "type": "string"
                   },
                   "text": {
@@ -76171,8 +76183,60 @@
                           ],
                           "type": "string"
                         },
+                        "revisedAt": {
+                          "type": "number"
+                        },
                         "revision": {
                           "type": "number"
+                        },
+                        "scope": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "id": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "type": {
+                              "enum": [
+                                "origin",
+                                "agent",
+                                "project",
+                                "org"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "id"
+                          ],
+                          "type": "object"
+                        },
+                        "sourceExcerpt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "sourceMessageId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "status": {
                           "enum": [
@@ -76182,6 +76246,16 @@
                           ],
                           "type": "string"
                         },
+                        "supersededBy": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "updatedAt": {
                           "type": "number"
                         }
@@ -76190,16 +76264,21 @@
                         "id",
                         "origin",
                         "key",
+                        "scope",
                         "status",
                         "ownerType",
                         "ownerId",
                         "ask",
                         "askedBy",
                         "askedAt",
+                        "revisedAt",
                         "answer",
                         "answeredBy",
                         "answeredAt",
                         "blocks",
+                        "sourceMessageId",
+                        "sourceExcerpt",
+                        "supersededBy",
                         "revision",
                         "createdAt",
                         "updatedAt"
@@ -76333,6 +76412,10 @@
                   },
                   "owner": {
                     "description": "human:<contact>|agent:<id>|unassigned; ownership is not approval authority",
+                    "type": "string"
+                  },
+                  "scope": {
+                    "description": "Proposed scope once answered: thread (default), agent:<id>, project:<id> or org; the answer settles it",
                     "type": "string"
                   },
                   "task": {
@@ -76481,8 +76564,60 @@
                           ],
                           "type": "string"
                         },
+                        "revisedAt": {
+                          "type": "number"
+                        },
                         "revision": {
                           "type": "number"
+                        },
+                        "scope": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "id": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "type": {
+                              "enum": [
+                                "origin",
+                                "agent",
+                                "project",
+                                "org"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "id"
+                          ],
+                          "type": "object"
+                        },
+                        "sourceExcerpt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "sourceMessageId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "status": {
                           "enum": [
@@ -76492,6 +76627,16 @@
                           ],
                           "type": "string"
                         },
+                        "supersededBy": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "updatedAt": {
                           "type": "number"
                         }
@@ -76500,16 +76645,21 @@
                         "id",
                         "origin",
                         "key",
+                        "scope",
                         "status",
                         "ownerType",
                         "ownerId",
                         "ask",
                         "askedBy",
                         "askedAt",
+                        "revisedAt",
                         "answer",
                         "answeredBy",
                         "answeredAt",
                         "blocks",
+                        "sourceMessageId",
+                        "sourceExcerpt",
+                        "supersededBy",
                         "revision",
                         "createdAt",
                         "updatedAt"
@@ -76629,12 +76779,20 @@
                     "description": "Include answered history",
                     "type": "boolean"
                   },
+                  "answeredSince": {
+                    "description": "Only decisions answered at or after this ISO time or epoch ms (implies --all)",
+                    "type": "string"
+                  },
                   "limit": {
                     "description": "Page size (default 50, maximum 500)",
                     "type": "string"
                   },
                   "offset": {
                     "description": "Page offset",
+                    "type": "string"
+                  },
+                  "scope": {
+                    "description": "Only decisions with this scope: thread, task, agent:<id>, project:<id> or org",
                     "type": "string"
                   },
                   "task": {
@@ -76781,8 +76939,60 @@
                             ],
                             "type": "string"
                           },
+                          "revisedAt": {
+                            "type": "number"
+                          },
                           "revision": {
                             "type": "number"
+                          },
+                          "scope": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "id": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "type": {
+                                "enum": [
+                                  "origin",
+                                  "agent",
+                                  "project",
+                                  "org"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "id"
+                            ],
+                            "type": "object"
+                          },
+                          "sourceExcerpt": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "sourceMessageId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "status": {
                             "enum": [
@@ -76792,6 +77002,16 @@
                             ],
                             "type": "string"
                           },
+                          "supersededBy": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "updatedAt": {
                             "type": "number"
                           }
@@ -76800,16 +77020,21 @@
                           "id",
                           "origin",
                           "key",
+                          "scope",
                           "status",
                           "ownerType",
                           "ownerId",
                           "ask",
                           "askedBy",
                           "askedAt",
+                          "revisedAt",
                           "answer",
                           "answeredBy",
                           "answeredAt",
                           "blocks",
+                          "sourceMessageId",
+                          "sourceExcerpt",
+                          "supersededBy",
                           "revision",
                           "createdAt",
                           "updatedAt"
@@ -77056,8 +77281,60 @@
                           ],
                           "type": "string"
                         },
+                        "revisedAt": {
+                          "type": "number"
+                        },
                         "revision": {
                           "type": "number"
+                        },
+                        "scope": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "id": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "type": {
+                              "enum": [
+                                "origin",
+                                "agent",
+                                "project",
+                                "org"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "id"
+                          ],
+                          "type": "object"
+                        },
+                        "sourceExcerpt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "sourceMessageId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "status": {
                           "enum": [
@@ -77067,6 +77344,16 @@
                           ],
                           "type": "string"
                         },
+                        "supersededBy": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "updatedAt": {
                           "type": "number"
                         }
@@ -77075,16 +77362,21 @@
                         "id",
                         "origin",
                         "key",
+                        "scope",
                         "status",
                         "ownerType",
                         "ownerId",
                         "ask",
                         "askedBy",
                         "askedAt",
+                        "revisedAt",
                         "answer",
                         "answeredBy",
                         "answeredAt",
                         "blocks",
+                        "sourceMessageId",
+                        "sourceExcerpt",
+                        "supersededBy",
                         "revision",
                         "createdAt",
                         "updatedAt"
@@ -77349,8 +77641,60 @@
                           ],
                           "type": "string"
                         },
+                        "revisedAt": {
+                          "type": "number"
+                        },
                         "revision": {
                           "type": "number"
+                        },
+                        "scope": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "id": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "type": {
+                              "enum": [
+                                "origin",
+                                "agent",
+                                "project",
+                                "org"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "id"
+                          ],
+                          "type": "object"
+                        },
+                        "sourceExcerpt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "sourceMessageId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "status": {
                           "enum": [
@@ -77360,6 +77704,16 @@
                           ],
                           "type": "string"
                         },
+                        "supersededBy": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "updatedAt": {
                           "type": "number"
                         }
@@ -77368,16 +77722,21 @@
                         "id",
                         "origin",
                         "key",
+                        "scope",
                         "status",
                         "ownerType",
                         "ownerId",
                         "ask",
                         "askedBy",
                         "askedAt",
+                        "revisedAt",
                         "answer",
                         "answeredBy",
                         "answeredAt",
                         "blocks",
+                        "sourceMessageId",
+                        "sourceExcerpt",
+                        "supersededBy",
                         "revision",
                         "createdAt",
                         "updatedAt"
@@ -77638,8 +77997,60 @@
                           ],
                           "type": "string"
                         },
+                        "revisedAt": {
+                          "type": "number"
+                        },
                         "revision": {
                           "type": "number"
+                        },
+                        "scope": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "id": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "type": {
+                              "enum": [
+                                "origin",
+                                "agent",
+                                "project",
+                                "org"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "id"
+                          ],
+                          "type": "object"
+                        },
+                        "sourceExcerpt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "sourceMessageId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "status": {
                           "enum": [
@@ -77649,6 +78060,16 @@
                           ],
                           "type": "string"
                         },
+                        "supersededBy": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "updatedAt": {
                           "type": "number"
                         }
@@ -77657,16 +78078,21 @@
                         "id",
                         "origin",
                         "key",
+                        "scope",
                         "status",
                         "ownerType",
                         "ownerId",
                         "ask",
                         "askedBy",
                         "askedAt",
+                        "revisedAt",
                         "answer",
                         "answeredBy",
                         "answeredAt",
                         "blocks",
+                        "sourceMessageId",
+                        "sourceExcerpt",
+                        "supersededBy",
                         "revision",
                         "createdAt",
                         "updatedAt"
@@ -77807,6 +78233,313 @@
         },
         "security": [],
         "summary": "Read a decision, its immutable history and delivery state",
+        "tags": [
+          "decisions"
+        ]
+      }
+    },
+    "/api/v1/decisions/supersede": {
+      "post": {
+        "operationId": "decisions.supersede",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "by": {
+                    "description": "Answered decision that replaces it",
+                    "type": "string"
+                  },
+                  "execute": {
+                    "description": "Record the replacement",
+                    "type": "boolean"
+                  },
+                  "id": {
+                    "description": "Answered decision to replace",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "replaced": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "const": "superseded",
+                          "type": "string"
+                        },
+                        "supersededBy": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "status",
+                        "supersededBy"
+                      ],
+                      "type": "object"
+                    },
+                    "replacement": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "answer": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "answeredAt": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "answeredBy": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "ask": {
+                          "type": "string"
+                        },
+                        "askedAt": {
+                          "type": "number"
+                        },
+                        "askedBy": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "blocks": {
+                          "type": "boolean"
+                        },
+                        "createdAt": {
+                          "type": "number"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "key": {
+                          "type": "string"
+                        },
+                        "origin": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "chatId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "id": {
+                              "type": "string"
+                            },
+                            "sessionKey": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "type": {
+                              "enum": [
+                                "task",
+                                "thread"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "id",
+                            "chatId",
+                            "sessionKey"
+                          ],
+                          "type": "object"
+                        },
+                        "ownerId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "ownerType": {
+                          "enum": [
+                            "human",
+                            "agent",
+                            "unassigned"
+                          ],
+                          "type": "string"
+                        },
+                        "revisedAt": {
+                          "type": "number"
+                        },
+                        "revision": {
+                          "type": "number"
+                        },
+                        "scope": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "id": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "type": {
+                              "enum": [
+                                "origin",
+                                "agent",
+                                "project",
+                                "org"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "id"
+                          ],
+                          "type": "object"
+                        },
+                        "sourceExcerpt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "sourceMessageId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "status": {
+                          "enum": [
+                            "open",
+                            "answered",
+                            "superseded"
+                          ],
+                          "type": "string"
+                        },
+                        "supersededBy": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "updatedAt": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "origin",
+                        "key",
+                        "scope",
+                        "status",
+                        "ownerType",
+                        "ownerId",
+                        "ask",
+                        "askedBy",
+                        "askedAt",
+                        "revisedAt",
+                        "answer",
+                        "answeredBy",
+                        "answeredAt",
+                        "blocks",
+                        "sourceMessageId",
+                        "sourceExcerpt",
+                        "supersededBy",
+                        "revision",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "replaced",
+                    "replacement"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Replace an answered decision with a later answered one; the old leaves turn context, history stays",
         "tags": [
           "decisions"
         ]

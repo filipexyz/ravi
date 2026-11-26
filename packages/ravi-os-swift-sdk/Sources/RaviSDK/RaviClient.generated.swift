@@ -3336,6 +3336,13 @@ public struct DecisionsNamespace: Sendable {
     requestBody["id"] = try RaviJSON.fromEncodable(id)
     return try await transport.call(groupSegments: ["decisions"], command: "show", body: requestBody, as: DecisionsShowReturn.self)
   }
+
+  public func supersede(_ id: String, _ options: DecisionsSupersedeOptions = .init()) async throws -> DecisionsSupersedeReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["decisions"], command: "supersede", body: requestBody, as: DecisionsSupersedeReturn.self)
+  }
 }
 
 public struct DevinNamespace: Sendable {

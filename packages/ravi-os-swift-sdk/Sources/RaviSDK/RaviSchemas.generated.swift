@@ -69061,8 +69061,20 @@ public enum RaviSchemas {
         "description": "Decision id from ask/list",
         "type": "string"
       },
+      "scope": {
+        "description": "Where the answer applies: thread (default), agent:<id>, project:<id> or org; wider than the thread needs --source-message or the local operator",
+        "type": "string"
+      },
       "sourceMessage": {
-        "description": "The person's message that holds this answer (internal or provider message id). Recorded as provenance; it must be a message written by a person, and by the decision's owner when it names one",
+        "description": "The owner's message that holds this answer (internal or provider message id), written after the question in its chat or a direct chat. Recorded as provenance; required to widen the scope",
+        "type": "string"
+      },
+      "sourceQuote": {
+        "description": "A passage of the source message that holds the answer; needed unless the message names the decision id",
+        "type": "string"
+      },
+      "supersedes": {
+        "description": "An answered decision this answer replaces",
         "type": "string"
       },
       "text": {
@@ -69205,8 +69217,60 @@ public enum RaviSchemas {
             ],
             "type": "string"
           },
+          "revisedAt": {
+            "type": "number"
+          },
           "revision": {
             "type": "number"
+          },
+          "scope": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": {
+                "enum": [
+                  "origin",
+                  "agent",
+                  "project",
+                  "org"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ],
+            "type": "object"
+          },
+          "sourceExcerpt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sourceMessageId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "status": {
             "enum": [
@@ -69216,6 +69280,16 @@ public enum RaviSchemas {
             ],
             "type": "string"
           },
+          "supersededBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "updatedAt": {
             "type": "number"
           }
@@ -69224,16 +69298,21 @@ public enum RaviSchemas {
           "id",
           "origin",
           "key",
+          "scope",
           "status",
           "ownerType",
           "ownerId",
           "ask",
           "askedBy",
           "askedAt",
+          "revisedAt",
           "answer",
           "answeredBy",
           "answeredAt",
           "blocks",
+          "sourceMessageId",
+          "sourceExcerpt",
+          "supersededBy",
           "revision",
           "createdAt",
           "updatedAt"
@@ -69346,6 +69425,10 @@ public enum RaviSchemas {
       },
       "owner": {
         "description": "human:<contact>|agent:<id>|unassigned; ownership is not approval authority",
+        "type": "string"
+      },
+      "scope": {
+        "description": "Proposed scope once answered: thread (default), agent:<id>, project:<id> or org; the answer settles it",
         "type": "string"
       },
       "task": {
@@ -69489,8 +69572,60 @@ public enum RaviSchemas {
             ],
             "type": "string"
           },
+          "revisedAt": {
+            "type": "number"
+          },
           "revision": {
             "type": "number"
+          },
+          "scope": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": {
+                "enum": [
+                  "origin",
+                  "agent",
+                  "project",
+                  "org"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ],
+            "type": "object"
+          },
+          "sourceExcerpt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sourceMessageId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "status": {
             "enum": [
@@ -69500,6 +69635,16 @@ public enum RaviSchemas {
             ],
             "type": "string"
           },
+          "supersededBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "updatedAt": {
             "type": "number"
           }
@@ -69508,16 +69653,21 @@ public enum RaviSchemas {
           "id",
           "origin",
           "key",
+          "scope",
           "status",
           "ownerType",
           "ownerId",
           "ask",
           "askedBy",
           "askedAt",
+          "revisedAt",
           "answer",
           "answeredBy",
           "answeredAt",
           "blocks",
+          "sourceMessageId",
+          "sourceExcerpt",
+          "supersededBy",
           "revision",
           "createdAt",
           "updatedAt"
@@ -69616,12 +69766,20 @@ public enum RaviSchemas {
         "description": "Include answered history",
         "type": "boolean"
       },
+      "answeredSince": {
+        "description": "Only decisions answered at or after this ISO time or epoch ms (implies --all)",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default 50, maximum 500)",
         "type": "string"
       },
       "offset": {
         "description": "Page offset",
+        "type": "string"
+      },
+      "scope": {
+        "description": "Only decisions with this scope: thread, task, agent:<id>, project:<id> or org",
         "type": "string"
       },
       "task": {
@@ -69763,8 +69921,60 @@ public enum RaviSchemas {
               ],
               "type": "string"
             },
+            "revisedAt": {
+              "type": "number"
+            },
             "revision": {
               "type": "number"
+            },
+            "scope": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "origin",
+                    "agent",
+                    "project",
+                    "org"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ],
+              "type": "object"
+            },
+            "sourceExcerpt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sourceMessageId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "status": {
               "enum": [
@@ -69774,6 +69984,16 @@ public enum RaviSchemas {
               ],
               "type": "string"
             },
+            "supersededBy": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "updatedAt": {
               "type": "number"
             }
@@ -69782,16 +70002,21 @@ public enum RaviSchemas {
             "id",
             "origin",
             "key",
+            "scope",
             "status",
             "ownerType",
             "ownerId",
             "ask",
             "askedBy",
             "askedAt",
+            "revisedAt",
             "answer",
             "answeredBy",
             "answeredAt",
             "blocks",
+            "sourceMessageId",
+            "sourceExcerpt",
+            "supersededBy",
             "revision",
             "createdAt",
             "updatedAt"
@@ -70012,8 +70237,60 @@ public enum RaviSchemas {
             ],
             "type": "string"
           },
+          "revisedAt": {
+            "type": "number"
+          },
           "revision": {
             "type": "number"
+          },
+          "scope": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": {
+                "enum": [
+                  "origin",
+                  "agent",
+                  "project",
+                  "org"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ],
+            "type": "object"
+          },
+          "sourceExcerpt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sourceMessageId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "status": {
             "enum": [
@@ -70023,6 +70300,16 @@ public enum RaviSchemas {
             ],
             "type": "string"
           },
+          "supersededBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "updatedAt": {
             "type": "number"
           }
@@ -70031,16 +70318,21 @@ public enum RaviSchemas {
           "id",
           "origin",
           "key",
+          "scope",
           "status",
           "ownerType",
           "ownerId",
           "ask",
           "askedBy",
           "askedAt",
+          "revisedAt",
           "answer",
           "answeredBy",
           "answeredAt",
           "blocks",
+          "sourceMessageId",
+          "sourceExcerpt",
+          "supersededBy",
           "revision",
           "createdAt",
           "updatedAt"
@@ -70279,8 +70571,60 @@ public enum RaviSchemas {
             ],
             "type": "string"
           },
+          "revisedAt": {
+            "type": "number"
+          },
           "revision": {
             "type": "number"
+          },
+          "scope": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": {
+                "enum": [
+                  "origin",
+                  "agent",
+                  "project",
+                  "org"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ],
+            "type": "object"
+          },
+          "sourceExcerpt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sourceMessageId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "status": {
             "enum": [
@@ -70290,6 +70634,16 @@ public enum RaviSchemas {
             ],
             "type": "string"
           },
+          "supersededBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "updatedAt": {
             "type": "number"
           }
@@ -70298,16 +70652,21 @@ public enum RaviSchemas {
           "id",
           "origin",
           "key",
+          "scope",
           "status",
           "ownerType",
           "ownerId",
           "ask",
           "askedBy",
           "askedAt",
+          "revisedAt",
           "answer",
           "answeredBy",
           "answeredAt",
           "blocks",
+          "sourceMessageId",
+          "sourceExcerpt",
+          "supersededBy",
           "revision",
           "createdAt",
           "updatedAt"
@@ -70542,8 +70901,60 @@ public enum RaviSchemas {
             ],
             "type": "string"
           },
+          "revisedAt": {
+            "type": "number"
+          },
           "revision": {
             "type": "number"
+          },
+          "scope": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": {
+                "enum": [
+                  "origin",
+                  "agent",
+                  "project",
+                  "org"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ],
+            "type": "object"
+          },
+          "sourceExcerpt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sourceMessageId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "status": {
             "enum": [
@@ -70553,6 +70964,16 @@ public enum RaviSchemas {
             ],
             "type": "string"
           },
+          "supersededBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "updatedAt": {
             "type": "number"
           }
@@ -70561,16 +70982,21 @@ public enum RaviSchemas {
           "id",
           "origin",
           "key",
+          "scope",
           "status",
           "ownerType",
           "ownerId",
           "ask",
           "askedBy",
           "askedAt",
+          "revisedAt",
           "answer",
           "answeredBy",
           "answeredAt",
           "blocks",
+          "sourceMessageId",
+          "sourceExcerpt",
+          "supersededBy",
           "revision",
           "createdAt",
           "updatedAt"
@@ -70695,6 +71121,287 @@ public enum RaviSchemas {
       "decision",
       "deliveries",
       "history"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let DecisionsSupersedeInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "by": {
+        "description": "Answered decision that replaces it",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Record the replacement",
+        "type": "boolean"
+      },
+      "id": {
+        "description": "Answered decision to replace",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let DecisionsSupersedeReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "replaced": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "const": "superseded",
+            "type": "string"
+          },
+          "supersededBy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "supersededBy"
+        ],
+        "type": "object"
+      },
+      "replacement": {
+        "additionalProperties": false,
+        "properties": {
+          "answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "answeredAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "answeredBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ask": {
+            "type": "string"
+          },
+          "askedAt": {
+            "type": "number"
+          },
+          "askedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "blocks": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "origin": {
+            "additionalProperties": false,
+            "properties": {
+              "chatId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "sessionKey": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": {
+                "enum": [
+                  "task",
+                  "thread"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "chatId",
+              "sessionKey"
+            ],
+            "type": "object"
+          },
+          "ownerId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ownerType": {
+            "enum": [
+              "human",
+              "agent",
+              "unassigned"
+            ],
+            "type": "string"
+          },
+          "revisedAt": {
+            "type": "number"
+          },
+          "revision": {
+            "type": "number"
+          },
+          "scope": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": {
+                "enum": [
+                  "origin",
+                  "agent",
+                  "project",
+                  "org"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ],
+            "type": "object"
+          },
+          "sourceExcerpt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sourceMessageId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "open",
+              "answered",
+              "superseded"
+            ],
+            "type": "string"
+          },
+          "supersededBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "origin",
+          "key",
+          "scope",
+          "status",
+          "ownerType",
+          "ownerId",
+          "ask",
+          "askedBy",
+          "askedAt",
+          "revisedAt",
+          "answer",
+          "answeredBy",
+          "answeredAt",
+          "blocks",
+          "sourceMessageId",
+          "sourceExcerpt",
+          "supersededBy",
+          "revision",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "replaced",
+      "replacement"
     ],
     "type": "object"
   }

@@ -112,6 +112,7 @@ function message(input: {
   agentId?: string;
   chatId?: string;
   providerTimestamp?: number;
+  text?: string;
 }) {
   const chat = input.chatId ? { id: input.chatId } : ownerChat();
   return dbUpsertChatMessage({
@@ -124,7 +125,7 @@ function message(input: {
     actorType: input.actorType,
     contactId: input.contactId ?? null,
     agentId: input.agentId ?? null,
-    content: { text: "ok" },
+    content: { text: input.text ?? "ok" },
   }).message;
 }
 
@@ -204,9 +205,11 @@ describe("answer provenance comes from a person's stored message", () => {
   it("records the owner's message, by internal or provider id", async () => {
     const origin = await thread();
     const { decision } = await waitOnDecision(origin, null, "Pergunta?");
-    const msg = message({ providerMessageId: "1795720122.922989", actorType: "contact", contactId: OWNER });
-    expect(resolveDecisionAnswerSource(decision, msg.id)).toEqual({ contactId: OWNER, messageId: msg.id });
-    expect(resolveDecisionAnswerSource(decision, "1795720122.922989")).toEqual({ contactId: OWNER, messageId: msg.id });
+    const text = `${decision.id}: sim, pode seguir`;
+    const msg = message({ providerMessageId: "1795720122.922989", actorType: "contact", contactId: OWNER, text });
+    const expected = { contactId: OWNER, messageId: msg.id, excerpt: text };
+    expect(resolveDecisionAnswerSource(decision, msg.id)).toMatchObject(expected);
+    expect(resolveDecisionAnswerSource(decision, "1795720122.922989")).toMatchObject(expected);
     const answered = await runWithContext(caller(PARENT), () =>
       answerDecision(decision.id, "Sim", "luis", "1795720122.922989"),
     );
@@ -214,7 +217,8 @@ describe("answer provenance comes from a person's stored message", () => {
     const sourceRow = getDb()
       .query("SELECT snapshot_json AS s FROM decision_history WHERE decision_id=? AND type='answer-source'")
       .get(decision.id) as { s: string };
-    expect(JSON.parse(sourceRow.s)).toEqual({ decisionId: decision.id, contactId: OWNER, messageId: msg.id });
+    expect(JSON.parse(sourceRow.s)).toEqual({ decisionId: decision.id, ...expected });
+    expect(getDecision(decision.id)).toMatchObject({ sourceMessageId: msg.id, sourceExcerpt: text });
   });
 
   it("refuses an agent's message, another person's message and an unknown id, and records nothing", async () => {
@@ -225,7 +229,7 @@ describe("answer provenance comes from a person's stored message", () => {
     // One code and one text for every refusal: a caller cannot tell a missing message from someone else's.
     const refusals = [agentMsg.id, strangerMsg.id, "nope", "   "].map((ref) => {
       try {
-        resolveDecisionAnswerSource(decision, ref);
+        resolveDecisionAnswerSource(decision, ref, "ok");
         return null;
       } catch (error) {
         return { code: (error as { code?: string }).code, message: (error as Error).message };
@@ -327,7 +331,7 @@ describe("the source is tied to the question's time and chat", () => {
     });
     const inGroup = message({ providerMessageId: "m-group", actorType: "contact", contactId: OWNER, chatId: group.id });
     for (const ref of [old.id, inGroup.id])
-      expect(() => resolveDecisionAnswerSource(decision, ref)).toThrow(
+      expect(() => resolveDecisionAnswerSource(decision, ref, "ok")).toThrow(
         expect.objectContaining({ code: "DECISION_SOURCE_NOT_OWNER" }),
       );
   });
@@ -341,7 +345,7 @@ describe("the source is tied to the question's time and chat", () => {
       contactId: OWNER,
       chatId: origin.chatId!,
     });
-    expect(resolveDecisionAnswerSource(decision, inThread.id).messageId).toBe(inThread.id);
+    expect(resolveDecisionAnswerSource(decision, inThread.id, "ok").messageId).toBe(inThread.id);
     const owners = message({ providerMessageId: "shared-ts", actorType: "contact", contactId: OWNER });
     const group = dbUpsertChat({
       channel: "slack",
@@ -350,7 +354,7 @@ describe("the source is tied to the question's time and chat", () => {
       chatType: "group",
     });
     message({ providerMessageId: "shared-ts", actorType: "contact", contactId: "someone", chatId: group.id });
-    expect(resolveDecisionAnswerSource(decision, "shared-ts").messageId).toBe(owners.id);
+    expect(resolveDecisionAnswerSource(decision, "shared-ts", "ok").messageId).toBe(owners.id);
   });
 });
 
