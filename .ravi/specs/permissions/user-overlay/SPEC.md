@@ -39,7 +39,9 @@ normative: true
 
 A contact/user permission grant is scoped to a **chat** by default. The user
 overlay narrows what the executor agent does for that contact in that chat; it
-never widens the agent.
+never widens the agent. The one exception is the owner's own global power
+(`permissions/owner-authority`): an owner not narrowed in the chat acts with
+their own authority, not the agent's ceiling.
 
 For a resolved contact speaking in a governed chat:
 
