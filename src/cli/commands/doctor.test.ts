@@ -1209,6 +1209,33 @@ describe("runDoctor", () => {
       expect(report.ok).toBe(false);
     });
 
+    it("warns when a shell automation runs code from an agent workspace", () => {
+      const report = inspectDoctor({
+        ...makeHealthyDeps(),
+        dbListAgents: () => [{ id: "workflows", cwd: "/srv/agents/workflows" }],
+        listShellAutomations: () => [
+          { kind: "trigger", id: "t1", enabled: true, shellCommand: "cd /srv/agents/workflows && bun run.ts" },
+        ],
+      } as any);
+      const check = report.checks.find((item) => item.id === "permissions.shell_automation_in_agent_workspace");
+      // A legacy "warn" check reports as fail with warn severity.
+      expect(check?.status).toBe("fail");
+      expect(check?.severity).toBe("warn");
+      expect(JSON.stringify(check?.data)).toContain('"agentId":"workflows"');
+      const finding = report.findings.find((item) => item.id === "permissions.shell_automation_in_agent_workspace");
+      expect(JSON.stringify(finding?.evidence)).toContain("agent:workflows");
+    });
+
+    it("passes the shell automation check when no command touches an agent workspace", () => {
+      const report = inspectDoctor({
+        ...makeHealthyDeps(),
+        dbListAgents: () => [{ id: "workflows", cwd: "/srv/agents/workflows" }],
+        listShellAutomations: () => [{ kind: "cron", id: "c1", enabled: true, shellCommand: "/opt/tools/run.sh" }],
+      } as any);
+      const check = report.checks.find((item) => item.id === "permissions.shell_automation_in_agent_workspace");
+      expect(check?.status).toBe("pass");
+    });
+
     it("warns on F2 misconfigurations without failing", () => {
       const report = inspectDoctor({
         ...makeHealthyDeps(),

@@ -74,6 +74,7 @@ import { getRaviStateDir } from "../../utils/paths.js";
 import { getRegistry, type RegistrySnapshot } from "../registry-snapshot.js";
 import { inspectCliRuntimeTarget, type CliRuntimeTargetSummary } from "../runtime-target.js";
 import { dbListCronJobs } from "../../cron/cron-db.js";
+import { dbListTriggers } from "../../triggers/triggers-db.js";
 import { resolveCronTarget, type CronTargetState } from "../../cron/target-resolver.js";
 import { resolveSession } from "../../router/sessions.js";
 import { inspectKnowledgeExposure, agentHasNoExec } from "../../knowledge/safety/exposure.js";
@@ -97,6 +98,10 @@ import {
 } from "../../security/omni-db-auth.js";
 import { readOmniConfig } from "../../omni-config.js";
 import { inspectStateDirPermissions } from "../../security/state-dir-permissions.js";
+import {
+  findShellAutomationsInAgentWorkspaces,
+  type ShellAutomationLike,
+} from "../../automation/shell-workspace-exposure.js";
 
 export type DoctorSeverity = "error" | "warn" | "info";
 export type DoctorCheckStatus = "pass" | "fail" | "skip";
@@ -221,6 +226,7 @@ export interface DiskProbeResult {
 }
 
 type DoctorDeps = {
+  listShellAutomations?: () => ShellAutomationLike[];
   inspectCliRuntimeTarget: (instanceName?: string | null) => CliRuntimeTargetSummary;
   getRaviStateDir: () => string;
   getRaviDbPath: () => string;
@@ -309,6 +315,22 @@ export interface RunDoctorOptions extends InspectDoctorOptions {
 }
 
 const DEFAULT_DEPS: DoctorDeps = {
+  listShellAutomations: () => [
+    ...dbListCronJobs().map((job) => ({
+      kind: "cron" as const,
+      id: job.id,
+      name: job.name,
+      enabled: job.enabled,
+      shellCommand: job.shellCommand,
+    })),
+    ...dbListTriggers().map((trigger) => ({
+      kind: "trigger" as const,
+      id: trigger.id,
+      name: trigger.name,
+      enabled: trigger.enabled,
+      shellCommand: trigger.shellCommand,
+    })),
+  ],
   inspectCliRuntimeTarget,
   getRaviStateDir,
   getRaviDbPath,
@@ -667,6 +689,7 @@ export function inspectDoctor(overrides: Partial<DoctorDeps> = {}, options: Insp
   addCheck(checks, () => buildPermissionChatOnlyCeilingCheck(deps));
   addCheck(checks, () => buildPermissionAgentIdentityReadinessCheck(deps));
   addCheck(checks, () => buildKnowledgeExposureCheck(deps));
+  addCheck(checks, () => buildShellAutomationWorkspaceCheck(deps));
   addCheck(checks, () => buildKnowledgeF2SetupCheck(deps));
   const filtered = filterChecksByDomain(checks, options.domain);
   return buildReport(filtered, {
@@ -3625,6 +3648,48 @@ function buildKnowledgeExposureCheck(deps: DoctorDeps): LegacyDoctorCheck {
     status: "ok",
     summary: `no outside-reachable agent can read files or run code (${report.checkedAgents} agent(s) checked)`,
     data: { checkedAgents: report.checkedAgents, offenders: [] },
+  };
+}
+
+/**
+ * Shell cron and shell triggers run as the operator. A command that runs a
+ * script from an agent's workspace lets that agent change what the operator
+ * runs next (warn only: existing workflows rely on it).
+ */
+function buildShellAutomationWorkspaceCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const base = {
+    id: "permissions.shell_automation_in_agent_workspace",
+    domain: "permissions",
+    title: "Shell automation in an agent workspace",
+  };
+  if (!deps.listShellAutomations) {
+    return { ...base, status: "skip", summary: "shell automations are not available to this check" };
+  }
+  let exposures: ReturnType<typeof findShellAutomationsInAgentWorkspaces>;
+  try {
+    exposures = findShellAutomationsInAgentWorkspaces(deps.listShellAutomations(), deps.dbListAgents());
+  } catch (error) {
+    return {
+      ...base,
+      status: "warn",
+      severity: "warn",
+      summary: `cannot read crons, triggers or agents: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+  if (exposures.length === 0) {
+    return { ...base, status: "ok", summary: "no shell cron or trigger runs code from an agent workspace" };
+  }
+  return {
+    ...base,
+    status: "warn",
+    severity: "warn",
+    summary: `${exposures.length} shell cron/trigger(s) run as the operator from a folder an agent can write`,
+    details: exposures.map(
+      (item) => `${item.kind}:${item.id}${item.name ? ` (${item.name})` : ""} → agent:${item.agentId} at ${item.path}`,
+    ),
+    fixHint:
+      "Move the script to a folder no agent writes (outside every agent cwd), or accept that the agent can change what the operator runs.",
+    data: { exposures },
   };
 }
 

@@ -1,6 +1,7 @@
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { mkdir, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, extname, join, relative } from "node:path";
+import { dirname, extname, isAbsolute, join, relative } from "node:path";
 import type { PromptContextSection } from "../prompt-builder.js";
 
 const RAVI_RULES_SEGMENTS = [".ravi", "rules"] as const;
@@ -75,7 +76,28 @@ export function getRaviRulesDir(cwd: string): string {
 
 export async function loadRaviRuleFiles(cwd: string): Promise<RaviRuleFile[]> {
   const rulesDir = getRaviRulesDir(cwd);
+  // The workspace belongs to the agent: a `.ravi` or `.ravi/rules` symlink must
+  // not make the daemon read files from outside it into the prompt.
+  if (!(await isRealPathInside(rulesDir, cwd))) return [];
   return loadRaviRuleFilesFromDir(rulesDir);
+}
+
+/**
+ * True when `path` exists and its real path (all symlinks resolved) stays
+ * inside the real path of `root`. A missing path is not inside.
+ */
+async function isRealPathInside(path: string, root: string): Promise<boolean> {
+  let realPath: string;
+  let realRoot: string;
+  try {
+    [realPath, realRoot] = await Promise.all([realpath(path), realpath(root)]);
+  } catch (error) {
+    // no-cause: a path that cannot be resolved (missing, dangling link, no access) is treated as outside; nothing is reported.
+    void error;
+    return false;
+  }
+  const rel = relative(realRoot, realPath);
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
 export async function loadRaviRuleFilesFromDir(rulesDir: string): Promise<RaviRuleFile[]> {
@@ -164,8 +186,17 @@ export async function importRaviRules(options: RaviRulesImportOptions): Promise<
     const toWrite = candidates.filter((candidate) => candidate.action !== "skip_exists");
     for (const candidate of toWrite) options.authorizeWrite?.(candidate.destinationPath);
     for (const candidate of toWrite) {
-      await mkdir(dirname(candidate.destinationPath), { recursive: true });
-      await writeFile(candidate.destinationPath, `${candidate.content}\n`, "utf8");
+      // A symlinked directory under the rules dir must not redirect the write
+      // (or the directories created for it) outside the workspace.
+      const destinationDir = dirname(candidate.destinationPath);
+      if (!(await isRealPathInside(await nearestExistingPath(destinationDir), options.cwd))) {
+        throw new Error(`Refusing to write ${candidate.destinationRelativePath}: it resolves outside the workspace`);
+      }
+      await mkdir(destinationDir, { recursive: true });
+      await writeFile(candidate.destinationPath, `${candidate.content}\n`, {
+        encoding: "utf8",
+        flag: noFollowWriteFlag(),
+      });
     }
   }
 
@@ -296,4 +327,20 @@ async function statIfExists(path: string): Promise<Awaited<ReturnType<typeof sta
   } catch {
     return null;
   }
+}
+
+/** The path itself, or its closest ancestor that exists. */
+async function nearestExistingPath(path: string): Promise<string> {
+  let current = path;
+  while (!(await statIfExists(current))) {
+    const parent = dirname(current);
+    if (parent === current) return current;
+    current = parent;
+  }
+  return current;
+}
+
+/** `w` without following a symlink at the final path component. */
+function noFollowWriteFlag(): number {
+  return constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | (constants.O_NOFOLLOW ?? 0);
 }

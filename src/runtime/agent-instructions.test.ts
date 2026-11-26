@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -26,6 +26,35 @@ describe("agent instruction files", () => {
     expect(existsSync(agentsPath)).toBe(true);
     expect(readFileSync(agentsPath, "utf8")).toBe("# Agent\n\nPrimary instructions.\n");
     expect(readFileSync(claudePath, "utf8")).toBe(buildGeneratedClaudeBridge());
+  });
+
+  it("never creates a file through a dangling AGENTS.md symlink the agent planted", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-agent-instructions-"));
+    const outside = mkdtempSync(join(tmpdir(), "ravi-agent-instructions-outside-"));
+    const target = join(outside, "planted.txt");
+    symlinkSync(target, join(cwd, "AGENTS.md"));
+
+    const result = ensureAgentInstructionFiles(cwd, { createAgentsStub: "# Stub\n" });
+
+    expect(result.createdAgents).toBe(false);
+    expect(existsSync(target)).toBe(false);
+    expect(lstatSync(join(cwd, "AGENTS.md")).isSymbolicLink()).toBe(true);
+  });
+
+  it("never overwrites the target of a CLAUDE.md symlink", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-agent-instructions-"));
+    const outside = mkdtempSync(join(tmpdir(), "ravi-agent-instructions-outside-"));
+    const target = join(outside, "victim.txt");
+    // Same text as AGENTS.md, so the daemon would turn CLAUDE.md into a bridge.
+    writeFileSync(target, "# Agent\n\nPrimary instructions.\n");
+    writeFileSync(join(cwd, "AGENTS.md"), "# Agent\n\nPrimary instructions.\n");
+    symlinkSync(target, join(cwd, "CLAUDE.md"));
+
+    const result = ensureAgentInstructionFiles(cwd);
+
+    expect(result.createdClaude).toBe(false);
+    expect(result.updatedClaude).toBe(false);
+    expect(readFileSync(target, "utf8")).toBe("# Agent\n\nPrimary instructions.\n");
   });
 
   it("creates a managed CLAUDE.md bridge next to a canonical AGENTS.md workspace", () => {
