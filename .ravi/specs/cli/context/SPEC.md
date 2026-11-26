@@ -111,6 +111,29 @@ invariant stronger than most: context keys (`rctx_*`) ARE credentials.
   (`CRON_SHELL_NOT_OPERATOR`, `TRIGGER_SHELL_NOT_OPERATOR`). This check closes
   the easy path only; a process can drop the marker.
 
+## The daemon does not trust the agent's workspace
+
+- The daemon MUST NOT run tools inside an agent's workspace. A `git status`
+  there honours repository config the agent writes (`core.fsmonitor`, clean
+  filters, submodules); the message-edit notice tells the agent to check its
+  workspace itself.
+- Writes the daemon makes in a workspace (`AGENTS.md`, `CLAUDE.md`, imported
+  rules) MUST NOT follow a symlink at the target, and an imported rule MUST NOT
+  land (or create directories) outside the workspace through a symlinked
+  directory. `.ravi/rules` is read only when its real path stays inside the
+  workspace; the daemon then reads and writes through the resolved directory,
+  not the name, and re-checks after creating directories. Node has no
+  per-component no-follow open, so a race on an intermediate directory stays
+  possible until the OS sandbox; the agent can already read those files itself.
+- CLAUDE.md becomes a pointer to AGENTS.md only when AGENTS.md holds real
+  instructions; a skipped (symlinked) legacy bridge leaves CLAUDE.md intact.
+- File arguments the daemon reads for a person held below break-glass stay in
+  the session workspace and the temp directory, like their writes.
+- Shell cron and shell triggers run as the operator. `ravi doctor` warns
+  (`permissions.shell_automation_in_agent_workspace`) when one runs code from
+  an agent's workspace, because that agent can change what the operator runs.
+  It does not refuse them: existing workflows rely on it.
+
 ## Write classification (brake decision per op)
 
 | op | class | brake |
