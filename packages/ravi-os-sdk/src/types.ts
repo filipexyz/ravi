@@ -12947,6 +12947,7 @@ export type DecisionsAnswerInput = {
   by?: string;
   execute?: boolean;
   id: string;
+  sourceMessage?: string;
   text?: string;
 };
 
