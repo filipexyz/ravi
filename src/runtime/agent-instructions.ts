@@ -218,8 +218,11 @@ export function ensureAgentInstructionFiles(
   const originalClaude = before.claude?.content ?? null;
   const originalAgents = before.agents?.content ?? null;
   const originalAgentsWasBridge = originalAgents ? isLegacyAgentsBridge(originalAgents) : false;
+  // AGENTS.md must hold real instructions before CLAUDE.md becomes a pointer to it.
+  // A symlinked legacy bridge is left untouched, so it still points at CLAUDE.md.
   const claudeCanBecomeBridge =
     !!afterAgents &&
+    !isLegacyAgentsBridge(afterAgents) &&
     (!originalClaude ||
       isClaudeCompatibilityBridge(originalClaude) ||
       originalAgentsWasBridge ||

@@ -49,3 +49,23 @@
   `automation:trigger:*`. Removing the job check, dropping trigger from the
   operator-owned set, or treating a malformed marker as operator-owned MUST
   each fail a test.
+
+- `bun test src/omni/workspace-inspection.test.ts` MUST show that the edit
+  notice never runs git in the agent workspace: a planted `core.fsmonitor`
+  script never runs.
+
+- `bun test src/runtime/agent-instructions.test.ts` MUST show that a symlinked
+  `AGENTS.md` or `CLAUDE.md` is never written through, and that a symlinked
+  legacy `AGENTS.md` bridge leaves a regular `CLAUDE.md` with its instructions.
+
+- `bun test src/runtime/ravi-rules.test.ts` MUST show that a `.ravi/rules` link
+  out of the workspace loads nothing and that an import through a symlinked
+  directory is refused before any directory is created outside.
+
+- `bun test src/cli/caller-cwd.test.ts` MUST deny a read outside the session
+  workspace and temp to a person held below break-glass.
+
+- `bun test src/automation/shell-workspace-exposure.test.ts
+  src/cli/commands/doctor.test.ts` MUST flag a shell cron or trigger whose
+  command runs a file under an agent `cwd`, and `ravi doctor` MUST warn with
+  `permissions.shell_automation_in_agent_workspace`.

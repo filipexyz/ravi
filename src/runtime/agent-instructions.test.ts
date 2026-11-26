@@ -57,6 +57,22 @@ describe("agent instruction files", () => {
     expect(readFileSync(target, "utf8")).toBe("# Agent\n\nPrimary instructions.\n");
   });
 
+  it("keeps CLAUDE.md instructions when a symlinked AGENTS.md legacy bridge is skipped", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-agent-instructions-"));
+    const outside = mkdtempSync(join(tmpdir(), "ravi-agent-instructions-outside-"));
+    const target = join(outside, "bridge.md");
+    writeFileSync(target, "@CLAUDE.md\n");
+    symlinkSync(target, join(cwd, "AGENTS.md"));
+    writeFileSync(join(cwd, "CLAUDE.md"), "# Agent\n\nPrimary instructions.\n");
+
+    const result = ensureAgentInstructionFiles(cwd);
+
+    expect(result.updatedAgents).toBe(false);
+    expect(result.updatedClaude).toBe(false);
+    expect(readFileSync(join(cwd, "CLAUDE.md"), "utf8")).toBe("# Agent\n\nPrimary instructions.\n");
+    expect(readFileSync(target, "utf8")).toBe("@CLAUDE.md\n");
+  });
+
   it("creates a managed CLAUDE.md bridge next to a canonical AGENTS.md workspace", () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-agent-instructions-"));
     writeFileSync(join(cwd, "AGENTS.md"), "# Agent\n\nPrimary instructions.\n");

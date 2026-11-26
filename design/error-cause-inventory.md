@@ -1896,8 +1896,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-process-identity.ts | src/runtime-process-identity.ts | 118 | fixed | binding retained / no recognized error surface | src/runtime-process-identity.ts:a217c3ccb54ec6e59940e130 |
 | runtime-process-identity.ts | src/runtime-process-identity.ts | 143 | fixed | binding retained / no recognized error surface | src/runtime-process-identity.ts:614a7eaf2c18ada59499d773 |
 | runtime-process-identity.ts | src/runtime-process-identity.ts | 195 | no-cause | Missing, unreadable or corrupt receipts are untrusted evidence; status must report unverifiable identity. | src/runtime-process-identity.ts:e5b2ef5a8b3b11926aa567b0 |
-| runtime-chat | src/runtime/agent-instructions.ts | 267 | fixed | binding retained / no recognized error surface | src/runtime/agent-instructions.ts:7dd5ae602b243390838053ba |
-| runtime-chat | src/runtime/agent-instructions.ts | 297 | triaged-follow-up | catch-without-binding | src/runtime/agent-instructions.ts:ad21db78abb05e401132da93 |
+| runtime-chat | src/runtime/agent-instructions.ts | 270 | fixed | binding retained / no recognized error surface | src/runtime/agent-instructions.ts:7dd5ae602b243390838053ba |
+| runtime-chat | src/runtime/agent-instructions.ts | 300 | triaged-follow-up | catch-without-binding | src/runtime/agent-instructions.ts:ad21db78abb05e401132da93 |
 | runtime-chat | src/runtime/background-work.ts | 175 | fixed | binding retained / no recognized error surface | src/runtime/background-work.ts:66539e098fea5320d0f5931a |
 | runtime-chat | src/runtime/background-work.ts | 368 | fixed | binding retained / no recognized error surface | src/runtime/background-work.ts:0e66697ade2f32c90b14db9d |
 | runtime-chat | src/runtime/claude-provider.ts | 78 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:5496eef9c9b7fa7f8d6b6156 |
@@ -2129,8 +2129,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/ravi-env-file.ts | 377 | no-cause | A preexisting lock is busy/unsafe, never followed or stolen; OS diagnostics may include paths. | src/runtime/ravi-env-file.ts:9d7018904c277b688ee98b91 |
 | runtime-chat | src/runtime/ravi-env-file.ts | 431 | no-cause | No raw OS error/cause or env bytes cross the writer boundary. Post-rename failures are uncertain. | src/runtime/ravi-env-file.ts:a017511db09a91335a72ffe8 |
 | runtime-chat | src/runtime/ravi-env-file.ts | 441 | no-cause | Descriptor cleanup cannot change the known write result or leak secret-bearing OS diagnostics. | src/runtime/ravi-env-file.ts:c9470c9b2467433f9ffb2ed0 |
-| runtime-chat | src/runtime/ravi-rules.ts | 94 | no-cause | a path that cannot be resolved (missing, dangling link, no access) is treated as outside; nothing is reported. | src/runtime/ravi-rules.ts:8171c0c13a5d8c7161c8df4d |
-| runtime-chat | src/runtime/ravi-rules.ts | 327 | triaged-follow-up | catch-without-binding | src/runtime/ravi-rules.ts:d1548e705d2c1cc203c2b699 |
+| runtime-chat | src/runtime/ravi-rules.ts | 103 | no-cause | a path that cannot be resolved (missing, dangling link, no access) is treated as outside; nothing is reported. | src/runtime/ravi-rules.ts:7427b75535b5ed87be13dbad |
+| runtime-chat | src/runtime/ravi-rules.ts | 342 | triaged-follow-up | catch-without-binding | src/runtime/ravi-rules.ts:d1548e705d2c1cc203c2b699 |
 | runtime-chat | src/runtime/restart-turn-recovery.ts | 460 | fixed | binding retained / no recognized error surface | src/runtime/restart-turn-recovery.ts:71ae2a80a02d3e77b36e6b33 |
 | runtime-chat | src/runtime/restart-turn-recovery.ts | 479 | fixed | binding retained / no recognized error surface | src/runtime/restart-turn-recovery.ts:d449f88dfcdbcab9f736b604 |
 | runtime-chat | src/runtime/restart-turn-recovery.ts | 585 | fixed | binding retained / no recognized error surface | src/runtime/restart-turn-recovery.ts:cc3763325d82ce16ac9fc87b |

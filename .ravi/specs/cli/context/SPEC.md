@@ -121,7 +121,12 @@ invariant stronger than most: context keys (`rctx_*`) ARE credentials.
   rules) MUST NOT follow a symlink at the target, and an imported rule MUST NOT
   land (or create directories) outside the workspace through a symlinked
   directory. `.ravi/rules` is read only when its real path stays inside the
-  workspace.
+  workspace; the daemon then reads and writes through the resolved directory,
+  not the name, and re-checks after creating directories. Node has no
+  per-component no-follow open, so a race on an intermediate directory stays
+  possible until the OS sandbox; the agent can already read those files itself.
+- CLAUDE.md becomes a pointer to AGENTS.md only when AGENTS.md holds real
+  instructions; a skipped (symlinked) legacy bridge leaves CLAUDE.md intact.
 - File arguments the daemon reads for a person held below break-glass stay in
   the session workspace and the temp directory, like their writes.
 - Shell cron and shell triggers run as the operator. `ravi doctor` warns
