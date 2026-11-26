@@ -14,7 +14,8 @@ owners:
 
 ## Client
 
-- The client MUST call only `/api/cli/cloud-agents/...` routes and MUST send the login's bearer token.
+- The client MUST call only `/api/cli/cloud-agents/...` routes, plus `GET /api/cli/link?consoleUserId=` for a run's linked contact, and MUST send the login's bearer token.
+- `resolveLinkedContact` MUST read the plural `bindings` answer and MUST return a contact only when exactly one is linked; tests MUST fake that query with the plural payload the Console sends.
 - An `AUTH_EXPIRED` answer MUST refresh once and retry the call.
 - A run `url` on another origin MUST be dropped.
 - Lowercase Console codes MUST map to the same contract codes as uppercase ones.
