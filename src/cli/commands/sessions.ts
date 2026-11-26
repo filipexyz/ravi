@@ -7675,15 +7675,14 @@ export class SessionCommands {
         // Only an explicit --json takes the conflict as data. A gateway call without it keeps failing, so a caller
         // that did not ask for the structured form never reads a conflict as a successful attach.
         if (asJson) {
-          return returnStructuredResult(
-            {
-              error: err.code,
-              message: err.message,
-              currentOwner: err.currentSessionKey,
-              chatId: err.chatId,
-            },
-            asJson,
-          );
+          const conflict = {
+            error: err.code,
+            message: err.message,
+            currentOwner: err.currentSessionKey,
+            chatId: err.chatId,
+          };
+          printJson(conflict);
+          return conflict;
         }
         fail(err.message);
         return;
