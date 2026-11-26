@@ -225,6 +225,8 @@ describe("TriggerRunner invalid filters fail closed", () => {
     emit(topic, { kind: "match", eventId: "evt-after-fix" });
     await waitFor(() => publishCalls.length === 1);
     expect(publishCalls[0]?.payload._triggerId).toBe(trigger.id);
+    // The turn's provenance records the event topic from this marker; the PR-follow return rule reads it.
+    expect(publishCalls[0]?.payload._triggerTopic).toBe(topic);
   });
 
   it("drops a subscribed trigger on refresh when its persisted filter becomes invalid", async () => {

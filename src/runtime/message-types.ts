@@ -262,6 +262,8 @@ export interface PromptMessage {
   _trigger?: boolean;
   /** Trigger id when `_trigger` is true. */
   _triggerId?: string;
+  /** Topic of the event that fired the trigger, kept in the turn's provenance (never read as authority). */
+  _triggerTopic?: string;
   /** Ownership fixed by the runner when the trigger fired, never rebuilt from the live trigger. */
   _triggerAuthority?: TriggerRunAuthority;
   /** Session followup runner prompt marker. */

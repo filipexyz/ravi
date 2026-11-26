@@ -32,6 +32,23 @@ describe("classifyTurnProvenance", () => {
 
   it("classifies every built-in background producer", () => {
     expect(classifyTurnProvenance({ prompt: { prompt: "", _trigger: true } }).origin).toBe("trigger");
+    expect(
+      classifyTurnProvenance({
+        prompt: {
+          prompt: "",
+          _trigger: true,
+          _triggerId: "abc12345",
+          _triggerTopic: "ravi.watch.github.workflow_run.failed",
+        },
+      }),
+    ).toMatchObject({
+      origin: "trigger",
+      automationId: "trigger:abc12345",
+      triggerTopic: "ravi.watch.github.workflow_run.failed",
+    });
+    expect(
+      classifyTurnProvenance({ prompt: { prompt: "", _trigger: true, _triggerId: "abc12345" } }),
+    ).not.toHaveProperty("triggerTopic");
     expect(classifyTurnProvenance({ prompt: { prompt: "", _sessionFollowup: true } }).origin).toBe("session-followup");
     expect(classifyTurnProvenance({ prompt: { prompt: "", _heartbeat: true } }).origin).toBe("heartbeat");
     expect(

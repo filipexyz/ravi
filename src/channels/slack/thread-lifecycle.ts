@@ -73,6 +73,7 @@ import {
   decideThreadParentReturn,
   getThreadReturnWatch,
   markThreadParentReturn,
+  CI_WAKE_NUDGE_EVENT_PREFIX,
   readThreadTurnGhFollowWake,
   readThreadTurnOrigin,
   readThreadTurnReplyPreview,
@@ -447,7 +448,7 @@ async function reconcileThreadParentReturn(
     returnedSince: (since) => threadReturnedSince(record.requestId, watch, since),
     turnCiWake: turn?.outputState === "silent" && readThreadTurnGhFollowWake(turn.turnId),
     openHandoff: threadHasOpenHandoff(childSessionKey),
-    watchedTurnCiWake: watch?.stage === "nudged" && watch.turnId ? readThreadTurnGhFollowWake(watch.turnId) : false,
+    watchedTurnCiWake: watch?.stage === "nudged" && watch.nudgeEventId?.startsWith(CI_WAKE_NUDGE_EVENT_PREFIX) === true,
   });
 
   if (action.kind === "none") return;
@@ -467,7 +468,7 @@ async function reconcileThreadParentReturn(
     const child = getSession(childSessionKey);
     const parent = getSession(record.parentSessionKey);
     if (!child || !parent) return;
-    const eventId = `slack-thread-return-nudge:${record.requestId}:${action.turnId}`;
+    const eventId = `${action.silentCiWake ? CI_WAKE_NUDGE_EVENT_PREFIX : "slack-thread-return-nudge:"}${record.requestId}:${action.turnId}`;
     if (
       !claimThreadReturnNudge({
         requestId: record.requestId,

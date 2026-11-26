@@ -208,6 +208,16 @@ describe("decideThreadParentReturn: a silent PR follow wake", () => {
     });
     // Same silent follow-up for an ordinary nudge keeps meaning "waiting on a person".
     expect(decideThreadParentReturn(input({ turn: followup, watch: watch() })).kind).toBe("settle");
+    // Another PR wake that ended silent is not the answer to the ask: keep waiting for the real one.
+    expect(
+      decideThreadParentReturn(
+        input({ turn: followup, turnOrigin: "trigger", watch: watch(), watchedTurnCiWake: true }),
+      ),
+    ).toEqual({ kind: "none" });
+    // For an ordinary nudge a trigger-origin turn after it keeps its old meaning.
+    expect(decideThreadParentReturn(input({ turn: followup, turnOrigin: "trigger", watch: watch() })).kind).toBe(
+      "settle",
+    );
     // A follow-up that reports still settles.
     expect(
       decideThreadParentReturn(
@@ -259,6 +269,7 @@ describe.each(["claude", "codex", "pi"])("thread parent return through the gatew
     completedAt: number;
     origin: string;
     automationId?: string;
+    triggerTopic?: string;
     reply: string | null;
     outputState: "final" | "silent";
   }) {
@@ -290,7 +301,11 @@ describe.each(["claude", "codex", "pi"])("thread parent return through the gatew
       payloadJson: {
         context_id: context.contextId,
         provider,
-        turn_provenance: { origin: input.origin, ...(input.automationId ? { automationId: input.automationId } : {}) },
+        turn_provenance: {
+          origin: input.origin,
+          ...(input.automationId ? { automationId: input.automationId } : {}),
+          ...(input.triggerTopic ? { triggerTopic: input.triggerTopic } : {}),
+        },
       },
     });
     if (input.reply) {
@@ -437,7 +452,16 @@ describe.each(["claude", "codex", "pi"])("thread parent return through the gatew
     await tick();
     expect(calls()).toHaveLength(0);
   });
-  function ghFollowWake(turnId: string, outputState: "final" | "silent" = "silent") {
+  const CI_TOPIC = "ravi.watch.github.workflow_run.succeeded";
+
+  function ghFollowWake(
+    turnId: string,
+    outputState: "final" | "silent" = "silent",
+    triggerTopic: string | null = CI_TOPIC,
+    reply: string | null = null,
+    /** Later wakes must start later: the reconciliation judges the latest turn only. */
+    offsetMs = 0,
+  ) {
     const trigger = dbCreateTrigger({
       name: "gh-follow:filipexyz/ravi#1013",
       topic: "ravi.github.pull_request",
@@ -445,11 +469,12 @@ describe.each(["claude", "codex", "pi"])("thread parent return through the gatew
     });
     seedTurn({
       turnId,
-      startedAt: now - 10 * 60_000,
-      completedAt: now - 2 * 60_000,
+      startedAt: now - 10 * 60_000 + offsetMs,
+      completedAt: now - 2 * 60_000 + offsetMs,
       origin: "trigger",
       automationId: `trigger:${trigger.id}`,
-      reply: null,
+      ...(triggerTopic ? { triggerTopic } : {}),
+      reply,
       outputState,
     });
     return trigger;
@@ -464,7 +489,7 @@ describe.each(["claude", "codex", "pi"])("thread parent return through the gatew
     expect(nudge.payload._slackThreadLifecycle).toMatchObject({ eventType: "thread.return_nudge", turnId: "ci1" });
     expect(nudge.payload.prompt).toContain("A PR/CI event woke you");
     expect(nudge.payload.prompt).not.toContain("do nothing");
-    expect(nudge.options.messageId).toBe(`slack-thread-return-nudge:${requestId}:ci1`);
+    expect(nudge.options.messageId).toBe(`slack-thread-return-nudge-ci:${requestId}:ci1`);
     await tick();
     await tick(now + 60_000);
     expect(calls()).toHaveLength(1);
@@ -537,6 +562,7 @@ describe.each(["claude", "codex", "pi"])("thread parent return through the gatew
   it("keeps silence valid for triggers that are not PR follows", async () => {
     const other = dbCreateTrigger({ name: "page-comments:xyz", topic: "ravi.pages.comment", message: "c" });
     seedTurn({
+      triggerTopic: CI_TOPIC,
       turnId: "ci6",
       startedAt: now - 10 * 60_000,
       completedAt: now - 2 * 60_000,
@@ -547,6 +573,89 @@ describe.each(["claude", "codex", "pi"])("thread parent return through the gatew
     });
     await tick();
     expect(calls()).toHaveLength(0);
+  });
+
+  it("keeps silence valid on a comment or review wake, and when the wake carries no topic", async () => {
+    const quiet: Array<[string, string | null]> = [
+      ["ci9", "ravi.watch.github.issue_comment.created"],
+      ["ci10", "ravi.watch.github.pull_request_review.commented"],
+      ["ci11", null],
+      ["ci11b", "ravi.watch.github.workflow_run.requested"],
+      ["ci11c", "ravi.watch.github.workflow_run.in_progress"],
+    ];
+    for (const [i, [turnId, topic]] of quiet.entries()) {
+      ghFollowWake(turnId, "silent", topic, null, i * 1_000);
+      await tick();
+      expect(calls()).toHaveLength(0);
+    }
+  });
+
+  it("asks on the other events that demand a return: a failed run and a PR ending", async () => {
+    for (const [i, topic] of [
+      "ravi.watch.github.workflow_run.failed",
+      "ravi.watch.github.pull_request.merged",
+    ].entries()) {
+      ghFollowWake(`ci-topic-${i}`, "silent", topic, null, i * 1_000);
+    }
+    // Only the latest turn is judged per tick: the last seeded wake is the one asked.
+    await tick();
+    expect(calls()).toHaveLength(1);
+    expect(calls()[0]!.payload._slackThreadLifecycle).toMatchObject({ turnId: "ci-topic-1" });
+  });
+
+  it("does not call a silent follow-up to an ordinary nudge a stalled PR", async () => {
+    // The wake replied in the thread (ordinary nudge, "do nothing if waiting on a person"), then stayed silent.
+    ghFollowWake("ci12", "final", CI_TOPIC, "Falha de CI: aguardando a Maria responder aqui.");
+    await tick();
+    expect(calls()).toHaveLength(1);
+    expect(calls()[0]!.options.messageId).toBe(`slack-thread-return-nudge:${requestId}:ci12`);
+    expect(calls()[0]!.payload.prompt).toContain("do nothing");
+    seedTurn({
+      turnId: "ci12-f",
+      startedAt: now + 61_000,
+      completedAt: now + 90_000,
+      origin: "system",
+      reply: null,
+      outputState: "silent",
+    });
+    await tick(now + 120_000);
+    expect(calls()).toHaveLength(1);
+    expect(getThreadReturnWatch(requestId)).toMatchObject({ stage: "skipped", followupTurnId: "ci12-f" });
+  });
+
+  it("does not take another PR wake that finishes silent first for the answer to the ask", async () => {
+    const trigger = ghFollowWake("ci13");
+    await tick();
+    expect(calls()).toHaveLength(1);
+    // A queued PR event takes the next turn and ends silent before the ask runs.
+    seedTurn({
+      turnId: "ci13-other",
+      startedAt: now + 30_000,
+      completedAt: now + 50_000,
+      origin: "trigger",
+      automationId: `trigger:${trigger.id}`,
+      triggerTopic: "ravi.watch.github.issue_comment.created",
+      reply: null,
+      outputState: "silent",
+    });
+    await tick(now + 60_000);
+    expect(calls()).toHaveLength(1);
+    expect(getThreadReturnWatch(requestId)).toMatchObject({ stage: "nudged", turnId: "ci13" });
+    // The ask itself then runs and is silent too: now the parent hears about it.
+    seedTurn({
+      turnId: "ci13-f",
+      startedAt: now + 61_000,
+      completedAt: now + 90_000,
+      origin: "system",
+      reply: null,
+      outputState: "silent",
+    });
+    await tick(now + 120_000);
+    expect(calls()).toHaveLength(2);
+    expect(calls()[1]!.payload._slackThreadLifecycle).toMatchObject({
+      reason: "ci_wake_silent",
+      followupTurnId: "ci13-f",
+    });
   });
 
   it("only a turn whose recorded origin is trigger counts as a PR follow wake", async () => {
@@ -560,6 +669,7 @@ describe.each(["claude", "codex", "pi"])("thread parent return through the gatew
       startedAt: now - 10 * 60_000,
       completedAt: now - 2 * 60_000,
       origin: "system",
+      triggerTopic: CI_TOPIC,
       automationId: `trigger:${follow.id}`,
       reply: null,
       outputState: "silent",
@@ -575,6 +685,7 @@ describe.each(["claude", "codex", "pi"])("thread parent return through the gatew
       completedAt: now - 2 * 60_000,
       origin: "trigger",
       automationId: "trigger:gone0000",
+      triggerTopic: CI_TOPIC,
       reply: null,
       outputState: "silent",
     });
