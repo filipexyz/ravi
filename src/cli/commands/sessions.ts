@@ -13,6 +13,7 @@ import {
   resolveSession,
   findSessionByChatId,
 } from "../session-targets.js";
+import { findOpenAskGrant, recordAskGrant } from "../../sessions/ask-grants.js";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { Group, Command, CommandAccess, CliOnly, Arg, Option } from "../decorators.js";
@@ -5958,6 +5959,12 @@ export class SessionCommands {
     const deliveryBarrier = delivery.barrier;
     const { source, context } = this.resolveSource(session, channel, to);
 
+    // The Ask is what lets the asked session answer back, and only that: record it before
+    // the prompt exists, so an answer can never arrive before its authorization.
+    if (origin !== "unknown" && origin !== session.sessionKey) {
+      recordAskGrant({ originSessionKey: origin, targetSessionKey: session.sessionKey, sender: sender ?? null });
+    }
+
     await this.emitToSession(
       "ask",
       session.name ?? target,
@@ -6029,7 +6036,7 @@ export class SessionCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
   ) {
-    const session = this.resolveTarget(target);
+    const session = this.resolveAnswerTarget(target, channel, to);
     if (!session) return;
 
     const origin = getContext()?.sessionKey ?? "unknown";
@@ -7107,6 +7114,34 @@ export class SessionCommands {
     }
 
     return { session };
+  }
+
+  /**
+   * The target of `sessions answer`. Access to the session answers as before. Without it, an
+   * open Ask from that session to the caller authorizes this delivery and nothing more: the
+   * caller still cannot read, recap or prompt the asker, and cannot redirect the delivery.
+   */
+  private resolveAnswerTarget(nameOrKey: string, channel?: string, to?: string): SessionEntry | null {
+    const scopeCtx = getScopeContext();
+    if (!isScopeEnforced(scopeCtx)) return this.resolveTarget(nameOrKey);
+    if (isBridgeSessionTarget(nameOrKey)) {
+      fail(`Session not found: ${nameOrKey}`);
+      return null;
+    }
+    const session = resolveSession(nameOrKey) ?? findSessionByChatId(nameOrKey);
+    if (session && canAccessSession(scopeCtx, session.name ?? session.sessionKey)) return this.resolveTarget(nameOrKey);
+
+    const grant = session ? findOpenAskGrant(session.sessionKey, getContext()?.sessionKey) : null;
+    if (!session || !grant) {
+      // Same answer as an unknown session: an Ask grant does not reveal which sessions exist.
+      fail(`Session not found: ${nameOrKey}`);
+      return null;
+    }
+    if (channel || to) {
+      fail("An answer sent through an open Ask goes back where the Ask came from: --channel and --to are refused.");
+      return null;
+    }
+    return session;
   }
 
   private resolveTarget(

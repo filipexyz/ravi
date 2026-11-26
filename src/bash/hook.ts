@@ -26,6 +26,7 @@ import { collectShellLevels, type ShellLevel } from "./shell-structure.js";
 import { checkExecutablePath, isInterpreterName, isShellName } from "./executable-path.js";
 import { logger } from "../utils/logger.js";
 import { getScopeContext } from "../permissions/scope.js";
+import { findOpenAskGrant } from "../sessions/ask-grants.js";
 import {
   canWithCapabilities,
   canWithCapabilityContext,
@@ -930,7 +931,13 @@ function checkScopePermissionForContext(
 
   if (SESSION_TARGET_COMMANDS.has(toolName)) {
     const target = extractRaviTarget(command);
-    if (target && !canAccessSessionWithBashContext(ctx, target)) {
+    if (
+      target &&
+      !canAccessSessionWithBashContext(ctx, target) &&
+      !(toolName === "sessions_answer" && findOpenAskGrant(target, ctx.sessionKey))
+    ) {
+      // An open Ask from the target to this session lets it answer that Ask, and only
+      // answer: read, recap, send and the rest still need access to the session.
       return {
         allowed: false,
         reason: `Permission denied: agent:${ctx.agentId ?? "unknown"} cannot access session:${target}`,
