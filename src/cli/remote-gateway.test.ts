@@ -2543,12 +2543,12 @@ describe("Library refusals over the gateway", () => {
 describe("pages read refusals over the gateway", () => {
   it("keeps the public-only refusal and the turn rule that decided it", async () => {
     const message =
-      "https://acme.ravi.page/weekly is not public. Private Ravi Pages are read only on the operator's own turns (terminal, their direct chat, their routines). This turn is not the operator's own: the owner's direct chat runs in a session other people's chats can reach (another person's chat attached to it, a route that sends a group, a thread or several chats into it).";
+      "https://acme.ravi.page/weekly is not public. Private Ravi Pages are read only on the operator's own turns (terminal, their direct chat, their routines). This turn is not the operator's own: the operator relayed this turn (ravi sessions send|ask) and the session answers into a chat that is not their direct chat.";
     const local = new ContractError("pages read", "PAGE_ACCESS_DENIED", message, 3, {
       ...errorDiagnostic(message, { operation: "pages read" }),
       ...{
         reason: "public_only",
-        turn: "shared_session",
+        turn: "relay_answer_chat",
         suggestedAction: "Tell the person you cannot open this private Page for them.",
       },
     });
@@ -2561,12 +2561,12 @@ describe("pages read refusals over the gateway", () => {
       code: "PAGE_ACCESS_DENIED",
       exitCode: 3,
       details: {
-        turn: "shared_session",
+        turn: "relay_answer_chat",
         suggestedAction: "Tell the person you cannot open this private Page for them.",
       },
     });
     // The relay sanitizes the message again (the URL reads as a path); the rule that decided stays.
-    expect(remote?.message).toContain("This turn is not the operator's own: the owner's direct chat runs in a session");
+    expect(remote?.message).toContain("This turn is not the operator's own: the operator relayed this turn");
     expect(remote?.message).not.toBe("Remote command was blocked by policy.");
   });
 });
