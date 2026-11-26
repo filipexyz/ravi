@@ -45,7 +45,7 @@ Toda decisão tem escopo: `thread` (a origem, padrão), `agent:<id>`, `project:<
 
 A fonte (`--source-message`) precisa ser uma mensagem do dono depois da pergunta, no chat da decisão ou numa DM, amarrada a esta decisão: cita o id da decisão ou contém o trecho passado em `--source-quote`. O trecho fica gravado na decisão.
 
-Ampliar além da thread exige uma mensagem do **dono da instalação** (contato com a tag `permission-owner`; o `--owner` da pergunta não conta) com o id e o escopo lado a lado e o texto da resposta, por exemplo `dec_abc org: sem confirmação em grupos`; negação ("não org") e trecho solto não ampliam. Ou o operador local no terminal (automação disparada pelo daemon não conta). Agent nenhum amplia por conta própria, por maior que seja o grant (`DECISION_SCOPE_NOT_AUTHORIZED`). Resposta ampla cabe em 2000 caracteres.
+Ampliar além da thread exige uma mensagem do **dono da instalação** (contato com a tag `permission-owner`; o `--owner` da pergunta não conta) com o id e o escopo lado a lado seguidos da resposta, por exemplo `dec_abc org: sem confirmação em grupos`; a resposta gravada tem de ser exatamente o resto da mensagem (nunca um pedaço dela). Negação antes do id ("não dec_abc org") e trecho solto não ampliam; proibição depois do escopo é resposta válida (`dec_abc org: não use a api v1`). A tag `org-internal` só é posta ou tirada pelo dono da instalação ou pelo operador. Ou o operador local no terminal (automação disparada pelo daemon não conta). Agent nenhum amplia por conta própria, por maior que seja o grant (`DECISION_SCOPE_NOT_AUTHORIZED`). Resposta ampla cabe em 2000 caracteres.
 
 ```bash
 # A mensagem do dono da instalação diz: "<id> org: sem confirmação em grupos" (a resposta gravada está nela)

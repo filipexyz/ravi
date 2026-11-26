@@ -1,6 +1,7 @@
 import { isSqliteCapacityError } from "../db/write-retry.js";
 import { logger } from "../utils/logger.js";
 import { canonicalTagSlugsForAsset } from "../tags/helpers.js";
+import { ORG_DECISIONS_AGENT_TAG, seedOrgInternalTagOnce } from "./org-tag.js";
 import { formatDecisionScope } from "./model.js";
 import { DECISIONS_IN_FORCE_LIMIT, listDecisionsInForce } from "./store.js";
 import type { Decision } from "./types.js";
@@ -9,12 +10,7 @@ const log = logger.child("decisions:prompt");
 
 export const DECISIONS_SECTION_ID = "decisions.in_force";
 
-/**
- * Org decisions reach only agents tagged as working for the org. Without the tag (client-facing agents, or any agent
- * nobody classified) a turn carries just its agent's own and its thread's decisions: the owner approving "org" does
- * not see client audiences, so the default is closed.
- */
-export const ORG_DECISIONS_AGENT_TAG = "org-internal";
+export { ORG_DECISIONS_AGENT_TAG };
 
 function agentReceivesOrgDecisions(agentId: string): boolean {
   return canonicalTagSlugsForAsset("agent", agentId).includes(ORG_DECISIONS_AGENT_TAG);
@@ -55,6 +51,12 @@ function renderDecision(decision: Decision): string {
  * project, and the session itself can write that label, so it does not prove membership.
  */
 export function buildDecisionsInForceSection(input: { agentId: string; sessionKey?: string }): string | null {
+  try {
+    seedOrgInternalTagOnce();
+  } catch (error) {
+    // The seed only spares the operator one `tags attach`; a failure never costs the turn.
+    log.warn("org-internal seed failed", { error: String(error) });
+  }
   let decisions: Decision[];
   try {
     decisions = listDecisionsInForce({

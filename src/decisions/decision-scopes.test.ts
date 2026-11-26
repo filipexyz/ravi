@@ -21,7 +21,9 @@ import { answerDecisionRecord, decisionWrite, getDecision, listDecisionsInForce 
 import { admitDecisionAnswer, reconcileDecisionDeliveries } from "./delivery.js";
 import { ORG_DECISIONS_AGENT_TAG, buildDecisionsInForceSection, refreshDecisionsForTurn } from "./prompt.js";
 import { createContact } from "../contacts.js";
-import { attachTagSlugsToAsset } from "../tags/helpers.js";
+import { attachTagSlugsToAsset, canonicalTagSlugsForAsset } from "../tags/helpers.js";
+import { dbDeleteTagBinding } from "../tags/tag-db.js";
+import { assertOrgInternalTagWriteAllowed, seedOrgInternalTagOnce } from "./org-tag.js";
 import { parseDecisionScope } from "./model.js";
 import type { Decision, DecisionOrigin } from "./types.js";
 
@@ -709,12 +711,12 @@ describe("independent review of c67913f (#1030)", () => {
     expect(answered.scope).toEqual({ type: "org", id: null });
   });
 
-  it("N2: a negation or a scope away from the id never widens", async () => {
+  it("N2/N5: a negation word before the id or a scope away from it never widens", async () => {
     const decision = await ask(await thread(), "deploy");
     for (const text of [
+      `não ${decision.id} org: sim`,
+      `nunca, ${decision.id} org: sim`,
       `${decision.id}, não org: sim`,
-      `${decision.id} org não, sim`,
-      `não ${decision.id} org, sim`,
       `${decision.id} sim, mas org fica de fora`,
     ]) {
       const msg = ownerSays(text);
@@ -722,6 +724,76 @@ describe("independent review of c67913f (#1030)", () => {
         asParent(() => answerDecision(decision.id, "sim", undefined, msg.id, { scope: parseDecisionScope("org") })),
       ).rejects.toMatchObject({ code: "DECISION_SCOPE_NOT_AUTHORIZED" });
     }
+  });
+
+  it("N2: a negation before the id refuses even when the answer is the rest of the message", async () => {
+    const decision = await ask(await thread(), "deploy");
+    const msg = ownerSays(`não ${decision.id} org: sim`);
+    await expect(
+      asParent(() => answerDecision(decision.id, "não sim", undefined, msg.id, { scope: parseDecisionScope("org") })),
+    ).rejects.toMatchObject({ code: "DECISION_SCOPE_NOT_AUTHORIZED" });
+  });
+
+  it("N5: a prohibition after the scope is the answer, and 'no' inside a word is not a negation", async () => {
+    const origin = await thread();
+    const prohibition = await ask(origin, "api");
+    const msg = ownerSays(`${prohibition.id} org: não use a api v1`);
+    const answered = await asParent(() =>
+      answerDecision(prohibition.id, "Não use a API v1", undefined, msg.id, { scope: parseDecisionScope("org") }),
+    );
+    expect(answered.scope).toEqual({ type: "org", id: null });
+    const plan = await ask(origin, "plan");
+    const planMsg = ownerSays(`aprovado no plano ${plan.id} org: use B`);
+    const planAnswer = await asParent(() =>
+      answerDecision(plan.id, "aprovado no plano use B", undefined, planMsg.id, { scope: parseDecisionScope("org") }),
+    );
+    expect(planAnswer.scope).toEqual({ type: "org", id: null });
+  });
+
+  it("N4: a wide answer is the owner's whole message, never a fragment of it", async () => {
+    const decision = await ask(await thread(), "tool");
+    const msg = ownerSays(`${decision.id} org sim, mas não deve usar X`);
+    for (const fragment of ["deve usar X", "sim"])
+      await expect(
+        asParent(() => answerDecision(decision.id, fragment, undefined, msg.id, { scope: parseDecisionScope("org") })),
+      ).rejects.toMatchObject({ code: "DECISION_SCOPE_NOT_AUTHORIZED" });
+    const whole = await asParent(() =>
+      answerDecision(decision.id, "sim, mas não deve usar X", undefined, msg.id, { scope: parseDecisionScope("org") }),
+    );
+    expect(whole.answer).toBe("sim, mas não deve usar X");
+  });
+
+  it("N6: only the installation owner or the local operator sets org-internal", async () => {
+    await thread();
+    const deny = () => assertOrgInternalTagWriteAllowed("tags attach", "org-internal");
+    expect(() => runWithContext(caller(PARENT), deny)).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
+    expect(() =>
+      runWithContext(caller(PARENT), () => assertOrgInternalTagWriteAllowed("tags attach", "other")),
+    ).not.toThrow();
+    const withAuthority = (contactId: string): ToolContext => {
+      const base = caller(PARENT);
+      return { ...base, context: { ...base.context!, metadata: { ownerAuthority: `contact:${contactId}` } } };
+    };
+    expect(() => runWithContext(withAuthority(OWNER), deny)).not.toThrow();
+    const stranger = createContact({ phone: "5511900000994", name: "Cliente", status: "allowed" }).id;
+    expect(() => runWithContext(withAuthority(stranger), deny)).toThrow(
+      expect.objectContaining({ code: "PERMISSION_DENIED" }),
+    );
+    expect(deny).not.toThrow();
+    const { TagCommands } = await import("../cli/commands/tags.js");
+    expect(() =>
+      runWithContext(caller(PARENT), () => new TagCommands().attach("org-internal", "client-agent")),
+    ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
+  });
+
+  it("N6: main is tagged org-internal once; removing it afterwards is respected", async () => {
+    await thread();
+    dbDeleteTagBinding({ slug: ORG_DECISIONS_AGENT_TAG, assetType: "agent", assetId: "main" });
+    seedOrgInternalTagOnce();
+    expect(canonicalTagSlugsForAsset("agent", "main")).toContain(ORG_DECISIONS_AGENT_TAG);
+    dbDeleteTagBinding({ slug: ORG_DECISIONS_AGENT_TAG, assetType: "agent", assetId: "main" });
+    seedOrgInternalTagOnce();
+    expect(canonicalTagSlugsForAsset("agent", "main")).not.toContain(ORG_DECISIONS_AGENT_TAG);
   });
 
   it("N3: org decisions reach only agents tagged as working for the org", async () => {

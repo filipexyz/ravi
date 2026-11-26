@@ -31,6 +31,7 @@ import {
   emitTaskEvent,
 } from "../tasks/service.js";
 import { DecisionError, formatDecisionScope, sameDecisionScope } from "./model.js";
+import { isInstallationOwner } from "./org-tag.js";
 import {
   askDecisionRecord,
   answerDecisionRecord,
@@ -315,36 +316,47 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-const NEGATION = "(?:não|nao|not|no|nunca|never)";
+const NEGATION = "(?:não|nao|not|no|nunca|never)(?![\\p{L}\\p{N}_])";
 
 /**
- * The owner names the audience next to the decision: `<id> <scope>` (separated only by spaces or `:,;-`). A negation
- * right before the id or right after the scope ("não dec_x org", "dec_x org não") never widens; in doubt, no.
+ * Where the owner names the audience next to the decision: `<id> <scope>` (separated only by spaces or `:,;-`). A
+ * negation word right before the id ("não dec_x org") never widens; whatever follows the scope is the answer itself
+ * ("dec_x org: não use a api v1"). Returns the span of the approving pair, or null; in doubt, null.
  */
-export function ownerApprovesScope(text: string, decisionId: string, scope: DecisionScope): boolean {
+export function findOwnerScopeApproval(
+  text: string,
+  decisionId: string,
+  scope: DecisionScope,
+): { start: number; end: number } | null {
   const lower = text.toLowerCase();
   const pattern = new RegExp(
-    `(^|[^a-z0-9_])${escapeRegExp(decisionId.toLowerCase())}[\\s:,;-]*${escapeRegExp(decisionScopeLiteral(scope).toLowerCase())}(?![a-z0-9_]|[:.-][a-z0-9])`,
-    "g",
+    `(^|[^\\p{L}\\p{N}_])${escapeRegExp(decisionId.toLowerCase())}[\\s:,;-]*${escapeRegExp(decisionScopeLiteral(scope).toLowerCase())}(?![\\p{L}\\p{N}_]|[:.-][\\p{L}\\p{N}])`,
+    "gu",
   );
   for (const match of lower.matchAll(pattern)) {
-    const before = lower.slice(0, match.index + match[1]!.length);
-    const after = lower.slice(match.index + match[0].length);
-    if (new RegExp(`${NEGATION}[\\s:,;-]*$`).test(before)) continue;
-    if (new RegExp(`^[\\s:,;.-]*${NEGATION}(?![a-z])`).test(after)) continue;
-    return true;
+    const start = match.index + match[1]!.length;
+    if (new RegExp(`(^|[^\\p{L}\\p{N}_])${NEGATION}[\\s:,;-]*$`, "u").test(lower.slice(0, start))) continue;
+    return { start, end: match.index + match[0].length };
   }
-  return false;
+  return null;
 }
 
-function normalizeForContainment(text: string): string {
+export function ownerApprovesScope(text: string, decisionId: string, scope: DecisionScope): boolean {
+  return findOwnerScopeApproval(text, decisionId, scope) !== null;
+}
+
+function normalizeAnswerText(text: string): string {
   return text.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
-/** The installation's owner: a contact tagged `permission-owner` now, read at answer time (same resolution as #1029). */
-export function isInstallationOwner(contactId: string | null | undefined): boolean {
-  if (!contactId) return false;
-  return findContactsByTag(OWNER_CONTACT_TAG).some((contact) => contact.id === contactId);
+/**
+ * What the owner decided, in their words: the message without the approving `<id> <scope>` pair and the separators
+ * around it. A wide answer must be exactly this, so the recorder cannot pick a fragment that means the opposite.
+ */
+export function ownerAnswerText(text: string, span: { start: number; end: number }): string {
+  const before = text.slice(0, span.start).replace(/[\s:,;.-]+$/u, "");
+  const after = text.slice(span.end).replace(/^[\s:,;.-]+/u, "");
+  return [before, after].filter(Boolean).join(" ");
 }
 
 /**
@@ -360,11 +372,13 @@ export function assertDecisionScopeAuthority(
   if (scope.type === "origin" || isLocalOperatorCaller()) return;
   // Only the installation's owner widens: a decision's `--owner` is chosen by whoever asks, so it never authorizes.
   // The owner approves the audience (`<id> <scope>`) and the words: the recorded answer is in the same message.
+  const approval = source ? findOwnerScopeApproval(source.text, decisionId, scope) : null;
   if (
     source &&
+    approval &&
     isInstallationOwner(source.contactId) &&
-    ownerApprovesScope(source.text, decisionId, scope) &&
-    (answerText === undefined || normalizeForContainment(source.text).includes(normalizeForContainment(answerText)))
+    (answerText === undefined ||
+      normalizeAnswerText(ownerAnswerText(source.text, approval)) === normalizeAnswerText(answerText))
   )
     return;
   const literal = decisionScopeLiteral(scope);

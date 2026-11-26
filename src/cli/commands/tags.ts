@@ -28,6 +28,7 @@ import {
   dbUpdateTagDefinition,
 } from "../../tags/index.js";
 import { attachTagToSelector, detachTagFromSelector, resolveTagTarget } from "../../tags/service.js";
+import { assertOrgInternalTagWriteAllowed } from "../../decisions/org-tag.js";
 import {
   assertBreakGlassTagWriteAllowed,
   assertPermissionDefinitionWithoutBreakGlass,
@@ -730,6 +731,7 @@ export class TagCommands {
   ) {
     const metadata = parseMetadata(metadataJson);
     const normalizedSlug = normalizeSlug(slug);
+    assertOrgInternalTagWriteAllowed("tags attach", normalizedSlug);
     const attachedDefinition = dbGetTagDefinition(normalizedSlug);
     assertProviderOwnedTagWriteAuthority(
       "tags attach",
@@ -876,6 +878,7 @@ export class TagCommands {
     asJson?: boolean,
   ) {
     const normalizedSlug = normalizeSlug(slug);
+    assertOrgInternalTagWriteAllowed("tags detach", normalizedSlug);
     const detachedDefinition = dbGetTagDefinition(normalizedSlug);
     assertProviderOwnedTagWriteAuthority(
       "tags detach",
