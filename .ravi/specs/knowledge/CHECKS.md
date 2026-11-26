@@ -21,7 +21,7 @@ normative: false
 
 ## Gate and audiences
 
-- Heartbeats, triggers, agents and contacts get `KNOWLEDGE_TURN_NOT_OPERATOR` (exit 3). The owner's own message counts in any session; in a group or a direct chat with someone outside the organization it gets `OWNER_CONFIRMATION_REQUIRED` (exit 3, `chatLinePt`, `confirmationCode`) until the owner's own message there carries `confirmo <code>` (`cli/connectors`, "Owner read confirmation").
+- Heartbeats, triggers, agents and contacts get `KNOWLEDGE_TURN_NOT_OPERATOR` (exit 3). The owner's own message passes in any session and in a group, with no confirmation (`cli/connectors`, "The owner's own turn").
 - With an outsider-reachable agent on `bootstrap`, every command exits 3 `KNOWLEDGE_EXPOSURE_UNSAFE`, and `ravi doctor` fails `permissions.knowledge_exposure`. An enabled trigger on `ravi.inbox.mail.*`, `ravi.inbound.*`, `ravi.console.inbox.*`, a watch, a webhook or a custom topic makes its agent outsider-reachable.
 - The operator relay or an owner cron in a shared session (`agent:<id>:main`, a group, a session with a route or a trigger) gets reason `shared_session`; the owner's own message there does not.
 - A write in a later turn of the same session after an unapproved read is gated; after `sessions reset` it is not.

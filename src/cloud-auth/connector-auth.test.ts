@@ -16,16 +16,8 @@ import { getOrCreateSession } from "../router/sessions.js";
 import { createRuntimeContext } from "../runtime/context-registry.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { CloudCredentials } from "./types.js";
-import type { OwnerReadExposureDeps } from "../link/owner-read-confirmation.js";
 
 let stateDir: string | null = null;
-
-/** The owner's DM, read by the owner alone. */
-const OWNER_ONLY_CHAT: OwnerReadExposureDeps = {
-  directChatContact: () => "luis",
-  isInsideContact: (contactId) => contactId === "luis",
-  contactMessagesSince: () => [],
-};
 
 beforeEach(async () => {
   stateDir = await createIsolatedRaviState("ravi-connector-auth-");
@@ -66,46 +58,10 @@ describe("resolveConnectorCloudCredentials", () => {
     });
     process.env.RAVI_CONTEXT_KEY = context.contextKey;
 
-    const { turn, credentials } = resolveConnectorCloudCredentials({ ownerRead: OWNER_ONLY_CHAT });
+    const { turn, credentials } = resolveConnectorCloudCredentials();
 
     expect(credentials.accessToken).toBe("operator-access");
     expect(turn.speaker).toEqual({ kind: "owner", contactId: "luis", consoleUserId: "user_operator" });
-  });
-
-  it("asks the owner to confirm before using their account in a chat people outside the organization read", () => {
-    writeCloudCredentials(makeCredentials("user_operator", "operator-access"));
-    const sessionKey = "agent:main:whatsapp:wa-main:group:120363012345678901";
-    getOrCreateSession(sessionKey, "main", stateDir ?? "/tmp");
-    const context = createRuntimeContext({
-      kind: "turn-runtime",
-      sessionKey,
-      sessionName: "client-group",
-      metadata: {
-        actorPrincipal: "contact:luis",
-        actorResolution: "resolved",
-        consoleUserId: "user_operator",
-        consoleOrgId: "org_123",
-        agentIdentityCompartment: "chat:120363012345678901@g.us",
-      },
-    });
-    process.env.RAVI_CONTEXT_KEY = context.contextKey;
-    const outside = { ...OWNER_ONLY_CHAT, directChatContact: () => null };
-
-    let asked: unknown;
-    try {
-      resolveConnectorCloudCredentials({ ownerRead: outside });
-    } catch (error) {
-      asked = error;
-    }
-    expect(asked).toBeInstanceOf(CloudAuthError);
-    const code = String((asked as CloudAuthError).details?.confirmationCode ?? "");
-    expect((asked as CloudAuthError).code).toBe("OWNER_CONFIRMATION_REQUIRED");
-    expect(code).toMatch(/^[0-9a-f]{6}$/);
-
-    const { turn } = resolveConnectorCloudCredentials({
-      ownerRead: { ...outside, contactMessagesSince: () => [`confirmo ${code}`] },
-    });
-    expect(turn.speaker.kind).toBe("owner");
   });
 
   it("never borrows another stored user's session for a contact linked to that user", () => {

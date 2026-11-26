@@ -20,7 +20,6 @@ import { deleteCloudCredentials, readCloudCredentials, writeCloudCredentials } f
 import type { ConnectorTurnDeps } from "../link/connector-turn.js";
 import { pageReadTurnBlock, type PageReadTurnBlock, resolveTurnForActiveLogin } from "../pages/read.js";
 import { requestConsoleWithRefresh } from "./cloud.js";
-import type { OwnerReadExposureDeps } from "../link/owner-read-confirmation.js";
 
 export const MEETINGS_READ_PATH = "/api/cli/meetings/read";
 export const MEETING_READ_MIN_CHARS = 1_000;
@@ -40,8 +39,6 @@ export interface MeetingReadDeps {
   turn?: ConnectorTurnDeps;
   /** Overrides the turn classification (tests): true = the operator's own turn. */
   operatorTurn?: boolean;
-  /** Who reads the chat the owner's answer goes to (tests). */
-  ownerRead?: OwnerReadExposureDeps;
 }
 
 export interface MeetingReadView {
@@ -183,10 +180,9 @@ export function meetingReadRefusalDetails(
 /**
  * Why this turn may not read a meeting, or null when it is the operator's own.
  * Uses the same classification as `pages read`: the operator asking in a
- * group may read there once they confirm in it, when people outside the
- * organization read it. `refuseGroup` (the calendar) refuses a group even when
- * the operator asks there. A turn Ravi cannot classify is refused (fail
- * closed).
+ * group they chose may read there. `refuseGroup` (the calendar) refuses a
+ * group even when the operator asks there. A turn Ravi cannot classify is
+ * refused (fail closed).
  */
 export function meetingReadTurnBlock(
   deps: MeetingReadDeps = {},
@@ -195,7 +191,7 @@ export function meetingReadTurnBlock(
   if (deps.operatorTurn !== undefined) {
     return deps.operatorTurn ? null : { turn: "not_owner", why: "a test marked this turn as someone else's" };
   }
-  const turnDeps = { turn: deps.turn, readCredentials: deps.readCredentials, ownerRead: deps.ownerRead };
+  const turnDeps = { turn: deps.turn, readCredentials: deps.readCredentials };
   try {
     const result = resolveTurnForActiveLogin(turnDeps);
     if (options.refuseGroup && result.ok && result.turn.conversation === "group") {

@@ -113,11 +113,9 @@ export function resolveKnowledgeAudience(
     const contactId = contactOf(prompt, chat, deps);
     if (contactId && ownerIds(deps).has(contactId)) {
       // The owner's own message counts wherever they write: their direct chat
-      // in any session, or a group. In a chat people outside the organization
-      // read, `ravi knowledge` asks them to confirm there first
-      // (src/link/owner-read-confirmation.ts). The classifier needs the
-      // owner's `ravi link` binding: without it the turn is refused, so the
-      // line says so.
+      // in any session, or a group (sharing there is their choice). The
+      // classifier needs the owner's `ravi link` binding: without it the turn
+      // is refused, so the line says so.
       return isLinkedOwner(contactId, deps) ? operator() : none;
     }
     if (group || !contactId) return none;

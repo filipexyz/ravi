@@ -34,9 +34,8 @@ agent's whole ceiling (`permissions/agent-identity`).
 
 The guard keeps the routing only. Whether a turn is the operator's does not
 depend on it: the owner's own verified message counts as the operator's turn
-wherever it runs, shared session or not, and a private read in a chat other
-people read waits for the owner's confirmation there (spec `cli/connectors`,
-"Owner read confirmation").
+wherever it runs, shared session or not, a group included (spec
+`cli/connectors`, "The owner's own turn").
 
 ## Contract
 
@@ -93,7 +92,7 @@ people read waits for the owner's confirmation there (spec `cli/connectors`,
 
 - The owner's verified message counts as the operator's turn in the shared
   session, in a per-person session and in a group alike (`cli/connectors`,
-  "Owner read confirmation"). This guard adds nothing to that rule and reads
+  "The owner's own turn"). This guard adds nothing to that rule and reads
   no privacy from routes or attached chats.
 - The rule is channel-free: it reads contacts and session keys, never a
   channel name.

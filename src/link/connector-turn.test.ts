@@ -975,8 +975,7 @@ describe("connector turn classification", () => {
 
   describe("the owner's own direct chat counts in any session", () => {
     // Owner decision (26/11): "se eu escrevo eu quero que esse dado venha,
-    // independente de onde estar". Who else reads the answer chat is checked
-    // by each private read (src/link/owner-read-confirmation.ts).
+    // independente de onde estar"; in a group, sharing is the owner's choice.
     const OWNER_JID = "5511999999999@s.whatsapp.net";
     const LUIS = {
       actorPrincipal: "contact:c_luis",
@@ -1007,7 +1006,6 @@ describe("connector turn classification", () => {
           expect(result.turn).toMatchObject({
             speaker: { kind: "owner", contactId: "c_luis" },
             conversation: "dm",
-            answerChat: { chatId: OWNER_JID, kind: "dm" },
           });
         }
       }
@@ -1023,7 +1021,7 @@ describe("connector turn classification", () => {
       expect(classify(ownerTurn(OWNER_DM_SESSION)).ok).toBe(true);
     });
 
-    it("marks where the answer goes, in a group too, and never sends it to Link", () => {
+    it("uses the owner's account in a group too", () => {
       const result = classify(
         turnContext({
           actorPrincipal: "contact:c_luis",
@@ -1034,9 +1032,7 @@ describe("connector turn classification", () => {
       );
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.turn.answerChat).toEqual({ chatId: "120363012345678901@g.us", kind: "group" });
-        expect(buildExecContext(result.turn)).not.toHaveProperty("answerChat");
-        expect(buildAgentExecContext(result.turn)).not.toHaveProperty("answerChat");
+        expect(result.turn).toMatchObject({ speaker: { kind: "owner", contactId: "c_luis" }, conversation: "group" });
       }
     });
 

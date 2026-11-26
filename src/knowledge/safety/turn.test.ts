@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 
 import { dbCreateCronJob } from "../../cron/cron-db.js";
 import type { ConnectorTurnDeps } from "../../link/connector-turn.js";
-import type { OwnerReadExposureDeps } from "../../link/owner-read-confirmation.js";
 import type { ContextRecord } from "../../router/router-db.js";
 import { getOrCreateSession } from "../../router/sessions.js";
 import { createRuntimeContext } from "../../runtime/context-registry.js";
@@ -40,18 +39,10 @@ function turnContext(
   });
 }
 
-/** The owner's DM, read by the owner alone, unless a test says otherwise. */
-const OWNER_ONLY_CHAT: OwnerReadExposureDeps = {
-  directChatContact: () => "c_luis",
-  isInsideContact: (contactId) => contactId === "c_luis",
-  contactMessagesSince: () => [],
-};
-
-function classify(context: ContextRecord, deps: ConnectorTurnDeps = {}, ownerRead = OWNER_ONLY_CHAT) {
+function classify(context: ContextRecord, deps: ConnectorTurnDeps = {}) {
   return classifyKnowledgeTurn({
     readCredentials: () => null,
     turn: { ...OWNER, env: { RAVI_CONTEXT_KEY: context.contextKey }, ...deps },
-    ownerRead,
   });
 }
 
@@ -147,29 +138,17 @@ describe("classifyKnowledgeTurn", () => {
     expect(classify(shared)).toMatchObject({ ok: false, reason: "shared_session" });
   });
 
-  it("asks the owner in a group to confirm there first, then lets them in", () => {
+  it("lets the owner in from a group: sharing there is the owner's choice", () => {
     const context = turnContext({
       actorPrincipal: "contact:c_luis",
       consoleUserId: "user_luis",
       consoleOrgId: "org_1",
       agentIdentityCompartment: "chat:120363012345678901@g.us",
     });
-    const outside: OwnerReadExposureDeps = { ...OWNER_ONLY_CHAT, directChatContact: () => null };
 
-    const asked = classify(context, {}, outside);
-    expect(asked).toMatchObject({
-      ok: false,
-      code: "OWNER_CONFIRMATION_REQUIRED",
-      reason: "owner_confirmation",
-      actorPrincipal: "contact:c_luis",
-    });
-    if (asked.ok || asked.code !== "OWNER_CONFIRMATION_REQUIRED") return;
-    const code = String(asked.details.confirmationCode);
-    expect(asked.message).toContain(`confirmo ${code}`);
-
-    const confirmed = classify(context, {}, { ...outside, contactMessagesSince: () => [`confirmo ${code}`] });
-    expect(confirmed.ok).toBe(true);
-    if (confirmed.ok) expect(confirmed.turn.execContext.conversation).toBe("group");
+    const verdict = classify(context);
+    expect(verdict.ok).toBe(true);
+    if (verdict.ok) expect(verdict.turn.execContext.conversation).toBe("group");
   });
 
   it("lets the owner's own direct chat in from the agent's shared session", () => {
@@ -185,18 +164,25 @@ describe("classifyKnowledgeTurn", () => {
     expect(classify(context).ok).toBe(true);
   });
 
-  it("asks the owner to confirm in a direct chat with someone outside the organization", () => {
-    const context = turnContext(
+  it("refuses a contact other than the owner in a group and in the shared session", () => {
+    const group = turnContext({
+      actorPrincipal: "contact:c_ana",
+      consoleUserId: "user_ana",
+      consoleOrgId: "org_1",
+      agentIdentityCompartment: "chat:120363012345678901@g.us",
+    });
+    expect(classify(group)).toMatchObject({ ok: false, code: "KNOWLEDGE_TURN_NOT_OPERATOR", reason: "group" });
+
+    const shared = turnContext(
       {
-        actorPrincipal: "contact:c_luis",
-        consoleUserId: "user_luis",
+        actorPrincipal: "contact:c_ana",
+        consoleUserId: "user_ana",
         consoleOrgId: "org_1",
         agentIdentityCompartment: "dm:5511988887777@s.whatsapp.net",
       },
-      OWNER_DM_SESSION,
+      { sessionKey: "agent:main:main", sessionName: "main" },
     );
-    const thirdParty: OwnerReadExposureDeps = { ...OWNER_ONLY_CHAT, directChatContact: () => "c_client" };
-    expect(classify(context, {}, thirdParty)).toMatchObject({ ok: false, code: "OWNER_CONFIRMATION_REQUIRED" });
+    expect(classify(shared).ok).toBe(false);
   });
 
   it("refuses the heartbeat with reason routine", () => {

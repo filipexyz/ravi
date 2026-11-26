@@ -79,7 +79,7 @@ describe("meetingReadTurnBlock", () => {
     ).toMatchObject({ turn: "unknown" });
   });
 
-  it("lets the operator read in a group once they confirm there, and the calendar still refuses it", () => {
+  it("lets the operator read in a group they chose, and the calendar still refuses it", () => {
     const record = {
       contextId: "ctx_group",
       contextKey: "rctx_group",
@@ -102,19 +102,11 @@ describe("meetingReadTurnBlock", () => {
       getContextById: () => null,
       env: {},
     };
-    // Like `pages read`, the owner may read a meeting in a group once they confirm there; the calendar refuses it.
-    const outside = { directChatContact: () => null, isInsideContact: () => false, contactMessagesSince: () => [] };
-    const asked = meetingReadTurnBlock({ readCredentials: () => makeCredentials(), turn, ownerRead: outside });
-    expect(asked).toMatchObject({ turn: "owner_confirmation" });
-    const code = String((asked as { details?: { confirmationCode?: string } }).details?.confirmationCode ?? "");
-    const confirmed = { ...outside, contactMessagesSince: () => [`confirmo ${code}`] };
-    expect(pageReadTurnBlock({ readCredentials: () => makeCredentials(), turn, ownerRead: confirmed })).toBeNull();
-    expect(meetingReadTurnBlock({ readCredentials: () => makeCredentials(), turn, ownerRead: confirmed })).toBeNull();
+    // Like `pages read`, the owner may read a meeting in a group they chose; the calendar refuses it.
+    expect(pageReadTurnBlock({ readCredentials: () => makeCredentials(), turn })).toBeNull();
+    expect(meetingReadTurnBlock({ readCredentials: () => makeCredentials(), turn })).toBeNull();
     expect(
-      meetingReadTurnBlock(
-        { readCredentials: () => makeCredentials(), turn, ownerRead: confirmed },
-        { refuseGroup: true },
-      ),
+      meetingReadTurnBlock({ readCredentials: () => makeCredentials(), turn }, { refuseGroup: true }),
     ).toMatchObject({ turn: "group", ownerAsked: true });
   });
 });

@@ -33,28 +33,6 @@ function thrown(run: () => unknown): ContractError {
 }
 
 describe("assertKnowledgeAllowed", () => {
-  it("asks the owner to confirm in the chat when outsiders read it, with the line to say", () => {
-    const chatLinePt =
-      "Este chat tem gente de fora da organização. Para eu trazer isso aqui, responda: confirmo a1b2c3";
-    const error = thrown(() =>
-      assertKnowledgeAllowed("knowledge.search", true, {
-        exposure: () => SAFE,
-        classify: () => ({
-          ok: false,
-          code: "OWNER_CONFIRMATION_REQUIRED",
-          reason: "owner_confirmation",
-          actorPrincipal: "contact:c_luis",
-          message: "The owner asked for private data in a chat that people outside the organization can read.",
-          details: { chatLinePt, replyTo: "same_chat", confirmationCode: "a1b2c3" },
-        }),
-      }),
-    );
-
-    expect(error.code).toBe("OWNER_CONFIRMATION_REQUIRED");
-    expect(error.exitCode).toBe(3);
-    expect(JSON.stringify(error.details)).toContain("confirmo a1b2c3");
-  });
-
   it("returns the operator turn when exposure is safe", () => {
     expect(
       quietly(() =>

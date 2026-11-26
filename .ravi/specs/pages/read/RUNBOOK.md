@@ -18,9 +18,7 @@ entry file marked.
   operator's own and the route is not public. Expected; the agent tells the
   person it cannot open that private Page. Run it from the terminal to check
   that the Page itself is readable. `details.turn` names the rule:
-  `owner_confirmation` means the owner asked in a chat people outside the
-  organization read; post `details.chatLinePt` there and read again after
-  the owner answers `confirmo <code>`; `not_owner` means the owner's chat account is not linked
+  `not_owner` means the owner's chat account is not linked
   to this `ravi login` user (`ravi link` in that chat). Never clear the
   runtime env to get around it.
 - `1` with `PAGE_ACCESS_DENIED`: `org_forbidden` (the `ravi login` is in

@@ -19,8 +19,9 @@
   contact. Tag the right contact and check the identity link.
 - Nothing is held and colleagues still reach the shared session: no contact is
   tagged `permission-owner`, so the guard is off (fail-open). Tag the owner.
-- The owner's DM was refused or asked for a confirmation: that is not this
-  guard. See `cli/connectors`, "Owner read confirmation", and the `pages/read`
-  and `knowledge` runbooks.
+- The owner's own message was refused a private read: that is not this
+  guard. See `cli/connectors`, "The owner's own turn" (usually the owner's
+  account is not linked to this `ravi login`), and the `pages/read` and
+  `knowledge` runbooks.
 - To trace a held omni DM: `ravi sessions trace` shows `route.rejected` with
   `dm_owner_session_non_owner`.

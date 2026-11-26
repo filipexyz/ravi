@@ -34,11 +34,9 @@
   MUST be blocked, and the same relay with `_cliDestination` MUST be allowed.
   Both relay blocks MUST carry, in the envelope, the `suggestedAction` to
   post nothing from the account into that chat (the owner can run the
-  command in their terminal), never the catalog step to answer in the group;
-  the owner confirmation refusal MUST carry the one to reply with the chat
-  line and run again only after the owner answers. A relay
-  blocked by where it answers MUST still change a mode (`connectors mode`)
-  and own the crons it creates (`operator`).
+  command in their terminal), never the catalog step to answer in the group.
+  A relay blocked by where it answers MUST still change a mode (`connectors
+  mode`) and own the crons it creates (`operator`).
 - The runtime MUST record `turnReplyTarget` on the turn context at every
   turn start: `none` when the turn posts to no chat (`suppressChatEmit`),
   the bound chat when there is one, `unresolved` otherwise.
@@ -47,21 +45,13 @@
   of a revoked one, MUST block.
 - A resolved contact whose `consoleUserId` is the active session's user MUST
   be allowed as speaker `owner` in any session, shared (`agent:<id>:main`) or
-  not: conversation `dm` with `answerChat` in a `dm:` compartment, `group` in
-  a `chat:` one. The same contact with a different `consoleOrgId` MUST be
-  blocked. That turn MUST still change a mode (`connectors mode`) and own the
-  crons it creates (`operator`).
-- Owner read confirmation: in the owner's own direct chat, a thread inside
-  it, or a direct chat with a person tagged `permission-owner` or linked to
-  this installation, the owner's private read MUST pass without asking. In a
-  group, a channel or a direct chat with someone outside the organization it
-  MUST exit 3 `OWNER_CONFIRMATION_REQUIRED` with `details.confirmationCode`
-  and the chat line, and MUST pass only after the owner's own message there
-  in the last ten minutes carries `confirmo <code>` of this or the previous
-  window. A code of an older window or another chat, a bare `confirmo`, the
-  agent's own line and another person's message MUST NOT confirm. No answer
-  chat, or an unreadable store, MUST refuse with no code.
-  `bun test src/link/owner-read-confirmation.test.ts` SHOULD pass.
+  not (conversation `dm`), and in a group (conversation `group`), with no
+  confirmation. The same contact with a different `consoleOrgId` MUST be
+  blocked. That turn MUST still change a mode (`connectors mode`) from a
+  direct chat and own the crons it creates (`operator`). A contact other than
+  the owner MUST stay refused in the shared session and in a group.
+  `bun test src/link/connector-turn.test.ts -t "counts in any session"`
+  SHOULD pass.
 - A contact linked to another Console user MUST be blocked
   (`CONNECTOR_SPEAKER_NOT_OWNER`, exit 3) and MUST NOT switch to that user's
   stored session, even when one exists.

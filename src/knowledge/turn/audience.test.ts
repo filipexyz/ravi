@@ -84,7 +84,7 @@ describe("knowledgeAudienceForPrompt", () => {
     ).toBe("operator");
   });
 
-  it("gives operator for the owner in a group: Knowledge asks them to confirm there", () => {
+  it("gives operator for the owner in a group: sharing there is the owner's choice", () => {
     const prompt = dm(OWNER, "120363000000000001@g.us");
     prompt.context = { ...prompt.context!, isGroup: true };
     expect(

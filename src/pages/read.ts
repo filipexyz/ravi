@@ -5,7 +5,6 @@ import { CloudAuthError } from "../cloud-auth/errors.js";
 import { readActiveCloudAuthUserId, readCloudCredentials } from "../cloud-auth/storage.js";
 import { LEGACY_CLOUD_AUTH_USER_ID } from "../cloud-auth/types.js";
 import { resolveConnectorTurn, type ConnectorTurnDeps, type ConnectorTurnResult } from "../link/connector-turn.js";
-import { ownerReadExposure, type OwnerReadExposureDeps } from "../link/owner-read-confirmation.js";
 import { createAuthenticatedPagesContext, type PagesClientDeps, type PagesClientOptions } from "./client.js";
 import {
   downloadPageFiles,
@@ -59,8 +58,6 @@ export interface PageReadOptions extends PagesClientOptions {
 
 export interface PageReadDeps extends PagesClientDeps {
   turn?: ConnectorTurnDeps;
-  /** Who reads the chat the owner's answer goes to (tests). */
-  ownerRead?: OwnerReadExposureDeps;
   /** Overrides the turn classification (tests). */
   publicOnly?: boolean;
   /** Downloads the presigned file URLs (tests). */
@@ -183,14 +180,16 @@ export function normalizePageReadNumber(
 
 /**
  * Whether this call may only read public Pages: every turn that is not the
- * operator's own, as the connector classifier decides it, and the owner's own
- * turn in a chat people outside the organization can read until the owner
- * confirms there (`ownerReadExposure`).
+ * operator's own, as the connector classifier decides it.
+ *
+ * The owner's own message counts in any chat, a group included: sharing
+ * there is the owner's choice (owner decision, 26/11). What the read returns
+ * stays in that session's transcript, where another participant can ask
+ * about it later; that is part of the same choice (spec cli/connectors).
  */
 export function pageReadIsPublicOnly(deps: PageReadDeps = {}): boolean {
   if (deps.publicOnly !== undefined) return deps.publicOnly;
-  const result = resolveTurnForActiveLogin(deps);
-  return !result.ok || !ownerReadExposure(result.turn, deps.ownerRead).ok;
+  return !resolveTurnForActiveLogin(deps).ok;
 }
 
 /**
@@ -214,22 +213,14 @@ export function resolveTurnForActiveLogin(
 }
 
 /** Which rule kept this turn from being the operator's own (for a `public_only` refusal). */
-export type PageReadTurnBlock =
-  | "owner_confirmation"
-  | "relay_answer_chat"
-  | "owner_outside_dm"
-  | "group"
-  | "not_owner"
-  | "unknown";
+export type PageReadTurnBlock = "relay_answer_chat" | "owner_outside_dm" | "group" | "not_owner" | "unknown";
 
 /**
  * Why the classifier did not count this turn as the operator's own, in words
  * an agent can relay; null when it did (or a test fixed `publicOnly`). It
  * only explains the existing classification: it never changes it.
  */
-export function pageReadTurnBlock(
-  deps: PageReadDeps = {},
-): { turn: PageReadTurnBlock; why: string; details?: Record<string, unknown> } | null {
+export function pageReadTurnBlock(deps: PageReadDeps = {}): { turn: PageReadTurnBlock; why: string } | null {
   if (deps.publicOnly !== undefined) return null;
   let result: ConnectorTurnResult;
   try {
@@ -237,16 +228,7 @@ export function pageReadTurnBlock(
   } catch {
     return { turn: "unknown", why: "Ravi could not classify who is asking in this turn." };
   }
-  if (result.ok) {
-    const exposure = ownerReadExposure(result.turn, deps.ownerRead);
-    if (exposure.ok) return null;
-    const { chatLine, chatLinePt, replyTo, confirmationCode } = exposure.error.details ?? {};
-    return {
-      turn: "owner_confirmation",
-      why: exposure.error.message,
-      details: { chatLine, chatLinePt, replyTo, ...(confirmationCode ? { confirmationCode } : {}) },
-    };
-  }
+  if (result.ok) return null;
   if (result.relay) {
     return {
       turn: "relay_answer_chat",

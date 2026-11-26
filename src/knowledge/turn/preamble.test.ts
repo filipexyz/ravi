@@ -139,7 +139,7 @@ describe("withKnowledgePreamble", () => {
     expect(firstLines(result, 1)).toEqual([KNOWLEDGE_AUDIENCE_LINES.none]);
   });
 
-  it("writes operator for the owner in a group, where Knowledge asks them to confirm first", () => {
+  it("writes operator for the owner in a group, where sharing is the owner's choice", () => {
     const group = dm(OWNER);
     group.context = { ...group.context!, isGroup: true };
     const result = withKnowledgePreamble(group, ctx, {

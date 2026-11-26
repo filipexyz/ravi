@@ -23,7 +23,7 @@
 - An unreadable owner set MUST hold the DM.
 - The owner's verified DM in `agent:<id>:main` MUST count as the operator's
   turn whatever else the session holds; the guard MUST NOT be read as a
-  privacy check (`cli/connectors`, "Owner read confirmation").
+  privacy check (`cli/connectors`, "The owner's own turn").
 - `bun test src/channels/owner-dm-guard.test.ts src/channels/owner-dm-guard.routing.test.ts`,
   `bun test src/link/connector-turn.test.ts -t "counts in any session"`,
   `bun test src/channels/slack/socket-mode.test.ts -t "Slack owner DM guard"` and

@@ -17,7 +17,6 @@ import {
   isOwnersDirectChat,
   resolveConnectorTurn,
 } from "../../link/connector-turn.js";
-import { ownerReadExposure } from "../../link/owner-read-confirmation.js";
 import { dbListRoutesBySessionName, dbListSessionChatSubscriptions } from "../../router/router-db.js";
 import { parseSessionKey } from "../../router/session-key.js";
 import { resolveSession } from "../../router/sessions.js";
@@ -31,18 +30,9 @@ export type KnowledgeTurnVerdict =
       code: "KNOWLEDGE_TURN_NOT_OPERATOR";
       reason: "group" | "contact" | "shared_session" | "routine" | "agent" | "unknown";
       actorPrincipal: string;
-    }
-  | {
-      ok: false;
-      code: "OWNER_CONFIRMATION_REQUIRED";
-      reason: "owner_confirmation";
-      actorPrincipal: string;
-      /** What the agent tells the owner, and the code the owner answers with. */
-      message: string;
-      details: Record<string, unknown>;
     };
 
-type RefusalReason = Extract<KnowledgeTurnVerdict, { ok: false; code: "KNOWLEDGE_TURN_NOT_OPERATOR" }>["reason"];
+type RefusalReason = Extract<KnowledgeTurnVerdict, { ok: false }>["reason"];
 
 const TERMINAL_TURN: KnowledgeTurn = {
   audience: "operator",
@@ -97,21 +87,10 @@ function verdictFor(result: ConnectorTurnResult, deps: LibraryTurnDeps): Knowled
   const sessionKey = currentKnowledgeSessionKey(deps);
   if (turn.speaker.kind === "owner") {
     if (turn.speaker.contactId) {
-      // The owner's own message counts wherever they write (their direct chat
-      // in any session, or a group); a chat that people outside the
-      // organization read waits for the owner to confirm there.
+      // The owner's own message counts wherever they write: their direct chat
+      // in any session, or a group. Sharing there is their choice (owner
+      // decision, 26/11); what comes back stays in that session's transcript.
       if (turn.conversation !== "dm" && turn.conversation !== "group") return refuse("unknown", turn.actorPrincipal);
-      const exposure = ownerReadExposure(turn, deps.ownerRead);
-      if (!exposure.ok) {
-        return {
-          ok: false,
-          code: "OWNER_CONFIRMATION_REQUIRED",
-          reason: "owner_confirmation",
-          actorPrincipal: turn.actorPrincipal,
-          message: exposure.error.message,
-          details: exposure.error.details ?? {},
-        };
-      }
       return allow(turn, sessionKey);
     }
     if (turn.conversation !== "dm" && turn.conversation !== "terminal") {

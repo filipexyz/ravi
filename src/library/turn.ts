@@ -10,15 +10,12 @@
 import { readActiveCloudAuthUserId, readCloudCredentials } from "../cloud-auth/storage.js";
 import { LEGACY_CLOUD_AUTH_USER_ID } from "../cloud-auth/types.js";
 import { resolveConnectorTurn, type ConnectorTurnDeps } from "../link/connector-turn.js";
-import type { OwnerReadExposureDeps } from "../link/owner-read-confirmation.js";
 
 export interface LibraryTurnDeps {
   turn?: ConnectorTurnDeps;
   readCredentials?: typeof readCloudCredentials;
   /** Overrides the classification (tests). */
   operatorOwnTurn?: boolean;
-  /** Who reads the chat the owner's answer goes to (tests; Knowledge only). */
-  ownerRead?: OwnerReadExposureDeps;
 }
 
 export function isOperatorOwnTurn(deps: LibraryTurnDeps = {}): boolean {

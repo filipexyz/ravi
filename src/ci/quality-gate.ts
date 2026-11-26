@@ -122,8 +122,6 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/db/runtime-state.ts": ["src/db/schema-owner.test.ts"],
   "src/db/state-boundary.ts": ["src/router/state-boundary.test.ts"],
   "src/router/": [
-    // The owner's own recent messages in one chat (owner read confirmation).
-    "src/router/router-db.contact-chat-messages.test.ts",
     // Daemon/consumer initialization exercises the router's journal/schema boundary.
     "src/db/schema-owner.test.ts",
     "src/db/journal-mode-retry.test.ts",

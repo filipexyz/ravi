@@ -82,13 +82,6 @@ export interface ConnectorTurn {
    * Never sent to Link.
    */
   directChat?: { chatId: string; sessionKey: string | null };
-  /**
-   * The owner's turn in a chat: the chat the answer goes to. Private reads
-   * check who else reads it before returning the owner's data there
-   * (`ownerReadExposure`, src/link/owner-read-confirmation.ts). Never sent to
-   * Link.
-   */
-  answerChat?: { chatId: string; kind: "dm" | "group" };
 }
 
 export type ConnectorTurnResult =
@@ -359,7 +352,6 @@ export function resolveConnectorTurn(deps: ConnectorTurnDeps = {}): ConnectorTur
             actorPrincipal,
             speaker: { kind: "owner", contactId: principalId, ...(consoleUserId ? { consoleUserId } : {}) },
             conversation: "group",
-            ...(surface.id ? { answerChat: { chatId: surface.id, kind: "group" as const } } : {}),
           },
         };
       }
@@ -372,9 +364,8 @@ export function resolveConnectorTurn(deps: ConnectorTurnDeps = {}): ConnectorTur
       return { ...notOwner(actorPrincipal, unknownTurnMessage(owner)), speakerIsOwner: true };
     }
     // The owner's own turn counts wherever the session runs, shared or not
-    // (owner decision, 26/11: "se eu escrevo eu quero que esse dado venha").
-    // Who else reads the chat the answer goes to is checked by each private
-    // read (`ownerReadExposure`), not here.
+    // (owner decision, 26/11: "se eu escrevo eu quero que esse dado venha,
+    // independente de onde estar"). Sharing in a group is their choice too.
     return {
       ok: true,
       turn: {
@@ -382,7 +373,6 @@ export function resolveConnectorTurn(deps: ConnectorTurnDeps = {}): ConnectorTur
         actorPrincipal,
         speaker: { kind: "owner", contactId: principalId, ...(consoleUserId ? { consoleUserId } : {}) },
         conversation: "dm",
-        ...(surface.id ? { answerChat: { chatId: surface.id, kind: "dm" as const } } : {}),
       },
     };
   }

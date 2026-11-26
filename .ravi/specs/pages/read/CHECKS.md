@@ -6,12 +6,10 @@
   call.
 - A turn with a runtime context the classifier refuses reads with
   `publicOnly: true`; the terminal reads with `publicOnly: false`.
-- The linked owner's own direct chat reads with `publicOnly: false` in any
-  session, the agent's shared session (`agent:<id>:main`) included. In a
-  group or a direct chat with someone outside the organization the owner
-  reads public-only until their own message there carries `confirmo <code>`
-  (`details.turn: owner_confirmation`); an owner account not linked to the
-  login reads public-only (`details.turn: not_owner`).
+- The linked owner's own message reads with `publicOnly: false` in any
+  session, the agent's shared session (`agent:<id>:main`) included, and in a
+  group, with no confirmation; an owner account not linked to the login
+  reads public-only (`details.turn: not_owner`).
 - A 403 with reason `public_only` maps to `PAGE_ACCESS_DENIED` exit 3; other
   reasons exit 1; 404 maps to `PAGE_NOT_FOUND`; 413/415 to
   `PAGE_CONTENT_UNSUPPORTED`.

@@ -21,7 +21,6 @@ import type { ContextRecord } from "../router/router-db.js";
 import { getOrCreateSession } from "../router/sessions.js";
 import { createRuntimeContext } from "../runtime/context-registry.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import type { OwnerReadExposureDeps } from "../link/owner-read-confirmation.js";
 
 describe("normalizePageReadUrl", () => {
   it("accepts *.ravi.page links with or without a scheme and drops the fragment", () => {
@@ -105,18 +104,10 @@ describe("pageReadTurnBlock on real turn contexts", () => {
     });
   }
 
-  /** The owner's DM, read by the owner alone, unless a test says otherwise. */
-  const OWNER_ONLY_CHAT: OwnerReadExposureDeps = {
-    directChatContact: () => "c_luis",
-    isInsideContact: (contactId) => contactId === "c_luis",
-    contactMessagesSince: () => [],
-  };
-
-  function deps(context: ContextRecord, ownerRead: OwnerReadExposureDeps = OWNER_ONLY_CHAT) {
+  function deps(context: ContextRecord) {
     return {
       readCredentials: () => makeCredentials(),
       turn: { ...OWNER, env: { RAVI_CONTEXT_KEY: context.contextKey } },
-      ownerRead,
     };
   }
 
@@ -139,23 +130,14 @@ describe("pageReadTurnBlock on real turn contexts", () => {
     expect(pageReadTurnBlock(deps(main))).toBeNull();
   });
 
-  it("asks the owner to confirm in a chat people outside the organization read, then reads", () => {
+  it("lets the owner read in a group: sharing there is the owner's choice", () => {
     const group = turnContext(
       { ...ownerDm, agentIdentityCompartment: "chat:120363012345678901@g.us" },
       "agent:main:whatsapp:wa-main:group:120363012345678901",
       "client-group",
     );
-    const outside: OwnerReadExposureDeps = { ...OWNER_ONLY_CHAT, directChatContact: () => null };
-    expect(pageReadIsPublicOnly(deps(group, outside))).toBe(true);
-    const block = pageReadTurnBlock(deps(group, outside));
-    expect(block).toMatchObject({ turn: "owner_confirmation" });
-    const code = String(block?.details?.confirmationCode ?? "");
-    expect(code).toMatch(/^[0-9a-f]{6}$/);
-    expect(block?.why).toContain(`confirmo ${code}`);
-
-    const confirmed: OwnerReadExposureDeps = { ...outside, contactMessagesSince: () => [`confirmo ${code}`] };
-    expect(pageReadIsPublicOnly(deps(group, confirmed))).toBe(false);
-    expect(pageReadTurnBlock(deps(group, confirmed))).toBeNull();
+    expect(pageReadIsPublicOnly(deps(group))).toBe(false);
+    expect(pageReadTurnBlock(deps(group))).toBeNull();
   });
 
   it("names the link rule when the owner writes from an account not linked to this login", () => {
