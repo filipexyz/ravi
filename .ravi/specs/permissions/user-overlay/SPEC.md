@@ -52,6 +52,10 @@ effective_capabilities =
   INTERSECT turn_capabilities_when_present
 ```
 
+An owner turn (`permissions/owner-authority`) is not overlaid: a chat that
+narrows the owner keeps this formula; otherwise the owner's own power replaces
+the agent ceiling.
+
 Agent identity remains the primary authority path
 (`permissions/agent-identity`). The overlay is an additional branch on top of
 it, not a replacement.
@@ -119,7 +123,9 @@ chat grant for any contact, or a chat-tag grant whose tag the chat carries.
 - Task-self capabilities (`task-runtime:self:*`) MUST survive the overlay so a
   task session can still report on its own task.
 - The executor agent ceiling MUST bound the result. A `chat-only` agent MUST
-  still produce zero tool capabilities regardless of contact grants.
+  still produce zero tool capabilities regardless of contact grants. Contact
+  grants never lift this; only owner authority does
+  (`permissions/owner-authority`), and never for a chat that narrows the owner.
 
 ### Lifted Overlay
 

@@ -45,6 +45,7 @@ import {
   isRelayHeldBelowAgent,
   isTurnHeldBelowAgent,
   RAVI_TURN_HELD_BELOW_AGENT_ENV,
+  RAVI_TURN_OWNER_AUTHORITY_ENV,
 } from "../permissions/actor-limit.js";
 import {
   breakGlassDeniesForContact,
@@ -665,8 +666,13 @@ function buildAgentIdentityRuntimeContextInput(options: {
     chatNarrowsActor: userOverlay !== null,
     relayCaller,
   });
+  // The agent's own `deny_*` are part of its ceiling, which the owner is not under: kept, any of them
+  // would drop the owner's admin from the snapshot (Devin on #1029). The owner's own denies stay.
   const ownerAuthority = ownerAuthorityContactId
-    ? [...materializeContactPolicyCapabilities(ownerAuthorityContactId), ...agentIdentityCapabilities]
+    ? [
+        ...materializeContactPolicyCapabilities(ownerAuthorityContactId),
+        ...agentIdentityCapabilities.filter((capability) => !capability.permission.startsWith("deny_")),
+      ]
     : null;
   const effectiveCapabilities = buildEffectiveCapabilities({
     agentCapabilities: ownerAuthority ?? agentIdentityCapabilities,
@@ -753,6 +759,12 @@ function resolveRelayCaller(prompt: RuntimeLaunchPrompt): {
   contactId?: string;
   /** The producing turn held the agent's whole authority: the relay narrows its lineage, not its power. */
   unrestricted?: boolean;
+  /**
+   * The owner whose authority the producing turn carried (`permissions/owner-authority`), still valid now:
+   * that turn's chat does not narrow them today. Never set for a person credential (a paired device or
+   * a call lends a person's turn, not the owner's authority: a guest can speak on it).
+   */
+  ownerContactId?: string;
 } {
   const origin = resolveRuntimeTurnOrigin(prompt._turnOrigin);
   const callerContextId = origin?.callerContextId;
@@ -816,9 +828,23 @@ function resolveRelayCaller(prompt: RuntimeLaunchPrompt): {
   // not reopen what the caller's denies withheld.
   const narrowedByCaller = narrowed || breakGlassDenies.length > 0;
   const lendsNothing = profileRevoked || humanHandoffRefused || liftWithdrawn;
+  // Owner authority travels only from a turn that carried it, for the same contact, and only while the
+  // chat that turn ran in still does not narrow the owner: a `deny_*` added there after a queued inform
+  // was produced withdraws it (Devin on #1029).
+  const callerOwner =
+    typeof metadata.ownerAuthority === "string" && metadata.ownerAuthority.startsWith("contact:")
+      ? metadata.ownerAuthority.slice("contact:".length)
+      : undefined;
+  const callerChat =
+    typeof metadata.surfacePrincipal === "string" && metadata.surfacePrincipal.startsWith("chat:")
+      ? metadata.surfacePrincipal.slice("chat:".length)
+      : undefined;
+  const ownerStillHolds = callerOwner !== undefined && !ownerNarrowedInChat(callerOwner, callerChat);
+  const ownerContactId = callerOwner === contactId && !lendsNothing && ownerStillHolds ? callerOwner : undefined;
   return {
     ...(lendsNothing || narrowedByCaller ? { narrowing: lendsNothing ? [] : positiveCapabilities } : {}),
     ...(narrowed && !callerHeld ? { unrestricted: true } : {}),
+    ...(ownerContactId ? { ownerContactId } : {}),
     ...(breakGlassDenies.length > 0 ? { breakGlassDenies } : {}),
     ...(contactId ? { contactId } : {}),
   };
@@ -835,7 +861,12 @@ function resolveOwnerAuthorityContact(input: {
   actorPrincipal: AuthorityPrincipal | null;
   actorResolution: "resolved" | "missing_contact" | "not_applicable";
   chatNarrowsActor: boolean;
-  relayCaller: { contactId?: string; unrestricted?: boolean; narrowing?: ContextCapability[] };
+  relayCaller: {
+    contactId?: string;
+    unrestricted?: boolean;
+    narrowing?: ContextCapability[];
+    ownerContactId?: string;
+  };
 }): string | null {
   // The installation's owner only: the global `permission-owner` tag. `admin`/`superadmin` are other
   // people's full access and keep the agent ∩ person rule.
@@ -844,15 +875,17 @@ function resolveOwnerAuthorityContact(input: {
     if (!policy || policy.status !== "allowed" || policy.optOut) return false;
     return policy.tags.some((tag) => normalizePermissionTag(tag) === OWNER_PERMISSION_TAG);
   };
+  // A chat that narrows this turn's actor keeps its overlay, relayed or not.
+  if (input.chatNarrowsActor) return null;
   if (input.relayCaller.narrowing !== undefined || input.relayCaller.contactId) {
-    // The caller lends its owner's authority only when it was not held: not narrowed at all, or
-    // narrowed only as a verified handoff of someone holding the agent's whole authority.
-    const caller = input.relayCaller.contactId;
+    // A relay lends owner authority only when the producing turn carried it (never a person
+    // credential: a paired device or a call), that turn was not held (not narrowed at all, or narrowed
+    // only as a verified handoff of someone holding the agent's whole authority), and the owner still is.
+    const caller = input.relayCaller.ownerContactId;
     const callerNotHeld = input.relayCaller.narrowing === undefined || input.relayCaller.unrestricted === true;
     return caller && callerNotHeld && holdsFullAccess(caller) ? caller : null;
   }
   if (input.actorPrincipal?.subjectType !== "contact" || input.actorResolution !== "resolved") return null;
-  if (input.chatNarrowsActor) return null;
   return holdsFullAccess(input.actorPrincipal.subjectId) ? input.actorPrincipal.subjectId : null;
 }
 
@@ -886,6 +919,13 @@ function contactPowerCoversAgent(overlay: ContactChatOverlay): boolean {
  * context recorded, against the grants and tags as they are now. A lifted context without both
  * fails closed.
  */
+/** The chat (if any) holds this owner below the agent now: a governing overlay with a `deny_*` that keeps it. */
+function ownerNarrowedInChat(contactId: string, chatId: string | undefined): boolean {
+  if (!chatId) return false;
+  const overlay = resolveContactChatOverlay({ contactId, chatId });
+  return overlay.active && !contactPowerCoversAgent(overlay);
+}
+
 function callerLiftStillHolds(metadata: Record<string, unknown>): boolean {
   const owner = typeof metadata.userOverlayContact === "string" ? metadata.userOverlayContact : "";
   const chat = typeof metadata.userOverlayChat === "string" ? metadata.userOverlayChat : "";
@@ -1358,6 +1398,7 @@ function buildContextSource(resolvedSource?: RuntimeMessageTarget) {
 const MANAGED_RAVI_RUNTIME_ENV_KEYS = [
   "RAVI_CONTEXT_KEY",
   RAVI_TURN_HELD_BELOW_AGENT_ENV,
+  RAVI_TURN_OWNER_AUTHORITY_ENV,
   "RAVI_SESSION_KEY",
   "RAVI_SESSION_NAME",
   "RAVI_AGENT_ID",
@@ -1585,6 +1626,10 @@ function buildRaviRuntimeEnv(options: {
   // Read by the provider in the daemon (never from the agent's process): a turn of a
   // person held below the agent runs without execution power the provider would grant.
   if (turnRunsBelowAgentExecution(runtimeContext)) raviEnv[RAVI_TURN_HELD_BELOW_AGENT_ENV] = "1";
+  // The owner acts with their own power, so the provider does not apply the agent profile's sandbox.
+  else if (typeof runtimeContext.metadata?.ownerAuthority === "string") {
+    raviEnv[RAVI_TURN_OWNER_AUTHORITY_ENV] = "1";
+  }
 
   Object.assign(raviEnv, buildTaskRuntimeEnv(sessionName, sessionCwd, prompt.taskBarrierTaskId));
   return raviEnv;

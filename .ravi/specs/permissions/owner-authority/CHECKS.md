@@ -20,3 +20,13 @@
 - The Bash hook MUST allow an owner-authority turn's command outside the
   agent's list and MUST still refuse it when the snapshot lacks it
   (hook.test.ts, "bounds an owner-authority turn by its issued snapshot").
+- An agent `deny_*` unrelated to the command MUST NOT remove the owner's
+  shell access ("an agent deny does not cut the owner").
+- A relay from a person credential of the owner (paired device, call) MUST NOT
+  carry owner authority (person-credential.test.ts).
+- A queued relay of the owner's turn MUST lose owner authority once a chat
+  `deny_*` narrows the owner in the producing turn's chat.
+- An owner-authority turn MUST carry `RAVI_TURN_OWNER_AUTHORITY=1` and the next
+  ordinary turn MUST NOT; Codex MUST open the owner's turn unrestricted for a
+  restricted agent profile and keep a bridge turn restricted
+  (codex-provider.test.ts, `resolveCodexTurnSecurity`).
