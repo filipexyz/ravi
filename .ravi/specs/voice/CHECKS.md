@@ -39,3 +39,7 @@ normative: false
   when a sentence ends exactly at the limit); a window ending while a delegation settles does not
   erase its request; each reply's window shows only what that reply answered; the offset splits an
   utterance without a pause.
+- Review repro of #1023 (`engines.test.ts`, S1-S3): a greeting the model answered does not ride along
+  with the next request; a delegation after the conversation window still gets the request; inside
+  the window nothing shows as conversation; a late delegation never takes speech that started after
+  its offset.

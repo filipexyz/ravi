@@ -33,6 +33,8 @@ export const UTTERANCE_GAP_MS = 1200;
  * ver") before it delegates, and the request must still reach the session.
  */
 export const CONVERSATION_SETTLE_MS = 3000;
+/** How many shown utterances a late delegation can still take. */
+const RECENT_SHOWN_LIMIT = 3;
 /** Events that carry reflected audio. They are dropped on arrival, never stored or published. */
 const AUDIO_EVENTS = new Set(["session.input_audio.append", "session.output_audio.delta"]);
 
@@ -234,6 +236,12 @@ export class LiveSideband {
   private pendingUtterances: Array<{ text: string; startMs: number | null; answeredBy: number | null }> = [];
   /** Counts model replies; each conversation timer only shows what its own reply answered. */
   private replySeq = 0;
+  /**
+   * The last utterances shown as conversation that no delegation took. If a
+   * delegation arrives after the window with nothing pending, the latest of
+   * these that started before its offset is the request.
+   */
+  private recentShown: Array<{ text: string; startMs: number | null }> = [];
   /** Delegations created but not yet settled. */
   private pendingDelegations = 0;
   /** A model reply is being transcribed (timestamps decide when one ends). */
@@ -442,14 +450,40 @@ export class LiveSideband {
       this.userStartMs = later[0]?.startMs ?? null;
       this.userLastEndMs = laterLastEndMs;
     }
-    const taken: string[] = [];
-    const kept: typeof this.pendingUtterances = [];
-    for (const item of this.pendingUtterances) {
-      if (offsetMs !== null && item.startMs !== null && item.startMs > offsetMs) kept.push(item);
-      else taken.push(item.text);
+    const before = (item: { startMs: number | null }) =>
+      offsetMs === null || item.startMs === null || item.startMs <= offsetMs;
+    const eligible = this.pendingUtterances.filter(before);
+    this.pendingUtterances = this.pendingUtterances.filter((item) => !before(item));
+    const unanswered = eligible.filter((item) => item.answeredBy === null);
+    const answered = eligible.filter((item) => item.answeredBy !== null);
+    let taken: string[];
+    let conversation: typeof answered;
+    if (unanswered.length) {
+      // New speech after the model's reply is the request; what the model
+      // already answered was conversation.
+      taken = unanswered.map((item) => item.text);
+      conversation = answered;
+    } else if (answered.length) {
+      // The model talked ("deixa eu ver") and then delegated: the request is
+      // the last thing it answered; anything earlier was conversation.
+      taken = [answered[answered.length - 1]?.text ?? ""];
+      conversation = answered.slice(0, -1);
+    } else {
+      // The conversation window already showed it: take the latest shown
+      // utterance that started before the offset instead of asking to repeat.
+      const recent = [...this.recentShown].reverse().find(before);
+      taken = recent ? [recent.text] : [];
+      conversation = [];
+      if (recent) this.recentShown = this.recentShown.filter((item) => item !== recent);
     }
-    this.pendingUtterances = kept;
+    for (const item of conversation) this.showConversation(item);
     return taken.join(" ").trim();
+  }
+
+  private showConversation(item: { text: string; startMs: number | null }): void {
+    this.options.handlers.onUserTranscript(item.text);
+    this.recentShown.push({ text: item.text, startMs: item.startMs });
+    if (this.recentShown.length > RECENT_SHOWN_LIMIT) this.recentShown.shift();
   }
 
   /** Close the utterance being heard and keep it until a delegation or an answer takes it. */
@@ -468,10 +502,15 @@ export class LiveSideband {
    * conversation: show it once. A delegation still settling takes it instead.
    */
   private emitAnswered(reply: number): void {
-    if (this.pendingDelegations > 0) return;
+    if (this.closed) return;
+    if (this.pendingDelegations > 0) {
+      // A delegation is settling: check again later instead of dropping the timer.
+      this.timer(() => this.emitAnswered(reply), CONVERSATION_SETTLE_MS);
+      return;
+    }
     const shown = this.pendingUtterances.filter((item) => item.answeredBy === reply);
     this.pendingUtterances = this.pendingUtterances.filter((item) => item.answeredBy !== reply);
-    for (const item of shown) this.options.handlers.onUserTranscript(item.text);
+    for (const item of shown) this.showConversation(item);
   }
 
   /** Show everything nobody took (hangup or close). */

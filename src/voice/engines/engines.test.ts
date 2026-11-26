@@ -248,8 +248,7 @@ describe("voice engines", () => {
     h.send({ type: "session.input_transcript.delta", delta: "oi cara", start_ms: 0, end_ms: 800 });
     h.send({ type: "session.output_transcript.delta", delta: "Oi! " });
     h.send({ type: "session.input_transcript.delta", delta: "quais ferramentas tu tem", start_ms: 5000, end_ms: 6500 });
-    // More than CONVERSATION_SETTLE_MS after the reply started: "oi cara" was conversation.
-    h.timers[0]?.();
+    // The delegation comes inside the reply's window: still, only the new speech is the request.
     h.send({ type: "session.delegation.created", delegation: { id: "d1" } });
     h.timers[1]?.();
     expect(h.users).toEqual(["oi cara"]);
@@ -379,6 +378,50 @@ describe("voice engines", () => {
     h.send({ type: "session.delegation.created", delegation: { id: "d2", offset_ms: 2500 } });
     h.timers[1]?.();
     expect(h.delegations.at(-1)).toEqual({ delegationId: "d2", text: "e outra coisa" });
+  });
+
+  // Repro from the review of #1023 (reviews/repro-live-1023.ts), scenarios S1-S3.
+  it("S1: a greeting the model answered does not ride along with the next request", () => {
+    const h = harness();
+    h.send({ type: "session.input_transcript.delta", delta: "oi", start_ms: 0, end_ms: 400 });
+    h.send({ type: "session.output_transcript.delta", delta: "Oi!", start_ms: 600, end_ms: 900 });
+    h.send({ type: "session.input_transcript.delta", delta: "manda o resumo", start_ms: 2000, end_ms: 3000 });
+    h.send({ type: "session.delegation.created", delegation: { id: "d1", offset_ms: 3200 } });
+    h.timers.at(-1)?.();
+    h.timers[0]?.();
+    expect(h.delegations).toEqual([{ delegationId: "d1", text: "manda o resumo" }]);
+    expect(h.users).toEqual(["oi"]);
+  });
+
+  it("S2: a delegation after the conversation window still gets the request", () => {
+    const h = harness();
+    h.send({ type: "session.input_transcript.delta", delta: "quais ferramentas tu tem", start_ms: 0, end_ms: 1500 });
+    h.send({ type: "session.output_transcript.delta", delta: "Deixa eu ver", start_ms: 1700, end_ms: 2400 });
+    h.timers[0]?.();
+    h.send({ type: "session.delegation.created", delegation: { id: "d1", offset_ms: 1500 } });
+    h.timers.at(-1)?.();
+    expect(h.delegations).toEqual([{ delegationId: "d1", text: "quais ferramentas tu tem" }]);
+  });
+
+  it("S3: a delegation inside the window gets the request and nothing shows as conversation", () => {
+    const h = harness();
+    h.send({ type: "session.input_transcript.delta", delta: "quais ferramentas tu tem", start_ms: 0, end_ms: 1500 });
+    h.send({ type: "session.output_transcript.delta", delta: "Deixa eu ver", start_ms: 1700, end_ms: 2400 });
+    h.send({ type: "session.delegation.created", delegation: { id: "d1", offset_ms: 1500 } });
+    h.timers.at(-1)?.();
+    h.timers[0]?.();
+    expect(h.delegations).toEqual([{ delegationId: "d1", text: "quais ferramentas tu tem" }]);
+    expect(h.users).toEqual([]);
+  });
+
+  it("a late delegation does not take shown speech that started after its offset", () => {
+    const h = harness();
+    h.send({ type: "session.input_transcript.delta", delta: "depois", start_ms: 5000, end_ms: 5500 });
+    h.send({ type: "session.output_transcript.delta", delta: "Ok.", start_ms: 5700, end_ms: 6000 });
+    h.timers[0]?.();
+    h.send({ type: "session.delegation.created", delegation: { id: "d1", offset_ms: 1000 } });
+    h.timers.at(-1)?.();
+    expect(h.delegations).toEqual([{ delegationId: "d1", text: "" }]);
   });
 
   it("reads the provider error nested under error", () => {

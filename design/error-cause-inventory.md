@@ -2549,10 +2549,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | voice | src/voice/door.ts | 621 | fixed | binding retained / no recognized error surface | src/voice/door.ts:1b66eb0a4e2d9ec1d4744619 |
 | voice | src/voice/door.ts | 734 | fixed | binding retained / no recognized error surface | src/voice/door.ts:84c31200c0720431174f85d7 |
 | voice | src/voice/door.ts | 814 | fixed | binding retained / no recognized error surface | src/voice/door.ts:f3ce27952b7188fffad68e3c |
-| voice | src/voice/engines/live.ts | 149 | no-cause | best effort; the sideband close below ends the session too. | src/voice/engines/live.ts:131880a16d76feb7670ff646 |
-| voice | src/voice/engines/live.ts | 287 | no-cause | closing a socket that already dropped. | src/voice/engines/live.ts:3367d51f4685a322902cd622 |
-| voice | src/voice/engines/live.ts | 292 | no-cause | closing a socket that already dropped. | src/voice/engines/live.ts:3367d51f4685a322902cd622 |
-| voice | src/voice/engines/live.ts | 526 | no-cause | a non-JSON provider frame is ignored, not an error. | src/voice/engines/live.ts:28d99f5c39baa36e06a9503d |
+| voice | src/voice/engines/live.ts | 151 | no-cause | best effort; the sideband close below ends the session too. | src/voice/engines/live.ts:131880a16d76feb7670ff646 |
+| voice | src/voice/engines/live.ts | 295 | no-cause | closing a socket that already dropped. | src/voice/engines/live.ts:3367d51f4685a322902cd622 |
+| voice | src/voice/engines/live.ts | 300 | no-cause | closing a socket that already dropped. | src/voice/engines/live.ts:3367d51f4685a322902cd622 |
+| voice | src/voice/engines/live.ts | 565 | no-cause | a non-JSON provider frame is ignored, not an error. | src/voice/engines/live.ts:28d99f5c39baa36e06a9503d |
 | voice | src/voice/events.ts | 23 | fixed | binding retained / no recognized error surface | src/voice/events.ts:3a399038496742285f0807b2 |
 | voice | src/voice/store.ts | 47 | fixed | binding retained / no recognized error surface | src/voice/store.ts:8f06902caa7d1d7f676ba3ee |
 | voice | src/voice/store.ts | 50 | no-cause | Cleanup must not replace the setup error rethrown below; the handle was never cached. | src/voice/store.ts:dc90cd3643bb6cab0d1b0a7b |
