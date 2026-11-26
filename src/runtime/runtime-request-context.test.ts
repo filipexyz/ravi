@@ -3545,6 +3545,11 @@ describe("verified human work handoffs", () => {
       expect(turn.metadata).toMatchObject({ actorAuthorizationMode: "user-overlay", userOverlay: "active" });
       expect(canWithCapabilities(turn.capabilities, "execute", "executable", "rm")).toBe(false);
       expect(automationHoldCause(turn)).toBe("contact-chat-grants");
+      // Narrowed in this chat, the owner carries no owner authority, and neither does a relay of the turn.
+      expect(turn.metadata?.ownerAuthority).toBeUndefined();
+      const relayed = handoff(turn, "session.bootstrap", {}, originAgent);
+      expect(relayed.metadata?.ownerAuthority).toBeUndefined();
+      expect(canWithCapabilities(relayed.capabilities, "execute", "executable", "rm")).toBe(false);
     });
 
     it("a deny over an admin keeps the overlay even when an agent deny hides admin from the comparison", () => {
