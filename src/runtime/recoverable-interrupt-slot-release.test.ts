@@ -126,6 +126,8 @@ async function fixture() {
     currentToolSafety: null,
     pendingAbort: false,
     agentMode: "active",
+    // claude + ravi-host permissions, as resolveRuntimeToolEffectFence gives in production.
+    toolEffectFence: "host_write_ahead",
   };
   dispatcher.streamingSessions.set(session.name!, streaming);
 
@@ -183,7 +185,7 @@ async function fixture() {
       drainPendingStarts() {},
     });
   };
-  return { session, streaming, dispatcher, reply, restarts, run };
+  return { session, streaming, dispatcher, reply, restarts, run, running: streaming.pendingMessages[0]! };
 }
 
 function skippedRestarts(sessionKey: string): Array<Record<string, unknown>> {
@@ -324,5 +326,16 @@ describe("pool reclaimer and finished sessions", () => {
     expect(isReleasableDoneRuntimeSession({ done: true, eventLoopActive: false })).toBe(true);
     expect(isReleasableDoneRuntimeSession({ done: true })).toBe(true);
     expect(isReleasableDoneRuntimeSession({ done: false, eventLoopActive: false })).toBe(false);
+  });
+
+  it("re-delivers the superseded turn's own message when it was stopped before the provider checked it", async () => {
+    // 26/11 19:58Z: the interrupted turn's prompt never reached the provider (prompt_check), the runtime
+    // restarted, and only the reply was re-delivered. The first message existed nowhere else.
+    const f = await fixture();
+
+    await f.run(() => {});
+
+    const stashed = f.dispatcher.stashedMessages.get(f.session.name!) ?? [];
+    expect(stashed.map((message) => message.pendingId)).toEqual([f.running.pendingId, f.reply.pendingId]);
   });
 });

@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, setSystemTime } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { listLocalInboxEvents, listLocalInboxItems, markLocalInboxItem } from "../inbox/local-db.js";
+import {
+  listLocalInboxEvents,
+  listLocalInboxItems,
+  markLocalInboxItem,
+  readLocalInboxItem,
+} from "../inbox/local-db.js";
 import { dbCreateCronJob } from "./cron-db.js";
 import {
   CRON_FAILURE_DIGEST_MAX_LINES,
@@ -13,6 +18,8 @@ import {
   notifyCronFailure,
   notifyUndeliveredRunReturn,
   recordUnreadableCronFailure,
+  resolveCronFailureAlerts,
+  CRON_FAILURE_RESOLVED_EVENT,
 } from "./failure-notification.js";
 
 let stateDir: string | null = null;
@@ -508,5 +515,168 @@ describe("undelivered run return notice: one per origin per window", () => {
     expect(sent[1]).toContain("O resultado de 4 execuções do agendamento");
     // The second window's count starts at the second notice: the first window's joins are not counted again.
     expect(sent[2]).toContain("O resultado de 3 execuções do agendamento");
+  });
+});
+
+describe("cron failure alerts resolve when the job runs fine again", () => {
+  const silent = { owner: () => target, deliver: async () => {} };
+
+  function failureItems() {
+    return listLocalInboxItems({ includeArchived: true, limit: 500 }).filter(
+      (item) => item.sourceDomain === "cron" && item.sourceType === "run_failed",
+    );
+  }
+
+  it("closes every open failure of the job up to the successful run, with a resolution event", async () => {
+    const current = job();
+    const t0 = Date.now() - 10_000;
+    await notifyCronFailure({ ...current, lastRunAt: t0, runId: "r1" }, "Agent turn interrupted", silent);
+    await notifyCronFailure({ ...current, lastRunAt: t0 + 1000, runId: "r2" }, "Agent turn interrupted", silent);
+    expect(failureItems().filter((item) => item.status !== "done")).toHaveLength(2);
+
+    expect(resolveCronFailureAlerts(current.id, t0 + 5000)).toBe(2);
+
+    const items = failureItems();
+    expect(items.every((item) => item.status === "done")).toBe(true);
+    for (const item of items) {
+      const resolved = listLocalInboxEvents(item.id).filter((event) => event.eventType === CRON_FAILURE_RESOLVED_EVENT);
+      expect(resolved).toHaveLength(1);
+      expect(resolved[0]!.actorType).toBe("system");
+    }
+  });
+
+  it("keeps a failure that happened after the successful run open", async () => {
+    const current = job();
+    const t0 = Date.now() - 10_000;
+    await notifyCronFailure({ ...current, lastRunAt: t0, runId: "before" }, "Agent turn interrupted", silent);
+    await notifyCronFailure({ ...current, lastRunAt: t0 + 9000, runId: "after" }, "Agent turn interrupted", silent);
+
+    expect(resolveCronFailureAlerts(current.id, t0 + 5000)).toBe(1);
+
+    const open = failureItems().filter((item) => item.status !== "done");
+    expect(open).toHaveLength(1);
+    expect(open[0]!.occurredAt).toBe(t0 + 9000);
+  });
+
+  it("never touches another job's failures", async () => {
+    const mine = job();
+    const other = job();
+    const t0 = Date.now() - 10_000;
+    await notifyCronFailure({ ...mine, lastRunAt: t0, runId: "m" }, "Agent turn interrupted", silent);
+    await notifyCronFailure({ ...other, lastRunAt: t0, runId: "o" }, "Agent turn interrupted", silent);
+
+    expect(resolveCronFailureAlerts(mine.id, t0 + 5000)).toBe(1);
+
+    const open = failureItems().filter((item) => item.status !== "done");
+    expect(open).toHaveLength(1);
+    expect(open[0]!.sourceId).toBe(other.id);
+  });
+
+  it("does not reopen or re-record items a person already closed", async () => {
+    const current = job();
+    const t0 = Date.now() - 10_000;
+    await notifyCronFailure({ ...current, lastRunAt: t0, runId: "r1" }, "Agent turn interrupted", silent);
+    const [item] = failureItems();
+    markLocalInboxItem(item!.id, "done", { eventType: "done", actorType: "contact" });
+
+    expect(resolveCronFailureAlerts(current.id, t0 + 5000)).toBe(0);
+    expect(listLocalInboxEvents(item!.id).some((event) => event.eventType === CRON_FAILURE_RESOLVED_EVENT)).toBe(false);
+  });
+
+  it("resolves more than one page of failures", async () => {
+    const current = job();
+    const t0 = Date.now() - 1_000_000;
+    for (let i = 0; i < 60; i++) {
+      await notifyCronFailure({ ...current, lastRunAt: t0 + i, runId: `r${i}` }, "Agent turn interrupted", silent);
+    }
+    expect(resolveCronFailureAlerts(current.id, t0 + 100)).toBe(60);
+    expect(failureItems().filter((item) => item.status !== "done")).toHaveLength(0);
+  });
+  it("keeps a failure of a run admitted after the successful one open, whatever order the outcomes arrive in", async () => {
+    const current = job();
+    const olderAdmission = Date.now() - 10_000;
+    // The newer manual run failed first; the older scheduled run completes ok afterwards.
+    await notifyCronFailure(
+      { ...current, lastRunAt: olderAdmission + 1000, runId: "manual" },
+      "Agent turn interrupted",
+      silent,
+    );
+
+    expect(resolveCronFailureAlerts(current.id, olderAdmission)).toBe(0);
+    expect(failureItems().filter((item) => item.status !== "done")).toHaveLength(1);
+  });
+
+  it("does not close a failure admitted in the same millisecond as the successful run", async () => {
+    const current = job();
+    const at = Date.now() - 10_000;
+    await notifyCronFailure({ ...current, lastRunAt: at, runId: "same-ms" }, "Agent turn interrupted", silent);
+    expect(resolveCronFailureAlerts(current.id, at)).toBe(0);
+  });
+
+  it("reading a resolved alert keeps it closed", async () => {
+    const current = job();
+    const t0 = Date.now() - 10_000;
+    await notifyCronFailure({ ...current, lastRunAt: t0, runId: "r1" }, "Agent turn interrupted", silent);
+    resolveCronFailureAlerts(current.id, t0 + 5000);
+    const [item] = failureItems();
+
+    const read = readLocalInboxItem(item!.id);
+    expect(read.item.status).toBe("done");
+    expect(read.events.some((event) => event.eventType === CRON_FAILURE_RESOLVED_EVENT)).toBe(true);
+    expect(listLocalInboxItems({ sourceDomain: "cron" })).toHaveLength(0);
+  });
+
+  it("delivering a pending notice after the job recovered does not reopen the alert", async () => {
+    const current = job();
+    const report = prepareCronFailureReport({ ...current, runId: "pending" }, "timeout", { owners: () => [target] });
+    expect(report).not.toBeNull();
+    resolveCronFailureAlerts(current.id, (current.lastRunAt as number) + 1);
+
+    const sent: string[] = [];
+    await deliverCronFailureReports([report!], {
+      reachable: async () => null,
+      deliver: async (_to, text) => {
+        sent.push(text);
+      },
+    });
+    expect(sent).toHaveLength(1);
+    expect(failureItems().every((item) => item.status === "done")).toBe(true);
+  });
+
+  it("a failed delivery after the job recovered does not reopen the alert either", async () => {
+    const current = job();
+    const report = prepareCronFailureReport({ ...current, runId: "pending" }, "timeout", { owners: () => [target] });
+    resolveCronFailureAlerts(current.id, (current.lastRunAt as number) + 1);
+
+    await deliverCronFailureReports([report!], {
+      reachable: async () => null,
+      deliver: async () => {
+        throw new Error("send failed");
+      },
+    });
+    expect(failureItems().every((item) => item.status === "done")).toBe(true);
+  });
+});
+
+describe("a failure resolved before its notice went out", () => {
+  it("sends nothing at start for a failure the job already recovered from", async () => {
+    const current = job();
+    // The owner's chat was unreachable: the failure is recorded but owed a message.
+    const pending = prepareCronFailureReport({ ...current, runId: "offline" }, "timeout", { owners: () => [target] });
+    expect(pending).not.toBeNull();
+    resolveCronFailureAlerts(current.id, (current.lastRunAt as number) + 1);
+
+    // The next start rebuilds the report for the same run: it is settled, no message is owed.
+    expect(
+      prepareCronFailureReport({ ...current, runId: "offline" }, "timeout", { owners: () => [target] }),
+    ).toBeNull();
+  });
+
+  it("still sends for a failure that was not resolved", async () => {
+    const current = job();
+    prepareCronFailureReport({ ...current, runId: "offline" }, "timeout", { owners: () => [target] });
+    expect(
+      prepareCronFailureReport({ ...current, runId: "offline" }, "timeout", { owners: () => [target] }),
+    ).not.toBeNull();
   });
 });
