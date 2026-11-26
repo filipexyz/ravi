@@ -168,13 +168,13 @@ export async function revalidateCachedBindings(
     // Nothing cached: discovery only, on the stored session as it is. A
     // refresh here would write or delete the active credentials from a
     // background tick, racing a `ravi login` that switches accounts.
-    if (await discoverWithStoredSession(deps, env)) result.discovered += 1;
+    result.discovered += await discoverWithStoredSession(deps, env);
     return result;
   }
 
   try {
     await withCloudSession(deps, async (client, credentials) => {
-      if (await discoverOwnerBinding(client, credentials, cached, env)) result.discovered += 1;
+      result.discovered += await discoverOwnerBinding(client, credentials, env);
       for (const binding of cached) {
         if (binding.installationId !== credentials.installationId) continue;
         try {
@@ -205,67 +205,80 @@ export async function revalidateCachedBindings(
  * deleting them: an expired or unhydrated session waits for the next tick
  * (or for the next `ravi` command that refreshes it in the foreground).
  */
-async function discoverWithStoredSession(deps: LinkWatcherDeps, env: NodeJS.ProcessEnv): Promise<boolean> {
+async function discoverWithStoredSession(deps: LinkWatcherDeps, env: NodeJS.ProcessEnv): Promise<number> {
   let stored: CloudCredentials | null;
   try {
     stored = (deps.readCredentials ?? readCloudCredentials)(env);
   } catch (error) {
     log.debug("Owner link discovery skipped", { error: errorText(error) });
-    return false;
+    return 0;
   }
-  if (!stored) return false;
+  if (!stored) return 0;
   const now = (deps.now ?? Date.now)();
   const expiresAt = stored.accessTokenExpiresAt ? Date.parse(stored.accessTokenExpiresAt) : Number.NaN;
-  if (Number.isFinite(expiresAt) && expiresAt <= now) return false;
+  if (Number.isFinite(expiresAt) && expiresAt <= now) return 0;
   const client = deps.client ?? new ConsoleApiClient({ consoleUrl: stored.consoleUrl });
   try {
-    return await discoverOwnerBinding(client, stored, [], env);
+    return await discoverOwnerBinding(client, stored, env);
   } catch (error) {
     log.debug("Owner link discovery skipped", { error: errorText(error) });
-    return false;
+    return 0;
   }
 }
 
 /**
- * Cache the login owner's binding on this installation when none is cached.
- * Only the active login's own Console user is looked up, so nothing is
- * granted that the Console did not already bind to this installation. The
- * binding is confirmed a second time by contact before it is written, so a
- * `ravi unlink` that lands between the two calls is not undone.
+ * Cache the login owner's bindings on this installation that are not cached
+ * yet. Only the active login's own Console user is looked up (the Console
+ * answers that query with every active binding of the user on this
+ * installation, e.g. one per channel), so nothing is cached that the Console
+ * did not already bind here. Each binding is confirmed a second time by
+ * contact before it is written, so a `ravi unlink` that lands between the
+ * calls is not undone. Returns how many bindings were cached.
  */
 async function discoverOwnerBinding(
   client: ConsoleApiClient,
   credentials: CloudCredentials,
-  cached: ActorBinding[],
   env: NodeJS.ProcessEnv,
-): Promise<boolean> {
+): Promise<number> {
   const ownerUserId = credentials.user?.id?.trim();
   const installationId = credentials.installationId;
-  if (!ownerUserId || !installationId) return false;
-  if (cached.some((binding) => binding.installationId === installationId && binding.consoleUserId === ownerUserId)) {
-    return false;
-  }
+  if (!ownerUserId || !installationId) return 0;
+  // An entry cached for another installation does not count: the active
+  // login never reads it, so it would keep the owner unlinked here. Cache
+  // reads use the real clock, like every other cache read in this watcher.
+  const cachedHere = (contactId: string) =>
+    readCachedActorBinding(contactId, env, undefined, { requireInstallationId: installationId });
+  let listed: ActorBinding[];
   try {
-    const found = await client.resolveActorBinding({ consoleUserId: ownerUserId }, credentials.accessToken);
-    if (!found || found.consoleUserId !== ownerUserId || found.installationId !== installationId) return false;
-    // An entry cached for another installation does not count: the active
-    // login never reads it, so it would keep the owner unlinked here.
-    const cachedHere = () =>
-      readCachedActorBinding(found.contactId, env, Date.now(), { requireInstallationId: installationId });
-    if (cachedHere() !== null) return false;
-    const confirmed = await client.resolveActorBinding({ contactId: found.contactId }, credentials.accessToken);
-    if (!confirmed || confirmed.id !== found.id || confirmed.consoleUserId !== ownerUserId) return false;
-    // A link or unlink for this contact may have written the cache while the calls were in flight.
-    if (cachedHere() !== null) return false;
-    writeCachedActorBinding(confirmed, env);
-    log.info("Cached the login owner's Console link", { contactId: confirmed.contactId });
-    return true;
+    listed = await client.listActorBindingsForUser(ownerUserId, credentials.accessToken);
   } catch (error) {
     if (isCloudAuthError(error) && error.code === "AUTH_EXPIRED") throw error;
-    if (isCloudAuthError(error) && error.code === "NOT_FOUND") return false;
+    if (isCloudAuthError(error) && error.code === "NOT_FOUND") return 0;
     log.warn("Owner link discovery failed", { error: errorText(error) });
-    return false;
+    return 0;
   }
+  let discovered = 0;
+  const seen = new Set<string>();
+  for (const found of listed) {
+    if (found.consoleUserId !== ownerUserId || found.installationId !== installationId) continue;
+    if (seen.has(found.contactId)) continue;
+    seen.add(found.contactId);
+    if (cachedHere(found.contactId) !== null) continue;
+    try {
+      const confirmed = await client.resolveActorBinding({ contactId: found.contactId }, credentials.accessToken);
+      if (!confirmed || confirmed.id !== found.id || confirmed.consoleUserId !== ownerUserId) continue;
+      if (confirmed.installationId !== installationId) continue;
+      // A link or unlink for this contact may have written the cache while the calls were in flight.
+      if (cachedHere(found.contactId) !== null) continue;
+      writeCachedActorBinding(confirmed, env);
+      log.info("Cached the login owner's Console link", { contactId: confirmed.contactId });
+      discovered += 1;
+    } catch (error) {
+      if (isCloudAuthError(error) && error.code === "AUTH_EXPIRED") throw error;
+      log.warn("Owner link confirmation failed", { error: errorText(error) });
+    }
+  }
+  return discovered;
 }
 
 /** The linking state this request belongs to, if it was sent by the private-chat flow. */

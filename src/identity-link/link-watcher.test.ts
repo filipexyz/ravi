@@ -240,113 +240,135 @@ describe("revalidateCachedBindings", () => {
   });
 });
 
+// The Console's answer to `GET /api/cli/link?consoleUserId=` (no contact): the
+// plural list, each entry in the shape of ravi-console `publicBinding`
+// (src/server/console/ravi-link.ts:278-279 and :358-373).
+const OWNER_UUID = "8d576898-bfc1-49dc-b532-8f896e496728";
+const INSTALLATION_UUID = "0b9f4c1e-2a57-4d8e-9c3b-6f1a2d7e8b90";
+const ORG_UUID = "5e2d8a41-7c6b-4f03-a9e1-3b8c0d4f6a12";
+
+function serverBinding(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "1f6c2b9a-3d4e-4a5b-8c7d-9e0f1a2b3c4d",
+    installationId: INSTALLATION_UUID,
+    organizationId: ORG_UUID,
+    consoleUserId: OWNER_UUID,
+    contactId: "d8f3d5ad489d",
+    platformIdentities: {},
+    status: "active",
+    linkedBy: OWNER_UUID,
+    linkedAt: "2026-11-01T12:00:00.000Z",
+    revokedAt: null,
+    createdAt: "2026-11-01T12:00:00.000Z",
+    updatedAt: "2026-11-01T12:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function ownerCredentials(overrides: Record<string, unknown> = {}) {
+  const credentials = createMemoryCredentials(INSTALLATION_UUID);
+  credentials.writeCredentials({
+    ...credentials.current!,
+    user: { id: OWNER_UUID },
+    organization: { id: ORG_UUID },
+    ...overrides,
+  });
+  return credentials;
+}
+
+/** Answers the owner list (plural) and the per-contact confirmation (singular). */
+function answerOwnerLinks(
+  fake: ReturnType<typeof createFakeConsole>,
+  list: Record<string, unknown>[],
+  byContact: (contactId: string) => Record<string, unknown> | null = (contactId) =>
+    list.find((entry) => entry.contactId === contactId) ?? null,
+) {
+  fake.on((call) => {
+    if (call.path === `/api/cli/link?consoleUserId=${OWNER_UUID}`) return { body: { version: 1, bindings: list } };
+    const prefix = "/api/cli/link?contactId=";
+    if (call.path.startsWith(prefix))
+      return { body: { version: 1, binding: byContact(call.path.slice(prefix.length)) } };
+    return undefined;
+  });
+}
+
 describe("revalidateCachedBindings discovers the login owner's link", () => {
-  const ownerBinding = () =>
-    bindingPayload({ id: "bind_owner", contactId: "contact_owner", actorPrincipal: "contact:contact_owner" });
-  const ownerBindingBody = () => ({ version: 1, binding: { ...ownerBinding(), consoleUserId: "user_operator" } });
-
-  function answerOwner(fake: ReturnType<typeof createFakeConsole>, byContact: () => unknown = ownerBindingBody) {
-    fake.on((call) => {
-      if (call.path === "/api/cli/link?consoleUserId=user_operator") return { body: ownerBindingBody() };
-      if (call.path === "/api/cli/link?contactId=contact_owner") return { body: byContact() };
-      return undefined;
-    });
-  }
-
   it("caches a Console link of the login owner that never reached this installation", async () => {
     const fake = createFakeConsole();
-    answerOwner(fake);
+    answerOwnerLinks(fake, [serverBinding()]);
     const { messenger } = createFakeMessenger();
 
-    const result = await revalidateCachedBindings(linkDeps(fake, createMemoryCredentials(), messenger));
+    const result = await revalidateCachedBindings(linkDeps(fake, ownerCredentials(), messenger));
 
     expect(result).toEqual({ kept: 0, removed: 0, discovered: 1 });
-    expect(readCachedActorBinding("contact_owner")?.consoleUserId).toBe("user_operator");
+    expect(readCachedActorBinding("d8f3d5ad489d")?.consoleUserId).toBe(OWNER_UUID);
+    expect(readCachedActorBinding("d8f3d5ad489d")?.installationId).toBe(INSTALLATION_UUID);
   });
 
-  it("does not look the owner up again when their link is already cached", async () => {
-    writeCachedActorBinding({ ...ownerBinding(), consoleUserId: "user_operator", platformIdentity: null });
+  it("caches every contact of the owner on this installation and skips other entries", async () => {
     const fake = createFakeConsole();
-    answerOwner(fake);
+    answerOwnerLinks(fake, [
+      serverBinding(),
+      serverBinding({ id: "2a7d3c0b-4e5f-4b6c-9d8e-0f1a2b3c4d5e", contactId: "wa_contact" }),
+      serverBinding({
+        id: "3b8e4d1c-5f60-4c7d-8e9f-1a2b3c4d5e6f",
+        contactId: "elsewhere",
+        installationId: "other-install",
+      }),
+      { version: 1, broken: true },
+    ]);
+    const { messenger } = createFakeMessenger();
+
+    const result = await revalidateCachedBindings(linkDeps(fake, ownerCredentials(), messenger));
+
+    expect(result.discovered).toBe(2);
+    expect(readCachedActorBinding("d8f3d5ad489d")).not.toBeNull();
+    expect(readCachedActorBinding("wa_contact")).not.toBeNull();
+    expect(readCachedActorBinding("elsewhere")).toBeNull();
+  });
+
+  it("does not look up the owner's contacts again when they are already cached", async () => {
+    writeCachedActorBinding({ ...bindingPayload(), consoleUserId: "user_operator", platformIdentity: null });
+    const fake = createFakeConsole();
+    fake.on((call) => {
+      if (call.path === "/api/cli/link?consoleUserId=user_operator")
+        return { body: { version: 1, bindings: [{ ...bindingPayload(), consoleUserId: "user_operator" }] } };
+      if (call.path === "/api/cli/link?contactId=contact_luis")
+        return { body: { version: 1, binding: { ...bindingPayload(), consoleUserId: "user_operator" } } };
+      return undefined;
+    });
     const { messenger } = createFakeMessenger();
 
     const result = await revalidateCachedBindings(linkDeps(fake, createMemoryCredentials(), messenger));
 
     expect(result).toEqual({ kept: 1, removed: 0, discovered: 0 });
-    expect(fake.linkCalls()).toEqual(["GET /api/cli/link?contactId=contact_owner"]);
+    // One contact lookup: the revalidation's, not a second one for discovery.
+    expect(fake.linkCalls().filter((call) => call.includes("contactId="))).toEqual([
+      "GET /api/cli/link?contactId=contact_luis",
+    ]);
   });
 
-  it("caches nothing when the owner has no link, or a link of another installation", async () => {
+  it("caches nothing when the owner has no link on this installation", async () => {
     const none = createFakeConsole();
-    none.on((call) =>
-      call.path === "/api/cli/link?consoleUserId=user_operator" ? { body: { version: 1, binding: null } } : undefined,
-    );
+    answerOwnerLinks(none, []);
     const elsewhere = createFakeConsole();
-    elsewhere.on((call) =>
-      call.path === "/api/cli/link?consoleUserId=user_operator"
-        ? { body: { version: 1, binding: { ...ownerBindingBody().binding, installationId: "ins_other" } } }
-        : undefined,
-    );
+    answerOwnerLinks(elsewhere, [serverBinding({ installationId: "other-install" })]);
     const { messenger } = createFakeMessenger();
 
-    expect(await revalidateCachedBindings(linkDeps(none, createMemoryCredentials(), messenger))).toEqual({
-      kept: 0,
-      removed: 0,
-      discovered: 0,
-    });
-    expect(await revalidateCachedBindings(linkDeps(elsewhere, createMemoryCredentials(), messenger))).toEqual({
-      kept: 0,
-      removed: 0,
-      discovered: 0,
-    });
-    expect(readCachedActorBinding("contact_owner")).toBeNull();
+    expect((await revalidateCachedBindings(linkDeps(none, ownerCredentials(), messenger))).discovered).toBe(0);
+    expect((await revalidateCachedBindings(linkDeps(elsewhere, ownerCredentials(), messenger))).discovered).toBe(0);
+    expect(readCachedActorBinding("d8f3d5ad489d")).toBeNull();
   });
 
   it("does not cache a link the Console stopped confirming for the contact (unlinked in flight)", async () => {
     const fake = createFakeConsole();
-    answerOwner(fake, () => ({ version: 1, binding: null }));
+    answerOwnerLinks(fake, [serverBinding()], () => null);
     const { messenger } = createFakeMessenger();
 
-    const result = await revalidateCachedBindings(linkDeps(fake, createMemoryCredentials(), messenger));
+    const result = await revalidateCachedBindings(linkDeps(fake, ownerCredentials(), messenger));
 
-    expect(result).toEqual({ kept: 0, removed: 0, discovered: 0 });
-    expect(readCachedActorBinding("contact_owner")).toBeNull();
-  });
-});
-
-describe("owner discovery with nothing cached never touches the stored session", () => {
-  it("skips an expired session without calling the Console", async () => {
-    const fake = createFakeConsole();
-    const credentials = createMemoryCredentials();
-    const expired = { ...credentials.current!, accessTokenExpiresAt: "2000-01-01T00:00:00.000Z" };
-    credentials.writeCredentials(expired);
-    const { messenger } = createFakeMessenger();
-
-    const result = await revalidateCachedBindings(linkDeps(fake, credentials, messenger));
-
-    expect(result).toEqual({ kept: 0, removed: 0, discovered: 0 });
-    expect(fake.calls).toEqual([]);
-    expect(credentials.current).toBe(expired);
-  });
-
-  it("neither refreshes nor deletes the session when the Console rejects the token", async () => {
-    const fake = createFakeConsole();
-    fake.on((call) =>
-      call.path === "/api/cli/link?consoleUserId=user_operator"
-        ? { status: 401, body: { error: { code: "AUTH_EXPIRED", message: "expired" } } }
-        : undefined,
-    );
-    const credentials = createMemoryCredentials();
-    const before = credentials.current;
-    const { messenger } = createFakeMessenger();
-
-    const result = await revalidateCachedBindings(linkDeps(fake, credentials, messenger));
-
-    expect(result).toEqual({ kept: 0, removed: 0, discovered: 0 });
-    expect(fake.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
-      "GET /api/cli/link?consoleUserId=user_operator",
-    ]);
-    expect(credentials.current).toBe(before);
+    expect(result.discovered).toBe(0);
+    expect(readCachedActorBinding("d8f3d5ad489d")).toBeNull();
   });
 
   it("replaces an entry cached for another installation with this installation's link", async () => {
@@ -357,25 +379,56 @@ describe("owner discovery with nothing cached never touches the stored session",
       platformIdentity: null,
     });
     const fake = createFakeConsole();
-    const ownerBody = () => ({
-      version: 1,
-      binding: bindingPayload({
-        id: "bind_owner",
-        contactId: "contact_owner",
-        actorPrincipal: "contact:contact_owner",
-        consoleUserId: "user_operator",
-      }),
+    const owner = {
+      ...bindingPayload({ id: "bind_owner", contactId: "contact_owner" }),
+      consoleUserId: "user_operator",
+    };
+    fake.on((call) => {
+      if (call.path === "/api/cli/link?consoleUserId=user_operator") return { body: { version: 1, bindings: [owner] } };
+      if (call.path === "/api/cli/link?contactId=contact_owner") return { body: { version: 1, binding: owner } };
+      return undefined;
     });
-    fake.on((call) =>
-      call.path === "/api/cli/link?consoleUserId=user_operator" || call.path === "/api/cli/link?contactId=contact_owner"
-        ? { body: ownerBody() }
-        : undefined,
-    );
     const { messenger } = createFakeMessenger();
 
     const result = await revalidateCachedBindings(linkDeps(fake, createMemoryCredentials(), messenger));
 
     expect(result.discovered).toBe(1);
     expect(readCachedActorBinding("contact_owner")?.installationId).toBe("ins_console");
+  });
+});
+
+describe("owner discovery with nothing cached never touches the stored session", () => {
+  it("skips an expired session without calling the Console", async () => {
+    const fake = createFakeConsole();
+    answerOwnerLinks(fake, [serverBinding()]);
+    const credentials = ownerCredentials({ accessTokenExpiresAt: "2000-01-01T00:00:00.000Z" });
+    const before = credentials.current;
+    const { messenger } = createFakeMessenger();
+
+    const result = await revalidateCachedBindings(linkDeps(fake, credentials, messenger));
+
+    expect(result).toEqual({ kept: 0, removed: 0, discovered: 0 });
+    expect(fake.calls).toEqual([]);
+    expect(credentials.current).toBe(before);
+  });
+
+  it("neither refreshes nor deletes the session when the Console rejects the token", async () => {
+    const fake = createFakeConsole();
+    fake.on((call) =>
+      call.path === `/api/cli/link?consoleUserId=${OWNER_UUID}`
+        ? { status: 401, body: { error: { code: "AUTH_EXPIRED", message: "expired" } } }
+        : undefined,
+    );
+    const credentials = ownerCredentials();
+    const before = credentials.current;
+    const { messenger } = createFakeMessenger();
+
+    const result = await revalidateCachedBindings(linkDeps(fake, credentials, messenger));
+
+    expect(result).toEqual({ kept: 0, removed: 0, discovered: 0 });
+    expect(fake.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+      `GET /api/cli/link?consoleUserId=${OWNER_UUID}`,
+    ]);
+    expect(credentials.current).toBe(before);
   });
 });

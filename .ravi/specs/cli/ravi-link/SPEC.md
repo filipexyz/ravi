@@ -107,9 +107,13 @@ for the channel.
 8. In the same pass the watcher brings in the login owner's own binding when
    none is cached for this installation (a link approved on the Console that
    never reached this machine, or a lost cache): it looks up the active
-   login's Console user (`GET /api/cli/link?consoleUserId=`), accepts only a
-   binding of this installation, confirms it again by contact and caches it
-   only if the cache for that contact is still empty for this installation.
+   login's Console user (`GET /api/cli/link?consoleUserId=`). Without a
+   contact the Console answers in the plural, `{ version, bindings: [...] }`
+   (one entry per linked contact, e.g. one per channel; the singular
+   `{ binding }` comes only with `contactId`). Each entry of this installation
+   is confirmed again by contact and cached only if the cache for that
+   contact is still empty for this installation; an entry that does not
+   parse is skipped.
    No other person is looked up. With nothing cached, this pass uses the
    stored session as it is: it never refreshes, hydrates or deletes the
    active credentials from the background, and skips an expired session.
