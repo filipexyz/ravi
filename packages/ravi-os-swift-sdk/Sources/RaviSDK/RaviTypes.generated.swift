@@ -29583,6 +29583,69 @@ public struct SessionsResetOptions: Codable, Sendable {
 
 public typealias SessionsResetReturn = [String: RaviJSON]
 
+public struct SessionsRetainedListReturn: Codable, Sendable {
+  public var items: [RaviJSON]
+  public var total: Double
+  public var ttlMinutes: Double
+
+  public init(items: [RaviJSON], total: Double, ttlMinutes: Double) {
+    self.items = items
+    self.total = total
+    self.ttlMinutes = ttlMinutes
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case items = "items"
+    case total = "total"
+    case ttlMinutes = "ttlMinutes"
+  }
+}
+
+public struct SessionsRetainedResumeOptions: Codable, Sendable {
+  public var execute: Bool?
+  public var force: Bool?
+
+  public init(execute: Bool? = nil, force: Bool? = nil) {
+    self.execute = execute
+    self.force = force
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case execute = "execute"
+    case force = "force"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.force {
+      body["force"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct SessionsRetainedResumeReturn: Codable, Sendable {
+  public var itemId: String
+  public var ok: Bool
+  public var requeuedAt: String
+  public var sessionName: String
+
+  public init(itemId: String, ok: Bool, requeuedAt: String, sessionName: String) {
+    self.itemId = itemId
+    self.ok = ok
+    self.requeuedAt = requeuedAt
+    self.sessionName = sessionName
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case itemId = "itemId"
+    case ok = "ok"
+    case requeuedAt = "requeuedAt"
+    case sessionName = "sessionName"
+  }
+}
+
 public struct SessionsRuntimeFollowUpOptions: Codable, Sendable {
   public var execute: Bool?
   public var expectedTurn: String?

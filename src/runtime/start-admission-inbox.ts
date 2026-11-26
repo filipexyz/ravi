@@ -37,7 +37,7 @@ export function preserveRejectedRuntimeStart(input: {
     title: "Runtime start needs capacity",
     status: "open",
     priority: "high",
-    summary: `Session "${input.sessionName}" was refused before execution. Free capacity and resume the saved prompt envelope.`,
+    summary: `Session "${input.sessionName}" was refused before execution. It resumes by itself when capacity frees up (within 4 h), or with ravi sessions retained resume.`,
     assignedToAgentId: session?.agentId ?? input.prompt._agentId ?? null,
     occurredAt: Date.now(),
     actorType: "system",
@@ -47,7 +47,7 @@ export function preserveRejectedRuntimeStart(input: {
       prompt: input.prompt,
       capacity: input.capacity,
       providerHandoff: false,
-      recovery: "operator_resume_saved_envelope",
+      recovery: "auto_resume_saved_envelope",
     },
   });
 }

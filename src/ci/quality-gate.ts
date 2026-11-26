@@ -215,6 +215,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/compaction-announcement.test.ts",
     "src/runtime/codex-transport.test.ts",
     "src/runtime/prompt-subscription.test.ts",
+    // Capacity refusals saved in the inbox resume once, in their session lane, or expire / are superseded.
+    "src/runtime/start-admission-resume.test.ts",
     // Per-agent skill visibility: core resolution, gate, and local-skill preservation.
     "src/runtime/allowed-skills.test.ts",
     "src/runtime/skill-gate.test.ts",

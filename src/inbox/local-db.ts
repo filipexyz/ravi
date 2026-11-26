@@ -311,6 +311,41 @@ export function markLocalInboxItem(
 }
 
 /**
+ * Compare-and-set on status: moves the item to `to` only while it is still in one of `from`.
+ * Returns false when another owner already moved it, so two runners never act on the same item.
+ */
+export function claimLocalInboxItem(
+  id: string,
+  from: readonly LocalInboxStatus[],
+  to: LocalInboxStatus,
+  options: { eventType?: string; payload?: Record<string, unknown> } = {},
+): boolean {
+  ensureLocalInboxSchema();
+  if (from.length === 0) return false;
+  const now = Date.now();
+  return executeWrite(
+    getDb(),
+    (db) => {
+      const result = db
+        .prepare(
+          `UPDATE inbox_items SET status = ?, updated_at = ?
+           WHERE id = ? AND status IN (${from.map(() => "?").join(",")})`,
+        )
+        .run(to, now, id, ...from);
+      if (Number(result.changes ?? 0) !== 1) return false;
+      appendInboxEvent(id, options.eventType ?? to, {
+        actorType: "system",
+        actorId: null,
+        payload: options.payload ?? { status: to },
+        now,
+      });
+      return true;
+    },
+    { label: "local_inbox_claim" },
+  );
+}
+
+/**
  * When an event of this type last happened on any item of one source, whatever the item's status
  * (open, done, archived) and however many other items exist. Null if never.
  */

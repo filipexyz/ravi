@@ -25267,6 +25267,68 @@ typedef SessionsResetReturn = Map<String, RaviJson>;
 
 SessionsResetReturn sessionsResetReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
 
+class SessionsRetainedListReturn {
+  const SessionsRetainedListReturn({required this.items, required this.total, required this.ttlMinutes});
+
+  final List<RaviJson> items;
+  final double total;
+  final double ttlMinutes;
+
+  factory SessionsRetainedListReturn.fromJson(Map<String, Object?> json) {
+    return SessionsRetainedListReturn(
+      items: raviJsonAsList(json["items"], RaviJson.from),
+      total: raviJsonAsDouble(json["total"]),
+      ttlMinutes: raviJsonAsDouble(json["ttlMinutes"]),
+    );
+  }
+
+  static SessionsRetainedListReturn fromJsonValue(Object? json) {
+    return SessionsRetainedListReturn.fromJson(raviJsonObject(json, "SessionsRetainedListReturn"));
+  }
+}
+
+SessionsRetainedListReturn sessionsRetainedListReturnFromJson(Object? json) => SessionsRetainedListReturn.fromJsonValue(json);
+
+class SessionsRetainedResumeOptions {
+  const SessionsRetainedResumeOptions({this.execute, this.force});
+
+  final bool? execute;
+  final bool? force;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (force != null) {
+      into["force"] = RaviJson.from(force);
+    }
+  }
+}
+
+class SessionsRetainedResumeReturn {
+  const SessionsRetainedResumeReturn({required this.itemId, required this.ok, required this.requeuedAt, required this.sessionName});
+
+  final String itemId;
+  final bool ok;
+  final String requeuedAt;
+  final String sessionName;
+
+  factory SessionsRetainedResumeReturn.fromJson(Map<String, Object?> json) {
+    return SessionsRetainedResumeReturn(
+      itemId: raviJsonAsString(json["itemId"]),
+      ok: raviJsonAsBool(json["ok"]),
+      requeuedAt: raviJsonAsString(json["requeuedAt"]),
+      sessionName: raviJsonAsString(json["sessionName"]),
+    );
+  }
+
+  static SessionsRetainedResumeReturn fromJsonValue(Object? json) {
+    return SessionsRetainedResumeReturn.fromJson(raviJsonObject(json, "SessionsRetainedResumeReturn"));
+  }
+}
+
+SessionsRetainedResumeReturn sessionsRetainedResumeReturnFromJson(Object? json) => SessionsRetainedResumeReturn.fromJsonValue(json);
+
 class SessionsRuntimeFollowUpOptions {
   const SessionsRuntimeFollowUpOptions({this.execute, this.expectedTurn, this.thread, this.turn});
 

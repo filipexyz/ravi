@@ -8091,6 +8091,8 @@ class SessionsNamespace {
 
   SessionsFollowupsNamespace get followups => SessionsFollowupsNamespace(_transport);
 
+  SessionsRetainedNamespace get retained => SessionsRetainedNamespace(_transport);
+
   SessionsRuntimeNamespace get runtime => SessionsRuntimeNamespace(_transport);
 
   Future<SessionsActionsReturn> actions([String? nameOrKey, SessionsActionsOptions options = const SessionsActionsOptions()]) async {
@@ -8923,6 +8925,34 @@ class SessionsFollowupsNamespace {
       command: "update",
       body: requestBody,
       decode: sessionsFollowupsUpdateReturnFromJson,
+    );
+  }
+}
+
+class SessionsRetainedNamespace {
+  const SessionsRetainedNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<SessionsRetainedListReturn> list() async {
+    final requestBody = <String, RaviJson>{};
+    return _transport.callJson(
+      groupSegments: const ["sessions", "retained"],
+      command: "list",
+      body: requestBody,
+      decode: sessionsRetainedListReturnFromJson,
+    );
+  }
+
+  Future<SessionsRetainedResumeReturn> resume(String item, [SessionsRetainedResumeOptions options = const SessionsRetainedResumeOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["item"] = RaviJson.from(item);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["sessions", "retained"],
+      command: "resume",
+      body: requestBody,
+      decode: sessionsRetainedResumeReturnFromJson,
     );
   }
 }
