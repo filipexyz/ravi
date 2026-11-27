@@ -598,7 +598,7 @@ export function renderInventory(sites: CatchSite[], frozen: Baseline): string {
     .map(([directory, count]) => `| ${directory} | ${count} |`)
     .join(
       "\n",
-    )}\n\n| Boundary | File | Line | State | Rule / explicit reason | ID |\n| --- | --- | ---: | --- | --- | --- |\n${sites.map((site) => `| ${escaped(site.boundary)} | ${escaped(site.file)} | ${site.line} | ${site.state} | ${escaped(site.annotation ?? site.violation ?? "binding retained / no recognized error surface")} | ${site.id} |`).join("\n")}\n`;
+    )}\n\n| Boundary | File | State | Rule / explicit reason | ID |\n| --- | --- | --- | --- | --- |\n${[...sites].sort((a, b) => a.file.localeCompare(b.file) || a.id.localeCompare(b.id)).map((site) => `| ${escaped(site.boundary)} | ${escaped(site.file)} | ${site.state} | ${escaped(site.annotation ?? site.violation ?? "binding retained / no recognized error surface")} | ${site.id} |`).join("\n")}\n`;
 }
 function readBaseline(path: string): Baseline {
   return JSON.parse(readFileSync(path, "utf8")) as Baseline;

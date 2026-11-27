@@ -285,6 +285,13 @@ describe("error cause AST gate", () => {
     expect(checkSurfaceCoverage(sites, ["media-send", "transcription"])).toEqual([]);
   });
 
+  it("inventory_ignores_line_shifts", () => {
+    const before = scan("try {} catch {}\nwork().catch((e)=>fail(e));");
+    const after = scan("\n\n\n// moved\n\ntry {} catch {}\n\n\nwork().catch((e)=>fail(e));");
+    expect(after.map((site) => site.line)).not.toEqual(before.map((site) => site.line));
+    expect(renderInventory(after, makeBaseline(after))).toBe(renderInventory(before, makeBaseline(before)));
+  });
+
   it("inventory_has_a_row_for_every_site_and_public_totals", () => {
     const sites = scan("try {} catch {}\nwork().catch((e)=>fail(e));");
     const text = renderInventory(sites, makeBaseline(sites));
