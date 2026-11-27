@@ -155,6 +155,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/crash-recovery-store.test.ts",
     // Agent delete: live contexts revoked, Library listing not inherited by a same-id agent.
     "src/router/agent-delete.test.ts",
+    "src/router/agent-defaults-patch.test.ts",
+    "src/router/router-db.agent-write-audit.test.ts",
     "src/runtime/session-goals.test.ts",
     // Skill-grant store (dbUpsert/List/DeleteSkillGrant*) is exercised here.
     "src/cli/commands/skills.test.ts",
@@ -178,6 +180,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/restart-reason.test.ts",
     // Reset refusal must still settle its captured logical request under ownership fences.
     "src/runtime/host-event-loop.reset-failure.test.ts",
+    // Exhausted credential cooldown ends at the provider's real reset (event, header or notice), not 24 h later.
+    "src/runtime/credential-reset-time.test.ts",
     // Real host/generator retention, owner and cancellation fences under memory-only isolation.
     "src/runtime/direct-interrupted-retention.test.ts",
     "src/channels/backend.test.ts",

@@ -113,3 +113,11 @@ describe("global confirmation policy metadata", () => {
     }
   });
 });
+
+describe("sessions report options", () => {
+  it("has no variadic option, which would swallow the positional message written after it", () => {
+    const report = getRegistry().commands.find((command) => command.fullName === "sessions.report");
+    expect(report?.options.map((option) => option.flags)).toContain("--options <choices>");
+    expect(report?.options.filter((option) => option.flags.includes("...>"))).toEqual([]);
+  });
+});

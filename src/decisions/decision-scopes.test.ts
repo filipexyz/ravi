@@ -145,7 +145,7 @@ describe("the source is bound to the decision it answers (N1)", () => {
     const msg = ownerSays("sim, pode fazer o deploy hoje");
     for (const quote of [undefined, "amanhã", " "])
       expect(() => resolveDecisionAnswerSource(decision, msg.id, quote)).toThrow(
-        expect.objectContaining({ code: "DECISION_SOURCE_NOT_OWNER" }),
+        expect.objectContaining({ code: "DECISION_SOURCE_NO_MATCH" }),
       );
     expect(resolveDecisionAnswerSource(decision, msg.id, "Pode   fazer o DEPLOY").excerpt).toBe("Pode fazer o DEPLOY");
   });
@@ -195,7 +195,7 @@ describe("the source is bound to the decision it answers (N1)", () => {
     expect(resolveDecisionAnswerSource(decision, after.id, "sim").messageId).toBe(after.id);
     const before = ownerSays("sim", { providerTimestamp: Math.floor(decision.askedAt / 1000) - 60 });
     expect(() => resolveDecisionAnswerSource(decision, before.id, "sim")).toThrow(
-      expect.objectContaining({ code: "DECISION_SOURCE_NOT_OWNER" }),
+      expect.objectContaining({ code: "DECISION_SOURCE_BEFORE_QUESTION" }),
     );
   });
 });
@@ -494,7 +494,7 @@ describe("CodeRabbit follow-ups (#1030)", () => {
     );
     expect(reasked.decision.revisedAt).toBeGreaterThan(reasked.decision.askedAt);
     expect(() => resolveDecisionAnswerSource(reasked.decision, beforeRevision.id)).toThrow(
-      expect.objectContaining({ code: "DECISION_SOURCE_NOT_OWNER" }),
+      expect.objectContaining({ code: "DECISION_SOURCE_BEFORE_QUESTION" }),
     );
     const after = ownerSays(`${decision.id} sim`);
     expect(resolveDecisionAnswerSource(reasked.decision, after.id).messageId).toBe(after.id);
@@ -583,7 +583,7 @@ describe("CodeRabbit second round (#1030)", () => {
     expect(legacy.revisedAt).toBe(legacy.askedAt + 15000);
     const between = ownerSays(`${decision.id} sim`, { providerTimestamp: legacy.askedAt + 10000 });
     expect(() => resolveDecisionAnswerSource(legacy, between.id)).toThrow(
-      expect.objectContaining({ code: "DECISION_SOURCE_NOT_OWNER" }),
+      expect.objectContaining({ code: "DECISION_SOURCE_BEFORE_QUESTION" }),
     );
   });
 

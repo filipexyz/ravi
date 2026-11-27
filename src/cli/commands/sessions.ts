@@ -124,6 +124,12 @@ import { DEFAULT_RUNTIME_PROBE_TIMEOUT_MS } from "../../runtime/runtime-probe.js
 import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
 import { enforceCliCommandAccess, listCliCommandAccessCandidates } from "../command-access.js";
 import { canWithCapabilities } from "../../permissions/capability-snapshot.js";
+import {
+  decisionHeadline,
+  formatDecisionQuestion,
+  resolveDecisionQuestion,
+  splitDecisionOptions,
+} from "../../decisions/question.js";
 import { askDecisionForWait } from "../../decisions/service.js";
 import { retireDecisionIfWaitFails } from "../../decisions/store.js";
 import { redactText } from "../../session-trace/session-trace-db.js";
@@ -1187,6 +1193,22 @@ function observeRuleId(target: SessionEntry, source: SessionEntry): string {
 function resolveCurrentSessionRef(): string | undefined {
   const ctx = getContext();
   return ctx?.sessionName?.trim() || ctx?.sessionKey?.trim() || undefined;
+}
+
+/**
+ * True when the calling session is the one that opened this thread (its recorded parent) and may modify
+ * itself. A thread, a sibling or any other session is not the owner: its own grants decide, as before.
+ */
+function callerIsThreadParent(
+  scopeCtx: ReturnType<typeof getScopeContext>,
+  lifecycle: { parentSessionKey: string } | null | undefined,
+): boolean {
+  if (!lifecycle) return false;
+  // Identity is the immutable session key of the running turn, never a name: a reused session name must not
+  // make the new holder look like the thread's parent.
+  const callerKey = getContext()?.sessionKey?.trim();
+  if (!callerKey || callerKey !== lifecycle.parentSessionKey) return false;
+  return !isScopeEnforced(scopeCtx) || canModifySession(scopeCtx, callerKey);
 }
 
 function extractActionMessageText(message: ChatMessageWithSortKey | ChatMessageRecord): string | undefined {
@@ -8229,10 +8251,15 @@ export class SessionCommands {
     const session = resolveSession(target);
     const orphan = session ? null : findSlackThreadLifecycleByChildRef(target);
     const scopeCtx = getScopeContext();
+    // The session that opened the thread owns it: it closes it the way it sends to it (`thread-send`
+    // authorizes on the parent), without a grant on the child session itself.
+    const lifecycle = session ? findSlackThreadLifecycleByChildRef(session.sessionKey) : orphan;
+    const callerOwnsThread = callerIsThreadParent(scopeCtx, lifecycle);
     const authorized = session
-      ? !isScopeEnforced(scopeCtx) || canModifySession(scopeCtx, sessionActionRef(session))
+      ? !isScopeEnforced(scopeCtx) || callerOwnsThread || canModifySession(scopeCtx, sessionActionRef(session))
       : orphan &&
         (!isScopeEnforced(scopeCtx) ||
+          callerOwnsThread ||
           canModifySession(scopeCtx, orphan.childSessionName ?? orphan.childSessionKey ?? target) ||
           canModifySession(scopeCtx, orphan.parentSessionName));
     if ((!session && !orphan) || !authorized) {
@@ -8452,6 +8479,24 @@ export class SessionCommands {
         "With --awaiting review and --ref <full SHA>: the PR to review. When that SHA is the PR head and its quality gate passed, the runtime opens the independent review itself (reviewer on another model)",
     })
     pr?: string,
+    @Option({
+      flags: "--ask <question>",
+      description:
+        "With --awaiting decision: the question in one line (up to 280 characters). The owner reads this, not the report",
+    })
+    ask?: string,
+    @Option({
+      // One value split on ";": a variadic option would swallow the positional message written after it.
+      flags: "--options <choices>",
+      description:
+        'With --awaiting decision and --ask: the choices the owner picks from, separated by ";" (up to 6), e.g. --options "vinculado; conversa"',
+    })
+    optionsText?: string,
+    @Option({
+      flags: "--recommend <recommendation>",
+      description: "With --awaiting decision and --ask: what this thread recommends",
+    })
+    recommend?: string,
   ) {
     if (!message.trim()) {
       throw new CliExpectedError("Report message is required", "USAGE_ERROR", 2);
@@ -8464,6 +8509,26 @@ export class SessionCommands {
         2,
       );
     }
+    const options = splitDecisionOptions(optionsText);
+    if ((ask?.trim() || optionsText?.trim() || recommend?.trim()) && awaitingKind !== "decision") {
+      throw new CliExpectedError(
+        "--ask, --options and --recommend only apply with --awaiting decision",
+        "USAGE_ERROR",
+        2,
+      );
+    }
+    // The question is settled before anything is published: a refused question sends no report and opens no wait.
+    const decisionQuestion =
+      awaitingKind === "decision"
+        ? formatDecisionQuestion(
+            resolveDecisionQuestion({
+              ask: ask ?? null,
+              options,
+              recommend: recommend ?? null,
+              report: decodeLiteralLineBreaks(message),
+            }),
+          )
+        : null;
     if (ref?.trim() && awaitingKind === undefined) {
       throw new CliExpectedError("--ref only applies with --awaiting", "USAGE_ERROR", 2);
     }
@@ -8531,7 +8596,8 @@ export class SessionCommands {
         kind: awaitingKind,
         // With --pr the ref names the PR too, so the wait closes when the PR is merged or closed.
         ref: reviewTarget ? formatPullRequestHandoffRef(reviewTarget) : ref?.trim() || null,
-        note: reportText.split("\n")[0]?.trim() || null,
+        // A decision wait's reminder to the owner shows the question, not the report the parent reads.
+        note: decisionQuestion ? decisionHeadline(decisionQuestion) : reportText.split("\n")[0]?.trim() || null,
         callerContextId: getContext({ localOnly: true })?.contextId ?? null,
         now,
       };
@@ -8593,9 +8659,9 @@ export class SessionCommands {
       // A decision wait records its question as a decision, so the answer is recorded (not just a message) and
       // closes the wait. A decision that cannot be recorded leaves an ordinary wait, as before.
       try {
-        // The question is the decoded report, as the parent read it, without the appended wait line.
+        // The question is the short one resolved above, never the report: the report is the parent's context.
         pendingHandoff.decisionId = (
-          await askDecisionForWait(session.sessionKey, pendingHandoff.ref, decodeLiteralLineBreaks(message))
+          await askDecisionForWait(session.sessionKey, pendingHandoff.ref, decisionQuestion!)
         ).id;
       } catch (error) {
         logger.child("cli:sessions").warn("Decision wait not recorded as a decision; the wait opens without one", {

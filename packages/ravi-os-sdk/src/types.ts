@@ -21061,9 +21061,12 @@ export type SessionsRenameReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.report`. */
 export type SessionsReportInput = {
+  ask?: string;
   awaiting?: string;
   message: string;
+  options?: string;
   pr?: string;
+  recommend?: string;
   ref?: string;
   session?: string;
 };

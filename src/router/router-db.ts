@@ -21,6 +21,7 @@ import { mkdirSync, existsSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 import { logger } from "../utils/logger.js";
+import { agentDefaultsDiffIsEmpty, describeAgentWriteActor, diffAgentDefaults } from "./agent-write-audit.js";
 import { getCredentialConnection } from "../credentials/store.js";
 import { createReadWatchdog } from "../db/read-watchdog.js";
 import { getRaviStateDir } from "../utils/paths.js";
@@ -8441,7 +8442,12 @@ export function dbListChatMessagesByProviderId(
        WHERE m.provider_message_id = ? AND m.actor_type = 'contact' AND m.contact_id = ?
          AND COALESCE(CASE WHEN m.provider_timestamp < 1000000000000 THEN m.provider_timestamp * 1000
                            ELSE m.provider_timestamp END, m.created_at) >= ?
-         AND (m.chat_id = ? OR c.chat_type = 'dm')
+         AND (m.chat_id = ? OR c.chat_type = 'dm'
+              OR (c.chat_type = 'thread' AND json_extract(c.metadata_json, '$.parentChatType') = 'dm')
+              OR (c.chat_type = 'thread' AND EXISTS (
+                    SELECT 1 FROM chats p
+                    WHERE p.channel = c.channel AND p.instance_id = c.instance_id AND p.chat_type = 'dm'
+                      AND c.platform_chat_id = p.platform_chat_id || '#' || substr(c.platform_chat_id, length(p.platform_chat_id) + 2))))
        LIMIT 20`,
     )
     .all(providerMessageId, writtenBy.contactId, writtenBy.since, writtenBy.chatId) as ChatMessageRow[];
@@ -10022,8 +10028,45 @@ export function dbUpdateAgent(id: string, updates: AgentUpdateInput): AgentConfi
     id,
   );
 
-  log.info("Updated agent", { id });
+  recordAgentWriteAudit(id, row, updates, now);
   return dbGetAgent(id)!;
+}
+
+/**
+ * One audit_log row per agent write: who wrote and which fields/defaults keys
+ * changed. A write that drops runtimePermissions is logged as a warning, since
+ * it silently narrows (or widens) every future turn of the agent.
+ */
+function recordAgentWriteAudit(id: string, row: AgentRow, updates: AgentUpdateInput, now: number): void {
+  const fields = Object.keys(updates).filter(
+    (key) => (updates as Record<string, unknown>)[key] !== undefined && key !== "defaults",
+  );
+  const defaultsDiff =
+    updates.defaults !== undefined
+      ? diffAgentDefaults(parseAgentDefaultsRecord(row.defaults ?? null), updates.defaults ?? null)
+      : null;
+  const defaultsChanged = defaultsDiff !== null && !agentDefaultsDiffIsEmpty(defaultsDiff);
+  if (fields.length === 0 && !defaultsChanged) {
+    log.info("Updated agent", { id, changed: "none" });
+    return;
+  }
+  const actor = describeAgentWriteActor();
+  const runtimePermissionsTouched =
+    defaultsDiff !== null &&
+    [...defaultsDiff.added, ...defaultsDiff.removed, ...defaultsDiff.changed].includes("runtimePermissions");
+  const detail = {
+    fields,
+    ...(defaultsChanged ? { defaults: defaultsDiff } : {}),
+    ...(defaultsChanged ? { previousDefaults: parseAgentDefaultsRecord(row.defaults ?? null) } : {}),
+  };
+  try {
+    getStatements().insertAuditLog.run("agent.updated", "agent", id, JSON.stringify(detail), actor, now);
+  } catch (error) {
+    log.warn("Agent write audit failed", { id, error: error instanceof Error ? error.message : String(error) });
+  }
+  const summary = { id, actor, fields, defaults: defaultsChanged ? defaultsDiff : undefined };
+  if (runtimePermissionsTouched) log.warn("Updated agent runtimePermissions", summary);
+  else log.info("Updated agent", summary);
 }
 
 /**
@@ -10772,14 +10815,34 @@ export function dbListDeletedInstances(): InstanceConfig[] {
  * Older releases also copied the bound key into session adapter debug
  * snapshots. Remove it there (the snapshot keeps the context id).
  */
-function scrubStoredContextKeyCopies(db: Database): void {
+function scrubStoredContextKeyCopies(db: Database): number {
   const table = db
     .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session_adapter_debug'")
     .get();
-  if (!table) return;
-  db.exec(`UPDATE session_adapter_debug
+  if (!table) return 0;
+  return db
+    .prepare(`UPDATE session_adapter_debug
     SET snapshot_json = json_remove(snapshot_json, '$.bind.contextKey')
-    WHERE json_valid(snapshot_json) AND json_extract(snapshot_json, '$.bind.contextKey') IS NOT NULL`);
+    WHERE json_valid(snapshot_json) AND json_extract(snapshot_json, '$.bind.contextKey') IS NOT NULL`)
+    .run().changes;
+}
+
+/** Run `work` with SQLite zeroing the bytes it frees, whatever the build's default is. */
+function withSecureDelete<T>(db: Database, work: () => T): T {
+  const previous = (db.prepare("PRAGMA secure_delete").get() as { secure_delete: number }).secure_delete;
+  db.exec("PRAGMA secure_delete = ON");
+  try {
+    return work();
+  } finally {
+    db.exec(`PRAGMA secure_delete = ${previous === 1 ? "ON" : previous === 2 ? "FAST" : "OFF"}`);
+  }
+}
+
+/** Fold the WAL into the main file and truncate it; retried in the background when busy. */
+function truncateWal(db: Database): boolean {
+  const checkpoint = db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get() as { busy: number } | undefined;
+  if (checkpoint?.busy) scheduleWalTruncateRetry(db);
+  return Boolean(checkpoint?.busy);
 }
 
 /** A busy truncate (another reader) leaves old frames in the WAL: try again shortly, a few times. */
@@ -10803,22 +10866,22 @@ export function hashStoredContextKeys(db: Database): number {
   const rows = db
     .prepare(`SELECT context_id, context_key FROM contexts WHERE context_key NOT LIKE '${"sha256:"}%'`)
     .all() as Array<{ context_id: string; context_key: string }>;
-  scrubStoredContextKeyCopies(db);
-  if (rows.length === 0) return 0;
+  if (rows.length === 0) {
+    // Snapshots written by an older release can hold a key even when every
+    // context is already hashed; wipe them the same way as the rewrite below.
+    if (withSecureDelete(db, () => scrubStoredContextKeyCopies(db)) > 0) truncateWal(db);
+    return 0;
+  }
   const update = db.prepare("UPDATE contexts SET context_key = ? WHERE context_id = ?");
   // Zero the bytes the clear keys occupied, then fold the WAL into the main file
   // and truncate it, so the keys do not survive in free pages or old WAL frames.
-  const previousSecureDelete = (db.prepare("PRAGMA secure_delete").get() as { secure_delete: number }).secure_delete;
-  db.exec("PRAGMA secure_delete = ON");
-  try {
+  withSecureDelete(db, () =>
     db.transaction(() => {
       for (const row of rows) update.run(hashContextKey(row.context_key), row.context_id);
-    })();
-  } finally {
-    db.exec(`PRAGMA secure_delete = ${previousSecureDelete ? "ON" : "OFF"}`);
-  }
-  const checkpoint = db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get() as { busy: number } | undefined;
-  if (checkpoint?.busy) scheduleWalTruncateRetry(db);
+      scrubStoredContextKeyCopies(db);
+    })(),
+  );
+  const walCheckpointBusy = truncateWal(db);
   const now = Date.now();
   const stillLive = rows.length
     ? (
@@ -10836,7 +10899,7 @@ export function hashStoredContextKeys(db: Database): number {
   log.warn("Hashed stored context keys; earlier copies of the state database still hold them in the clear", {
     count: rows.length,
     stillLive,
-    walCheckpointBusy: Boolean(checkpoint?.busy),
+    walCheckpointBusy,
     rotate: "ravi context revoke <contextId>, then issue a new key (see spec runtime/context-keys RUNBOOK)",
   });
   return rows.length;
@@ -12161,7 +12224,9 @@ export function dbUpdateCostEventPricing(update: CostEventPricingUpdate): void {
 export function dbListAuditLog(entity?: string, limit = 100): AuditEntry[] {
   const db = getDb();
   const rows = entity
-    ? (db.prepare("SELECT * FROM audit_log WHERE entity = ? ORDER BY ts DESC LIMIT ?").all(entity, limit) as Array<{
+    ? (db
+        .prepare("SELECT * FROM audit_log WHERE entity = ? ORDER BY ts DESC, id DESC LIMIT ?")
+        .all(entity, limit) as Array<{
         id: number;
         action: string;
         entity: string;
@@ -12170,7 +12235,7 @@ export function dbListAuditLog(entity?: string, limit = 100): AuditEntry[] {
         actor: string;
         ts: number;
       }>)
-    : (db.prepare("SELECT * FROM audit_log ORDER BY ts DESC LIMIT ?").all(limit) as Array<{
+    : (db.prepare("SELECT * FROM audit_log ORDER BY ts DESC, id DESC LIMIT ?").all(limit) as Array<{
         id: number;
         action: string;
         entity: string;

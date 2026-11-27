@@ -324,9 +324,17 @@ ravi sessions thread-configure <sessão-da-thread> --model gpt-6-astra --effort 
 ravi sessions report "progresso, bloqueio ou decisão"
 ravi sessions close-thread [--return "resultado"]
 
+# Na thread: esperar uma decisão do dono. O relatório vai para o pai; o dono lê só a pergunta curta
+ravi sessions report "relatório completo para o pai" --awaiting decision \
+  --ask "Qual modo é o padrão para quem escreve sem ravi link?" \
+  --options "vinculado: só o convite; conversa: agente sem ferramentas" \
+  --recommend "vinculado em toda org"
+
 # No pai: fechar uma filha pelo nome (fora da thread o nome vai em --session, não posicional)
 ravi sessions close-thread --session <sessão-da-thread> --return "resultado"
 ```
+
+Esperar uma decisão: `--awaiting decision` grava uma decisão para o dono, e o dono lê só a pergunta, nunca o relatório. Passe `--ask` (uma linha, até 280 caracteres), `--options` (um valor, escolhas separadas por `;`, até 6) e `--recommend`. Sem `--ask`, o relatório só vira a pergunta quando já é uma linha curta; um relatório longo é recusado (`DECISION_QUESTION_INVALID`) antes de publicar qualquer coisa. A espera fecha quando a resposta é registrada com `ravi decisions answer`.
 
 Retorno ao pai: a thread que termina o trabalho fala com o pai por `report` ou `close-thread --return`. Responder só dentro da thread não chega ao pai. Quando um turno da filha, iniciado pelo pai, termina sem retorno, o runtime pede uma vez à própria thread um retorno curto. Se ela continuar calada, o pai recebe um `[System] Inform` com a última mensagem dela. Isso vale para qualquer provider. Para evitar o aviso, feche cada turno de trabalho com `report` ou com o `close-thread --return`.
 

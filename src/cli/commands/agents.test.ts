@@ -586,6 +586,51 @@ describe("AgentsCommands set model validation", () => {
     expect(updateAgentCalls).toHaveLength(0);
   });
 
+  it("merges a defaults write per key and keeps runtimePermissions (27/11 overlay TTS save)", async () => {
+    const runtimePermissions = { profile: "full-access" };
+    currentAgent = {
+      id: "dev",
+      cwd: "/tmp/dev",
+      provider: "pi",
+      defaults: { runtimePermissions, stickers: { enabled: true }, tts_voice: "old" },
+    };
+    const commands = new AgentsCommands();
+
+    await commands.set(
+      "dev",
+      "defaults",
+      JSON.stringify({ tts_provider: "elevenlabs", tts_voice: "new", tts_lang: null }),
+      true,
+    );
+
+    expect(updateAgentCalls).toEqual([
+      {
+        id: "dev",
+        partial: {
+          defaults: { runtimePermissions, stickers: { enabled: true }, tts_voice: "new", tts_provider: "elevenlabs" },
+        },
+      },
+    ]);
+  });
+
+  it("refuses a defaults write that changes runtimePermissions and writes nothing", async () => {
+    currentAgent = {
+      id: "dev",
+      cwd: "/tmp/dev",
+      provider: "pi",
+      defaults: { runtimePermissions: { profile: "full-access" } },
+    };
+    const commands = new AgentsCommands();
+
+    await expect(
+      commands.set("dev", "defaults", JSON.stringify({ runtimePermissions: { profile: "none" } }), true),
+    ).rejects.toThrow("cannot change runtimePermissions");
+    await expect(commands.set("dev", "defaults", JSON.stringify({ runtimePermissions: null }), true)).rejects.toThrow(
+      "cannot change runtimePermissions",
+    );
+    expect(updateAgentCalls).toHaveLength(0);
+  });
+
   it("creates agents with provider and model in one mutation", async () => {
     currentAgent = null;
     const commands = new AgentsCommands();

@@ -464,6 +464,50 @@ describe("identity chat schema", () => {
     expect(old.id).toBeTruthy();
   });
 
+  it("a provider-id lookup filtered by writer includes a thread of a DM, not a thread of a group (27/11)", () => {
+    dbUpsertChat({ channel: "slack", instanceId: "i1", platformChatId: "D-owner", chatType: "dm" });
+    dbUpsertChat({ channel: "slack", instanceId: "i1", platformChatId: "C-team", chatType: "group" });
+    const dmThread = dbUpsertChat({
+      channel: "slack",
+      instanceId: "i1",
+      platformChatId: "D-owner#1795807146.082739",
+      chatType: "thread",
+    });
+    const groupThread = dbUpsertChat({
+      channel: "slack",
+      instanceId: "i1",
+      platformChatId: "C-team#1795807146.082739",
+      chatType: "thread",
+    });
+    const write = (chatId: string, raw: string) =>
+      dbUpsertChatMessage({
+        chatId,
+        channel: "slack",
+        instanceId: "i1",
+        providerMessageId: "1795807404.718439",
+        providerTimestamp: null,
+        rawChatId: raw,
+        actorType: "contact",
+        contactId: "owner",
+      }).message;
+    const orphanDmThread = dbUpsertChat({
+      channel: "slack",
+      instanceId: "i1",
+      platformChatId: "D-unseen#1795807146.082739",
+      chatType: "thread",
+      metadata: { parentChatType: "dm" },
+    });
+    const inDmThread = write(dmThread.id, "D-owner#1795807146.082739");
+    const inOrphanDmThread = write(orphanDmThread.id, "D-unseen#1795807146.082739");
+    write(groupThread.id, "C-team#1795807146.082739");
+    const filter = { contactId: "owner", since: 0, chatId: null };
+    expect(
+      dbListChatMessagesByProviderId("1795807404.718439", filter)
+        .map((m) => m.id)
+        .sort(),
+    ).toEqual([inDmThread.id, inOrphanDmThread.id].sort());
+  });
+
   it("ensures one durable chat per actor and agent across retries and restarts", () => {
     const first = dbEnsureActorAgentChat({
       actorId: "actor-1",

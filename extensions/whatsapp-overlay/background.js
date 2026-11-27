@@ -763,12 +763,11 @@ async function postAgentTtsSettings(payload = {}) {
   if (!agentId) return { ok: false, status: 400, code: "missing_agent", error: "Missing agentId" };
   const settings = payload.settings && typeof payload.settings === "object" ? payload.settings : {};
   const { client } = await getClient();
-  const agentsResult = await client.agents.list({}).catch((error) => fallbackUnlessAuth(error, { agents: [] }));
-  const agents = Array.isArray(agentsResult?.agents) ? agentsResult.agents : [];
-  const agent = agents.find((item) => clean(item?.id ?? item?.agentId ?? item?.name) === agentId) ?? null;
-  const currentDefaults =
-    agent?.defaults && typeof agent.defaults === "object" && !Array.isArray(agent.defaults) ? agent.defaults : {};
-  const nextDefaults = { ...currentDefaults, tts_provider: "elevenlabs" };
+  // Send only the TTS keys as a patch: `agents set <id> defaults` merges per key
+  // and `null` clears one. Never read-modify-write the whole object here; on
+  // 27/11 a paginated agent list missed the agent, this started from {} and
+  // erased every other default, including runtimePermissions.
+  const nextDefaults = { tts_provider: "elevenlabs" };
 
   setDefaultValue(nextDefaults, "tts_auto", typeof settings.enabled === "boolean" ? (settings.enabled ? "on" : "off") : undefined);
   setDefaultValue(nextDefaults, "tts_voice", clean(settings.voiceId));
@@ -789,7 +788,8 @@ async function postAgentTtsSettings(payload = {}) {
 
 function setDefaultValue(target, key, value) {
   if (value === undefined || value === null || value === "") {
-    delete target[key];
+    // null in a defaults patch clears the key on the server.
+    target[key] = null;
     return;
   }
   target[key] = value;

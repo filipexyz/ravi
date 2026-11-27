@@ -241,6 +241,23 @@ describe("a click becomes the same command, with the authority of the person who
     ]);
   });
 
+  it("answers a click on its own, without replacing the card the button is on", async () => {
+    // Slack replaces the message a button sits on when a `response_url` answer does not say otherwise.
+    // Closing already refreshes the card to "closed" (thread-lifecycle), and the answer arrives after
+    // that: left to the default it overwrote the card with a one-line "Closed thread".
+    registerCard();
+    getOrCreateSession(CHILD_KEY, "main", "/tmp/main", { name: "main-t-card" });
+    for (const actionId of [SLACK_THREAD_CLOSE_ACTION_ID, SLACK_THREAD_STOP_ACTION_ID]) {
+      const h = harness();
+
+      await handleSlackThreadControlClick(click({ actionId }), h.deps);
+
+      expect(h.replies).toHaveLength(1);
+      expect(h.replies[0]).toMatchObject({ response_type: "ephemeral", replace_original: false });
+      expect(h.replies[0]).not.toHaveProperty("delete_original");
+    }
+  });
+
   it("Parar interrupts the turn of the thread's own session, not the chat's", async () => {
     registerCard();
     const child = getOrCreateSession(CHILD_KEY, "main", "/tmp/main", { name: "main-t-card" });

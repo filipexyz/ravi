@@ -2119,6 +2119,8 @@ export class SlackSocketModeService {
       platformChatId: routeThreadId ? `${message.channelId}#${routeThreadId}` : message.channelId,
       chatType: routeThreadId ? "thread" : peerKind,
       title: message.channelId,
+      // A thread chat records what its parent is: a DM thread can be stored before (or without) its root DM chat.
+      ...(routeThreadId ? { metadata: { parentChatType: peerKind } } : {}),
       rawProvenance: {
         source: "slack.socket_mode",
         ...slackTeamProvenance(message),

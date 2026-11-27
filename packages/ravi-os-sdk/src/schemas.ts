@@ -108523,6 +108523,10 @@ export const SessionsRenameReturnSchema = {
 export const SessionsReportInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "ask": {
+      "description": "With --awaiting decision: the question in one line (up to 280 characters). The owner reads this, not the report",
+      "type": "string"
+    },
     "awaiting": {
       "description": "Declare that this thread now waits for the parent: review, decision, merge, dispatch, instruction. The parent is reminded after 15 min and the owner told once after 45 min until the parent acts on this thread",
       "type": "string"
@@ -108531,8 +108535,16 @@ export const SessionsReportInputSchema = {
       "description": "Progress, blocker or decision the parent session needs now",
       "type": "string"
     },
+    "options": {
+      "description": "With --awaiting decision and --ask: the choices the owner picks from, separated by \";\" (up to 6), e.g. --options \"vinculado; conversa\"",
+      "type": "string"
+    },
     "pr": {
       "description": "With --awaiting review and --ref <full SHA>: the PR to review. When that SHA is the PR head and its quality gate passed, the runtime opens the independent review itself (reviewer on another model)",
+      "type": "string"
+    },
+    "recommend": {
+      "description": "With --awaiting decision and --ask: what this thread recommends",
       "type": "string"
     },
     "ref": {

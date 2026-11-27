@@ -13,7 +13,9 @@
  *   `thread_ts`. It is looked up among the threads of the session the chat
  *   resolves to, never anywhere else, so a card cannot name another chat's
  *   thread.
- * - The answer is ephemeral, through the click's `response_url`.
+ * - The answer is ephemeral, through the click's `response_url`, and says `replace_original: false`:
+ *   left unsaid, Slack replaces the message the button is on. Closing already refreshes the card to
+ *   "closed" (thread-lifecycle); the answer must not overwrite it.
  *
  * Spec: channels/slack/commands.
  */

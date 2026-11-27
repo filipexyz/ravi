@@ -462,6 +462,7 @@ describe("Slack Threads section", () => {
     expect(thread).toContain(
       "add `--pr <owner/repo#number>`: once that SHA is the PR head and its quality gate passed",
     );
+    expect(thread).toContain('For a decision, the owner reads only the question: pass `--ask "<one line>"`');
     expect(thread).toContain(
       "Other threads cannot be messaged from here; the orchestrating session relays between them.",
     );

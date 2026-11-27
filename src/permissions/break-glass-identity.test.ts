@@ -20,7 +20,7 @@ import {
 } from "../contacts.js";
 import { runApprovedBreakGlassGrant } from "./break-glass.js";
 import type { ContextCapability } from "../router/router-db.js";
-import { dbCreateAgent, dbGetAgent, dbUpsertChat, dbUpsertInstance } from "../router/router-db.js";
+import { dbCreateAgent, dbGetAgent, dbUpdateAgent, dbUpsertChat, dbUpsertInstance } from "../router/router-db.js";
 import { dbCreateTagDefinition } from "../tags/index.js";
 import { dbEnsureContactChatGrant } from "./contact-chat-grants.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
@@ -226,7 +226,8 @@ describe("every writer of agent runtime permissions keeps the rule", () => {
   it("refuses agents set defaults that carries full-access or break-glass capabilities for another agent", async () => {
     dbCreateAgent({ id: "victim", cwd: "/tmp" });
     const commands = new AgentsCommands();
-    const denied = { code: "FULL_ACCESS_APPROVAL_REQUIRED", exitCode: 3 };
+    // agents set defaults never writes runtimePermissions (27/11 fix): refused before the break-glass check.
+    const denied = { code: "AGENT_DEFAULTS_PERMISSIONS_READ_ONLY" };
     await runWithContext(ADMIN_AGENT, async () => {
       await expect(
         commands.set("victim", "defaults", JSON.stringify({ runtimePermissions: { profile: "full-access" } })),
@@ -242,27 +243,26 @@ describe("every writer of agent runtime permissions keeps the rule", () => {
     });
     expect(JSON.stringify(dbGetAgent("victim")?.defaults ?? {})).not.toContain("full-access");
     expect(JSON.stringify(dbGetAgent("victim")?.defaults ?? {})).toContain("tts_voice");
-    await new AgentsCommands().set(
-      "victim",
-      "defaults",
-      JSON.stringify({ runtimePermissions: { profile: "full-access" } }),
-      true,
-    );
+    // The operator terminal raises through agents permissions, the one writer of runtimePermissions.
+    new AgentsCommands().permissions("victim", "full-access", undefined, true, undefined, true);
     expect(JSON.stringify(dbGetAgent("victim")?.defaults ?? {})).toContain("full-access");
+    expect(JSON.stringify(dbGetAgent("victim")?.defaults ?? {})).toContain("tts_voice");
   });
 
   it("refuses planting dormant break-glass by agents set defaults, and waking it by agents permissions", async () => {
     dbCreateAgent({ id: "plant-victim", cwd: "/tmp" });
     const commands = new AgentsCommands();
-    const denied = { code: "FULL_ACCESS_APPROVAL_REQUIRED", exitCode: 3 };
-    const dormant = JSON.stringify({ runtimePermissions: { profile: "chat-only", capabilities: ["admin:system:*"] } });
+    const denied = { code: "AGENT_DEFAULTS_PERMISSIONS_READ_ONLY" };
+    const dormantConfig = { profile: "chat-only", capabilities: ["admin:system:*"] };
+    const dormant = JSON.stringify({ runtimePermissions: dormantConfig });
     await runWithContext(ADMIN_AGENT, async () => {
       await expect(commands.set("plant-victim", "defaults", dormant)).rejects.toMatchObject(denied);
     });
     expect(JSON.stringify(dbGetAgent("plant-victim")?.defaults ?? {})).not.toContain("admin");
 
-    // The operator stored it; an agent asking for "bootstrap" must not wake it.
-    await commands.set("plant-victim", "defaults", dormant, true);
+    // Legacy state: the operator stored it before agents set defaults stopped writing permissions.
+    dbUpdateAgent("plant-victim", { defaults: { runtimePermissions: dormantConfig } });
+    // An agent asking for "bootstrap" must not wake it.
     runWithContext(ADMIN_AGENT, () =>
       expectBreakGlassDenied(() => commands.permissions("plant-victim", "bootstrap", undefined, true, undefined, true)),
     );
@@ -272,12 +272,10 @@ describe("every writer of agent runtime permissions keeps the rule", () => {
   it("warns the operator once, on the real write, not on the dry run", async () => {
     dbCreateAgent({ id: "dormant-terminal", cwd: "/tmp" });
     const commands = new AgentsCommands();
-    await commands.set(
-      "dormant-terminal",
-      "defaults",
-      JSON.stringify({ runtimePermissions: { profile: "chat-only", capabilities: ["admin:system:*"] } }),
-      true,
-    );
+    // Legacy dormant break-glass, stored before agents set defaults stopped writing permissions.
+    dbUpdateAgent("dormant-terminal", {
+      defaults: { runtimePermissions: { profile: "chat-only", capabilities: ["admin:system:*"] } },
+    });
     const stderr: string[] = [];
     const original = process.stderr.write.bind(process.stderr);
     process.stderr.write = ((chunk: string) => {

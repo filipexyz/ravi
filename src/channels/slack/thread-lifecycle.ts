@@ -1,3 +1,4 @@
+import { decisionHeadline } from "../../decisions/question.js";
 import { getDecisionWaitSummary, listDecisions } from "../../decisions/store.js";
 import { dbGetContext, getDb } from "../../router/router-db.js";
 import { randomUUID } from "node:crypto";
@@ -1301,7 +1302,7 @@ export async function updateSlackThreadCard(
     .get(record.requestId);
   const status = pending.length ? ("waiting" as const) : state.status;
   const note = pending.length
-    ? `${pending[0]!.ask}${pending.length > 1 ? ` (+${pending.length - 1})` : ""}`
+    ? `${decisionHeadline(pending[0]!.ask)}${pending.length > 1 ? ` (+${pending.length - 1})` : ""}`
     : pendingAnswer
       ? "Resposta registrada; entrega pendente."
       : state.note;

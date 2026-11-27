@@ -7,6 +7,7 @@ import { resolveSession } from "../router/sessions.js";
 import { hasRuntimeInvocationContext } from "../cli/context.js";
 import { readSpawnedAutomationPrincipal } from "../runtime/turn-origin.js";
 import {
+  dbFindChat,
   dbGetChat,
   dbGetChatMessage,
   type ChatMessageRecord,
@@ -240,53 +241,100 @@ export interface DecisionAnswerSource {
  * the provider id (looked up only among eligible messages). A decision with no human owner has no valid source.
  * Every refusal has the same code and text, so a caller cannot learn whether a message exists or who wrote it.
  */
+/**
+ * Keep in step with the provider-id query in `dbListChatMessagesByProviderId` (src/router/router-db.ts), which
+ * narrows to the same chats in SQL before its row limit; this check runs after it, so a mismatch fails closed.
+ *
+ * A direct chat with a person: the DM itself or a thread inside it. A Slack thread of a DM is stored as its own
+ * chat (`chat_type = thread`, platform id `<dm>#<thread ts>`); the owner writing in it is still writing directly.
+ */
+function isDirectChat(chatId: string): boolean {
+  const chat = dbGetChat(chatId);
+  if (!chat) return false;
+  if (chat.chatType === "dm") return true;
+  if (chat.chatType !== "thread") return false;
+  const hash = chat.platformChatId.lastIndexOf("#");
+  if (hash <= 0) return false;
+  // The channel adapter records the parent's kind on the thread chat; older thread chats rely on the parent row.
+  if (chat.metadata?.parentChatType === "dm") return true;
+  const parent = dbFindChat({
+    channel: chat.channel,
+    instanceId: chat.instanceId,
+    platformChatId: chat.platformChatId.slice(0, hash),
+  });
+  return parent?.chatType === "dm";
+}
+
 export function resolveDecisionAnswerSource(
   decision: Decision,
   messageRef: string,
   quote?: string,
 ): DecisionAnswerSource {
+  const howTo =
+    "Pass the id of the owner's message that holds the answer, and --source-quote with a passage it contains unless it names the decision id.";
+  // A message that is not the owner's, an agent's, or one that does not exist get one code and one text: the
+  // caller cannot tell a missing message from someone else's. The finer codes below are only for the owner's own.
   const refuse = (): never => {
     throw new DecisionError(
       "DECISION_SOURCE_NOT_OWNER",
       "The source must be one message the decision's owner wrote after the question, in its chat or a direct chat, naming the decision id or containing the quoted passage.",
-      {
-        exitCode: 2,
-        suggestedAction:
-          "Pass the id of the owner's message that holds the answer, and --source-quote with a passage it contains unless it names the decision id.",
-      },
+      { exitCode: 2, suggestedAction: howTo },
     );
+  };
+  const refuseOwn = (
+    code: "DECISION_SOURCE_BEFORE_QUESTION" | "DECISION_SOURCE_AMBIGUOUS" | "DECISION_SOURCE_NO_MATCH",
+    message: string,
+  ): never => {
+    throw new DecisionError(code, message, { exitCode: 2, suggestedAction: howTo });
   };
   const ref = messageRef.trim();
   if (!ref || decision.ownerType !== "human" || !decision.ownerId) return refuse();
   const ownerId = decision.ownerId;
   // The current wording: a message sent before the question was last revised did not answer it.
   const sourceSince = Math.max(decision.askedAt, decision.revisedAt);
-  const eligible = (message: ChatMessageRecord): boolean => {
-    if (message.actorType !== "contact" || message.contactId !== ownerId) return false;
-    if (chatMessageTime(message) < sourceSince) return false;
-    if (decision.origin.chatId && message.chatId === decision.origin.chatId) return true;
-    return dbGetChat(message.chatId)?.chatType === "dm";
-  };
+  const byOwner = (message: ChatMessageRecord): boolean =>
+    message.actorType === "contact" && message.contactId === ownerId;
+  const inAllowedChat = (message: ChatMessageRecord): boolean =>
+    (Boolean(decision.origin.chatId) && message.chatId === decision.origin.chatId) || isDirectChat(message.chatId);
   const direct = dbGetChatMessage(ref);
-  const candidates = (
+  // A provider id can repeat across many chats: the eligible ones are narrowed in the query, before its row limit.
+  const eligible = (
     direct
       ? [direct]
-      : dbListChatMessagesByProviderId(ref, {
-          contactId: ownerId,
-          since: sourceSince,
-          chatId: decision.origin.chatId,
-        })
-  ).filter(eligible);
-  if (candidates.length !== 1) return refuse();
+      : dbListChatMessagesByProviderId(ref, { contactId: ownerId, since: sourceSince, chatId: decision.origin.chatId })
+  ).filter((message) => byOwner(message) && chatMessageTime(message) >= sourceSince && inAllowedChat(message));
+  // Nothing eligible: say why only when the message is the owner's own (the wider read is just for that).
+  const owned = eligible.length ? eligible : (direct ? [direct] : dbListChatMessagesByProviderId(ref)).filter(byOwner);
+  if (!owned.length) return refuse();
+  // A message of the owner in another chat gets the generic refusal too: a finer code would tell the caller that
+  // the owner wrote there, in a chat the caller may not read. Finer codes are only for the chats that may answer.
+  const reachable = owned.filter(inAllowedChat);
+  if (!reachable.length) return refuse();
+  const candidates = reachable.filter((message) => chatMessageTime(message) >= sourceSince);
+  if (!candidates.length)
+    return refuseOwn(
+      "DECISION_SOURCE_BEFORE_QUESTION",
+      "That message of the owner was written before the question (or before its last revision), so it does not answer it.",
+    );
+  if (candidates.length > 1)
+    return refuseOwn(
+      "DECISION_SOURCE_AMBIGUOUS",
+      "That provider id matches more than one message of the owner; pass the Ravi message id instead.",
+    );
   const message = candidates[0]!;
   const text = chatMessageText(message);
   const cited = quote?.replace(/\s+/g, " ").trim() ?? "";
   let excerpt: string;
   if (cited) {
-    if (cited.length < SOURCE_QUOTE_MIN || !normalizeForQuote(text).includes(normalizeForQuote(cited))) return refuse();
+    if (cited.length < SOURCE_QUOTE_MIN || !normalizeForQuote(text).includes(normalizeForQuote(cited)))
+      return refuseOwn("DECISION_SOURCE_NO_MATCH", "The owner's message does not contain the quoted passage.");
     excerpt = cited;
   } else {
-    if (!text.includes(decision.id)) return refuse();
+    if (!text.includes(decision.id))
+      return refuseOwn(
+        "DECISION_SOURCE_NO_MATCH",
+        "The owner's message does not name the decision id; pass --source-quote with a passage it contains.",
+      );
     excerpt = text.replace(/\s+/g, " ").trim();
   }
   return {
