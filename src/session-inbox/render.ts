@@ -37,11 +37,17 @@ function formatTime(ms: number, timeZone: string): string {
 
 /** A field printed inside a block line: one line, whatever the producer stored. */
 function inline(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
+  return text.replace(/[\s\u0085]+/g, " ").trim();
 }
 
+/**
+ * Every line break a reader may honour separates quoted lines: CRLF, LF, a lone CR, NEL (U+0085),
+ * and the Unicode line and paragraph separators (U+2028, U+2029).
+ */
+const LINE_BREAKS = /\r\n|[\n\r\u0085\u2028\u2029]/;
+
 function quote(body: string): string[] {
-  return body.split(/\r?\n/).map((line) => `  > ${line}`);
+  return body.split(LINE_BREAKS).map((line) => `  > ${line}`);
 }
 
 export function renderInboxBlock(input: RenderInboxBlockInput): string {
