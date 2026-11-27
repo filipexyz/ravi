@@ -3174,6 +3174,17 @@ describe("SessionCommands attach hints", () => {
     await expect(new SessionCommands().report("\\n", undefined, true, "merge")).rejects.toMatchObject({
       code: "USAGE_ERROR",
     });
+    // A decision wait never turns a long report into the owner's question: refused before anything is published.
+    const reportsBefore = reportedSlackThreads.length;
+    await expect(
+      new SessionCommands().report(`Desenho pronto. ${"contexto longo ".repeat(40)}`, undefined, true, "decision"),
+    ).rejects.toMatchObject({ code: "DECISION_QUESTION_INVALID" });
+    // The question flags only go with a decision wait.
+    await expect(
+      new SessionCommands().report("pronta", undefined, true, "merge", undefined, undefined, "Mergeio?"),
+    ).rejects.toMatchObject({ code: "USAGE_ERROR" });
+    expect(reportedSlackThreads.length).toBe(reportsBefore);
+    expect(listOpenHandoffs(parentKey).map((h) => h.id)).toEqual([result.handoff.id]);
     // A replacement report that fails to publish leaves the current wait open and untouched.
     reportSlackThreadError = new Error("broker down");
     await expect(new SessionCommands().report("agora espera merge", undefined, true, "merge")).rejects.toThrow();
@@ -3218,6 +3229,30 @@ describe("SessionCommands attach hints", () => {
     toolContext = { sessionKey: parentKey, sessionName: "dev-slack" };
     await new SessionCommands().threadSend("handoff-child", "vai pelo caminho A", undefined, true);
     expect(listOpenHandoffs(parentKey)).toHaveLength(0);
+
+    // A decision wait's note (what the owner's reminder shows) is the short question, not the report.
+    resolvedSession = {
+      sessionKey: childKey,
+      name: "dev-slack-t-1713000000000100",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+    };
+    toolContext = { sessionKey: childKey, sessionName: "dev-slack-t-1713000000000100" };
+    const decisionWait = (await new SessionCommands().report(
+      `Desenho pronto. ${"contexto longo ".repeat(40)}`,
+      undefined,
+      true,
+      "decision",
+      undefined,
+      undefined,
+      "Qual modo é o padrão?",
+      ["vinculado", "conversa"],
+      "vinculado",
+    )) as Record<string, any>;
+    expect(decisionWait.handoff).toMatchObject({ kind: "decision" });
+    expect(listOpenHandoffs(parentKey).find((h) => h.id === decisionWait.handoff.id)?.note).toBe(
+      "Qual modo é o padrão?",
+    );
   });
 
   it("report --awaiting review --pr opens the review only for the PR head with a green gate", async () => {

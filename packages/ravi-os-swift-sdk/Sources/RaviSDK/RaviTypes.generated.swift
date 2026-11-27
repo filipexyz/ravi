@@ -29601,31 +29601,49 @@ public struct SessionsRecapReturn: Codable, Sendable {
 public typealias SessionsRenameReturn = [String: RaviJSON]
 
 public struct SessionsReportOptions: Codable, Sendable {
+  public var ask: String?
   public var awaiting: String?
+  public var option: [String]?
   public var pr: String?
+  public var recommend: String?
   public var ref: String?
   public var session: String?
 
-  public init(awaiting: String? = nil, pr: String? = nil, ref: String? = nil, session: String? = nil) {
+  public init(ask: String? = nil, awaiting: String? = nil, option: [String]? = nil, pr: String? = nil, recommend: String? = nil, ref: String? = nil, session: String? = nil) {
+    self.ask = ask
     self.awaiting = awaiting
+    self.option = option
     self.pr = pr
+    self.recommend = recommend
     self.ref = ref
     self.session = session
   }
 
   enum CodingKeys: String, CodingKey {
+    case ask = "ask"
     case awaiting = "awaiting"
+    case option = "option"
     case pr = "pr"
+    case recommend = "recommend"
     case ref = "ref"
     case session = "session"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.ask {
+      body["ask"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.awaiting {
       body["awaiting"] = try RaviJSON.fromEncodable(value)
     }
+    if let value = self.option {
+      body["option"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.pr {
       body["pr"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.recommend {
+      body["recommend"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.ref {
       body["ref"] = try RaviJSON.fromEncodable(value)

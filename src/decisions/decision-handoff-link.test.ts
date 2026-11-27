@@ -23,6 +23,7 @@ import {
 } from "./service.js";
 import { getDecision, retireDecisionIfWaitFails } from "./store.js";
 import { decisionQuestionNotice } from "./delivery.js";
+import { formatDecisionQuestion } from "./question.js";
 import { listHandoffs } from "../handoffs/store.js";
 import type { DecisionOrigin } from "./types.js";
 
@@ -330,10 +331,12 @@ describe("the source is tied to the question's time and chat", () => {
       chatType: "group",
     });
     const inGroup = message({ providerMessageId: "m-group", actorType: "contact", contactId: OWNER, chatId: group.id });
-    for (const ref of [old.id, inGroup.id])
-      expect(() => resolveDecisionAnswerSource(decision, ref, "ok")).toThrow(
-        expect.objectContaining({ code: "DECISION_SOURCE_NOT_OWNER" }),
-      );
+    expect(() => resolveDecisionAnswerSource(decision, old.id, "ok")).toThrow(
+      expect.objectContaining({ code: "DECISION_SOURCE_BEFORE_QUESTION" }),
+    );
+    expect(() => resolveDecisionAnswerSource(decision, inGroup.id, "ok")).toThrow(
+      expect.objectContaining({ code: "DECISION_SOURCE_NOT_OWNER" }),
+    );
   });
 
   it("accepts an owner message in the decision's own chat, and a provider id repeated in an ineligible chat", async () => {
@@ -355,6 +358,79 @@ describe("the source is tied to the question's time and chat", () => {
     });
     message({ providerMessageId: "shared-ts", actorType: "contact", contactId: "someone", chatId: group.id });
     expect(resolveDecisionAnswerSource(decision, "shared-ts", "ok").messageId).toBe(owners.id);
+  });
+
+  it("accepts the owner's answer written in a thread of their DM, by Ravi id and by the Slack id (27/11 case)", async () => {
+    const origin = await thread();
+    const { decision } = await waitOnDecision(origin, null, "Pergunta?");
+    ownerChat();
+    // The 27/11 shape: the DM thread is its own chat, `<dm>#<thread ts>`, of type thread.
+    const dmThread = dbUpsertChat({
+      channel: "slack",
+      instanceId: "fixture-slack",
+      platformChatId: "D-owner#1795807146.082739",
+      chatType: "thread",
+    });
+    const answer = message({
+      providerMessageId: "1795807404.718439",
+      actorType: "contact",
+      contactId: OWNER,
+      chatId: dmThread.id,
+      text: "1 sim, 2 vinculado, 3 ok",
+    });
+    expect(resolveDecisionAnswerSource(decision, answer.id, "2 vinculado").messageId).toBe(answer.id);
+    expect(resolveDecisionAnswerSource(decision, "1795807404.718439", "2 vinculado").messageId).toBe(answer.id);
+    // The DM thread is eligible in the query itself: more ineligible repeats than the row limit do not hide it.
+    for (let i = 0; i < 25; i += 1) {
+      const group = dbUpsertChat({
+        channel: "slack",
+        instanceId: "fixture-slack",
+        platformChatId: `C-many-${i}`,
+        chatType: "group",
+      });
+      message({ providerMessageId: "repeat-ts", actorType: "contact", contactId: OWNER, chatId: group.id });
+    }
+    const late = message({
+      providerMessageId: "repeat-ts",
+      actorType: "contact",
+      contactId: OWNER,
+      chatId: dmThread.id,
+      text: "2 vinculado",
+    });
+    expect(resolveDecisionAnswerSource(decision, "repeat-ts", "2 vinculado").messageId).toBe(late.id);
+    // A DM thread stored before its root DM row is known as one by the parent kind the channel adapter records.
+    const orphanThread = dbUpsertChat({
+      channel: "slack",
+      instanceId: "fixture-slack",
+      platformChatId: "D-new#1795807999.000001",
+      chatType: "thread",
+      metadata: { parentChatType: "dm" },
+    });
+    const orphanAnswer = message({
+      providerMessageId: "m-orphan-thread",
+      actorType: "contact",
+      contactId: OWNER,
+      chatId: orphanThread.id,
+      text: "2 vinculado",
+    });
+    expect(resolveDecisionAnswerSource(decision, "m-orphan-thread", "2 vinculado").messageId).toBe(orphanAnswer.id);
+    // A thread of a group is not a direct chat.
+    dbUpsertChat({ channel: "slack", instanceId: "fixture-slack", platformChatId: "C-team", chatType: "group" });
+    const groupThread = dbUpsertChat({
+      channel: "slack",
+      instanceId: "fixture-slack",
+      platformChatId: "C-team#1795807000.000001",
+      chatType: "thread",
+    });
+    const inGroupThread = message({
+      providerMessageId: "m-group-thread",
+      actorType: "contact",
+      contactId: OWNER,
+      chatId: groupThread.id,
+    });
+    expect(() => resolveDecisionAnswerSource(decision, inGroupThread.id, "ok")).toThrow(
+      expect.objectContaining({ code: "DECISION_SOURCE_NOT_OWNER" }),
+    );
   });
 });
 
@@ -401,7 +477,7 @@ describe("follow-ups of decision waits", () => {
       "Faço o deploy hoje?\nContexto longo do relatório que não deve se repetir na thread.",
     );
     const notice = decisionQuestionNotice(decision);
-    expect(notice).toContain(`Decisão pendente: ${decision.key}`);
+    expect(notice).toContain("Decisão pendente");
     expect(notice).toContain("Faço o deploy hoje?");
     expect(notice).not.toContain("Contexto longo do relatório");
     expect(notice).not.toContain(OWNER);
@@ -411,6 +487,37 @@ describe("follow-ups of decision waits", () => {
     const plainNotice = decisionQuestionNotice(plain.decision);
     expect(plainNotice).toContain("Pergunta direta?");
     expect(plainNotice).not.toContain(OWNER);
+  });
+
+  it("a structured question renders as question, options and recommendation, without the report", async () => {
+    const origin = await thread();
+    const { decision } = await waitOnDecision(
+      origin,
+      null,
+      formatDecisionQuestion({
+        question: "Qual modo é o padrão para quem escreve sem ravi link?",
+        options: ["vinculado: só o convite", "conversa: agente sem ferramentas"],
+        recommendation: "vinculado em toda org",
+      }),
+    );
+    const notice = decisionQuestionNotice(decision);
+    expect(notice).toBe(
+      [
+        "**Decisão pendente**",
+        "",
+        "> Qual modo é o padrão para quem escreve sem ravi link?",
+        "",
+        "- vinculado: só o convite",
+        "- conversa: agente sem ferramentas",
+        "",
+        "**Recomendação:** vinculado em toda org",
+        "",
+        "Responsável: uma pessoa. Para responder, fale com a sessão que abriu esta thread.",
+        "O contexto completo está no relatório enviado a essa sessão.",
+        `_Ref. ${decision.id}_`,
+      ].join("\n"),
+    );
+    expect(notice).not.toContain(OWNER);
   });
 });
 

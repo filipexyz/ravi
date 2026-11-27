@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "a4d4e6335f9559d9"
+    "version": "bb7c88bdd15fed38"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -124162,6 +124162,10 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "ask": {
+                    "description": "With --awaiting decision: the question in one line (up to 280 characters). The owner reads this, not the report",
+                    "type": "string"
+                  },
                   "awaiting": {
                     "description": "Declare that this thread now waits for the parent: review, decision, merge, dispatch, instruction. The parent is reminded after 15 min and the owner told once after 45 min until the parent acts on this thread",
                     "type": "string"
@@ -124170,8 +124174,19 @@
                     "description": "Progress, blocker or decision the parent session needs now",
                     "type": "string"
                   },
+                  "option": {
+                    "description": "With --awaiting decision and --ask: the choices the owner picks from (up to 6)",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
                   "pr": {
                     "description": "With --awaiting review and --ref <full SHA>: the PR to review. When that SHA is the PR head and its quality gate passed, the runtime opens the independent review itself (reviewer on another model)",
+                    "type": "string"
+                  },
+                  "recommend": {
+                    "description": "With --awaiting decision and --ask: what this thread recommends",
                     "type": "string"
                   },
                   "ref": {
