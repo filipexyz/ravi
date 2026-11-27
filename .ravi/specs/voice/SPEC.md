@@ -140,6 +140,16 @@ entered the session, and the feature spec `runtime/providers/realtime-voice` (ar
   allowed. `calls approve` MUST carry the approval's `--version` and `--digest` and `--execute`; it
   is accepted only from the paired person (operator or device), and is checked again by the approval
   grantor gate (`channel: voice`, sender = the device id or `operator`).
+- **Profiles are configuration, not a call right.** `voice profiles create|update|delete|bind|unbind`
+  MUST accept only the operator or a context the operator issued with `mutate:voice:profiles` (or
+  `admin:system:*`), and MUST refuse device and worker keys (`VOICE_OPERATOR_ONLY`) even though they
+  carry `mutate voice *` for their own calls. Every key may read profiles and voices. Provider keys
+  (ElevenLabs, Groq, OpenAI, LiveKit) stay in the daemon environment and never appear in a profile.
+- **Which profile a call uses.** `calls start` takes the named `--profile`, else the profile bound to
+  the session (`voice profiles bind <id> --session <s>`), else the device's only profile when it was
+  paired for exactly one, else `default`. A device paired with `--profiles <ids>` MUST be refused any
+  other profile (`VOICE_PROFILE_FORBIDDEN`); devices paired without the option keep `*`. Deleting a
+  profile removes its session bindings.
 
 ## Surface
 
@@ -156,9 +166,10 @@ ravi voice calls cancel-turn <call> --turn <id>
 ravi voice calls approve <call> <approval> --version <n> --digest <d> --execute
 ravi voice calls deny <call> <approval>
 ravi voice calls end <call>
-ravi voice profiles list|show|create|update|delete
+ravi voice profiles list|show|create|update|delete [--stt-provider auto|groq|openai] [--stt-model <id>] [--stt-language <code>]
+ravi voice profiles bind <id> --session <s> | unbind --session <s>
 ravi voice voices list
-ravi voice devices pair|list|revoke
+ravi voice devices pair [--profiles <ids>]|list|revoke
 ravi voice engines list|check
 GET /api/v1/_stream/voice/{call}?after=<seq>
 ```
@@ -205,4 +216,9 @@ and resumes with `after`.
 ## Storage
 
 `voice.db` under `RAVI_STATE_DIR`, owned by the daemon like every runtime store:
-`voice_calls`, `voice_events`, `voice_profiles`, `voice_devices`, `voice_usage_daily`.
+`voice_calls`, `voice_events`, `voice_profiles`, `voice_devices` (with `profiles_json`),
+`voice_session_profiles`, `voice_usage_daily`, `voice_usage_daily_profile`.
+- **Transcription is a profile setting.** `sttProvider` pins the push provider (unset: Groq when
+  `GROQ_API_KEY` is set, else OpenAI); `sttModel` overrides the provider's Whisper model and, on
+  hands-free, the worker's STT model; `sttLanguage` overrides `language` for transcription only.
+  `calls start` refuses a push call whose pinned provider has no key (`VOICE_ENGINE_NOT_READY`).

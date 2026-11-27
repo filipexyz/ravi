@@ -141558,6 +141558,12 @@ class RaviSchemas {
               "lastSeenAt": {
                 "type": "string"
               },
+              "profiles": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
               "revoked": {
                 "type": "boolean"
               },
@@ -141573,6 +141579,7 @@ class RaviSchemas {
               "label",
               "contactId",
               "sessions",
+              "profiles",
               "createdAt",
               "expiresAt",
               "revoked"
@@ -141662,6 +141669,10 @@ class RaviSchemas {
       "description": "Device name, e.g. 'iPhone'",
       "type": "string"
     },
+    "profiles": {
+      "description": "Voice profiles it may start calls with (comma-separated; default '*', any)",
+      "type": "string"
+    },
     "session": {
       "description": "Sessions it may call (comma-separated; '*' only for the owner)",
       "type": "string"
@@ -141705,6 +141716,12 @@ class RaviSchemas {
             "lastSeenAt": {
               "type": "string"
             },
+            "profiles": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "revoked": {
               "type": "boolean"
             },
@@ -141720,6 +141737,7 @@ class RaviSchemas {
             "label",
             "contactId",
             "sessions",
+            "profiles",
             "createdAt",
             "expiresAt",
             "revoked"
@@ -141788,6 +141806,12 @@ class RaviSchemas {
             "lastSeenAt": {
               "type": "string"
             },
+            "profiles": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "revoked": {
               "type": "boolean"
             },
@@ -141803,6 +141827,7 @@ class RaviSchemas {
             "label",
             "contactId",
             "sessions",
+            "profiles",
             "createdAt",
             "expiresAt",
             "revoked"
@@ -142046,6 +142071,49 @@ class RaviSchemas {
 }
 ''';
 
+  static const voiceProfilesBindInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Profile id",
+      "type": "string"
+    },
+    "session": {
+      "description": "Session name or key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceProfilesBindReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "profileId": {
+      "type": "string"
+    },
+    "sessionKey": {
+      "type": "string"
+    },
+    "sessionName": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "profileId",
+    "sessionKey",
+    "sessionName"
+  ],
+  "type": "object"
+}
+''';
+
   static const voiceProfilesCreateInputSchema = r'''
 {
   "additionalProperties": false,
@@ -142092,6 +142160,18 @@ class RaviSchemas {
     },
     "mode": {
       "description": "push|live|handsfree|mock",
+      "type": "string"
+    },
+    "sttLanguage": {
+      "description": "Transcription language when not --language (empty clears)",
+      "type": "string"
+    },
+    "sttModel": {
+      "description": "Transcription model (empty clears)",
+      "type": "string"
+    },
+    "sttProvider": {
+      "description": "Push transcription provider: auto|groq|openai",
       "type": "string"
     },
     "ttsModel": {
@@ -142161,6 +142241,19 @@ class RaviSchemas {
             "live",
             "handsfree",
             "mock"
+          ],
+          "type": "string"
+        },
+        "sttLanguage": {
+          "type": "string"
+        },
+        "sttModel": {
+          "type": "string"
+        },
+        "sttProvider": {
+          "enum": [
+            "groq",
+            "openai"
           ],
           "type": "string"
         },
@@ -142352,6 +142445,19 @@ class RaviSchemas {
             ],
             "type": "string"
           },
+          "sttLanguage": {
+            "type": "string"
+          },
+          "sttModel": {
+            "type": "string"
+          },
+          "sttProvider": {
+            "enum": [
+              "groq",
+              "openai"
+            ],
+            "type": "string"
+          },
           "ttsModel": {
             "type": "string"
           },
@@ -142462,6 +142568,19 @@ class RaviSchemas {
           ],
           "type": "string"
         },
+        "sttLanguage": {
+          "type": "string"
+        },
+        "sttModel": {
+          "type": "string"
+        },
+        "sttProvider": {
+          "enum": [
+            "groq",
+            "openai"
+          ],
+          "type": "string"
+        },
         "ttsModel": {
           "type": "string"
         },
@@ -142490,6 +142609,38 @@ class RaviSchemas {
   },
   "required": [
     "profile"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceProfilesUnbindInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "session": {
+      "description": "Session name or key",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const voiceProfilesUnbindReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "sessionKey": {
+      "type": "string"
+    },
+    "unbound": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "sessionKey",
+    "unbound"
   ],
   "type": "object"
 }
@@ -142547,6 +142698,18 @@ class RaviSchemas {
       "default": false,
       "description": "Stop accepting third-party speakers",
       "type": "boolean"
+    },
+    "sttLanguage": {
+      "description": "Transcription language when not --language (empty clears)",
+      "type": "string"
+    },
+    "sttModel": {
+      "description": "Transcription model (empty clears)",
+      "type": "string"
+    },
+    "sttProvider": {
+      "description": "Push transcription provider: auto|groq|openai",
+      "type": "string"
     },
     "ttsModel": {
       "description": "ElevenLabs model id",
@@ -142615,6 +142778,19 @@ class RaviSchemas {
             "live",
             "handsfree",
             "mock"
+          ],
+          "type": "string"
+        },
+        "sttLanguage": {
+          "type": "string"
+        },
+        "sttModel": {
+          "type": "string"
+        },
+        "sttProvider": {
+          "enum": [
+            "groq",
+            "openai"
           ],
           "type": "string"
         },

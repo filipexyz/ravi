@@ -27403,6 +27403,7 @@ export type VoiceDevicesListReturn = {
     id: string;
     label: string;
     lastSeenAt?: string;
+    profiles: string[];
     revoked: boolean;
     sessions: string[];
   }) | null>;
@@ -27423,6 +27424,7 @@ export type VoiceDevicesPairInput = {
   contact?: string;
   execute?: boolean;
   label?: string;
+  profiles?: string;
   session?: string;
   worker?: boolean;
 };
@@ -27437,6 +27439,7 @@ export type VoiceDevicesPairReturn = {
     id: string;
     label: string;
     lastSeenAt?: string;
+    profiles: string[];
     revoked: boolean;
     sessions: string[];
   }) | null;
@@ -27457,6 +27460,7 @@ export type VoiceDevicesRevokeReturn = {
     id: string;
     label: string;
     lastSeenAt?: string;
+    profiles: string[];
     revoked: boolean;
     sessions: string[];
   }) | null;
@@ -27510,6 +27514,19 @@ export type VoiceEnginesListReturn = {
   total: number;
 };
 
+/** Input shape for `voice.profiles.bind`. */
+export type VoiceProfilesBindInput = {
+  id: string;
+  session?: string;
+};
+
+/** Return shape for `voice.profiles.bind`. */
+export type VoiceProfilesBindReturn = {
+  profileId: string;
+  sessionKey: string;
+  sessionName: string;
+};
+
 /** Input shape for `voice.profiles.create`. */
 export type VoiceProfilesCreateInput = {
   allowGuests?: boolean;
@@ -27523,6 +27540,9 @@ export type VoiceProfilesCreateInput = {
   maxCallMinutes?: string;
   maxDailyCost?: string;
   mode?: string;
+  sttLanguage?: string;
+  sttModel?: string;
+  sttProvider?: string;
   ttsModel?: string;
   voice?: string;
 };
@@ -27542,6 +27562,9 @@ export type VoiceProfilesCreateReturn = {
     maxCallMinutes: number;
     maxDailyCostUsd: number;
     mode: "push" | "live" | "handsfree" | "mock";
+    sttLanguage?: string;
+    sttModel?: string;
+    sttProvider?: "groq" | "openai";
     ttsModel?: string;
     updatedAt: number;
     voice?: string;
@@ -27589,6 +27612,9 @@ export type VoiceProfilesListReturn = {
     maxCallMinutes: number;
     maxDailyCostUsd: number;
     mode: "push" | "live" | "handsfree" | "mock";
+    sttLanguage?: string;
+    sttModel?: string;
+    sttProvider?: "groq" | "openai";
     ttsModel?: string;
     updatedAt: number;
     voice?: string;
@@ -27616,10 +27642,24 @@ export type VoiceProfilesShowReturn = {
     maxCallMinutes: number;
     maxDailyCostUsd: number;
     mode: "push" | "live" | "handsfree" | "mock";
+    sttLanguage?: string;
+    sttModel?: string;
+    sttProvider?: "groq" | "openai";
     ttsModel?: string;
     updatedAt: number;
     voice?: string;
   };
+};
+
+/** Input shape for `voice.profiles.unbind`. */
+export type VoiceProfilesUnbindInput = {
+  session?: string;
+};
+
+/** Return shape for `voice.profiles.unbind`. */
+export type VoiceProfilesUnbindReturn = {
+  sessionKey: string;
+  unbound: boolean;
 };
 
 /** Input shape for `voice.profiles.update`. */
@@ -27636,6 +27676,9 @@ export type VoiceProfilesUpdateInput = {
   maxDailyCost?: string;
   mode?: string;
   noGuests?: boolean;
+  sttLanguage?: string;
+  sttModel?: string;
+  sttProvider?: string;
   ttsModel?: string;
   voice?: string;
 };
@@ -27655,6 +27698,9 @@ export type VoiceProfilesUpdateReturn = {
     maxCallMinutes: number;
     maxDailyCostUsd: number;
     mode: "push" | "live" | "handsfree" | "mock";
+    sttLanguage?: string;
+    sttModel?: string;
+    sttProvider?: "groq" | "openai";
     ttsModel?: string;
     updatedAt: number;
     voice?: string;

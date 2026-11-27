@@ -1,4 +1,4 @@
-import type { VoiceConnectionKind, VoiceMode, VoiceProfile } from "../types.js";
+import type { VoiceConnectionKind, VoiceMode, VoiceProfile, VoiceSttProvider } from "../types.js";
 
 export interface VoiceEngineCapabilities {
   /** The person can talk over the agent and the agent stops speaking. */
@@ -48,7 +48,13 @@ export interface TextToSpeechResult {
 
 /** Ears and mouth for clip-based engines (push, mock). */
 export interface ClipSpeechEngine {
-  transcribe(input: { bytes: Uint8Array; mime: string; language: string }): Promise<SpeechToTextResult>;
+  transcribe(input: {
+    bytes: Uint8Array;
+    mime: string;
+    language: string;
+    /** From the profile: pinned transcription provider and model. */
+    stt?: { provider?: VoiceSttProvider; model?: string };
+  }): Promise<SpeechToTextResult>;
   synthesize(input: { text: string; profile: VoiceProfile }): Promise<TextToSpeechResult | null>;
 }
 

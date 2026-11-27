@@ -34580,11 +34580,12 @@ class VoiceDevicesListReturn {
 VoiceDevicesListReturn voiceDevicesListReturnFromJson(Object? json) => VoiceDevicesListReturn.fromJsonValue(json);
 
 class VoiceDevicesPairOptions {
-  const VoiceDevicesPairOptions({this.contact, this.execute, this.label, this.session, this.worker});
+  const VoiceDevicesPairOptions({this.contact, this.execute, this.label, this.profiles, this.session, this.worker});
 
   final String? contact;
   final bool? execute;
   final String? label;
+  final String? profiles;
   final String? session;
   final bool? worker;
 
@@ -34597,6 +34598,9 @@ class VoiceDevicesPairOptions {
     }
     if (label != null) {
       into["label"] = RaviJson.from(label);
+    }
+    if (profiles != null) {
+      into["profiles"] = RaviJson.from(profiles);
     }
     if (session != null) {
       into["session"] = RaviJson.from(session);
@@ -34707,8 +34711,42 @@ class VoiceEnginesListReturn {
 
 VoiceEnginesListReturn voiceEnginesListReturnFromJson(Object? json) => VoiceEnginesListReturn.fromJsonValue(json);
 
+class VoiceProfilesBindOptions {
+  const VoiceProfilesBindOptions({this.session});
+
+  final String? session;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (session != null) {
+      into["session"] = RaviJson.from(session);
+    }
+  }
+}
+
+class VoiceProfilesBindReturn {
+  const VoiceProfilesBindReturn({required this.profileId, required this.sessionKey, required this.sessionName});
+
+  final String profileId;
+  final String sessionKey;
+  final String sessionName;
+
+  factory VoiceProfilesBindReturn.fromJson(Map<String, Object?> json) {
+    return VoiceProfilesBindReturn(
+      profileId: raviJsonAsString(json["profileId"]),
+      sessionKey: raviJsonAsString(json["sessionKey"]),
+      sessionName: raviJsonAsString(json["sessionName"]),
+    );
+  }
+
+  static VoiceProfilesBindReturn fromJsonValue(Object? json) {
+    return VoiceProfilesBindReturn.fromJson(raviJsonObject(json, "VoiceProfilesBindReturn"));
+  }
+}
+
+VoiceProfilesBindReturn voiceProfilesBindReturnFromJson(Object? json) => VoiceProfilesBindReturn.fromJsonValue(json);
+
 class VoiceProfilesCreateOptions {
-  const VoiceProfilesCreateOptions({this.allowGuests, this.delivery, this.label, this.language, this.liveModel, this.liveVoice, this.maxCallCost, this.maxCallMinutes, this.maxDailyCost, this.mode, this.ttsModel, this.voice});
+  const VoiceProfilesCreateOptions({this.allowGuests, this.delivery, this.label, this.language, this.liveModel, this.liveVoice, this.maxCallCost, this.maxCallMinutes, this.maxDailyCost, this.mode, this.sttLanguage, this.sttModel, this.sttProvider, this.ttsModel, this.voice});
 
   final bool? allowGuests;
   final String? delivery;
@@ -34720,6 +34758,9 @@ class VoiceProfilesCreateOptions {
   final String? maxCallMinutes;
   final String? maxDailyCost;
   final String? mode;
+  final String? sttLanguage;
+  final String? sttModel;
+  final String? sttProvider;
   final String? ttsModel;
   final String? voice;
 
@@ -34753,6 +34794,15 @@ class VoiceProfilesCreateOptions {
     }
     if (mode != null) {
       into["mode"] = RaviJson.from(mode);
+    }
+    if (sttLanguage != null) {
+      into["sttLanguage"] = RaviJson.from(sttLanguage);
+    }
+    if (sttModel != null) {
+      into["sttModel"] = RaviJson.from(sttModel);
+    }
+    if (sttProvider != null) {
+      into["sttProvider"] = RaviJson.from(sttProvider);
     }
     if (ttsModel != null) {
       into["ttsModel"] = RaviJson.from(ttsModel);
@@ -34857,8 +34907,40 @@ class VoiceProfilesShowReturn {
 
 VoiceProfilesShowReturn voiceProfilesShowReturnFromJson(Object? json) => VoiceProfilesShowReturn.fromJsonValue(json);
 
+class VoiceProfilesUnbindOptions {
+  const VoiceProfilesUnbindOptions({this.session});
+
+  final String? session;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (session != null) {
+      into["session"] = RaviJson.from(session);
+    }
+  }
+}
+
+class VoiceProfilesUnbindReturn {
+  const VoiceProfilesUnbindReturn({required this.sessionKey, required this.unbound});
+
+  final String sessionKey;
+  final bool unbound;
+
+  factory VoiceProfilesUnbindReturn.fromJson(Map<String, Object?> json) {
+    return VoiceProfilesUnbindReturn(
+      sessionKey: raviJsonAsString(json["sessionKey"]),
+      unbound: raviJsonAsBool(json["unbound"]),
+    );
+  }
+
+  static VoiceProfilesUnbindReturn fromJsonValue(Object? json) {
+    return VoiceProfilesUnbindReturn.fromJson(raviJsonObject(json, "VoiceProfilesUnbindReturn"));
+  }
+}
+
+VoiceProfilesUnbindReturn voiceProfilesUnbindReturnFromJson(Object? json) => VoiceProfilesUnbindReturn.fromJsonValue(json);
+
 class VoiceProfilesUpdateOptions {
-  const VoiceProfilesUpdateOptions({this.allowGuests, this.delivery, this.label, this.language, this.liveModel, this.liveVoice, this.maxCallCost, this.maxCallMinutes, this.maxDailyCost, this.mode, this.noGuests, this.ttsModel, this.voice});
+  const VoiceProfilesUpdateOptions({this.allowGuests, this.delivery, this.label, this.language, this.liveModel, this.liveVoice, this.maxCallCost, this.maxCallMinutes, this.maxDailyCost, this.mode, this.noGuests, this.sttLanguage, this.sttModel, this.sttProvider, this.ttsModel, this.voice});
 
   final bool? allowGuests;
   final String? delivery;
@@ -34871,6 +34953,9 @@ class VoiceProfilesUpdateOptions {
   final String? maxDailyCost;
   final String? mode;
   final bool? noGuests;
+  final String? sttLanguage;
+  final String? sttModel;
+  final String? sttProvider;
   final String? ttsModel;
   final String? voice;
 
@@ -34907,6 +34992,15 @@ class VoiceProfilesUpdateOptions {
     }
     if (noGuests != null) {
       into["noGuests"] = RaviJson.from(noGuests);
+    }
+    if (sttLanguage != null) {
+      into["sttLanguage"] = RaviJson.from(sttLanguage);
+    }
+    if (sttModel != null) {
+      into["sttModel"] = RaviJson.from(sttModel);
+    }
+    if (sttProvider != null) {
+      into["sttProvider"] = RaviJson.from(sttProvider);
     }
     if (ttsModel != null) {
       into["ttsModel"] = RaviJson.from(ttsModel);

@@ -7879,6 +7879,13 @@ public struct VoiceProfilesNamespace: Sendable {
     self.transport = transport
   }
 
+  public func bind(_ id: String, _ options: VoiceProfilesBindOptions = .init()) async throws -> VoiceProfilesBindReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["voice","profiles"], command: "bind", body: requestBody, as: VoiceProfilesBindReturn.self)
+  }
+
   public func create(_ id: String, _ options: VoiceProfilesCreateOptions = .init()) async throws -> VoiceProfilesCreateReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["id"] = try RaviJSON.fromEncodable(id)
@@ -7902,6 +7909,12 @@ public struct VoiceProfilesNamespace: Sendable {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["id"] = try RaviJSON.fromEncodable(id)
     return try await transport.call(groupSegments: ["voice","profiles"], command: "show", body: requestBody, as: VoiceProfilesShowReturn.self)
+  }
+
+  public func unbind(_ options: VoiceProfilesUnbindOptions = .init()) async throws -> VoiceProfilesUnbindReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["voice","profiles"], command: "unbind", body: requestBody, as: VoiceProfilesUnbindReturn.self)
   }
 
   public func update(_ id: String, _ options: VoiceProfilesUpdateOptions = .init()) async throws -> VoiceProfilesUpdateReturn {

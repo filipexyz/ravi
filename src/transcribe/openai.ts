@@ -62,28 +62,41 @@ interface TranscribeProvider {
 /** Max duration in seconds before chunking (10 minutes) */
 const CHUNK_THRESHOLD_SEC = 600;
 
+export type TranscriptionProviderName = "groq" | "openai";
+
 export interface TranscriptionOptions {
   language?: string;
   durationHintSec?: number;
+  /** Pin the provider; default: Groq when GROQ_API_KEY is set, else OpenAI. */
+  provider?: TranscriptionProviderName;
+  /** Override the provider's default model. */
+  model?: string;
 }
 
-function getProvider(): TranscribeProvider {
+export const DEFAULT_TRANSCRIPTION_MODELS: Record<TranscriptionProviderName, string> = {
+  groq: "whisper-large-v3-turbo",
+  openai: "whisper-1",
+};
+
+function getProvider(options: TranscriptionOptions = {}): TranscribeProvider {
   const groqKey = process.env.GROQ_API_KEY;
-  if (groqKey) {
+  const openaiKey = process.env.OPENAI_API_KEY;
+  const wanted = options.provider ?? (groqKey ? "groq" : openaiKey ? "openai" : undefined);
+  if (wanted === "groq") {
+    if (!groqKey) throw new Error("Transcription provider groq needs GROQ_API_KEY");
     return {
       name: "groq",
       client: new OpenAI({ apiKey: groqKey, baseURL: "https://api.groq.com/openai/v1" }),
-      model: "whisper-large-v3-turbo",
+      model: options.model || DEFAULT_TRANSCRIPTION_MODELS.groq,
       credential: groqKey,
     };
   }
-
-  const openaiKey = process.env.OPENAI_API_KEY;
-  if (openaiKey) {
+  if (wanted === "openai") {
+    if (!openaiKey) throw new Error("Transcription provider openai needs OPENAI_API_KEY");
     return {
       name: "openai",
       client: new OpenAI({ apiKey: openaiKey }),
-      model: "whisper-1",
+      model: options.model || DEFAULT_TRANSCRIPTION_MODELS.openai,
       credential: openaiKey,
     };
   }
@@ -226,7 +239,7 @@ export async function transcribeAudio(
   mimetype: string,
   options: TranscriptionOptions = {},
 ): Promise<TranscriptionResult> {
-  const provider = getProvider();
+  const provider = getProvider(options);
   const ext = extensionForMimeType(mimetype);
 
   log.debug("Transcribing audio", { provider: provider.name, model: provider.model, mimetype, size: buffer.length });

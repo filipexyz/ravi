@@ -139858,6 +139858,12 @@ export const VoiceDevicesListReturnSchema = {
               "lastSeenAt": {
                 "type": "string"
               },
+              "profiles": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
               "revoked": {
                 "type": "boolean"
               },
@@ -139873,6 +139879,7 @@ export const VoiceDevicesListReturnSchema = {
               "label",
               "contactId",
               "sessions",
+              "profiles",
               "createdAt",
               "expiresAt",
               "revoked"
@@ -139961,6 +139968,10 @@ export const VoiceDevicesPairInputSchema = {
       "description": "Device name, e.g. 'iPhone'",
       "type": "string"
     },
+    "profiles": {
+      "description": "Voice profiles it may start calls with (comma-separated; default '*', any)",
+      "type": "string"
+    },
     "session": {
       "description": "Sessions it may call (comma-separated; '*' only for the owner)",
       "type": "string"
@@ -140003,6 +140014,12 @@ export const VoiceDevicesPairReturnSchema = {
             "lastSeenAt": {
               "type": "string"
             },
+            "profiles": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "revoked": {
               "type": "boolean"
             },
@@ -140018,6 +140035,7 @@ export const VoiceDevicesPairReturnSchema = {
             "label",
             "contactId",
             "sessions",
+            "profiles",
             "createdAt",
             "expiresAt",
             "revoked"
@@ -140084,6 +140102,12 @@ export const VoiceDevicesRevokeReturnSchema = {
             "lastSeenAt": {
               "type": "string"
             },
+            "profiles": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "revoked": {
               "type": "boolean"
             },
@@ -140099,6 +140123,7 @@ export const VoiceDevicesRevokeReturnSchema = {
             "label",
             "contactId",
             "sessions",
+            "profiles",
             "createdAt",
             "expiresAt",
             "revoked"
@@ -140337,6 +140362,47 @@ export const VoiceEnginesListReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `voice.profiles.bind`. */
+export const VoiceProfilesBindInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Profile id",
+      "type": "string"
+    },
+    "session": {
+      "description": "Session name or key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `voice.profiles.bind`. */
+export const VoiceProfilesBindReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "profileId": {
+      "type": "string"
+    },
+    "sessionKey": {
+      "type": "string"
+    },
+    "sessionName": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "profileId",
+    "sessionKey",
+    "sessionName"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `voice.profiles.create`. */
 export const VoiceProfilesCreateInputSchema = {
   "additionalProperties": false,
@@ -140383,6 +140449,18 @@ export const VoiceProfilesCreateInputSchema = {
     },
     "mode": {
       "description": "push|live|handsfree|mock",
+      "type": "string"
+    },
+    "sttLanguage": {
+      "description": "Transcription language when not --language (empty clears)",
+      "type": "string"
+    },
+    "sttModel": {
+      "description": "Transcription model (empty clears)",
+      "type": "string"
+    },
+    "sttProvider": {
+      "description": "Push transcription provider: auto|groq|openai",
       "type": "string"
     },
     "ttsModel": {
@@ -140451,6 +140529,19 @@ export const VoiceProfilesCreateReturnSchema = {
             "live",
             "handsfree",
             "mock"
+          ],
+          "type": "string"
+        },
+        "sttLanguage": {
+          "type": "string"
+        },
+        "sttModel": {
+          "type": "string"
+        },
+        "sttProvider": {
+          "enum": [
+            "groq",
+            "openai"
           ],
           "type": "string"
         },
@@ -140638,6 +140729,19 @@ export const VoiceProfilesListReturnSchema = {
             ],
             "type": "string"
           },
+          "sttLanguage": {
+            "type": "string"
+          },
+          "sttModel": {
+            "type": "string"
+          },
+          "sttProvider": {
+            "enum": [
+              "groq",
+              "openai"
+            ],
+            "type": "string"
+          },
           "ttsModel": {
             "type": "string"
           },
@@ -140746,6 +140850,19 @@ export const VoiceProfilesShowReturnSchema = {
           ],
           "type": "string"
         },
+        "sttLanguage": {
+          "type": "string"
+        },
+        "sttModel": {
+          "type": "string"
+        },
+        "sttProvider": {
+          "enum": [
+            "groq",
+            "openai"
+          ],
+          "type": "string"
+        },
         "ttsModel": {
           "type": "string"
         },
@@ -140774,6 +140891,36 @@ export const VoiceProfilesShowReturnSchema = {
   },
   "required": [
     "profile"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `voice.profiles.unbind`. */
+export const VoiceProfilesUnbindInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "session": {
+      "description": "Session name or key",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `voice.profiles.unbind`. */
+export const VoiceProfilesUnbindReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "sessionKey": {
+      "type": "string"
+    },
+    "unbound": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "sessionKey",
+    "unbound"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -140830,6 +140977,18 @@ export const VoiceProfilesUpdateInputSchema = {
       "default": false,
       "description": "Stop accepting third-party speakers",
       "type": "boolean"
+    },
+    "sttLanguage": {
+      "description": "Transcription language when not --language (empty clears)",
+      "type": "string"
+    },
+    "sttModel": {
+      "description": "Transcription model (empty clears)",
+      "type": "string"
+    },
+    "sttProvider": {
+      "description": "Push transcription provider: auto|groq|openai",
+      "type": "string"
     },
     "ttsModel": {
       "description": "ElevenLabs model id",
@@ -140897,6 +141056,19 @@ export const VoiceProfilesUpdateReturnSchema = {
             "live",
             "handsfree",
             "mock"
+          ],
+          "type": "string"
+        },
+        "sttLanguage": {
+          "type": "string"
+        },
+        "sttModel": {
+          "type": "string"
+        },
+        "sttProvider": {
+          "enum": [
+            "groq",
+            "openai"
           ],
           "type": "string"
         },

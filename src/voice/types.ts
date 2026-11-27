@@ -88,6 +88,9 @@ export interface VoiceCall {
   endedAt?: number;
 }
 
+export const VOICE_STT_PROVIDERS = ["groq", "openai"] as const;
+export type VoiceSttProvider = (typeof VOICE_STT_PROVIDERS)[number];
+
 export interface VoiceProfile {
   id: string;
   label: string;
@@ -99,6 +102,12 @@ export interface VoiceProfile {
   /** GPT-Live voice (fixed at session start). */
   liveVoice?: string;
   liveModel?: string;
+  /** Push transcription provider; unset picks Groq when its key is set, else OpenAI. */
+  sttProvider?: VoiceSttProvider;
+  /** Transcription model (push: the provider's Whisper model; hands-free: the worker's STT model). */
+  sttModel?: string;
+  /** Transcription language when it differs from `language`. */
+  sttLanguage?: string;
   delivery: VoiceDeliveryClass;
   allowGuests: boolean;
   maxCallMinutes: number;
@@ -114,6 +123,8 @@ export interface VoiceDevice {
   contactId: string;
   /** Sessions this device may call; `*` means every session the contact may reach. */
   sessions: string[];
+  /** Voice profiles this device may start calls with; `*` (the default) means any. */
+  profiles?: string[];
   contextId: string;
   createdAt: number;
   expiresAt: number;

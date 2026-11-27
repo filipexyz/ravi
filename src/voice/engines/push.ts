@@ -44,9 +44,13 @@ export function createPushEngine(deps: PushEngineDeps = {}): VoiceEngineDescript
       }
       return { engine: "push", ready: missing.length === 0, missing, notes };
     },
-    async transcribe({ bytes, mime, language }) {
+    async transcribe({ bytes, mime, language, stt }) {
       const env = deps.env ?? process.env;
-      const result = await transcribe(Buffer.from(bytes), mime, { language: language.split("-")[0] });
+      const result = await transcribe(Buffer.from(bytes), mime, {
+        language: language.split("-")[0],
+        ...(stt?.provider ? { provider: stt.provider } : {}),
+        ...(stt?.model ? { model: stt.model } : {}),
+      });
       const provider = result.provider ?? (envHas(env, "GROQ_API_KEY") ? "groq" : "openai");
       const durationSec = result.duration ?? estimateSpokenSeconds(result.text);
       return { text: result.text.trim(), durationSec, provider };
