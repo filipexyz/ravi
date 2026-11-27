@@ -23,7 +23,7 @@ const RECOMMENDATION_PREFIX = "Recomendação:";
 export interface DecisionQuestionInput {
   /** `--ask`: the question in one line. */
   ask?: string | null;
-  /** `--option`: the choices, when there are some. */
+  /** `--options` (split on ";"): the choices, when there are some. */
   options?: readonly string[] | null;
   /** `--recommend`: what the asker recommends. */
   recommend?: string | null;
@@ -46,7 +46,7 @@ function usage(message: string): CliExpectedError {
 }
 
 const HOW_TO_ASK =
-  "Pass the question itself: --ask '<one line, up to 280 characters>' [--option '<choice>' ...] [--recommend '<what you recommend>']. The report stays the context the parent reads.";
+  "Pass the question itself: --ask '<one line, up to 280 characters>' [--options '<choice>; <choice>'] [--recommend '<what you recommend>']. The report stays the context the parent reads.";
 
 /**
  * Resolves the question of a decision wait before anything is published, so a refused wait sends nothing and the
@@ -57,7 +57,7 @@ export function resolveDecisionQuestion(input: DecisionQuestionInput): DecisionQ
   const recommendation = input.recommend ? oneLine(input.recommend) : "";
   let question = input.ask ? oneLine(input.ask) : "";
   if (!question) {
-    if (options.length || recommendation) throw usage(`--option and --recommend need --ask. ${HOW_TO_ASK}`);
+    if (options.length || recommendation) throw usage(`--options and --recommend need --ask. ${HOW_TO_ASK}`);
     const report = input.report.trim();
     if (report.includes("\n") || report.length > DECISION_QUESTION_MAX) {
       throw usage(
@@ -69,10 +69,12 @@ export function resolveDecisionQuestion(input: DecisionQuestionInput): DecisionQ
   if (question.length > DECISION_QUESTION_MAX)
     throw usage(`--ask has ${question.length} characters; keep it to ${DECISION_QUESTION_MAX}. ${HOW_TO_ASK}`);
   if (options.length > DECISION_OPTIONS_MAX)
-    throw usage(`At most ${DECISION_OPTIONS_MAX} --option values; this wait has ${options.length}.`);
+    throw usage(`At most ${DECISION_OPTIONS_MAX} choices in --options; this wait has ${options.length}.`);
   const longOption = options.find((option) => option.length > DECISION_OPTION_MAX);
   if (longOption)
-    throw usage(`Each --option has at most ${DECISION_OPTION_MAX} characters: "${longOption.slice(0, 40)}…"`);
+    throw usage(
+      `Each choice in --options has at most ${DECISION_OPTION_MAX} characters: "${longOption.slice(0, 40)}…"`,
+    );
   if (recommendation.length > DECISION_RECOMMENDATION_MAX)
     throw usage(`--recommend has ${recommendation.length} characters; keep it to ${DECISION_RECOMMENDATION_MAX}.`);
   return { question, options, recommendation: recommendation || null };
@@ -123,4 +125,12 @@ export function decisionHeadline(text: string): string {
       .find((line) => line.trim())
       ?.trim() ?? "";
   return first.length > DECISION_QUESTION_MAX ? `${first.slice(0, DECISION_QUESTION_MAX - 1)}…` : first;
+}
+
+/** `--options` is one value: the choices separated by ";" (a choice cannot contain ";"). */
+export function splitDecisionOptions(text: string | null | undefined): string[] {
+  return (text ?? "")
+    .split(";")
+    .map((choice) => choice.trim())
+    .filter(Boolean);
 }

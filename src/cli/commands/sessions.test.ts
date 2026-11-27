@@ -3246,7 +3246,7 @@ describe("SessionCommands attach hints", () => {
       undefined,
       undefined,
       "Qual modo é o padrão?",
-      ["vinculado", "conversa"],
+      "vinculado; conversa",
       "vinculado",
     )) as Record<string, any>;
     expect(decisionWait.handoff).toMatchObject({ kind: "decision" });

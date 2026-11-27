@@ -242,6 +242,9 @@ export interface DecisionAnswerSource {
  * Every refusal has the same code and text, so a caller cannot learn whether a message exists or who wrote it.
  */
 /**
+ * Keep in step with the provider-id query in `dbListChatMessagesByProviderId` (src/router/router-db.ts), which
+ * narrows to the same chats in SQL before its row limit; this check runs after it, so a mismatch fails closed.
+ *
  * A direct chat with a person: the DM itself or a thread inside it. A Slack thread of a DM is stored as its own
  * chat (`chat_type = thread`, platform id `<dm>#<thread ts>`); the owner writing in it is still writing directly.
  */

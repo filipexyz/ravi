@@ -8049,7 +8049,7 @@ export class RaviClient {
     report: async (message: string, options?: {
       ask?: string;
       awaiting?: string;
-      option?: string[];
+      options?: string;
       pr?: string;
       recommend?: string;
       ref?: string;

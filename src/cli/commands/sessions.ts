@@ -124,7 +124,12 @@ import { DEFAULT_RUNTIME_PROBE_TIMEOUT_MS } from "../../runtime/runtime-probe.js
 import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
 import { enforceCliCommandAccess, listCliCommandAccessCandidates } from "../command-access.js";
 import { canWithCapabilities } from "../../permissions/capability-snapshot.js";
-import { decisionHeadline, formatDecisionQuestion, resolveDecisionQuestion } from "../../decisions/question.js";
+import {
+  decisionHeadline,
+  formatDecisionQuestion,
+  resolveDecisionQuestion,
+  splitDecisionOptions,
+} from "../../decisions/question.js";
 import { askDecisionForWait } from "../../decisions/service.js";
 import { retireDecisionIfWaitFails } from "../../decisions/store.js";
 import { redactText } from "../../session-trace/session-trace-db.js";
@@ -8481,10 +8486,12 @@ export class SessionCommands {
     })
     ask?: string,
     @Option({
-      flags: "--option <choice...>",
-      description: "With --awaiting decision and --ask: the choices the owner picks from (up to 6)",
+      // One value split on ";": a variadic option would swallow the positional message written after it.
+      flags: "--options <choices>",
+      description:
+        'With --awaiting decision and --ask: the choices the owner picks from, separated by ";" (up to 6), e.g. --options "vinculado; conversa"',
     })
-    options?: string[],
+    optionsText?: string,
     @Option({
       flags: "--recommend <recommendation>",
       description: "With --awaiting decision and --ask: what this thread recommends",
@@ -8502,9 +8509,10 @@ export class SessionCommands {
         2,
       );
     }
-    if ((ask?.trim() || options?.length || recommend?.trim()) && awaitingKind !== "decision") {
+    const options = splitDecisionOptions(optionsText);
+    if ((ask?.trim() || optionsText?.trim() || recommend?.trim()) && awaitingKind !== "decision") {
       throw new CliExpectedError(
-        "--ask, --option and --recommend only apply with --awaiting decision",
+        "--ask, --options and --recommend only apply with --awaiting decision",
         "USAGE_ERROR",
         2,
       );
@@ -8515,7 +8523,7 @@ export class SessionCommands {
         ? formatDecisionQuestion(
             resolveDecisionQuestion({
               ask: ask ?? null,
-              options: options ?? null,
+              options,
               recommend: recommend ?? null,
               report: decodeLiteralLineBreaks(message),
             }),
