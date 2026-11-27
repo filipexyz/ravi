@@ -610,6 +610,13 @@ export type RuntimeEvent =
       recoverable?: boolean;
       /** Canonical failure class used by the host to apply bounded, replay-safe recovery. */
       failureKind?: "transport" | "provider_capacity_exhausted" | "provider_capacity_retry_unsafe";
+      /**
+       * Structured provider limit that rejected this attempt (Claude
+       * `rate_limit_event` with `status: "rejected"`). `resetAt` is epoch
+       * milliseconds; the host passes it to the credential classifier so the
+       * cooldown ends at the provider's real reset.
+       */
+      providerLimit?: RuntimeProviderLimitRejection;
       rawEvent?: Record<string, unknown>;
     } & RuntimeEventBase)
   | ({
@@ -620,6 +627,13 @@ export type RuntimeEvent =
       usage: RuntimeUsage;
       rawEvent?: Record<string, unknown>;
     } & RuntimeEventBase);
+
+export interface RuntimeProviderLimitRejection {
+  /** Epoch milliseconds at which the provider says the rejected limit resets. */
+  resetAt?: number;
+  /** Provider name of the limit window (Claude: five_hour, seven_day, seven_day_opus, ...). */
+  limitType?: string;
+}
 
 export interface RuntimeSessionHandle {
   provider: RuntimeProviderId;
