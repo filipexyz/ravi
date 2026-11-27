@@ -87,6 +87,13 @@ carries it.
   `full-access`. The check runs before any write (no half-installed agent). The
   operator terminal does it. One rule, `assertAgentBreakGlassRaiseAllowed` in
   `src/permissions/break-glass.ts`, serves every writer.
+- The operator terminal is the installed CLI with no runtime context. When it
+  resolves the local default credential (`~/.ravi/credentials.json`, an
+  `admin-bootstrap` key bound to the `bootstrap` identity; `contextOrigin:
+  default-credential`), that identity MUST NOT count as an agent for
+  break-glass, provided stdin and stdout are both a TTY. The same key through the
+  gateway (no `contextOrigin`) and the same file resolved by a shell with no TTY
+  (a full-access agent that dropped its `RAVI_*` env) stay agent/remote callers.
 - `ravi instances pending approve` of a contact holding break-glass is refused
   like `contacts approve`.
 - No caller may create or change a permission profile definition (kind `system`,

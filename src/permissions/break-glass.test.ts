@@ -9,6 +9,7 @@ import {
   grantProfileBreakGlassReasons,
   assertAgentBreakGlassRaiseAllowed,
   runApprovedBreakGlassGrant,
+  setInteractiveTerminalProbeForTests,
   isAdminProfileSlug,
   isBreakGlassCapability,
   profileBreakGlassReasons,
@@ -134,16 +135,29 @@ describe("break-glass power", () => {
       }
     };
     const raise = () => assertAgentBreakGlassRaiseAllowed("test", "main", null, { profile: "full-access" });
+    const terminal = {
+      contextOrigin: "default-credential" as const,
+      contextId: "ctx_op",
+      context: bootstrapKey,
+      agentId: "bootstrap",
+    };
 
-    // The terminal with no RAVI_* env: the CLI resolved ~/.ravi/credentials.json locally.
-    expect(() =>
-      quiet(() =>
-        runWithContext(
-          { contextOrigin: "default-credential", contextId: "ctx_op", context: bootstrapKey, agentId: "bootstrap" },
-          raise,
-        ),
-      ),
-    ).not.toThrow();
+    // The interactive terminal with no RAVI_* env: the CLI resolved ~/.ravi/credentials.json locally.
+    let restore = setInteractiveTerminalProbeForTests(() => true);
+    try {
+      expect(() => quiet(() => runWithContext(terminal, raise))).not.toThrow();
+    } finally {
+      restore();
+    }
+
+    // The same default credential from a shell with no TTY (a full-access agent that dropped
+    // its RAVI_* env) is not the operator.
+    restore = setInteractiveTerminalProbeForTests(() => false);
+    try {
+      expect(() => runWithContext(terminal, raise)).toThrow(/an agent never raises another agent/);
+    } finally {
+      restore();
+    }
 
     // The same key presented through the gateway is a remote caller, not the terminal.
     expect(() =>
