@@ -1,6 +1,7 @@
 // Knowledge settings keys (contract §13.1). Settings rows, not
-// `agents.defaults` JSON: `ravi agents set <id> defaults` replaces the whole
-// object and would wipe `runtimePermissions`. The validators run in
+// `agents.defaults` JSON: these keys are instance-wide, not per agent.
+// (`ravi agents set <id> defaults` merges per key and cannot change
+// `runtimePermissions`.) The validators run in
 // `ravi settings set` (src/cli/commands/settings.ts); the reader below is
 // lenient about anything written around them.
 

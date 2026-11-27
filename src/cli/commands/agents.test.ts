@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 const actualCliContextModule = await import("../context.js");
+const { mergeAgentDefaultsPatch } = await import("../../router/agent-defaults-patch.js");
 const actualRouterDbModule = await import("../../router/router-db.js");
 const actualRouterSessionsModule = await import("../../router/sessions.js");
 
@@ -151,6 +152,27 @@ mock.module("../../router/config.js", () => ({
     if (currentAgent?.id === id) {
       currentAgent = { ...currentAgent, ...partial };
     }
+  },
+  patchAgentDefaults: (id: string, patch: Record<string, unknown>) => {
+    const merged = mergeAgentDefaultsPatch(id, currentAgent?.id === id ? currentAgent.defaults : null, patch);
+    updateAgentCalls.push({ id, partial: { defaults: merged } });
+    if (currentAgent?.id === id) {
+      currentAgent = { ...currentAgent, defaults: merged };
+    }
+  },
+  rebaseAgentDefaults: (
+    id: string,
+    base: Record<string, unknown> | null | undefined,
+    next: Record<string, unknown> | null | undefined,
+  ) => {
+    const stored = currentAgent?.id === id ? { ...(currentAgent.defaults ?? {}) } : {};
+    const b = base ?? {};
+    const n = next ?? {};
+    for (const key of Object.keys(n)) if (JSON.stringify(b[key]) !== JSON.stringify(n[key])) stored[key] = n[key];
+    for (const key of Object.keys(b)) if (!(key in n)) delete stored[key];
+    const merged = Object.keys(stored).length > 0 ? stored : null;
+    updateAgentCalls.push({ id, partial: { defaults: merged } });
+    if (currentAgent?.id === id) currentAgent = { ...currentAgent, defaults: merged };
   },
   deleteAgent: (id: string) => {
     deleteAgentCalls.push(id);

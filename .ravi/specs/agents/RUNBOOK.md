@@ -29,3 +29,20 @@
 
 If a provider write fails because it is incompatible with a referenced preset,
 either clear the agent provider or assign a preset whose provider matches.
+
+## Overlay voice panel and release order
+
+The WhatsApp overlay voice panel (`postAgentTtsSettings`) sends only its TTS
+keys as a defaults patch and relies on the daemon merging per key (#1052,
+`agents set <id> defaults`). A daemon older than that release replaces the
+whole defaults object, so a voice save there would erase the agent's other
+defaults, including `runtimePermissions` (27/11 incident on `main`).
+
+- Install the release that contains #1052 on the daemon (`ravi update --next`,
+  then `ravi channels restart`) before loading an overlay built from a checkout
+  that contains this panel.
+- After a voice save, `ravi agents permissions <id>` must still show the
+  profile, and `audit_log` (`agent.updated`) must list only `tts_*` keys.
+- If a voice save ever erases defaults, restore the profile with
+  `ravi agents permissions <id> <profile> --execute` from the operator terminal
+  and read the `agent.updated` row for the actor.

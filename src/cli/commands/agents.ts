@@ -74,6 +74,8 @@ import {
 import { formatCliRuntimeTarget, getCliRuntimeMismatchMessage, inspectCliRuntimeTarget } from "../runtime-target.js";
 import type { AgentConfig, AgentUpdateInput } from "../../router/types.js";
 import { mergeAgentDefaultsPatch } from "../../router/agent-defaults-patch.js";
+// Namespace import: tests that mock router/config partially must still load this module.
+import * as routerConfig from "../../router/config.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { searchTagBindingsForSelector } from "../../tags/service.js";
 import type { TagBinding } from "../../tags/types.js";
@@ -1564,13 +1566,17 @@ SOURCES
         fail(`defaults must be valid JSON object, e.g. '{"tts_voice":"abc","image_mode":"fast"}'`);
       }
     }
+    let defaultsPatch: Record<string, unknown> | null = null;
     if (key === "defaults") {
       // Merge per key, never replace: a caller holding a stale or partial copy
       // (27/11: the WhatsApp overlay read a paginated agent list, missed the
       // agent and wrote only its TTS keys) must not erase keys it never saw.
       // `null` removes a key. runtimePermissions only changes through
       // `ravi agents permissions`, which owns the break-glass and revocation flow.
-      parsedValue = mergeAgentDefaultsPatch(id, agent.defaults, parsedValue as Record<string, unknown>);
+      // Validated here for an early, typed refusal; the write below re-merges
+      // inside one DB transaction (patchAgentDefaults) against the current row.
+      defaultsPatch = parsedValue as Record<string, unknown>;
+      parsedValue = mergeAgentDefaultsPatch(id, agent.defaults, defaultsPatch);
     }
     if (key === "defaults") {
       // defaults carries runtimePermissions: the same break-glass rule as `agents permissions`.
@@ -1601,7 +1607,8 @@ SOURCES
       } else {
         updates = { [key]: parsedValue };
       }
-      updateAgent(id, updates);
+      if (defaultsPatch) routerConfig.patchAgentDefaults(id, defaultsPatch);
+      else updateAgent(id, updates);
       if (key === "cwd" || key === "provider") {
         ensureAgentDirs(loadRouterConfig());
       }
@@ -1771,7 +1778,7 @@ SOURCES
     // Sweep again after the write to catch a context issued concurrently from
     // the old configuration while the mutation was in progress.
     revokeLiveRuntimeContextsForAgent(id);
-    updateAgent(id, { defaults: nextDefaults });
+    routerConfig.rebaseAgentDefaults(id, agent.defaults, nextDefaults);
     revokeLiveRuntimeContextsForAgent(id);
     const updated = getAgent(id) ?? { ...agent, defaults: nextDefaults };
     const payload = {
@@ -1954,7 +1961,7 @@ SOURCES
         );
       }
     }
-    updateAgent(id, { defaults: nextDefaults });
+    routerConfig.rebaseAgentDefaults(id, agent.defaults, nextDefaults);
     const updated = getAgent(id) ?? { ...agent, defaults: nextDefaults };
     const next = readRuntimeModelBrokerSelection(updated);
     const payload = {

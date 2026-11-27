@@ -42,6 +42,27 @@ An agent is not a human user, contact, chat, route, or permission profile.
 - Agent `effort` is a fallback default for sessions without
   `session.effortOverride` and for task/profile gaps; it MUST NOT override
   task, dispatch, or profile runtime settings.
+- `ravi agents set <id> defaults <json>` MUST apply the JSON as a patch: keys
+  absent from it are kept and a key set to `null` is removed. The read of the
+  current row, the merge and the write MUST happen in one IMMEDIATE write
+  transaction, so a concurrent writer in another process cannot lose an
+  update. Writers that build a whole defaults object from an earlier read
+  (`agents permissions`, `agents model-broker`, a Library profile, the
+  capability provider) MUST land only the keys they changed, applied over the
+  stored row in one transaction (`dbRebaseAgentDefaults`).
+  `agents set defaults` MUST refuse any change to `runtimePermissions`; only
+  `ravi agents permissions <id>` writes it, for agents and the operator alike.
+- Every write to `agents` that changes something MUST leave one `audit_log` row
+  (`agent.updated`) with the caller and the changed fields/defaults keys, and
+  only the old value of changed or removed keys (secret-looking key names
+  redacted), never the whole previous object. The audit write fails open: a
+  failure is logged as a warning and the agent write still lands, because the
+  audit exists to say who wrote, not to gate writes.
+- A client that edits part of an agent's defaults MUST send only the keys it
+  edits (a patch), never a copy of the rest of the object: a copied value would
+  replay over a concurrent edit. It MUST NOT locate the agent through a
+  paginated list (27/11: the WhatsApp overlay missed `main` in a paginated list
+  and erased its defaults) and MUST NOT write when the agent cannot be read by id.
 - Agent grants are a ceiling for what the executor can possibly do.
 - Agent grants MUST NOT become ambient authority for every contact or chat that
   can speak to the agent.

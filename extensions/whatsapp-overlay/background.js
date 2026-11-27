@@ -763,10 +763,17 @@ async function postAgentTtsSettings(payload = {}) {
   if (!agentId) return { ok: false, status: 400, code: "missing_agent", error: "Missing agentId" };
   const settings = payload.settings && typeof payload.settings === "object" ? payload.settings : {};
   const { client } = await getClient();
-  // Send only the TTS keys as a patch: `agents set <id> defaults` merges per key
-  // and `null` clears one. Never read-modify-write the whole object here; on
-  // 27/11 a paginated agent list missed the agent, this started from {} and
-  // erased every other default, including runtimePermissions.
+  // Confirm THIS agent exists (by id, never from a paginated list) and send
+  // only the TTS keys as a patch, `null` clearing one. The daemon merges per
+  // key (#1052), so keys this panel never touches are left as stored; copying
+  // the rest of the defaults here would replay old values over a concurrent
+  // edit. Requires a daemon with #1052: see .ravi/specs/agents/RUNBOOK.md
+  // ("Overlay voice panel and release order").
+  const shown = await client.agents.show(agentId);
+  const agent = shown?.agent ?? null;
+  if (!agent || clean(agent.id) !== agentId) {
+    return { ok: false, status: 404, code: "agent_not_found", error: `Agent not found: ${agentId}` };
+  }
   const nextDefaults = { tts_provider: "elevenlabs" };
 
   setDefaultValue(nextDefaults, "tts_auto", typeof settings.enabled === "boolean" ? (settings.enabled ? "on" : "off") : undefined);

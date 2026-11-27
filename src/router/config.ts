@@ -29,6 +29,8 @@ import {
   type ChannelConfig,
   type InstanceConfig,
 } from "./router-db.js";
+// Namespace import: tests that mock router-db partially must still load this module.
+import * as routerDb from "./router-db.js";
 
 const log = logger.child("router:config");
 
@@ -120,6 +122,26 @@ export function loadRouterConfig(): RouterConfig {
 export function updateAgent(id: string, partial: AgentUpdateInput): void {
   const { id: _ignoreId, ...updates } = partial;
   dbUpdateAgent(id, updates);
+}
+
+/**
+ * Merge a defaults patch into an agent (per key, `null` removes a key) in one
+ * write transaction. runtimePermissions is read-only here.
+ */
+export function patchAgentDefaults(id: string, patch: Record<string, unknown>): void {
+  routerDb.dbPatchAgentDefaults(id, patch);
+}
+
+/**
+ * Land a defaults object derived from an earlier read: only the keys that
+ * differ from `base` are applied over the stored row, in one transaction.
+ */
+export function rebaseAgentDefaults(
+  id: string,
+  base: Record<string, unknown> | null | undefined,
+  next: Record<string, unknown> | null | undefined,
+): void {
+  routerDb.dbRebaseAgentDefaults(id, base, next);
 }
 
 /**
