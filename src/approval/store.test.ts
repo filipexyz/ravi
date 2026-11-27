@@ -155,6 +155,37 @@ describe("approval request store", () => {
     expect(getApprovalRequest("req_caller")?.status).toBe("expired");
   });
 
+  it("refuses a decision whose caller expired after the decision read", async () => {
+    const caller = dbCreateContext({
+      contextId: "ctx_expired_caller",
+      contextKey: "rctx_expired_caller",
+      kind: "turn-runtime",
+      sessionName: "dev-main",
+      capabilities: [],
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 1_200,
+    });
+    createApprovalRequest({
+      id: "req_caller_expired",
+      type: "permission",
+      channel: "slack",
+      accountId: "main",
+      chatId: "C123",
+      callerContextId: caller.contextId,
+      createdAt: 1000,
+      expiresAt: 5000,
+    });
+
+    // The caller lease runs out after the request was opened; the stale read (`now: 2000`) still
+    // considers it live, so only the write-time check with the database clock can refuse this.
+    await new Promise((resolve) => setTimeout(resolve, 1_400));
+    expect(
+      claimApprovalDecision({ id: "req_caller_expired", decision: "approved", decidedBy: "U123", now: 2000 }),
+    ).toBeNull();
+    // The write refused it; the later read closes it with the real clock.
+    expect(getApprovalRequest("req_caller_expired")?.status).toBe("expired");
+  });
+
   it("claims a caller bound request while its caller is live", () => {
     const caller = dbCreateContext({
       contextId: "ctx_live_caller",
