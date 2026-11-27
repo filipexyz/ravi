@@ -2084,7 +2084,14 @@ export class Gateway {
         if (request.messageId !== data.messageId) throw new Error("Approval delivery does not match.");
         const target = resolveOutboundAccount(request.accountId, { channel: request.channel });
         if (target.kind !== "omni") throw new Error("Approval finalization adapter is unavailable.");
-        const text = `Pedido de aprovação encerrado. ${request.reason ?? "O prazo deste pedido terminou."}`;
+        // Fixed product wording only: a human's rejection text never reaches a non-Slack card.
+        const closing =
+          request.status === "expired"
+            ? "O prazo deste pedido terminou."
+            : request.decision === "approved"
+              ? "Pedido aprovado."
+              : "Pedido recusado.";
+        const text = `Pedido de aprovação encerrado. ${closing}`;
         await this.omniSender.editMessage(
           target.instanceId,
           normalizeOutboundJid(request.chatId),

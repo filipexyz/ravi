@@ -174,6 +174,14 @@ interface RuntimeTurnOriginEnvelope {
    * the new turn (to a contact overlay's capabilities), never widen it.
    */
   callerContextId?: string;
+  /**
+   * Whether the new turn may borrow the caller's origin for its approval cards.
+   * A relay that is not a delegation of the caller's conversation (an answer
+   * through an Ask) sets it to false: the caller context still narrows the turn,
+   * but its chat never becomes where this turn asks for approval or input.
+   * Absent means borrow.
+   */
+  borrowApprovalOrigin?: boolean;
 }
 
 export interface SessionRelayTurnOriginMetadata extends RuntimeTurnOriginEnvelope {

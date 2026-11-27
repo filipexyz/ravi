@@ -123,6 +123,19 @@ describe("sessions answer through an open Ask, with the real store", () => {
     expect(published).toHaveLength(0);
   });
 
+  it("marks the answer so the asker's turn never borrows the answerer's chat for approvals", async () => {
+    setup();
+    await ask();
+    const source = { channel: "whatsapp", accountId: "luis", chatId: "120363431846316920@g.us" };
+    await runWithContext(
+      { agentId: "asked", sessionKey: ASKED, sessionName: ASKED, suppressCliOutput: true, source },
+      () => new SessionCommands().answer(ASKER, "resposta"),
+    );
+
+    expect(published[0]?.payload).not.toHaveProperty("_approvalSource");
+    expect(published[0]?.payload._turnOrigin).toMatchObject({ borrowApprovalOrigin: false });
+  });
+
   it("leaves an answer from a caller with access to the asker as it was: approval source and barrier", async () => {
     setup();
     const source = { channel: "whatsapp", accountId: "luis", chatId: "5511900000001@s.whatsapp.net" };

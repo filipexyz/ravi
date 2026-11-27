@@ -341,6 +341,46 @@ describe("runtime context registry", () => {
     });
   });
 
+  it("keeps the parent's borrowed approval origin when a child asks to replace it", () => {
+    const parent = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: TEST_AGENT_ID,
+      ttlMs: 30 * 60 * 1000,
+      metadata: {
+        approvalSourceOnly: true,
+        approvalSource: { channel: "slack", accountId: "main", chatId: "C_ORIGIN", threadId: "1700.1" },
+      },
+    });
+
+    const child = issueRuntimeContext({
+      parent,
+      cliName: "sync-cli",
+      metadata: {
+        approvalSourceOnly: false,
+        approvalSource: { channel: "slack", accountId: "main", chatId: "C_FORGED" },
+      },
+      ttlMs: 60_000,
+    });
+
+    expect(child.metadata).toMatchObject({
+      approvalSourceOnly: true,
+      approvalSource: { channel: "slack", accountId: "main", chatId: "C_ORIGIN", threadId: "1700.1" },
+    });
+  });
+
+  it("drops a borrowed approval origin the parent does not have", () => {
+    const parent = createRuntimeContext({ kind: "turn-runtime", agentId: TEST_AGENT_ID, ttlMs: 30 * 60 * 1000 });
+
+    const child = issueRuntimeContext({
+      parent,
+      cliName: "sync-cli",
+      metadata: { approvalSource: { channel: "slack", accountId: "main", chatId: "C_FORGED" } },
+      ttlMs: 60_000,
+    });
+
+    expect(child.metadata).not.toHaveProperty("approvalSource");
+  });
+
   it("rejects child capabilities that exceed the parent context", () => {
     const parent = createRuntimeContext({
       agentId: TEST_AGENT_ID,

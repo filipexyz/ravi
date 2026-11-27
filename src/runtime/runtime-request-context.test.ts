@@ -1405,6 +1405,49 @@ describe("runtime request context authority", () => {
     expect(runtimeContext.metadata?.approvalSource).toBeUndefined();
   });
 
+  it("does not borrow the caller's chat when the relay marks that it must not", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+    const caller = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: agent.id,
+      capabilities: [],
+      metadata: {
+        approvalSourceOnly: true,
+        approvalSource: { channel: "slack", accountId: "main", chatId: "C_CALLER" },
+      },
+    });
+    const own = { channel: "whatsapp", accountId: "main", chatId: "5511999999999@s.whatsapp.net" };
+    const build = (borrowApprovalOrigin: boolean) =>
+      buildRuntimeRequestContext({
+        dbSessionKey: sessionKey,
+        sessionName,
+        sessionCwd: agent.cwd,
+        agent,
+        prompt: {
+          prompt: "[System] Answer",
+          source: own,
+          _turnOrigin: buildSessionRelayTurnOrigin(
+            "answer",
+            { agentId: agent.id, contextId: caller.contextId },
+            { borrowApprovalOrigin },
+          ),
+        },
+        runtimeProviderId: "codex",
+        model: "test",
+        runtimeResolution,
+        resolvedSource: own,
+      }).runtimeContext;
+
+    const borrowing = build(true);
+    expect(borrowing.metadata?.approvalSource).toMatchObject({ chatId: "C_CALLER" });
+
+    const ownOnly = build(false);
+    expect(ownOnly.source).toMatchObject({ chatId: own.chatId });
+    expect(ownOnly.metadata?.approvalSource).toBeUndefined();
+    expect(ownOnly.metadata?.approvalSourceOnly).toBeUndefined();
+  });
+
   it("narrows a relay produced by a contact-overlay turn to that turn's capabilities", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });

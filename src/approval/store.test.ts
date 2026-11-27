@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { dbCreateContext, dbRevokeContext } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   attachApprovalRequestMessageId,
@@ -124,5 +125,58 @@ describe("approval request store", () => {
     ).toBeNull();
     expect(expireApprovalRequest("req_3", 1600)?.status).toBe("expired");
     expect(isApprovalRequestOpen(getApprovalRequest("req_3")!, 1600)).toBe(false);
+  });
+
+  it("refuses a caller bound request whose caller was revoked after the decision read", () => {
+    const caller = dbCreateContext({
+      contextId: "ctx_decide_caller",
+      contextKey: "rctx_decide_caller",
+      kind: "turn-runtime",
+      sessionName: "dev-main",
+      capabilities: [],
+      createdAt: Date.now(),
+    });
+    createApprovalRequest({
+      id: "req_caller",
+      type: "permission",
+      channel: "slack",
+      accountId: "main",
+      chatId: "C123",
+      callerContextId: caller.contextId,
+      createdAt: 1000,
+      expiresAt: 5000,
+    });
+
+    // The decision read captured `now` before the revocation, and that stale read still sees a live
+    // caller. The write itself must refuse it.
+    dbRevokeContext(caller.contextId);
+    expect(claimApprovalDecision({ id: "req_caller", decision: "approved", decidedBy: "U123", now: 2000 })).toBeNull();
+    // The revocation trigger already closed it; either way no decision can be written.
+    expect(getApprovalRequest("req_caller")?.status).toBe("expired");
+  });
+
+  it("claims a caller bound request while its caller is live", () => {
+    const caller = dbCreateContext({
+      contextId: "ctx_live_caller",
+      contextKey: "rctx_live_caller",
+      kind: "turn-runtime",
+      sessionName: "dev-main",
+      capabilities: [],
+      createdAt: Date.now(),
+    });
+    createApprovalRequest({
+      id: "req_caller_live",
+      type: "permission",
+      channel: "slack",
+      accountId: "main",
+      chatId: "C123",
+      callerContextId: caller.contextId,
+      createdAt: 1000,
+      expiresAt: 5000,
+    });
+
+    expect(
+      claimApprovalDecision({ id: "req_caller_live", decision: "approved", decidedBy: "U123", now: 2000 }),
+    ).toMatchObject({ status: "decided", decision: "approved" });
   });
 });

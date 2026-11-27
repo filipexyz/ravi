@@ -245,7 +245,13 @@ export function claimApprovalDecision(input: ClaimApprovalDecisionInput): Approv
             decided_at = ?
         WHERE id = ?
           AND status = 'pending'
-          AND expires_at > ?`,
+          AND expires_at > ?
+          AND (
+            caller_context_id IS NULL
+            OR EXISTS (SELECT 1 FROM contexts c WHERE c.context_id = caller_context_id
+              AND (c.revoked_at IS NULL OR c.revoked_at = 0 OR c.revoked_at > ${SQLITE_NOW_MS})
+              AND (c.expires_at IS NULL OR c.expires_at = 0 OR c.expires_at > ${SQLITE_NOW_MS}))
+          )`,
     )
     .run(
       input.decision,

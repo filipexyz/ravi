@@ -636,6 +636,8 @@ export async function authorizeRuntimeContext(opts: ContextAuthorizationOptions)
   const result = await requestCascadingApproval({
     resolvedSource,
     approvalSource,
+    // The card is bound to this turn: revoking or expiring the caller cancels it.
+    callerContextId: context.contextId,
     type: "permission",
     sessionName: context.sessionName ?? context.contextId,
     agentId: context.agentId ?? "unknown",

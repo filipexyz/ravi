@@ -7391,7 +7391,9 @@ export class SessionCommands {
         deliveryBarrierSource,
         ...(promptPayload ?? {}),
         ...(cliDestination ? { _cliDestination: true } : {}),
-        _turnOrigin: buildSessionRelayTurnOrigin(action, getContext()),
+        _turnOrigin: buildSessionRelayTurnOrigin(action, getContext(), {
+          borrowApprovalOrigin: !options.withoutApprovalSource,
+        }),
       } as Record<string, unknown>);
     } catch (error) {
       failSessionRelay(`sessions ${action}`, error, asJson);

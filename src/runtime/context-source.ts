@@ -13,10 +13,14 @@ export function runtimeCommandSource(context: Pick<ContextRecord, "source" | "me
 export function approvalOrigin(context: Pick<ContextRecord, "source" | "metadata">): ContextSource | undefined {
   const own = runtimeCommandSource(context);
   if (own) return own;
-  return readBorrowedOrigin(context.metadata?.approvalSource) ?? context.source;
+  return readApprovalSourceHint(context.metadata?.approvalSource) ?? context.source;
 }
 
-function readBorrowedOrigin(value: unknown): ContextSource | undefined {
+/**
+ * A stored or prompt-carried approval hint. Older hints carry an empty account id; the channel and
+ * chat are what route the card, so they are the only required fields.
+ */
+export function readApprovalSourceHint(value: unknown): ContextSource | undefined {
   if (!value || typeof value !== "object") return undefined;
   const candidate = value as Record<string, unknown>;
   const text = (key: string) =>
