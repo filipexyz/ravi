@@ -126,3 +126,11 @@ export function decisionHeadline(text: string): string {
       ?.trim() ?? "";
   return first.length > DECISION_QUESTION_MAX ? `${first.slice(0, DECISION_QUESTION_MAX - 1)}…` : first;
 }
+
+/** `--options` is one value: the choices separated by ";" (a choice cannot contain ";"). */
+export function splitDecisionOptions(text: string | null | undefined): string[] {
+  return (text ?? "")
+    .split(";")
+    .map((choice) => choice.trim())
+    .filter(Boolean);
+}

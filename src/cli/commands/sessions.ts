@@ -124,7 +124,12 @@ import { DEFAULT_RUNTIME_PROBE_TIMEOUT_MS } from "../../runtime/runtime-probe.js
 import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
 import { enforceCliCommandAccess, listCliCommandAccessCandidates } from "../command-access.js";
 import { canWithCapabilities } from "../../permissions/capability-snapshot.js";
-import { decisionHeadline, formatDecisionQuestion, resolveDecisionQuestion } from "../../decisions/question.js";
+import {
+  decisionHeadline,
+  formatDecisionQuestion,
+  resolveDecisionQuestion,
+  splitDecisionOptions,
+} from "../../decisions/question.js";
 import { askDecisionForWait } from "../../decisions/service.js";
 import { retireDecisionIfWaitFails } from "../../decisions/store.js";
 import { redactText } from "../../session-trace/session-trace-db.js";
@@ -8504,10 +8509,7 @@ export class SessionCommands {
         2,
       );
     }
-    const options = optionsText
-      ?.split(";")
-      .map((choice) => choice.trim())
-      .filter(Boolean);
+    const options = splitDecisionOptions(optionsText);
     if ((ask?.trim() || optionsText?.trim() || recommend?.trim()) && awaitingKind !== "decision") {
       throw new CliExpectedError(
         "--ask, --options and --recommend only apply with --awaiting decision",
@@ -8521,7 +8523,7 @@ export class SessionCommands {
         ? formatDecisionQuestion(
             resolveDecisionQuestion({
               ask: ask ?? null,
-              options: options ?? null,
+              options,
               recommend: recommend ?? null,
               report: decodeLiteralLineBreaks(message),
             }),

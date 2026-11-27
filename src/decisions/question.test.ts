@@ -5,6 +5,7 @@ import {
   formatDecisionQuestion,
   parseDecisionQuestion,
   resolveDecisionQuestion,
+  splitDecisionOptions,
 } from "./question.js";
 
 // The report that became dec_99cff5ca29a9496f80fa88bcba4dfaa6 on 27/11: a whole design report used as the question.
@@ -70,5 +71,25 @@ describe("format and parse", () => {
   it("the headline is one bounded line", () => {
     expect(decisionHeadline(REAL_REPORT).length).toBeLessThanOrEqual(DECISION_QUESTION_MAX);
     expect(decisionHeadline("Pergunta?\nOpções:\n- a")).toBe("Pergunta?");
+  });
+});
+
+describe("splitDecisionOptions", () => {
+  it("splits one --options value on semicolons, trimming and dropping empty choices", () => {
+    expect(splitDecisionOptions("vinculado: só o convite; conversa: agente sem ferramentas ;; ")).toEqual([
+      "vinculado: só o convite",
+      "conversa: agente sem ferramentas",
+    ]);
+    expect(splitDecisionOptions(undefined)).toEqual([]);
+    expect(splitDecisionOptions("")).toEqual([]);
+  });
+
+  it("feeds the stored question in order", () => {
+    const question = resolveDecisionQuestion({
+      report: "x",
+      ask: "Qual modo?",
+      options: splitDecisionOptions("vinculado; conversa"),
+    });
+    expect(formatDecisionQuestion(question)).toBe("Qual modo?\nOpções:\n- vinculado\n- conversa");
   });
 });
