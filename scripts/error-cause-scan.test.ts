@@ -11,6 +11,7 @@ import {
   concreteNoCauseReason,
   makeBaseline,
   renderInventory,
+  byCodePoint,
   scanSource,
   scanSources,
   validateAllowlist,
@@ -290,6 +291,21 @@ describe("error cause AST gate", () => {
     const after = scan("\n\n\n// moved\n\ntry {} catch {}\n\n\nwork().catch((e)=>fail(e));");
     expect(after.map((site) => site.line)).not.toEqual(before.map((site) => site.line));
     expect(renderInventory(after, makeBaseline(after))).toBe(renderInventory(before, makeBaseline(before)));
+  });
+
+  it("inventory_order_is_locale_independent", () => {
+    const sites = scanSources([
+      { file: "src/a.ts", text: "try {} catch {}" },
+      { file: "src/B.ts", text: "try {} catch {}" },
+      { file: "src/_x.ts", text: "try {} catch {}" },
+      { file: "src/é.ts", text: "try {} catch {}" },
+    ]);
+    const text = renderInventory(sites, makeBaseline(sites));
+    const order = ["src/B.ts", "src/_x.ts", "src/a.ts", "src/é.ts"];
+    const positions = order.map((name) => text.indexOf(`| ${name} |`));
+    expect(positions.every((pos) => pos > 0)).toBe(true);
+    expect([...positions].sort((x, y) => x - y)).toEqual(positions);
+    expect(byCodePoint("B", "a")).toBe(-1);
   });
 
   it("inventory_has_a_row_for_every_site_and_public_totals", () => {

@@ -587,6 +587,10 @@ export function requiredSurfaceBoundaries(sites: CatchSite[]): string[] {
 export function checkSurfaceCoverage(sites: CatchSite[], covered: readonly string[]): string[] {
   return requiredSurfaceBoundaries(sites).filter((boundary) => !covered.includes(boundary));
 }
+/** Locale-independent order: the inventory is compared byte for byte across machines. */
+export function byCodePoint(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
 export function renderInventory(sites: CatchSite[], frozen: Baseline): string {
   const debt = sites.filter((site) => site.violation).length;
   const annotated = sites.filter((site) => site.annotation).length;
@@ -598,7 +602,7 @@ export function renderInventory(sites: CatchSite[], frozen: Baseline): string {
     .map(([directory, count]) => `| ${directory} | ${count} |`)
     .join(
       "\n",
-    )}\n\n| Boundary | File | State | Rule / explicit reason | ID |\n| --- | --- | --- | --- | --- |\n${[...sites].sort((a, b) => a.file.localeCompare(b.file) || a.id.localeCompare(b.id)).map((site) => `| ${escaped(site.boundary)} | ${escaped(site.file)} | ${site.state} | ${escaped(site.annotation ?? site.violation ?? "binding retained / no recognized error surface")} | ${site.id} |`).join("\n")}\n`;
+    )}\n\n| Boundary | File | State | Rule / explicit reason | ID |\n| --- | --- | --- | --- | --- |\n${[...sites].sort((a, b) => byCodePoint(a.file, b.file) || byCodePoint(a.id, b.id)).map((site) => `| ${escaped(site.boundary)} | ${escaped(site.file)} | ${site.state} | ${escaped(site.annotation ?? site.violation ?? "binding retained / no recognized error surface")} | ${site.id} |`).join("\n")}\n`;
 }
 function readBaseline(path: string): Baseline {
   return JSON.parse(readFileSync(path, "utf8")) as Baseline;
