@@ -194,6 +194,28 @@ describe("credential request CLI", () => {
     }
     expect(calls).toBe(1);
   });
+  it("fails closed on a relayed turn whose Slack origin is approval-only", async () => {
+    const f = fixture();
+    // An older record that stored the caller's chat in `source` with the approval-only marker.
+    f.ctx.context!.metadata = { ...f.ctx.context!.metadata, approvalSourceOnly: true };
+    await expect(
+      runWithContext(f.ctx, () =>
+        f.command.request(target, "U123ABC", "Read workspace", undefined, undefined, undefined, true, true),
+      ),
+    ).rejects.toMatchObject({ code: "INTAKE_SLACK_CONTEXT_REQUIRED" });
+    // The current shape: the borrowed origin is metadata only.
+    const g = fixture();
+    const borrowed = g.ctx.context!.source;
+    delete g.ctx.context!.source;
+    g.ctx.context!.metadata = { ...g.ctx.context!.metadata, approvalSource: borrowed, approvalSourceOnly: true };
+    await expect(
+      runWithContext(g.ctx, () =>
+        g.command.request(target, "U123ABC", "Read workspace", undefined, undefined, undefined, true, true),
+      ),
+    ).rejects.toMatchObject({ code: "INTAKE_SLACK_CONTEXT_REQUIRED" });
+    expect(f.calls).toEqual([]);
+    expect(g.calls).toEqual([]);
+  });
   it("rejects a projected Slack source without an authenticated Slack source", async () => {
     const f = fixture();
     delete f.ctx.context!.source;

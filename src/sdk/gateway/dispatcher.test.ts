@@ -1686,6 +1686,23 @@ describe("dispatch — CLI output", () => {
     });
   });
 
+  it("keeps approval routing out of the gateway command surface", async () => {
+    const result = await dispatch(
+      findCmd("demo.context"),
+      {},
+      {},
+      {
+        contextRecord: {
+          ...demoContext,
+          source: { channel: "slack", accountId: "origin", chatId: "origin-chat" },
+          metadata: { ...demoContext.metadata, approvalSourceOnly: true },
+        },
+      },
+    );
+    expect(result.response.status).toBe(200);
+    expect(((await result.response.json()) as { source?: unknown }).source).toBeUndefined();
+  });
+
   it("does not render a ContractError into gateway process logs", async () => {
     const rendered: string[] = [];
     const originalError = console.error;

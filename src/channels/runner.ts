@@ -197,6 +197,7 @@ export class ChannelRunner {
     await connectNats(this.options.natsUrl ?? env.NATS_URL ?? "nats://127.0.0.1:4222", {
       explicit: true,
       retry: true,
+      role: "channels",
     });
     if (this.drainRequested) return;
     await configStore.startRefresh();

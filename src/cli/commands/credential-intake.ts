@@ -23,6 +23,7 @@ import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorato
 import type { ChannelConfig } from "../../router/router-db.js";
 import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { authorizeIntakeSubject } from "../../credentials/intake-authorization.js";
+import { runtimeCommandSource } from "../../runtime/context-source.js";
 
 function failIntake(code: string, message: string, asJson?: boolean, exitCode?: 1 | 2 | 3): never {
   const op = "credentials request";
@@ -148,7 +149,7 @@ Example: ravi credentials request connection:slack:secondary --user U123ABC
       const ctx = this.deps.context();
       // Transport coordinates and issuer identity come from the authenticated
       // record, never getContext's legacy environment fallback/projection.
-      const source = ctx?.context?.source;
+      const source = ctx?.context ? runtimeCommandSource(ctx.context) : undefined;
       const issuerAgentId = ctx?.context?.agentId;
       if (!source || source.channel !== "slack" || !ctx?.context || !issuerAgentId) {
         failIntake(

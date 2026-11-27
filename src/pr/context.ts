@@ -8,6 +8,7 @@ import { isStateNotReadyError } from "../db/state-readiness.js";
 import { localOperatorCan } from "../permissions/provider-runtime.js";
 import { getScopeContext, canAccessSession } from "../permissions/scope.js";
 import { getRaviDbPath } from "../router/router-db.js";
+import { runtimeCommandSource } from "../runtime/context-source.js";
 import { resolveGhFollowContext, type GhWatchFollowContext } from "../hooks/gh-watch.js";
 import { prError, PUBLICATION_CONTEXT_REQUIRED_MESSAGE } from "./contracts.js";
 
@@ -31,7 +32,7 @@ export function requirePublicationRuntimeContext() {
     agentId: record.agentId,
     sessionKey: record.sessionKey,
     sessionName: record.sessionName,
-    source: record.source,
+    source: runtimeCommandSource(record),
   };
 }
 
@@ -149,7 +150,7 @@ export function resolvePublicationContext(replySession?: string): GhWatchFollowC
   }
   if (!canAccessSession(getScopeContext(), target))
     throw prError("SESSION_NOT_FOUND", "Publishing session is unavailable in this scope.");
-  const contextSource = caller.kind === "session" ? caller.context.source : undefined;
+  const contextSource = caller.kind === "session" ? runtimeCommandSource(caller.context) : undefined;
   let database: Database | undefined;
   try {
     // The session is read from runtime state, which a checkout or worktree never reaches.

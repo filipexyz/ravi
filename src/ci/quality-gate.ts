@@ -197,6 +197,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     // Atomic update: validate-before-write, probe pass/fail, full rollback.
     "src/runtime/session-runtime-update.test.ts",
     "src/runtime/context-registry.test.ts",
+    // Approval-only origin: never a command source; read only through approvalOrigin.
+    "src/runtime/context-source.test.ts",
     // Context keys stored only as hashes: issuance, lookup, hash-as-key refusal, migration.
     "src/runtime/context-key-hash.test.ts",
     "src/runtime/crash-recovery-store.test.ts",

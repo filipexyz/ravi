@@ -1290,7 +1290,7 @@ describe("approval service", () => {
       allowed: false,
       approved: false,
       inherited: false,
-      reason: "No approval source available.",
+      reason: "Não há chat de origem para pedir aprovação.",
     });
     expect(emitted).toHaveLength(0);
     expect(externalOrder).toEqual([]);
@@ -1376,9 +1376,9 @@ describe("approval service", () => {
           type: "scope",
           agentId: "dev",
           denied: "group:daemon",
-          reason: "[REDACTED:content length=29]",
+          reason: "[REDACTED:content length=43]",
           denialId: expect.any(Number),
-          dedupeKey: "audit.denied:scope:dev:group:daemon:[REDACTED:content length=29]",
+          dedupeKey: "audit.denied:scope:dev:group:daemon:[REDACTED:content length=43]",
           context: expect.objectContaining({
             contextId: "ctx_audit_denied",
             sessionName: "dev-main",
@@ -1954,7 +1954,9 @@ describe("isFixedApprovalRefusalReason", () => {
 
   it("accepts fixed text this service writes, including the no-grantor reason for the same request", () => {
     expect(isFixedApprovalRefusalReason("Timeout — nenhuma resposta em 5 minutos.", "permission", options)).toBe(true);
-    expect(isFixedApprovalRefusalReason("No approval source available.", "permission", options)).toBe(true);
+    expect(isFixedApprovalRefusalReason("Não há chat de origem para pedir aprovação.", "permission", options)).toBe(
+      true,
+    );
     const noGrantor =
       "Ninguém neste Slack pode aprovar execute:slack:conversations.create: nenhuma pessoa vinculada a um usuário do Slack tem a permissão execute:slack:conversations.create. Nenhum pedido foi enviado. Quem tem essa permissão precisa vincular o próprio usuário do Slack ao seu contato, ou conceder a permissão direto ao agente.";
     expect(isFixedApprovalRefusalReason(noGrantor, "permission", options)).toBe(true);

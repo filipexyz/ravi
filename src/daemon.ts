@@ -510,7 +510,7 @@ export async function startDaemon() {
   // Step 1: Connect to NATS (with retry for PM2 parallel startup)
   const natsUrl = process.env.NATS_URL || "nats://127.0.0.1:4222";
   log.info("Connecting to NATS...", { natsUrl: redactNatsUrl(natsUrl) });
-  await connectNats(natsUrl, { explicit: true });
+  await connectNats(natsUrl, { explicit: true, role: "daemon" });
   await checkNatsExposureAtBoot(natsUrl);
   setChannelBackendEgressRequesterForRuntime(createChannelBackendEgressRequester());
 

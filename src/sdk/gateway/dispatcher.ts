@@ -1,3 +1,4 @@
+import { runtimeCommandSource } from "../../runtime/context-source.js";
 import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Generic dispatcher for the SDK gateway.
@@ -608,14 +609,15 @@ function asToolContext(scope: ScopeContext, record: ContextRecord | null, cwd?: 
   if (record) {
     ctx.contextId = record.contextId;
     ctx.context = record;
-    if (record.source) {
+    const source = runtimeCommandSource(record);
+    if (source) {
       ctx.source = {
-        channel: record.source.channel,
-        accountId: record.source.accountId,
-        chatId: record.source.chatId,
-        ...(record.source.threadId ? { threadId: record.source.threadId } : {}),
-        ...(record.source.instanceId ? { instanceId: record.source.instanceId } : {}),
-        ...(record.source.canonicalChatId ? { canonicalChatId: record.source.canonicalChatId } : {}),
+        channel: source.channel,
+        accountId: source.accountId,
+        chatId: source.chatId,
+        ...(source.threadId ? { threadId: source.threadId } : {}),
+        ...(source.instanceId ? { instanceId: source.instanceId } : {}),
+        ...(source.canonicalChatId ? { canonicalChatId: source.canonicalChatId } : {}),
       };
     }
   }
