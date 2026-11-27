@@ -24,7 +24,19 @@ const SESSION_KEY = `agent:${AGENT_ID}:test`;
 const REVOKED_AT = 4_000;
 let stateDir: string | null = null;
 
+/** The key each fixture was issued with; the registry keeps only its hash. */
+function keyOf(context: ContextRecord): string {
+  return `test-key-${context.contextId}`;
+}
+
+/** Created context in its stored form: what every read returns (no key, only the hash is kept). */
 function createContext(id: string, overrides: Partial<ContextRecord> = {}): ContextRecord {
+  const issued = createIssuedContext(id, overrides);
+  expect(issued.contextKey).toBe(`test-key-${id}`);
+  return { ...issued, contextKey: "" };
+}
+
+function createIssuedContext(id: string, overrides: Partial<ContextRecord> = {}): ContextRecord {
   return dbCreateContext({
     contextId: id,
     contextKey: `test-key-${id}`,
@@ -267,14 +279,14 @@ describe("context metadata and transactional revocation persistence", () => {
     });
     const renewed = dbRenewActiveContext(context.contextId, context.expiresAt, 60_000, now + 1_000)!;
     expect(renewed).toEqual({ ...context, expiresAt: now + 61_000 });
-    expect(resolveRuntimeContext(context.contextKey, { touch: false })?.capabilities).toEqual(context.capabilities);
+    expect(resolveRuntimeContext(keyOf(context), { touch: false })?.capabilities).toEqual(context.capabilities);
     // An old heartbeat cannot overwrite a newer expiry, even before revocation.
     expect(dbRenewActiveContext(context.contextId, context.expiresAt, 60_000, now + 2_000)).toBeNull();
     expect(dbGetContext(context.contextId)?.expiresAt).toBe(renewed.expiresAt);
 
     dbRevokeContextCascade(context.contextId, { reason: "permission_removed" });
     expect(dbRenewActiveContext(context.contextId, renewed.expiresAt, 60_000, now + 2_000)).toBeNull();
-    expect(resolveRuntimeContext(context.contextKey, { touch: false })).toBeNull();
+    expect(resolveRuntimeContext(keyOf(context), { touch: false })).toBeNull();
     expect(dbGetContext(context.contextId)?.expiresAt).toBe(renewed.expiresAt);
   });
 
@@ -285,7 +297,7 @@ describe("context metadata and transactional revocation persistence", () => {
       metadata: { authorityMode: "agent-identity" },
     });
     expect(dbRenewActiveContext(expired.contextId, expired.expiresAt, 60_000, now)).toBeNull();
-    expect(resolveRuntimeContext(expired.contextKey, { touch: false })).toBeNull();
+    expect(resolveRuntimeContext(keyOf(expired), { touch: false })).toBeNull();
     for (const [id, overrides] of [
       ["cli-child", { kind: "cli-runtime", metadata: { authorityMode: "agent-identity" } }],
       ["turn-child", { metadata: { authorityMode: "agent-identity", parentContextId: "parent" } }],

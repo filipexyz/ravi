@@ -529,10 +529,14 @@ function persistRuntimeContextInPlace(
 
 /** Keep host service references, but never inherit omitted fields from the previous turn. */
 function replaceRuntimeContextSnapshot(target: ContextRecord, snapshot: ContextRecord): void {
+  // The registry stores only key hashes: a snapshot read back for the same
+  // context carries no key, so the key already held in memory is kept.
+  const keptKey = !snapshot.contextKey && snapshot.contextId === target.contextId ? target.contextKey : undefined;
   for (const key of Object.keys(target)) {
     if (!Object.hasOwn(snapshot, key)) Reflect.deleteProperty(target, key);
   }
   Object.assign(target, snapshot);
+  if (keptKey) target.contextKey = keptKey;
 }
 
 function buildAgentIdentityRuntimeContextInputForPrompt(options: {

@@ -87,6 +87,16 @@ Runtime context keys are opaque credentials that connect provider turns, Ravi to
   later than the lookup timestamp. Agent, session and kind filters, descending
   creation order, and explicit `includeInactive` inspection MUST be preserved.
   This optimization MUST NOT cache authority decisions or delete audit history.
+- The registry MUST store only a SHA-256 of each context key (`sha256:<hex>` in
+  `contexts.context_key`); the clear key leaves the registry only to its issuer
+  (`dbCreateContext`) and is otherwise known only to whoever presents it.
+  Reading the state database MUST NOT yield a usable key, and a stored hash
+  presented as a key MUST NOT resolve. A record read by id carries an empty
+  `contextKey`; code that holds a record by id revalidates it with
+  `resolveRuntimeContextById`, never by re-resolving a stored key. Rows written
+  in the clear by an older version are hashed at schema initialization, and
+  their holders keep working because the presented key hashes to the stored
+  value. The runtime keeps the in-memory key when it re-reads the same context.
 
 ## Acceptance
 

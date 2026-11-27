@@ -142,7 +142,10 @@ describe("active runtime context lifetime", () => {
     expect(isRuntimeContextLive(retained)).toBe(true);
     expect(retained.revokedAt).toBeUndefined();
     expect(retained.source).toBeUndefined();
-    expect(retained).toEqual(dbGetContext(next.contextId)!);
+    // The registry stores only the key's hash: the retained object keeps the clear key, the row does not.
+    expect(retained.contextKey).toBe(next.contextKey);
+    expect(retained.contextKey.startsWith("rctx_")).toBe(true);
+    expect({ ...retained, contextKey: "" }).toEqual(dbGetContext(next.contextId)!);
   });
 
   it("keeps a working turn authorized beyond an hour with the same key and capabilities", () => {

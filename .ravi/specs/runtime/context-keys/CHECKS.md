@@ -38,3 +38,9 @@
 - The synthetic context-list benchmark MUST materialize and compare every
   returned record, alternate current and legacy query runs, report failures and
   query plans, and use an isolated state directory without production data.
+- `src/runtime/context-key-hash.test.ts` checks the issuer gets the clear key
+  and the row holds only its hash, no `rctx_` remains in `contexts`, the
+  presented key resolves, the stored hash (with or without its prefix) does
+  not, a record read by id has no key, `resolveRuntimeContextById` applies the
+  live/expired/revoked rules, and the migration hashes clear rows while their
+  holders keep resolving.
