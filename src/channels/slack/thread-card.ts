@@ -26,6 +26,8 @@ export type SlackThreadCardStatus = "open" | "closed" | "reopened" | "waiting";
 /** Action ids of the buttons on a Ravi thread card; the click consumer (thread-controls.ts) answers them. */
 export const SLACK_THREAD_CLOSE_ACTION_ID = "ravi_thread_close";
 export const SLACK_THREAD_STOP_ACTION_ID = "ravi_thread_stop";
+/** Responder on a card waiting for a decision: opens the answer form (decision-answer.ts). */
+export const SLACK_DECISION_ANSWER_ACTION_ID = "ravi_decision_answer";
 
 export interface SlackThreadCardState {
   readonly status: SlackThreadCardStatus;
@@ -43,6 +45,11 @@ export interface SlackThreadCardState {
   readonly requestedBy?: string;
   /** Requested runtime shape, e.g. `codex · gpt-5.4 · high`; shown only when the caller pinned one. */
   readonly runtime?: string;
+  /**
+   * The open decision the card waits on, with a human owner: the card offers Responder. The button carries the id and
+   * the revision only; who may answer, and to which audience, is checked when the form comes back.
+   */
+  readonly decision?: { readonly id: string; readonly revision: number };
 }
 
 export interface SlackThreadCardMessage {
@@ -122,7 +129,10 @@ export function buildSlackThreadCard(rawBrief: string, state: SlackThreadCardSta
   ];
 
   // A closed thread has nothing left to close or stop.
-  const controls = state.controls === true && state.status !== "closed" ? [threadControlsBlock()] : [];
+  const controls = [
+    ...(state.status === "waiting" && state.decision ? [decisionAnswerBlock(state.decision)] : []),
+    ...(state.controls === true && state.status !== "closed" ? [threadControlsBlock()] : []),
+  ];
 
   return {
     text:
@@ -132,6 +142,34 @@ export function buildSlackThreadCard(rawBrief: string, state: SlackThreadCardSta
     blocks: [card, ...controls],
     fallbackBlocks: [...fallbackBlocks, ...controls],
     ...(truncated ? { fullBrief: `**Instruções completas**\n\n${brief.trim()}` } : {}),
+  };
+}
+
+/** `<decision id>:<revision>`, the only thing the Responder button carries. */
+export function encodeSlackDecisionAnswerValue(decision: { readonly id: string; readonly revision: number }): string {
+  return `${decision.id}:${decision.revision}`;
+}
+
+export function parseSlackDecisionAnswerValue(value: unknown): { id: string; revision: number } | null {
+  if (typeof value !== "string") return null;
+  const match = /^(dec_[A-Za-z0-9_-]{1,64}):([1-9][0-9]{0,8})$/.exec(value.trim());
+  return match ? { id: match[1]!, revision: Number(match[2]) } : null;
+}
+
+/** Responder, for the person who owns the pending decision; nothing to type but the answer itself. */
+function decisionAnswerBlock(decision: { readonly id: string; readonly revision: number }): SlackBlockKitBlock {
+  return {
+    type: "actions",
+    block_id: "ravi_decision_actions",
+    elements: [
+      {
+        type: "button",
+        action_id: SLACK_DECISION_ANSWER_ACTION_ID,
+        text: { type: "plain_text", text: "Responder", emoji: true },
+        style: "primary",
+        value: encodeSlackDecisionAnswerValue(decision),
+      },
+    ],
   };
 }
 

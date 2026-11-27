@@ -2,6 +2,8 @@ import { describe, expect, it } from "bun:test";
 import { validateSlackBlockKitMessage } from "./block-kit.js";
 import {
   buildSlackThreadCard,
+  parseSlackDecisionAnswerValue,
+  SLACK_DECISION_ANSWER_ACTION_ID,
   SLACK_THREAD_CLOSE_ACTION_ID,
   SLACK_THREAD_STOP_ACTION_ID,
   splitSlackThreadBrief,
@@ -248,5 +250,42 @@ describe("Slack thread card", () => {
       expect(buttonsOf(card.blocks)).toBeUndefined();
       expect(buttonsOf(card.fallbackBlocks)).toBeUndefined();
     });
+  });
+});
+
+describe("Responder on a card waiting for a decision", () => {
+  const actionIds = (blocks: readonly Record<string, unknown>[]) =>
+    blocks.flatMap((block) =>
+      Array.isArray(block.elements) ? (block.elements as Array<{ action_id?: string; value?: string }>) : [],
+    );
+
+  it("offers Responder with only the decision id and revision", () => {
+    const card = buildSlackThreadCard("Decide\nBrief", {
+      status: "waiting",
+      controls: true,
+      note: "Sonnet ou Opus?",
+      decision: { id: "dec_abc123", revision: 3 },
+    });
+    const responder = actionIds(card.blocks).find((b) => b.action_id === SLACK_DECISION_ANSWER_ACTION_ID);
+    expect(responder?.value).toBe("dec_abc123:3");
+    expect(parseSlackDecisionAnswerValue(responder?.value)).toEqual({ id: "dec_abc123", revision: 3 });
+  });
+
+  it("offers nothing when the card is not waiting or has no decision for a person", () => {
+    for (const card of [
+      buildSlackThreadCard("Decide\nBrief", { status: "open", controls: true, decision: { id: "dec_x", revision: 1 } }),
+      buildSlackThreadCard("Decide\nBrief", {
+        status: "closed",
+        controls: true,
+        decision: { id: "dec_x", revision: 1 },
+      }),
+      buildSlackThreadCard("Decide\nBrief", { status: "waiting", controls: true, note: "?" }),
+    ])
+      expect(actionIds(card.blocks).some((b) => b.action_id === SLACK_DECISION_ANSWER_ACTION_ID)).toBe(false);
+  });
+
+  it("parses only a decision id and a positive revision", () => {
+    for (const value of ["", "dec_x", "dec_x:0", "dec_x:-1", "x:1", "dec_x:1:2", "dec_ x:1", 5, null])
+      expect(parseSlackDecisionAnswerValue(value)).toBeNull();
   });
 });

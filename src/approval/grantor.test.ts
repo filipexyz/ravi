@@ -5,6 +5,7 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import { listSlackApprovalGrantorUserIds, setApprovalGrantorRouterConfigForTest } from "../channels/slack/grantors.js";
 import {
   actorCanGrantRequestedPermission,
+  resolveVerifiedSenderOwner,
   registerGrantorIdentityResolver,
   unregisterGrantorIdentityResolver,
 } from "./grantor.js";
@@ -34,6 +35,27 @@ describe("approval grantor", () => {
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
     setApprovalGrantorRouterConfigForTest();
+  });
+
+  it("resolves a verified sender to its owner without a permission check, and nothing else", () => {
+    registerGrantorIdentityResolver("fixture-channel", ({ senderId }) =>
+      senderId === "U-person"
+        ? { ownerType: "contact", ownerId: "contact-person" }
+        : senderId === "U-bot"
+          ? { ownerType: "agent", ownerId: "agent-x" }
+          : null,
+    );
+    try {
+      expect(resolveVerifiedSenderOwner({ channel: "fixture-channel", senderId: "U-person" })).toEqual({
+        ownerType: "contact",
+        ownerId: "contact-person",
+      });
+      expect(resolveVerifiedSenderOwner({ channel: "fixture-channel", senderId: "U-bot" })?.ownerType).toBe("agent");
+      expect(resolveVerifiedSenderOwner({ channel: "fixture-channel", senderId: "U-nobody" })).toBeNull();
+      expect(resolveVerifiedSenderOwner({ channel: "fixture-channel", senderId: "  " })).toBeNull();
+    } finally {
+      unregisterGrantorIdentityResolver("fixture-channel");
+    }
   });
 
   it("fails closed without an actor or resolvable identity", () => {

@@ -49,12 +49,15 @@ export interface ApprovalGrantorResult {
  * Server-side grantor gate. Reuses the live permission materializer + capability
  * matcher. Button values, emoji, and client claims are not consulted here.
  */
-export function actorCanGrantRequestedPermission(input: ApprovalGrantorInput): ApprovalGrantorResult {
+/**
+ * The owner of a verified platform sender, by the same channel lookup the grantor gate uses, and nothing more: no
+ * permission is checked. Null when the sender is missing, unknown, ambiguous or not a contact or agent.
+ */
+export function resolveVerifiedSenderOwner(
+  input: Pick<ApprovalGrantorInput, "channel" | "accountId" | "instanceId" | "senderId" | "senderAliases">,
+): Pick<PlatformIdentity, "ownerType" | "ownerId"> | null {
   const senderId = input.senderId?.trim();
-  if (!senderId) {
-    return { allowed: false, reason: "missing_actor" };
-  }
-
+  if (!senderId) return null;
   const channelResolver = identityResolvers.get(input.channel.trim().toLowerCase());
   const identity = channelResolver
     ? channelResolver({
@@ -68,6 +71,18 @@ export function actorCanGrantRequestedPermission(input: ApprovalGrantorInput): A
         [senderId, ...(input.senderAliases ?? [])],
         [input.instanceId, input.accountId, ""],
       );
+  if (!identity?.ownerType || !identity.ownerId || (identity.ownerType !== "contact" && identity.ownerType !== "agent"))
+    return null;
+  return identity;
+}
+
+export function actorCanGrantRequestedPermission(input: ApprovalGrantorInput): ApprovalGrantorResult {
+  const senderId = input.senderId?.trim();
+  if (!senderId) {
+    return { allowed: false, reason: "missing_actor" };
+  }
+
+  const identity = resolveVerifiedSenderOwner(input);
   if (
     !identity?.ownerType ||
     !identity.ownerId ||

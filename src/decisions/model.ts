@@ -21,7 +21,8 @@ export type DecisionErrorCode =
   | "DECISION_SOURCE_NOT_OWNER"
   | "DECISION_INVALID_SCOPE"
   | "DECISION_SCOPE_NOT_AUTHORIZED"
-  | "DECISION_NOT_ANSWERED";
+  | "DECISION_NOT_ANSWERED"
+  | "DECISION_STALE_CARD";
 
 export class DecisionError extends Error {
   readonly code: DecisionErrorCode;

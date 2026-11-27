@@ -222,7 +222,7 @@ export function answerDecisionRecord(
 
 function appendHistory(
   decision: Decision,
-  type: "asked" | "answered" | "superseded" | "answer-source",
+  type: "asked" | "answered" | "superseded" | "answer-source" | "card-form-opened",
   actor?: string,
   snapshot: unknown = decision,
 ): void {
@@ -409,4 +409,42 @@ export async function retireDecisionIfWaitFails<T>(
       retireDecisionForWait(decisionId, "wait not recorded");
     throw error;
   }
+}
+
+/**
+ * A card form a channel opened for the decision's owner: the platform's id of that form, who it was opened for and the
+ * card it came from. A submitted form counts only when it matches one of these (`findDecisionCardForm`), so a form
+ * the channel did not open from the real card (another app's, an agent's) never answers.
+ */
+export interface DecisionCardForm {
+  formId: string;
+  revision: number;
+  /** The platform sender the form was opened for. */
+  senderId: string;
+  channel: string;
+  chatId: string;
+  threadId: string;
+}
+
+export function recordDecisionCardForm(decision: Decision, form: DecisionCardForm): void {
+  appendHistory(decision, "card-form-opened", `${form.channel}:${form.senderId}`, form);
+}
+
+export function findDecisionCardForm(decisionId: string, formId: string): DecisionCardForm | null {
+  const rows = getDb()
+    .query(
+      "SELECT snapshot_json AS snapshot FROM decision_history WHERE decision_id=? AND type='card-form-opened' ORDER BY id DESC LIMIT 50",
+    )
+    .all(decisionId) as Array<{ snapshot: string }>;
+  for (const row of rows) {
+    let form: Partial<DecisionCardForm>;
+    try {
+      form = JSON.parse(row.snapshot) as Partial<DecisionCardForm>;
+    } catch {
+      // no-cause: A history row that is not a card form never binds a submission.
+      continue;
+    }
+    if (form.formId === formId) return form as DecisionCardForm;
+  }
+  return null;
 }
