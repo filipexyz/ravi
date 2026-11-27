@@ -858,9 +858,14 @@ describe("the runtime turn chain settles the block (review N2 of c66bb7a)", () =
     expect(getInboxItem(a.id)?.state).toBe("delivered");
   });
 
-  it("a failed turn, or one with no terminal, returns the block", async () => {
+  it("a failed turn returns the block", async () => {
     const failed = await runTurn({ terminal: "failed" });
     expect(getInboxItem(failed.id)?.state).toBe("pending");
+  });
+
+  it("a turn that ends with no terminal recorded returns the block", async () => {
+    const unrecorded = await runTurn({});
+    expect(getInboxItem(unrecorded.id)?.state).toBe("pending");
   });
 
   it("a turn whose preparation failed returns the block", async () => {
