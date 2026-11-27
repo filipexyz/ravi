@@ -14,6 +14,7 @@ import {
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   createRuntimeContext,
+  issueRuntimeContext,
   resolveRuntimeContext,
   resolveRuntimeContextById,
   revokeRuntimeContext,
@@ -117,5 +118,20 @@ describe("context keys are stored as hashes", () => {
 
     expect(onDisk()).toBe(false);
     expect(resolveRuntimeContext(legacyKey, { touch: false })?.contextId).toBe(context.contextId);
+  });
+
+  it("leaves no clear key anywhere in the state database after keys are issued, used and revoked", () => {
+    const root = createRuntimeContext({ kind: "test-runtime", agentId: AGENT });
+    const child = issueRuntimeContext({ parent: root, cliName: "scan-child", inheritCapabilities: true });
+    expect(resolveRuntimeContext(child.contextKey)?.contextId).toBe(child.contextId);
+    revokeRuntimeContext(child.contextId, { cascade: false, reason: "test" });
+    getDb().exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    const dbPath = getRaviDbPath();
+    for (const path of [dbPath, `${dbPath}-wal`]) {
+      if (!existsSync(path)) continue;
+      const bytes = readFileSync(path);
+      expect(bytes.includes(root.contextKey)).toBe(false);
+      expect(bytes.includes(child.contextKey)).toBe(false);
+    }
   });
 });

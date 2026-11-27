@@ -97,6 +97,12 @@ Runtime context keys are opaque credentials that connect provider turns, Ravi to
   in the clear by an older version are hashed at schema initialization, and
   their holders keep working because the presented key hashes to the stored
   value. The runtime keeps the in-memory key when it re-reads the same context.
+  No other table may store a clear key: session adapter debug snapshots keep
+  only the context id, and the migration removes keys older releases wrote
+  there. The guarantee holds for generated keys (18 random bytes); a key
+  imported with `RAVI_BOOTSTRAP_KEY`/`--from-env` is only as strong as the value
+  given, because the hash is unsalted. Files outside the database
+  (`credentials.json`, `.env`) are not covered.
 
 ## Acceptance
 

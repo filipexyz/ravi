@@ -46,3 +46,8 @@
   holders keep resolving.
   It also checks that a clear key left in a WAL frame is gone from the database
   file and its WAL after the migration (the WAL is truncated).
+- `src/runtime/context-key-hash.test.ts` also issues, uses and revokes keys and
+  then scans the whole database file and its WAL for those keys.
+- `src/adapters/adapter-store.test.ts` checks a session adapter debug snapshot
+  never stores the bound key, and that the migration removes a key an older
+  release stored there (row and files scanned).

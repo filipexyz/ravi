@@ -422,7 +422,6 @@ function buildDebugSnapshot(runtime: ActiveAdapterRuntime): SessionAdapterDebugS
       sessionName: session.name ?? undefined,
       agentId: session.agentId,
       contextId: context.contextId,
-      contextKey: context.contextKey,
       cliName: adapter.definition.bindings.context.cliName,
     },
     health,
