@@ -27087,7 +27087,7 @@ export type VideoAnalyzeReturn = {
 /** Input shape for `voice.calls.activity`. */
 export type VoiceCallsActivityInput = {
   call: string;
-  state?: string;
+  state: "speaking" | "quiet";
 };
 
 /** Return shape for `voice.calls.activity`. */

@@ -34059,18 +34059,6 @@ class VideoAnalyzeReturn {
 
 VideoAnalyzeReturn videoAnalyzeReturnFromJson(Object? json) => VideoAnalyzeReturn.fromJsonValue(json);
 
-class VoiceCallsActivityOptions {
-  const VoiceCallsActivityOptions({this.state});
-
-  final String? state;
-
-  void encodeBody(Map<String, RaviJson> into) {
-    if (state != null) {
-      into["state"] = RaviJson.from(state);
-    }
-  }
-}
-
 class VoiceCallsActivityReturn {
   const VoiceCallsActivityReturn({required this.callId, required this.speaking});
 

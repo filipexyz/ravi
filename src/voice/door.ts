@@ -612,6 +612,11 @@ export class VoiceDoorService {
       }
     }
     if (!this.isOpen(call.id)) return;
+    // The person may have started talking while the clip was synthesized: wait again before it can play.
+    if (profile.delivery === "when_idle") {
+      await this.waitUntilIdle(call.id);
+      if (!this.isOpen(call.id)) return;
+    }
     await this.emitOpen(
       call.id,
       "agent.transcript",

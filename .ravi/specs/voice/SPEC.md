@@ -42,8 +42,8 @@ entered the session, and the feature spec `runtime/providers/realtime-voice` (ar
 2. **Interrupting speech never cancels work.** Cancel is explicit (`calls cancel-turn`).
 3. **Every result has a delivery class.** `speak` (now), `when_idle` (after the person stops
    talking), `silent` (screen and context only).
-   `when_idle` MUST hold the reply while the person is talking, as reported by `calls activity
-   --state speaking|quiet` (sent by the client, e.g. on push-to-talk press and release), and speak it when
+   `when_idle` MUST hold the reply while the person is talking, as reported by `calls activity <call>
+   speaking|quiet` (sent by the client, e.g. on push-to-talk press and release), and speak it when
    they stop, when the call ends (then it is not spoken) or after `WHEN_IDLE_MAX_WAIT_MS` (20 s), so
    a lost "quiet" never silences the call. With no "speaking" signal it speaks at once. Live calls
    speak as `speak`: the live model owns turn-taking.
@@ -157,7 +157,7 @@ ravi voice calls push <call> --audio <file> | --audio-data <base64> [--mime <typ
 ravi voice calls audio <call> <item>
 ravi voice calls send <call> <text>
 ravi voice calls silence <call>
-ravi voice calls activity <call> --state speaking|quiet
+ravi voice calls activity <call> speaking|quiet
 ravi voice calls cancel-turn <call> --turn <id>
 ravi voice calls approve <call> <approval> --version <n> --digest <d> --execute
 ravi voice calls deny <call> <approval>

@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "539d335d43b58b15"
+    "version": "ee83864929f1bdca"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -158431,12 +158431,17 @@
                     "type": "string"
                   },
                   "state": {
-                    "description": "speaking|quiet",
+                    "description": "speaking or quiet",
+                    "enum": [
+                      "speaking",
+                      "quiet"
+                    ],
                     "type": "string"
                   }
                 },
                 "required": [
-                  "call"
+                  "call",
+                  "state"
                 ],
                 "type": "object"
               }

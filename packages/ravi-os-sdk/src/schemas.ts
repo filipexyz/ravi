@@ -138495,12 +138495,17 @@ export const VoiceCallsActivityInputSchema = {
       "type": "string"
     },
     "state": {
-      "description": "speaking|quiet",
+      "description": "speaking or quiet",
+      "enum": [
+        "speaking",
+        "quiet"
+      ],
       "type": "string"
     }
   },
   "required": [
-    "call"
+    "call",
+    "state"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

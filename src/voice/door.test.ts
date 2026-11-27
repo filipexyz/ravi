@@ -693,13 +693,54 @@ describe("voice door", () => {
       expect(transcript?.data.delivery).toBe("when_idle");
     });
 
-    it("speaks at the ceiling when the stop never comes", async () => {
+    it("speaks at the ceiling when the stop never comes, not before", async () => {
       saveVoiceProfile({ ...defaultVoiceProfile(), id: "idle", delivery: "when_idle" });
-      const { door } = harness({ whenIdleMaxWaitMs: 80 });
+      const { door } = harness({ whenIdleMaxWaitMs: 600 });
       const call = makeCall("push", { profileId: "idle" });
+      const startedAt = Date.now();
       await door.handleControl({ op: "activity", callId: call.id, speaking: true });
       await say(door, call.id, "vt_i2");
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      expect(spoke(call.id)).toBe(false);
       await until(() => spoke(call.id), "spoken at the ceiling");
+      expect(Date.now() - startedAt).toBeGreaterThanOrEqual(550);
+    });
+
+    it("a person who starts talking while the clip is synthesized still holds it", async () => {
+      saveVoiceProfile({ ...defaultVoiceProfile(), id: "idle", delivery: "when_idle" });
+      let releaseSynthesis: () => void = () => {};
+      let synthesizing: () => void = () => {};
+      const inSynthesis = new Promise<void>((resolve) => {
+        synthesizing = resolve;
+      });
+      const { door } = harness({
+        whenIdleMaxWaitMs: 60_000,
+        clip: {
+          transcribe: async () => ({ text: "", durationSec: 0, provider: "test" }),
+          synthesize: async ({ text }) => {
+            synthesizing();
+            await new Promise<void>((resolve) => {
+              releaseSynthesis = resolve;
+            });
+            return {
+              bytes: new Uint8Array([1]),
+              mime: "audio/mpeg",
+              characters: text.length,
+              costUsd: 0,
+              durationSec: 1,
+            };
+          },
+        },
+      });
+      const call = makeCall("push", { profileId: "idle" });
+      await say(door, call.id, "vt_i7");
+      await inSynthesis;
+      await door.handleControl({ op: "activity", callId: call.id, speaking: true });
+      releaseSynthesis();
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(spoke(call.id)).toBe(false);
+      await door.handleControl({ op: "activity", callId: call.id, speaking: false });
+      await until(() => spoke(call.id), "spoken once the person stopped");
     });
 
     it("speaks at once when nobody is talking, and speak delivery never waits", async () => {

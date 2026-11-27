@@ -891,7 +891,12 @@ export class VoiceCallsCommands {
   @CommandAccess({ kind: "mutate", resource: "voice", action: "calls.activity", risk: "low" })
   async activity(
     @Arg("call", { description: "Call id" }) callId: string,
-    @Option({ flags: "--state <state>", description: "speaking|quiet" }) state?: string,
+    @Arg("state", {
+      required: true,
+      description: "speaking or quiet",
+      schema: z.enum(["speaking", "quiet"]),
+    })
+    state: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const op = "voice calls activity";

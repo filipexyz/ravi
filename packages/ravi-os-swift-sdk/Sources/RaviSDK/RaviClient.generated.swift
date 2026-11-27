@@ -7730,10 +7730,10 @@ public struct VoiceCallsNamespace: Sendable {
     self.transport = transport
   }
 
-  public func activity(_ call: String, _ options: VoiceCallsActivityOptions = .init()) async throws -> VoiceCallsActivityReturn {
+  public func activity(_ call: String, _ state: String) async throws -> VoiceCallsActivityReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["call"] = try RaviJSON.fromEncodable(call)
-    try options.encodeBody(into: &requestBody)
+    requestBody["state"] = try RaviJSON.fromEncodable(state)
     return try await transport.call(groupSegments: ["voice","calls"], command: "activity", body: requestBody, as: VoiceCallsActivityReturn.self)
   }
 

@@ -10484,13 +10484,11 @@ export class RaviClient {
   readonly voice = {
     calls: {
       /** Tell the call whether the person is talking (holds when_idle speech until they stop) */
-      activity: async (call: string, options?: {
-        state?: string;
-      }): Promise<VoiceCallsActivityReturn> => {
+      activity: async (call: string, state: "speaking" | "quiet"): Promise<VoiceCallsActivityReturn> => {
         return this.transport.call({
           groupSegments: ["voice","calls"],
           command: "activity",
-          body: { call, ...(options ?? {}) },
+          body: { call, state },
         });
       },
       /** Approve a request shown in the call (tap only; dry-run by default; requires --execute) */
