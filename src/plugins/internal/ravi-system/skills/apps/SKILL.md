@@ -380,6 +380,6 @@ ravi specs get apps/builder --mode full --json
 
 ## Chamada de app em turno retido
 
-Um app pode pedir `sandbox.callableFromRestrictedTurns: true`. Isso não concede acesso. O operador confere o manifesto e confirma **no próprio terminal** com `ravi apps trust <app> --execute`; agente, ferramenta e gateway não podem marcar. `ravi apps untrust <app> --execute` revoga. Sem `--execute`, os dois mostram o plano. Mudança no manifesto invalida a confiança; desinstalar também revoga.
+Um app pode pedir `sandbox.callableFromRestrictedTurns: true`. Isso não concede acesso. O operador confere o manifesto e confirma **no próprio terminal** com `ravi apps trust <app> --execute`; agente, ferramenta e gateway não podem marcar. `ravi apps untrust <app>` revoga imediatamente. Só `trust` exige `--execute`; sem a flag, mostra o plano. Mudança no manifesto invalida a confiança; desinstalar também revoga.
 
 Nesse caso específico, use um comando simples `ravi apps run <app> <op> --json -- <args>` ou `ravi apps show <app> --json`, sem prefixo de variável, pipe, redirecionamento, encadeamento, expansão ou subshell. No Codex, peça aprovação dessa chamada para sair da sandbox; o daemon decide uma única execução. O resto do turno continua retido. Os grants do chamador, a exposição da loja, o contexto-filho e as exigências de humano verificado do executor continuam valendo.

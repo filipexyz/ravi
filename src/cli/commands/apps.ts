@@ -12,6 +12,7 @@ import {
   getAppManifest,
   importCliApp,
   normalizeAppSource,
+  normalizeAppId,
   RaviAppError,
   scaffoldApp,
   printAppRunResult,
@@ -364,15 +365,20 @@ export class AppsCommands {
     description: "Trust this exact app manifest for restricted turns (operator terminal only)",
   })
   @CliOnly()
-  @CommandAccess({ kind: "mutate", resource: "apps", action: "trust", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "apps", action: "trust", risk: "high", requiresConfirmation: true })
   @Returns(z.object({ id: z.string(), trusted: z.boolean(), changed: z.boolean() }))
   trust(
     @Arg("id", { description: "App id" }) id: string,
-    @Option({ flags: "--execute", description: "Confirm trust in the current manifest" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--execute", description: "Confirm trust in the current manifest" }) execute?: boolean,
   ) {
     requireTrustOperator("apps trust", asJson);
-    const record = getAppManifest(id);
+    let record: RaviAppManifestRecord;
+    try {
+      record = getAppManifest(id);
+    } catch (error) {
+      failAppsCommand("apps trust", error, asJson);
+    }
     if (!record.valid || record.manifest?.sandbox?.callableFromRestrictedTurns !== true) {
       contractFail(
         "apps trust",
@@ -381,7 +387,7 @@ export class AppsCommands {
         {
           asJson,
           exitCode: 3,
-          diagnostic: errorDiagnostic("Manifest did not request restricted-turn calls", { appId: id }),
+          diagnostic: errorDiagnostic("Manifest did not request restricted-turn calls", { operation: "apps trust" }),
         },
       );
     }
@@ -398,11 +404,10 @@ export class AppsCommands {
   @Returns(z.object({ id: z.string(), trusted: z.boolean(), changed: z.boolean() }))
   untrust(
     @Arg("id", { description: "App id" }) id: string,
-    @Option({ flags: "--execute", description: "Confirm revocation" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     requireTrustOperator("apps untrust", asJson);
-    if (execute !== true) contractDryRun("apps untrust", { id }, { asJson });
+    id = normalizeAppId(id);
     const result = { id, trusted: false, changed: untrustApp(id).changed };
     if (asJson) printJson(result);
     else console.log(`Revoked trust for ${id}.`);

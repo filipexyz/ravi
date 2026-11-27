@@ -1,90 +1,58 @@
 /**
- * Operator trust for calling an app from a restricted turn (spec apps/manifest, "Restricted Turn Calls").
- *
- * A manifest may ask, with `sandbox.callableFromRestrictedTurns: true`, that a turn held below the agent call it.
- * The ask alone grants nothing: the operator confirms it in their own terminal (`ravi apps trust <id> --execute`),
- * and the confirmation is pinned to the SHA-256 of the manifest file. A changed manifest is no longer trusted until
- * the operator confirms it again; `ravi apps untrust` or removing the app revokes it.
- *
- * The record lives next to the installed apps (`<state>/app-trust.json`, mode 0600): whoever can write there can
- * already install or replace an app, so the trust record adds no new writer.
+ * Operator trust for restricted-turn app calls, pinned to the manifest hash and path.
+ * Each app has an independent atomic record: trusting one cannot restore a concurrently revoked app.
+ * Records live under <state>/app-trust (0700), with files mode 0600.
  */
-
-import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { getRaviStateDir } from "../utils/paths.js";
+import { normalizeAppId } from "./service.js";
 import type { RaviAppManifestRecord } from "./types.js";
 
-export const APP_TRUST_FILE = "app-trust.json";
-
 export interface AppTrustEntry {
-  /** SHA-256 of the manifest file bytes when the operator trusted it. */
   manifestSha256: string;
   manifestPath: string;
   trustedAt: string;
 }
 
-export interface AppTrustFile {
-  version: 1;
-  apps: Record<string, AppTrustEntry>;
+function appTrustPath(id: string, env: NodeJS.ProcessEnv): string {
+  const name = createHash("sha256").update(normalizeAppId(id)).digest("hex");
+  return join(getRaviStateDir(env), "app-trust", `${name}.json`);
 }
 
-export function appTrustPath(env: NodeJS.ProcessEnv = process.env): string {
-  return join(getRaviStateDir(env), APP_TRUST_FILE);
-}
-
-/** Read the trust record. A missing, unreadable or malformed file trusts nothing (fails closed). */
-export function readAppTrust(env: NodeJS.ProcessEnv = process.env): AppTrustFile {
-  const path = appTrustPath(env);
-  if (!existsSync(path)) return { version: 1, apps: {} };
+/** Missing, unreadable or malformed records trust nothing. */
+function readAppTrust(id: string, env: NodeJS.ProcessEnv): AppTrustEntry | undefined {
   try {
-    const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
-    if (!parsed || typeof parsed !== "object") return { version: 1, apps: {} };
-    const apps = (parsed as { apps?: unknown }).apps;
-    if ((parsed as { version?: unknown }).version !== 1 || !apps || typeof apps !== "object") {
-      return { version: 1, apps: {} };
-    }
-    const out: Record<string, AppTrustEntry> = {};
-    for (const [id, entry] of Object.entries(apps as Record<string, unknown>)) {
-      if (!entry || typeof entry !== "object") continue;
-      const { manifestSha256, manifestPath, trustedAt } = entry as Record<string, unknown>;
-      if (typeof manifestSha256 !== "string" || !/^[0-9a-f]{64}$/.test(manifestSha256)) continue;
-      out[id] = {
-        manifestSha256,
-        manifestPath: typeof manifestPath === "string" ? manifestPath : "",
-        trustedAt: typeof trustedAt === "string" ? trustedAt : "",
-      };
-    }
-    return { version: 1, apps: out };
+    const parsed = JSON.parse(readFileSync(appTrustPath(id, env), "utf8"));
+    if (
+      parsed?.version !== 1 ||
+      parsed.id !== normalizeAppId(id) ||
+      typeof parsed.manifestSha256 !== "string" ||
+      !/^[0-9a-f]{64}$/.test(parsed.manifestSha256) ||
+      typeof parsed.manifestPath !== "string" ||
+      typeof parsed.trustedAt !== "string"
+    )
+      return undefined;
+    return { manifestSha256: parsed.manifestSha256, manifestPath: parsed.manifestPath, trustedAt: parsed.trustedAt };
   } catch {
-    // no-cause: an unreadable trust record trusts nothing; restricted turns keep the closed sandbox.
-    return { version: 1, apps: {} };
+    // no-cause: unreadable trust records leave restricted turns in the sandbox.
+    return undefined;
   }
-}
-
-function writeAppTrust(file: AppTrustFile, env: NodeJS.ProcessEnv): void {
-  const path = appTrustPath(env);
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  const temp = `${path}.${process.pid}.tmp`;
-  writeFileSync(temp, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
-  chmodSync(temp, 0o600);
-  renameSync(temp, path);
 }
 
 export function manifestFileSha256(path: string): string {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
-/** Whether the operator trusted exactly this manifest file (same id, same bytes). */
 export function isAppTrusted(record: RaviAppManifestRecord, env: NodeJS.ProcessEnv = process.env): boolean {
   if (!record.valid || !record.manifest) return false;
-  const entry = readAppTrust(env).apps[record.manifest.id];
+  const entry = readAppTrust(record.manifest.id, env);
   if (!entry) return false;
   try {
     return entry.manifestPath === record.path && entry.manifestSha256 === manifestFileSha256(record.path);
   } catch {
-    // no-cause: a manifest that cannot be read is not the one the operator trusted.
+    // no-cause: an unreadable manifest cannot be the manifest that the operator trusted.
     return false;
   }
 }
@@ -97,24 +65,30 @@ export function trustApp(
   if (!record.valid || record.manifest?.sandbox?.callableFromRestrictedTurns !== true) {
     throw new Error(`App ${record.id} must have a valid manifest requesting sandbox.callableFromRestrictedTurns.`);
   }
-  const file = readAppTrust(env);
+  const id = record.manifest.id;
+  const previous = readAppTrust(id, env);
   const entry: AppTrustEntry = {
     manifestSha256: manifestFileSha256(record.path),
     manifestPath: record.path,
     trustedAt: now().toISOString(),
   };
-  const previous = file.apps[record.manifest.id];
   const changed = previous?.manifestSha256 !== entry.manifestSha256 || previous?.manifestPath !== entry.manifestPath;
   if (!changed) return { entry: previous!, changed: false };
-  file.apps[record.manifest.id] = entry;
-  writeAppTrust(file, env);
+  const path = appTrustPath(id, env);
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  const temp = `${path}.${randomUUID()}.tmp`;
+  writeFileSync(temp, `${JSON.stringify({ version: 1, id, ...entry })}\n`, { mode: 0o600, flag: "wx" });
+  renameSync(temp, path);
   return { entry, changed: true };
 }
 
 export function untrustApp(id: string, env: NodeJS.ProcessEnv = process.env): { changed: boolean } {
-  const file = readAppTrust(env);
-  if (!file.apps[id]) return { changed: false };
-  delete file.apps[id];
-  writeAppTrust(file, env);
-  return { changed: true };
+  const path = appTrustPath(id, env);
+  try {
+    unlinkSync(path);
+    return { changed: true };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { changed: false };
+    throw error;
+  }
 }

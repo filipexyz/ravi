@@ -39,7 +39,8 @@ beforeEach(async () => {
   logger.setLevel("error");
   dir = await createIsolatedRaviState("ravi-restricted-app-");
   process.chdir(dir);
-  for (const name of ["RAVI_CONTEXT_KEY", "RAVI_AGENT_ID", "RAVI_SESSION_NAME", "RAVI_SESSION_KEY"])
+  dir = process.cwd();
+  for (const name of ["RAVI_CONTEXT_KEY", "RAVI_AGENT_ID", "RAVI_SESSION_NAME", "RAVI_SESSION_KEY", "RAVI_BIN"])
     delete process.env[name];
   mkdirSync(join(dir, "src/apps/sample"), { recursive: true });
   mkdirSync(join(dir, "bin"));
@@ -178,6 +179,54 @@ describe("restricted app sandbox exception", () => {
     ).toBeNull();
   });
 
+  it("uses the operator launcher, never a launcher supplied by the turn", () => {
+    trustApp(record(), env);
+    mkdirSync(join(dir, "launcher"));
+    const launcher = join(dir, "launcher/ravi");
+    writeFileSync(launcher, "#!/bin/sh\nexit 0\n");
+    chmodSync(launcher, 0o700);
+    const invocation = { cwd: dir, env: { ...env, PATH: join(dir, "launcher"), RAVI_BIN: launcher } };
+    expect(authorizeRestrictedAppCommand("ravi apps show sample", context, invocation).approved).toBe(false);
+    process.env.RAVI_BIN = launcher;
+    expect(authorizeRestrictedAppCommand("ravi apps show sample", context, invocation).approved).toBe(true);
+    expect(authorizeRestrictedAppCommand(`${raviBin} apps show sample`, context, invocation).approved).toBe(false);
+  });
+
+  it("revokes mixed-case ids immediately and handles missing trust targets as not found", () => {
+    process.env.RAVI_STATE_DIR = dir;
+    const cli = new AppsCommands();
+    cli.trust("SaMpLe", true, true);
+    expect(call().approved).toBe(true);
+    expect(untrustApp("SaMpLe", env).changed).toBe(true);
+    expect(call().approved).toBe(false);
+    cli.trust("SaMpLe", true, true);
+    expect(cli.untrust(" SaMpLe ", true).changed).toBe(true);
+    expect(call().approved).toBe(false);
+    try {
+      cli.trust("missing", true, true);
+      throw new Error("expected refusal");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ContractError);
+      expect((error as ContractError).message).toContain("not found");
+    }
+  });
+
+  it("trusting another app cannot restore a concurrently revoked record", () => {
+    const first = record();
+    trustApp(first, env);
+    const secondPath = join(dir, "second.json");
+    const manifest = { ...first.manifest!, id: "second" };
+    writeFileSync(secondPath, JSON.stringify(manifest));
+    const second = { ...first, id: "second", path: secondPath, manifest };
+    trustApp(second, env, () => {
+      untrustApp("sample", env);
+      return new Date();
+    });
+    expect(isAppTrusted(second, env)).toBe(true);
+    expect(isAppTrusted(first, env)).toBe(false);
+    expect(call().approved).toBe(false);
+  });
+
   it("rejects unknown sandbox keys and non-boolean declarations", () => {
     for (const sandbox of [{ callableFromRestrictedTurns: "true" }, { unexpected: true }, true]) {
       const data = JSON.parse(readFileSync(manifestPath, "utf8"));
@@ -195,20 +244,34 @@ describe("restricted app sandbox exception", () => {
         runWithContext({ transport, agentId: "held-app", context }, async () => cli.trust("sample", true, true)),
       ).rejects.toBeInstanceOf(ContractError);
       await expect(
-        runWithContext({ transport, agentId: "held-app", context }, async () => cli.untrust("sample", true, true)),
+        runWithContext({ transport, agentId: "held-app", context }, async () => cli.untrust("sample", true)),
       ).rejects.toBeInstanceOf(ContractError);
     }
     expect(isAppTrusted(record(), env)).toBe(false);
     process.env.RAVI_CONTEXT_KEY = key;
     expect(() => cli.trust("sample", true, true)).toThrow();
     delete process.env.RAVI_CONTEXT_KEY;
-    expect(() => cli.trust("sample", false, true)).toThrow();
+    expect(() => cli.trust("sample", true, false)).toThrow();
     expect(cli.trust("sample", true, true).trusted).toBe(true);
-    expect(cli.untrust("sample", true, true).trusted).toBe(false);
+    expect(cli.untrust("sample", true).trusted).toBe(false);
+  });
+
+  it("accepts quoted literal data while refusing active expansions and malformed quoting", () => {
+    trustApp(record(), env);
+    for (const arg of ['\'{"name":"Ana"}\'', "'$(id) `id` $HOME * # {}'", '"{literal} [data] # ~"']) {
+      expect(call(`ravi apps run sample read -- ${arg}`).approved).toBe(true);
+    }
+    for (const arg of ['"$(id)"', '"`id`"', '"$HOME"', "'unterminated", "$" + "{APP}", "{a,b}", "<(id)"]) {
+      expect(call(`ravi apps run sample read -- ${arg}`).approved).toBe(false);
+    }
   });
 
   it("does not flatten shell argv or accept extra shell arguments", () => {
     expect(restrictedCodexApprovalCommand(["/bin/bash", "-lc", "ravi apps show sample"])).toBe("ravi apps show sample");
+    expect(restrictedCodexApprovalCommand("/bin/bash -lc 'ravi apps show sample'")).toBe("ravi apps show sample");
+    expect(restrictedCodexApprovalCommand("/bin/bash -lc 'ravi apps show sample' extra")).toBeNull();
+    expect(restrictedCodexApprovalCommand("/bin/bash -lc 'ravi apps show sample'; id")).toBeNull();
+    expect(restrictedCodexApprovalCommand("/tmp/bash -lc 'ravi apps show sample'")).toBeNull();
     expect(restrictedCodexApprovalCommand(["/tmp/bash", "-lc", "ravi apps show sample"])).toBeNull();
     expect(restrictedCodexApprovalCommand(["/bin/bash", "-lc", "ravi apps show sample", "id"])).toBeNull();
   });
@@ -258,16 +321,19 @@ createInterface({input:process.stdin}).on('line', line => {
  if (m.method === 'turn/start') {
   started=m.params; send({id:m.id,result:{turn:{id:'u',status:'inProgress'}}});
   for (const [id,method,params] of [
-   ['app','item/commandExecution/requestApproval',{command:['/bin/bash','-lc','ravi apps show sample']}],
+   ['app','item/commandExecution/requestApproval',{command: "/bin/bash -lc 'ravi apps show sample'",cwd:JSON.parse(process.env.TEST_CWD_JSON)}],
+   ['array','item/commandExecution/requestApproval',{command:['/bin/bash','-lc','ravi apps show sample']}],
+   ['cwd','item/commandExecution/requestApproval',{command:'ravi apps show sample',cwd:'/different'}],
+   ['turn','item/commandExecution/requestApproval',{command:'ravi apps show sample',turnId:'wrong'}],
    ['compound','item/commandExecution/requestApproval',{command:'ravi apps show sample; id'}],
    ['other','item/commandExecution/requestApproval',{command:'curl https://example.com'}],
    ['file','item/fileChange/requestApproval',{changes:[]}],
    ['permissions','item/permissions/requestApproval',{permissions:{network:true}}],
   ]) send({id,method,params:{threadId:'t',turnId:'u',...params}});
  }
- if (['app','compound','other','file','permissions'].includes(m.id)) {
+ if (['app','array','cwd','turn','compound','other','file','permissions'].includes(m.id)) {
   results[m.id]=m.result;
-  if (Object.keys(results).length===5) {
+  if (Object.keys(results).length===8) {
    writeFileSync(${JSON.stringify(transcript)},JSON.stringify({opened,started,results}));
    send({method:'turn/completed',params:{threadId:'t',turn:{id:'u',status:'completed'}}});
   }
@@ -277,8 +343,9 @@ createInterface({input:process.stdin}).on('line', line => {
   );
   chmodSync(command, 0o700);
   const session = createCodexRuntimeProvider({ command }).startSession({
+    model: "gpt-5",
     cwd: dir,
-    env: { ...env, RAVI_CODEX_TRANSPORT: "stdio", RAVI_TURN_HELD_BELOW_AGENT: "1" },
+    env: { ...env, RAVI_CODEX_TRANSPORT: "stdio", RAVI_TURN_HELD_BELOW_AGENT: "1", TEST_CWD_JSON: JSON.stringify(dir) },
     prompt: (async function* () {
       yield {
         type: "user" as const,
@@ -299,6 +366,7 @@ createInterface({input:process.stdin}).on('line', line => {
   expect(rpc.opened.sandbox).toBe("read-only");
   expect(rpc.started.sandboxPolicy).toEqual({ type: "readOnly" });
   expect(rpc.results.app.decision).toBe("accept");
-  for (const id of ["compound", "other", "file"]) expect(rpc.results[id].decision).toBe("deny");
+  expect(rpc.results.array.decision).toBe("accept");
+  for (const id of ["compound", "other", "file", "cwd", "turn"]) expect(rpc.results[id].decision).toBe("deny");
   expect(rpc.results.permissions.permissions).toEqual({});
 }, 20_000);

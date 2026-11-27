@@ -1,4 +1,5 @@
-import { delimiter, dirname, join } from "node:path";
+import { resolveCanonicalRaviCliPath } from "./ravi-cli-path.js";
+import { delimiter, dirname } from "node:path";
 import { SANITIZED_ENV_VARS } from "../hooks/sanitize-bash.js";
 import { dbResolveActiveTaskBindingForSession } from "../tasks/task-db.js";
 import { filterAgentRuntimeBaseEnv } from "./agent-env-policy.js";
@@ -11,20 +12,6 @@ const TASK_RUNTIME_ENV_VARS = [
   "RAVI_TASK_SESSION",
   "RAVI_TASK_WORKSPACE",
 ];
-
-function resolveCanonicalRaviCliPath(): string | null {
-  const explicit = process.env.RAVI_BIN?.trim();
-  if (explicit) {
-    return explicit;
-  }
-
-  const bundlePath = process.argv[1];
-  if (!bundlePath) {
-    return null;
-  }
-
-  return join(dirname(dirname(dirname(bundlePath))), "bin", "ravi");
-}
 
 function prependPathEntry(currentPath: string | undefined, entry: string): string {
   const parts = (currentPath ?? "")

@@ -61,6 +61,7 @@ mock.module("../context.js", () => ({
 }));
 
 mock.module("../../runtime/context-registry.js", () => ({
+  resolveRuntimeContext: () => undefined,
   RAVI_CONTEXT_KEY_ENV: "RAVI_CONTEXT_KEY",
 }));
 

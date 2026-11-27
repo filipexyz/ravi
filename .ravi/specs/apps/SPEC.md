@@ -244,4 +244,4 @@ the structured readiness checklist.
 
 ## Restricted-turn trust
 
-The local operator uses `ravi apps trust <app-id> --execute` to pin an opted-in manifest for a single restricted-turn command. `ravi apps untrust <app-id> --execute` revokes it. See `apps/manifest` for the command, authority and hash boundary. Agents cannot grant this trust.
+The local operator uses `ravi apps trust <app-id> --execute` to pin an opted-in manifest for a single restricted-turn command. `ravi apps untrust <app-id>` revokes it. See `apps/manifest` for the command, authority and hash boundary. Agents cannot grant this trust.

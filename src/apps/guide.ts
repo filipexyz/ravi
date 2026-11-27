@@ -43,7 +43,7 @@ function basePrompts(): RaviAppsGuidePrompt[] {
       title: "Operator trust for restricted turns",
       prompt:
         "Only the operator's local terminal can trust an opted-in manifest. Trust pins its exact hash; changed manifests require a new confirmation. Held turns use a single literal ravi apps run|show command with their own grants.",
-      commands: ["ravi apps trust <app-id> --execute", "ravi apps untrust <app-id> --execute"],
+      commands: ["ravi apps trust <app-id> --execute", "ravi apps untrust <app-id>"],
     },
     {
       id: "discover",

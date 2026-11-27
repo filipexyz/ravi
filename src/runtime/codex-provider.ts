@@ -79,7 +79,11 @@ import type {
   SessionRuntimeProvider,
 } from "./types.js";
 import { toCodexRuntimeEffort } from "./effort.js";
-import { authorizeRestrictedAppCommand, hasCallableRestrictedApp } from "../apps/restricted-turn.js";
+import {
+  authorizeRestrictedAppCommand,
+  hasCallableRestrictedApp,
+  restrictedLiteralArgv,
+} from "../apps/restricted-turn.js";
 import { resolveRuntimeContext } from "./context-registry.js";
 import { RAVI_TURN_HELD_BELOW_AGENT_ENV, RAVI_TURN_OWNER_AUTHORITY_ENV } from "../permissions/actor-limit.js";
 import { createRuntimeTerminalEventTracker, type RuntimeFailedTerminalInput } from "./terminality.js";
@@ -4396,7 +4400,14 @@ function normalizeCodexGoal(value: unknown): RuntimeGoal | null {
 
 /** Accept only the native command string or an exact system-shell -c/-lc argv envelope. */
 export function restrictedCodexApprovalCommand(value: unknown): string | null {
-  if (typeof value === "string") return value;
+  const original = typeof value === "string" ? value : null;
+  if (original !== null) {
+    value = restrictedLiteralArgv(original);
+    if (!value) return null;
+    if (Array.isArray(value) && !String(value[0]).startsWith("/")) return original;
+    // Direct absolute Ravi invocations also pass through the shared executable check.
+    if (Array.isArray(value) && value[1] === "apps") return original;
+  }
   if (!Array.isArray(value) || value.length !== 3 || !value.every((v) => typeof v === "string")) return null;
   if (!["/bin/bash", "/bin/sh", "/bin/zsh", "/usr/bin/bash", "/usr/bin/zsh"].includes(value[0])) return null;
   return ["-c", "-lc"].includes(value[1]) ? value[2] : null;

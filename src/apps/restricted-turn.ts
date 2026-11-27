@@ -1,6 +1,7 @@
+import { resolveCanonicalRaviCliPath } from "../runtime/ravi-cli-path.js";
 /** One literal app invocation may cross a held turn's sandbox; this never grants shell authority. */
 import { realpathSync } from "node:fs";
-import { basename, resolve } from "node:path";
+import { basename } from "node:path";
 import { parse as parseShell } from "shell-quote";
 import { checkExecutablePath } from "../bash/executable-path.js";
 import { parseBashCommand } from "../bash/parser.js";
@@ -19,26 +20,53 @@ export interface RestrictedAppOptions {
   raviBin?: string;
 }
 
-function hostRaviBin(): string | undefined {
-  const entry = process.argv[1];
-  if (!entry || !/(?:dist\/bundle\/index\.js|src\/cli\/index\.ts)$/.test(entry)) return undefined;
-  return resolve(entry, "../../../bin/ravi");
+/** Decode literal argv only. shell-quote handles words; this guard excludes active expansion. */
+export function restrictedLiteralArgv(command: string): string[] | null {
+  if (!command || /[\x00-\x1f\x7f]/.test(command)) return null;
+  let quote: "'" | '"' | undefined;
+  for (let i = 0; i < command.length; i++) {
+    const char = command[i]!;
+    if (quote === "'") {
+      if (char === "'") quote = undefined;
+      continue;
+    }
+    if (char === "\\") {
+      if (++i >= command.length) return null;
+      // In double quotes a backslash only escapes a small set. Other characters stay literal.
+      continue;
+    }
+    if (char === quote) {
+      quote = undefined;
+      continue;
+    }
+    if (!quote && (char === "'" || char === '"')) {
+      quote = char;
+      continue;
+    }
+    if (char === "$" || char === "`" || (!quote && /[{}()[\]*?~#]/.test(char))) return null;
+  }
+  if (quote) return null;
+  try {
+    const argv = parseShell(command);
+    return argv.every((word): word is string => typeof word === "string") ? argv : null;
+  } catch {
+    // no-cause: unsupported shell syntax does not qualify as a literal command.
+    return null;
+  }
 }
 
 export function restrictedAppArgv(command: string, options: RestrictedAppOptions = {}): string[] | null {
-  // No expansion, control character, glob, subshell, brace expansion or comment. Quoted arguments remain data.
-  if (!command || /[\x00-\x1f\x7f$`{}()[\]*?~#]/.test(command)) return null;
+  const argv = restrictedLiteralArgv(command);
+  if (!argv) return null;
   try {
     const parsed = parseBashCommand(command);
     if (!parsed.success || parsed.commands?.length !== 1 || parsed.assignments?.length) return null;
-    const argv = parseShell(command);
-    if (!argv.every((word): word is string => typeof word === "string")) return null;
     const [word, group, verb, appId] = argv;
     if (!word || basename(word) !== "ravi" || group !== "apps" || !["run", "show"].includes(verb ?? "")) return null;
     if (!appId || !/^[a-z][a-z0-9-]*(\/[a-z][a-z0-9-]*)*$/.test(appId)) return null;
     if (verb === "show" && argv.slice(4).some((arg) => arg !== "--json")) return null;
     const checked = checkExecutablePath(word, { cwd: options.cwd, pathEnv: options.env?.PATH });
-    const expected = options.raviBin ?? hostRaviBin();
+    const expected = options.raviBin ?? resolveCanonicalRaviCliPath();
     if (!checked.ok || !checked.realPath || !expected || checked.realPath !== realpathSync(expected)) return null;
     return argv;
   } catch {
