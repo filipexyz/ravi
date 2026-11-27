@@ -129,6 +129,7 @@ function harness(
     noTurnStarted?: boolean;
     /** An isolated prompt queued earlier runs as its own turn between the in-flight turn and this one. */
     otherPromptQueues?: boolean;
+    whenIdleMaxWaitMs?: number;
   } = {},
 ) {
   let sessionChain: Promise<void> = Promise.resolve();
@@ -198,6 +199,7 @@ function harness(
       },
     },
     transcriptWaitMs: 200,
+    ...(options.whenIdleMaxWaitMs ? { whenIdleMaxWaitMs: options.whenIdleMaxWaitMs } : {}),
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, Math.min(ms, 5))),
   };
   return { hub, history, prompts, door: new VoiceDoorService(deps) };
@@ -663,6 +665,72 @@ describe("voice door", () => {
     await until(() => getVoiceCall(call.id)?.state === "ended", "ended by daily limit");
     expect(getVoiceCall(call.id)?.endedReason).toBe("limit");
     expect(listVoiceEvents(call.id).some((event) => event.data.limit === "max_daily_cost")).toBe(true);
+  });
+
+  describe("when_idle delivery", () => {
+    const spoke = (callId: string) => listVoiceEvents(callId).some((event) => event.type === "agent.transcript");
+    const say = (door: VoiceDoorService, callId: string, turnId: string) =>
+      door.handleControl({
+        op: "utterance",
+        callId,
+        turnId,
+        text: "oi",
+        speaker: { kind: "operator", id: "operator" },
+      });
+
+    it("holds the reply while the person talks and speaks it once they stop", async () => {
+      saveVoiceProfile({ ...defaultVoiceProfile(), id: "idle", delivery: "when_idle" });
+      const { door } = harness({ whenIdleMaxWaitMs: 60_000 });
+      const call = makeCall("push", { profileId: "idle" });
+      await door.handleControl({ op: "activity", callId: call.id, speaking: true });
+      await say(door, call.id, "vt_i1");
+      await until(() => getVoiceProfileDailyUsage("idle").costUsd === 0 && listVoiceTurns(call.id).length > 0, "turn");
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(spoke(call.id)).toBe(false);
+      await door.handleControl({ op: "activity", callId: call.id, speaking: false });
+      await until(() => spoke(call.id), "spoken after the person stopped");
+      const transcript = listVoiceEvents(call.id).find((event) => event.type === "agent.transcript");
+      expect(transcript?.data.delivery).toBe("when_idle");
+    });
+
+    it("speaks at the ceiling when the stop never comes", async () => {
+      saveVoiceProfile({ ...defaultVoiceProfile(), id: "idle", delivery: "when_idle" });
+      const { door } = harness({ whenIdleMaxWaitMs: 80 });
+      const call = makeCall("push", { profileId: "idle" });
+      await door.handleControl({ op: "activity", callId: call.id, speaking: true });
+      await say(door, call.id, "vt_i2");
+      await until(() => spoke(call.id), "spoken at the ceiling");
+    });
+
+    it("speaks at once when nobody is talking, and speak delivery never waits", async () => {
+      saveVoiceProfile({ ...defaultVoiceProfile(), id: "idle", delivery: "when_idle" });
+      const quiet = harness({ whenIdleMaxWaitMs: 60_000 });
+      const idleCall = makeCall("push", { profileId: "idle" });
+      await say(quiet.door, idleCall.id, "vt_i3");
+      await until(() => spoke(idleCall.id), "spoken with nobody talking");
+
+      const talking = harness({ whenIdleMaxWaitMs: 60_000 });
+      const speakCall = makeCall("push", { speaker: { kind: "operator", id: "other" } });
+      await talking.door.handleControl({ op: "activity", callId: speakCall.id, speaking: true });
+      await say(talking.door, speakCall.id, "vt_i4");
+      await until(() => spoke(speakCall.id), "speak delivery ignores the person talking");
+    });
+
+    it("ending the call releases held speech without speaking it", async () => {
+      saveVoiceProfile({ ...defaultVoiceProfile(), id: "idle", delivery: "when_idle" });
+      const { door } = harness({ whenIdleMaxWaitMs: 60_000 });
+      const call = makeCall("push", { profileId: "idle" });
+      await door.handleControl({ op: "activity", callId: call.id, speaking: true });
+      await say(door, call.id, "vt_i5");
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      await door.handleControl({ op: "end", callId: call.id, reason: "ended" });
+      await until(() => listVoiceTurns(call.id)[0]?.state === "done", "turn settles after the call ended");
+      expect(spoke(call.id)).toBe(false);
+      // The held reply no longer blocks the session: the next call's turn on it speaks right away.
+      const next = makeCall("push", { speaker: { kind: "operator", id: "next" } });
+      await say(door, next.id, "vt_i6");
+      await until(() => spoke(next.id), "the next call on the session is not stuck behind the held reply");
+    });
   });
 
   it("live calls end on restart; other calls survive and in-flight turns fail", async () => {

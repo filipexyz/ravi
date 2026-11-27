@@ -11190,6 +11190,18 @@ class VoiceCallsNamespace {
 
   final RaviTransport _transport;
 
+  Future<VoiceCallsActivityReturn> activity(String call, [VoiceCallsActivityOptions options = const VoiceCallsActivityOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["call"] = RaviJson.from(call);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["voice", "calls"],
+      command: "activity",
+      body: requestBody,
+      decode: voiceCallsActivityReturnFromJson,
+    );
+  }
+
   Future<VoiceCallsApproveReturn> approve(String call, String approval, [VoiceCallsApproveOptions options = const VoiceCallsApproveOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["call"] = RaviJson.from(call);

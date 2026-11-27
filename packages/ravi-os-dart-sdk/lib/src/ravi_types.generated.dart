@@ -34059,6 +34059,38 @@ class VideoAnalyzeReturn {
 
 VideoAnalyzeReturn videoAnalyzeReturnFromJson(Object? json) => VideoAnalyzeReturn.fromJsonValue(json);
 
+class VoiceCallsActivityOptions {
+  const VoiceCallsActivityOptions({this.state});
+
+  final String? state;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (state != null) {
+      into["state"] = RaviJson.from(state);
+    }
+  }
+}
+
+class VoiceCallsActivityReturn {
+  const VoiceCallsActivityReturn({required this.callId, required this.speaking});
+
+  final String callId;
+  final bool speaking;
+
+  factory VoiceCallsActivityReturn.fromJson(Map<String, Object?> json) {
+    return VoiceCallsActivityReturn(
+      callId: raviJsonAsString(json["callId"]),
+      speaking: raviJsonAsBool(json["speaking"]),
+    );
+  }
+
+  static VoiceCallsActivityReturn fromJsonValue(Object? json) {
+    return VoiceCallsActivityReturn.fromJson(raviJsonObject(json, "VoiceCallsActivityReturn"));
+  }
+}
+
+VoiceCallsActivityReturn voiceCallsActivityReturnFromJson(Object? json) => VoiceCallsActivityReturn.fromJsonValue(json);
+
 class VoiceCallsApproveOptions {
   const VoiceCallsApproveOptions({this.digest, this.execute, this.version});
 

@@ -49,3 +49,9 @@ normative: false
   counts against its profile, and a call ends with `limit: max_daily_cost` when its own profile
   reaches the limit; `voice.test.ts` shows `calls start` refuses only the profile that spent its day.
   Both tests fail when the check reads another profile's meter.
+- `when_idle` (`door.test.ts`, "when_idle delivery"): the reply is held while the person talks and
+  spoken when they stop; spoken at the ceiling when the stop never comes; spoken at once with nobody
+  talking, and `speak` never waits; ending the call drops the held reply and frees the session for
+  the next call. Mutants that skip the hold, keep waiters on "quiet", keep them on end, or hold for
+  every delivery each fail one of them. `voice.test.ts`: `calls activity` sends the control and
+  refuses a state other than speaking or quiet.

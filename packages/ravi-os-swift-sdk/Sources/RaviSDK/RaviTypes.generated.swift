@@ -39990,6 +39990,39 @@ public struct VideoAnalyzeReturn: Codable, Sendable {
   }
 }
 
+public struct VoiceCallsActivityOptions: Codable, Sendable {
+  public var state: String?
+
+  public init(state: String? = nil) {
+    self.state = state
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case state = "state"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.state {
+      body["state"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct VoiceCallsActivityReturn: Codable, Sendable {
+  public var callId: String
+  public var speaking: Bool
+
+  public init(callId: String, speaking: Bool) {
+    self.callId = callId
+    self.speaking = speaking
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case callId = "callId"
+    case speaking = "speaking"
+  }
+}
+
 public struct VoiceCallsApproveOptions: Codable, Sendable {
   public var digest: String?
   public var execute: Bool?

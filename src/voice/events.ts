@@ -38,6 +38,7 @@ export type VoiceControlMessage =
     }
   | { op: "cancel-turn"; callId: string; turnId: string; actor: string }
   | { op: "silence"; callId: string }
+  | { op: "activity"; callId: string; speaking: boolean }
   | { op: "end"; callId: string; reason: string }
   | { op: "live-attach"; callId: string; providerSessionId: string }
   | { op: "approval-resolved"; callId: string; approvalId: string; decision: "approved" | "rejected" };

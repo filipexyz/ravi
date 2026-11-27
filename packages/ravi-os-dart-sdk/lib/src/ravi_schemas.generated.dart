@@ -140157,6 +140157,45 @@ class RaviSchemas {
 }
 ''';
 
+  static const voiceCallsActivityInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "call": {
+      "description": "Call id",
+      "type": "string"
+    },
+    "state": {
+      "description": "speaking|quiet",
+      "type": "string"
+    }
+  },
+  "required": [
+    "call"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsActivityReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "callId": {
+      "type": "string"
+    },
+    "speaking": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "callId",
+    "speaking"
+  ],
+  "type": "object"
+}
+''';
+
   static const voiceCallsApproveInputSchema = r'''
 {
   "additionalProperties": false,
