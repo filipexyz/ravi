@@ -1716,11 +1716,29 @@ process.exit(3);`,
     expect(text).toContain("Cause: Operation not found for app khal-tasks: does-not-exist");
     expect(text).not.toContain("Ravi app operation failed.");
 
-    // What nobody classified still folds into the generic code, without leaking what the error said.
-    expect(
-      raiseContractFailure({ ...unknown, errorCode: "APP_OPERATION_FAILED", error: "Ravi app operation failed." }, true)
-        .error.code,
-    ).toBe("APP_OPERATION_FAILED");
+    // What nobody classified still folds into the generic code, and what the error said never leaves. The exception
+    // is real: reading `args` inside the router's try throws an Error that carries a secret-looking sentinel.
+    const unexpected = await runWithContext(appToolContext([appCapability("use")]), () =>
+      runAppOperation({
+        appId: "khal-tasks",
+        operation: "help",
+        json: true,
+        get args(): string[] {
+          throw new Error("UNEXPECTED_SECRET_SENTINEL_8f3a token=abc123");
+        },
+      }),
+    );
+    expect(unexpected).toMatchObject({
+      ok: false,
+      status: "failed",
+      errorCode: "APP_OPERATION_FAILED",
+      error: "Ravi app operation failed.",
+    });
+    expect(JSON.stringify(unexpected)).not.toContain("UNEXPECTED_SECRET_SENTINEL_8f3a");
+    const unexpectedRaised = raiseContractFailure(unexpected, true);
+    expect(unexpectedRaised.error.code).toBe("APP_OPERATION_FAILED");
+    expect(JSON.stringify(unexpectedRaised.error.envelope())).not.toContain("UNEXPECTED_SECRET_SENTINEL_8f3a");
+    expect(unexpectedRaised.stdout.join("\n")).not.toContain("UNEXPECTED_SECRET_SENTINEL_8f3a");
   });
 
   it("does not expose the provider operation as a direct app operation", async () => {
