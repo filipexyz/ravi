@@ -55,6 +55,7 @@
   the previous value.
 - `src/router/router-db.contexts.test.ts` checks that the migration leaves no
   fragment of a long clear key in the database file or its WAL when the
-  connection has `secure_delete` off, and restores the setting.
+  connection has `secure_delete` off, and that the migration puts back the
+  connection's setting whatever it was (`OFF`, `ON` or `FAST`).
 - `src/adapters/session-adapter-bus.test.ts` checks that events published on
   `ravi.session.<name>.adapter.*` carry the context id and never the bound key.

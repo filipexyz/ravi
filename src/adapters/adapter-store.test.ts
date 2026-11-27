@@ -203,6 +203,10 @@ describe("Session adapter store", () => {
     // survives in freed space is the front of the old cell: a key fragment.
     const fragment = key.slice(0, 32);
     const ids = Array.from({ length: 20 }, (_, index) => `${TEST_ADAPTER_ID}-sd-${index}`);
+    // Written with FAST, so the only copy left is the live cell: Bun on Linux
+    // starts with secure_delete off, and plain inserts there leave copies of
+    // their own that only VACUUM removes (CI run of #1047).
+    getDb().exec("PRAGMA secure_delete = FAST");
     try {
       for (const [index, adapterId] of ids.entries()) {
         saveSessionAdapter({ adapterId, definition: { ...buildDefinition(), name: `smoke-sd-${index}` } });
