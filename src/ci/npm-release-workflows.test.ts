@@ -21,6 +21,7 @@ type Workflow = {
 const releaseWorkflows = [
   { file: "version.yml", job: "version-and-publish", packageName: "ravi.bot", tag: "next" },
   { file: "sdk-release.yml", job: "release", packageName: "@ravi-os/sdk", tag: "latest" },
+  { file: "voice-release.yml", job: "release", packageName: "@ravi-os/voice", tag: "latest" },
 ] as const;
 const version = "3.261111.9";
 const syntheticToken = "synthetic-release-token-never-log";
@@ -200,7 +201,22 @@ for (const release of releaseWorkflows) {
   });
 }
 
-describe("sdk-release.yml: the push of the version bump and the major prefix", () => {
+const packageReleaseWorkflows = [
+  {
+    file: "sdk-release.yml",
+    bumpStep: "Commit SDK version bump",
+    packagePathEnv: "SDK_PACKAGE_PATH",
+    packageName: "@ravi-os/sdk",
+  },
+  {
+    file: "voice-release.yml",
+    bumpStep: "Commit voice version bump",
+    packagePathEnv: "VOICE_PACKAGE_PATH",
+    packageName: "@ravi-os/voice",
+  },
+] as const;
+
+for (const release of packageReleaseWorkflows) describe(`${release.file}: the push of the version bump and the major prefix`, () => {
   const jqDir =
     ["/usr/bin", "/bin", "/opt/homebrew/bin", "/usr/local/bin"].find((dir) => existsSync(join(dir, "jq"))) ??
     "/usr/bin";
@@ -208,7 +224,7 @@ describe("sdk-release.yml: the push of the version bump and the major prefix", (
   const expression = (body: string) => `$${"{{"} ${body} }}`;
 
   function findStep(name: string): string {
-    const step = loadWorkflow("sdk-release.yml").jobs.release!.steps.find((candidate) => candidate.name === name);
+    const step = loadWorkflow(release.file).jobs.release!.steps.find((candidate) => candidate.name === name);
     expect(step?.run, name).toBeDefined();
     return step!.run!;
   }
@@ -221,7 +237,7 @@ describe("sdk-release.yml: the push of the version bump and the major prefix", (
       for (const [name, body] of Object.entries(options.fakes)) {
         writeFileSync(join(bin, name), `#!${process.execPath}\n${body}`, { mode: 0o755 });
       }
-      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "@ravi-os/sdk", version: "0.261009.1" }));
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: release.packageName, version: "0.261009.1" }));
       writeFileSync(join(dir, "github-output"), "");
       // Deliberately not inheriting process.env: no operator credential, runtime identity or real git/npm client.
       const result = spawnSync("bash", ["-e", "-c", run], {
@@ -231,7 +247,7 @@ describe("sdk-release.yml: the push of the version bump and the major prefix", (
           PATH: `${bin}:${jqDir}:/usr/bin:/bin`,
           HOME: dir,
           TMPDIR: dir,
-          SDK_PACKAGE_PATH: join(dir, "package.json"),
+          [release.packagePathEnv]: join(dir, "package.json"),
           GITHUB_OUTPUT: join(dir, "github-output"),
           ...options.env,
         },
@@ -257,7 +273,7 @@ process.exit(0);
 `;
 
   function bumpStep(push: { status: number; output: string }) {
-    const run = findStep("Commit SDK version bump")
+    const run = findStep(release.bumpStep)
       .replaceAll(expression("steps.version.outputs.version"), "0.261125.1")
       .replaceAll(expression("github.event.inputs.branch"), "dev");
     return execute(run, {

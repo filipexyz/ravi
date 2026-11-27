@@ -17,7 +17,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "peerDependencies": {
-    "@ravi-os/sdk": ">=0.261009.1",
+    "@ravi-os/sdk": ">=0.261125.1",
     "livekit-client": "^2.0.0"
   },
   "peerDependenciesMeta": {

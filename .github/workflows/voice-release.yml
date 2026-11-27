@@ -1,0 +1,204 @@
+name: Voice Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to release the voice kit from"
+        required: true
+        type: choice
+        options: [main, dev]
+        default: main
+      prefix:
+        description: "Version major prefix (defaults to current package.json major)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: voice-release-${{ github.event.inputs.branch }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Version And Publish Voice Kit
+    # Pinned to the image the test shards run on (ci.yml). `ubuntu-latest` moved to 26.04, where coreutils is the Rust
+    # uutils build under /usr/lib/cargo/bin/coreutils, outside the Bash guard's trusted roots, so the pre-push suite
+    # of the version bump failed there on 2026-11-25 (run 45684222557).
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+    timeout-minutes: 45
+
+    env:
+      VOICE_PACKAGE_PATH: packages/ravi-os-voice/package.json
+      VOICE_DIR: packages/ravi-os-voice
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.branch }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+
+      # OIDC publish needs >=11.5.1; OIDC dist-tag needs >=11.21.0.
+      - name: Install npm with trusted publishing support
+        run: |
+          npm install --global npm@11.21.1
+          node --version
+          npm --version
+
+      - name: Isolate Ravi state
+        run: echo "RAVI_STATE_DIR=$RUNNER_TEMP/ravi-voice-release-state" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Resolve prefix
+        id: prefix
+        run: |
+          PREFIX="${{ github.event.inputs.prefix }}"
+          if [ -z "$PREFIX" ]; then
+            PREFIX=$(jq -r '.version | split(".") | .[0]' "$VOICE_PACKAGE_PATH")
+            # The push of a bump can be declined, so the manifest of the branch may be behind the registry. An omitted
+            # prefix never moves `latest` back to an older major: it follows the registry when that is ahead.
+            PACKAGE=$(jq -r '.name' "$VOICE_PACKAGE_PATH")
+            REGISTRY_MAJOR=$(npm view "$PACKAGE" version 2>/dev/null | cut -d. -f1 || true)
+            if echo "$REGISTRY_MAJOR" | grep -Eq '^[0-9]+$' && [ "$REGISTRY_MAJOR" -gt "$PREFIX" ]; then
+              echo "Registry major ${REGISTRY_MAJOR} is ahead of the manifest major ${PREFIX}; using ${REGISTRY_MAJOR}."
+              PREFIX="$REGISTRY_MAJOR"
+            fi
+          fi
+          if ! echo "$PREFIX" | grep -Eq '^[0-9]+$'; then
+            echo "Resolved prefix '$PREFIX' is not numeric" >&2
+            exit 1
+          fi
+          echo "prefix=${PREFIX}" >> "$GITHUB_OUTPUT"
+          echo "Resolved prefix: ${PREFIX}"
+
+      - name: Derive version
+        id: version
+        env:
+          PREFIX: ${{ steps.prefix.outputs.prefix }}
+        run: |
+          set -euo pipefail
+          PACKAGE=$(jq -r '.name' "$VOICE_PACKAGE_PATH")
+          TODAY=$(date -u +%y%m%d)
+          PATTERN="${PREFIX}.${TODAY}."
+
+          VERSIONS_JSON=$(npm view "$PACKAGE" versions --json 2>/dev/null || echo '[]')
+          if [ -z "$VERSIONS_JSON" ]; then
+            VERSIONS_JSON='[]'
+          fi
+          EXISTING=$(echo "$VERSIONS_JSON" | jq --arg p "$PATTERN" '
+            if type == "string"
+            then (if startswith($p) then 1 else 0 end)
+            else [.[] | select(startswith($p))] | length
+            end
+          ')
+          BUILD_NUMBER=$((EXISTING + 1))
+          VERSION="${PREFIX}.${TODAY}.${BUILD_NUMBER}"
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "build_number=${BUILD_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "Derived voice kit version: ${VERSION} (existing today: ${EXISTING})"
+
+      - name: Sync voice kit version
+        env:
+          RAVI_PACKAGE_PATH: ${{ env.VOICE_PACKAGE_PATH }}
+          RAVI_VERSION_PREFIX: ${{ steps.prefix.outputs.prefix }}
+          RAVI_BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
+          RAVI_VERSION: ${{ steps.version.outputs.version }}
+        run: bun run version
+
+      - name: Commit voice version bump
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          BRANCH="${{ github.event.inputs.branch }}"
+
+          git add "$VOICE_PACKAGE_PATH"
+          if git diff --cached --quiet; then
+            echo "No version changes to commit"
+            exit 0
+          fi
+
+          git commit -m "chore(voice-version): bump to ${VERSION} [skip ci]"
+
+          # A declined push is not a failed release. The ruleset of `dev` requires the Quality Gate check on every
+          # new commit, so a direct push of the bump is declined (GH013) after the pre-push suite already ran. The
+          # version is derived from npm, not from this file, so building and publishing do not need the push.
+          # Any other failure of the push, the pre-push suite included, still fails the job.
+          push_rc=0
+          push_out=$(git push origin "HEAD:refs/heads/${BRANCH}" 2>&1) || push_rc=$?
+          echo "$push_out"
+          if [ "$push_rc" -ne 0 ]; then
+            # Only the server's own lines count: the log of the pre-push suite is in $push_out too, and a test
+            # that mentions a rule or a protected branch must not turn a red suite into a warning.
+            if echo "$push_out" | grep -Eq '^remote: error: GH(013|006):'; then
+              echo "::warning::Direct push to ${BRANCH} declined by the repository rules. The bump is not saved in the branch; its package.json stays behind npm and the version keeps coming from the registry. The release goes on."
+            else
+              echo "::error::The push of the version bump failed for a reason other than the repository rules (pre-push checks included)."
+              exit "$push_rc"
+            fi
+          fi
+
+      # The kit resolves @ravi-os/sdk from node_modules at build time (tsconfig.build.json clears the source path
+      # mapping), and the repository root is not a workspace. It builds against the published floor of its own peer
+      # range, so a published kit is proven to compile with the oldest SDK it accepts.
+      - name: Install the kit's peers for the build
+        working-directory: ${{ env.VOICE_DIR }}
+        run: |
+          set -euo pipefail
+          SDK_FLOOR=$(jq -r '.peerDependencies["@ravi-os/sdk"] | ltrimstr(">=")' package.json)
+          LIVEKIT=$(jq -r '.peerDependencies["livekit-client"]' package.json)
+          if ! echo "$SDK_FLOOR" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::The @ravi-os/sdk peer range must be '>=<version>' to build against its floor; found '$SDK_FLOOR'."
+            exit 1
+          fi
+          npm install --no-save --no-package-lock --no-audit --no-fund "@ravi-os/sdk@${SDK_FLOOR}" "livekit-client@${LIVEKIT}"
+
+      - name: Build voice kit
+        working-directory: ${{ env.VOICE_DIR }}
+        run: bun run build
+
+      - name: Publish to npm
+        working-directory: ${{ env.VOICE_DIR }}
+        env:
+          # npm prefers OIDC; setup-node's npmrc supplies this only as fallback.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          echo "npm auth: OIDC preferred; verbose oidc logs show exchange success or failure."
+          if [ -n "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "::notice::NPM_TOKEN fallback enabled if OIDC exchange fails; token/2FA errors still fail this job."
+          else
+            echo "npm auth: OIDC only (NPM_TOKEN fallback unavailable)."
+          fi
+
+          PACKAGE=$(jq -r '.name' package.json)
+          if npm view "${PACKAGE}@${VERSION}" version >/dev/null 2>&1; then
+            echo "Version ${VERSION} already exists; moving dist-tag latest"
+            npm dist-tag add "${PACKAGE}@${VERSION}" latest --loglevel verbose
+          else
+            npm publish --access public --tag latest --provenance --loglevel verbose
+          fi
