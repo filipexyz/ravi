@@ -44,3 +44,5 @@
   not, a record read by id has no key, `resolveRuntimeContextById` applies the
   live/expired/revoked rules, and the migration hashes clear rows while their
   holders keep resolving.
+  It also checks that a clear key left in a WAL frame is gone from the database
+  file and its WAL after the migration (the WAL is truncated).

@@ -10774,10 +10774,38 @@ export function hashStoredContextKeys(db: Database): number {
     .all() as Array<{ context_id: string; context_key: string }>;
   if (rows.length === 0) return 0;
   const update = db.prepare("UPDATE contexts SET context_key = ? WHERE context_id = ?");
-  db.transaction(() => {
-    for (const row of rows) update.run(hashContextKey(row.context_key), row.context_id);
-  })();
-  log.info("Hashed stored context keys", { count: rows.length });
+  // Zero the bytes the clear keys occupied, then fold the WAL into the main file
+  // and truncate it, so the keys do not survive in free pages or old WAL frames.
+  const previousSecureDelete = (db.prepare("PRAGMA secure_delete").get() as { secure_delete: number }).secure_delete;
+  db.exec("PRAGMA secure_delete = ON");
+  try {
+    db.transaction(() => {
+      for (const row of rows) update.run(hashContextKey(row.context_key), row.context_id);
+    })();
+  } finally {
+    db.exec(`PRAGMA secure_delete = ${previousSecureDelete ? "ON" : "OFF"}`);
+  }
+  const checkpoint = db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get() as { busy: number } | undefined;
+  const now = Date.now();
+  const stillLive = rows.length
+    ? (
+        db
+          .prepare(
+            `SELECT COUNT(*) AS n FROM contexts WHERE context_id IN (${rows.map(() => "?").join(",")})
+               AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?)`,
+          )
+          .get(...rows.map((row) => row.context_id), now) as { n: number }
+      ).n
+    : 0;
+  // Copies made before this migration (update rollback snapshots, backups) still
+  // hold these keys in the clear. They stay valid so paired devices and the
+  // operator's credentials keep working; rotate them once those copies are gone.
+  log.warn("Hashed stored context keys; earlier copies of the state database still hold them in the clear", {
+    count: rows.length,
+    stillLive,
+    walCheckpointBusy: Boolean(checkpoint?.busy),
+    rotate: "ravi context revoke <contextId>, then issue a new key (see spec runtime/context-keys RUNBOOK)",
+  });
   return rows.length;
 }
 // ============================================================================

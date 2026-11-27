@@ -87,3 +87,9 @@ each, and reports plans, failures, medians, ranges and machine load. The reporte
 times cover SQL materialization with a warmed cache, not end-to-end replies.
 Expiry-index candidate lookup should replace the creation-order history scan;
 do not translate its speedup into the same multiplier for the entire runtime.
+
+## Keys stored as hashes (migration, rotation, rollback)
+
+- At schema initialization the registry replaces every clear key in `contexts.context_key` with its SHA-256, zeroes the freed bytes (`secure_delete`) and truncates the WAL. The daemon log line `Hashed stored context keys` reports how many rows changed and how many are still live.
+- Copies of the state database made before that boot (update rollback snapshots, manual backups) still hold those keys in the clear, and the keys stay valid so paired devices and operator credentials keep working. Once those copies are gone (the next `ravi update` prunes the old snapshot), rotate the long-lived ones: `ravi context revoke <contextId>`, then issue a new key the usual way (`ravi daemon init-admin-key` for the admin bootstrap key, pairing again for a voice device).
+- Code-only rollback to a release without hashing: that release looks keys up in the clear and no longer finds the migrated rows, while `init-admin-key` still counts them as live and refuses. Revoke the admin bootstrap contexts by id (`ravi context revoke <contextId>`, which works on the old release) and run `ravi daemon init-admin-key` again. A managed rollback (`ravi update rollback`) restores the pre-update database and needs none of this.

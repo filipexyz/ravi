@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { existsSync, readFileSync } from "node:fs";
 import {
   CONTEXT_KEY_HASH_PREFIX,
   dbCreateAgent,
@@ -6,6 +7,7 @@ import {
   dbGetContext,
   dbGetContextByKeyReadOnly,
   getDb,
+  getRaviDbPath,
   hashContextKey,
   hashStoredContextKeys,
 } from "../router/router-db.js";
@@ -99,5 +101,21 @@ describe("context keys are stored as hashes", () => {
     expect(storedKey(context.contextId)).toBe(hashContextKey(legacyKey));
     expect(resolveRuntimeContext(legacyKey, { touch: false })?.contextId).toBe(context.contextId);
     expect(hashStoredContextKeys(getDb())).toBe(0);
+  });
+
+  it("leaves no copy of a migrated clear key in the database file or its WAL", () => {
+    const legacyKey = "rctx_legacyKeyThatMustNotSurviveOnDisk";
+    const context = createRuntimeContext({ kind: "test-runtime", agentId: AGENT, contextKey: legacyKey });
+    getDb().prepare("UPDATE contexts SET context_key = ? WHERE context_id = ?").run(legacyKey, context.contextId);
+    const dbPath = getRaviDbPath();
+    // The clear key sits in a WAL frame, as it would on a live daemon.
+    const onDisk = () =>
+      [dbPath, `${dbPath}-wal`].some((path) => existsSync(path) && readFileSync(path).includes(legacyKey));
+    expect(onDisk()).toBe(true);
+
+    expect(hashStoredContextKeys(getDb())).toBe(1);
+
+    expect(onDisk()).toBe(false);
+    expect(resolveRuntimeContext(legacyKey, { touch: false })?.contextId).toBe(context.contextId);
   });
 });
