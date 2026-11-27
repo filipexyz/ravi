@@ -42,6 +42,7 @@ import {
   RaviAppPermissionDeniedError,
 } from "./permissions.js";
 import { enforceRaviAppRunResult } from "./error-contract.js";
+import { RaviAppRefusalError } from "./refusal.js";
 import { maskedSecretForms, projectAppCliFailure } from "./failure.js";
 import {
   RaviAppCompositionError,
@@ -99,10 +100,10 @@ export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviA
     assertCanUseApp(options.appId);
     const app = getAppManifest(options.appId, options);
     if (!app.valid) {
-      throw new Error(`App manifest is invalid: ${app.errors.join("; ")}`);
+      throw new RaviAppRefusalError("APP_MANIFEST_INVALID", `App manifest is invalid: ${app.errors.join("; ")}`);
     }
     if (!app.manifest) {
-      throw new Error(`App manifest is missing for ${app.id}`);
+      throw new RaviAppRefusalError("APP_MANIFEST_INVALID", `App manifest is missing for ${app.id}`);
     }
     assertStoreAppRunnable(app, options.env);
 
@@ -121,7 +122,7 @@ export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviA
   } catch (error) {
     const errorCode = classifyAppRunError(error);
     const message =
-      error instanceof AppStoreError || error instanceof AppScriptError
+      error instanceof AppStoreError || error instanceof AppScriptError || error instanceof RaviAppRefusalError
         ? error.message
         : errorCode === "not_found"
           ? "Ravi app was not found."
@@ -159,6 +160,7 @@ export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviA
 
 function classifyAppRunError(error: unknown): string {
   if (error instanceof RaviAppError) return error.code;
+  if (error instanceof RaviAppRefusalError) return error.code;
   if (error instanceof AppStoreError) return error.code;
   if (error instanceof AppScriptError) return error.code;
   if (error instanceof CliExpectedError && error.code === "PERMISSION_DENIED") return "PERMISSION_DENIED";
@@ -291,7 +293,7 @@ function resolveOperation(app: RaviAppManifestRecord, operationName: string | nu
   if (resolved) return resolved;
 
   const appId = app.manifest?.id ?? app.id;
-  throw new Error(`Operation not found for app ${appId}: ${operationName}`);
+  throw new RaviAppRefusalError("APP_OPERATION_UNKNOWN", `Operation not found for app ${appId}: ${operationName}`);
 }
 
 function resolveOperationInvocation(
@@ -391,12 +393,16 @@ async function dispatchResolvedOperation(
   const mutating = operation.mutating === true;
 
   if (isPermissionProviderOperation(app, resolved.id)) {
-    throw new Error(
+    throw new RaviAppRefusalError(
+      "APP_OPERATION_RESERVED",
       `Operation ${resolved.id} is reserved for app permission provider decisions and cannot be run directly.`,
     );
   }
   if (mutating && !hasDeclaredOperationPermission(operation)) {
-    throw new Error(`Mutating operation ${resolved.id} must declare permission or permissions.`);
+    throw new RaviAppRefusalError(
+      "APP_MANIFEST_INVALID",
+      `Mutating operation ${resolved.id} must declare permission or permissions.`,
+    );
   }
   // Composition (spec apps/router): another app may call an app that offers services only through them, and an app
   // that needs services runs only when they are there. Both read the manifests and start nothing, so they sit before
@@ -435,7 +441,10 @@ async function dispatchResolvedOperation(
   if (interfaceName === "builtin") {
     const handler = operation.handler?.trim();
     if (!handler || !RAVI_APP_BUILTIN_OPERATION_HANDLERS.has(handler)) {
-      throw new Error(`Unsupported builtin app operation handler: ${handler ?? "(missing)"}`);
+      throw new RaviAppRefusalError(
+        "APP_OPERATION_UNSUPPORTED",
+        `Unsupported builtin app operation handler: ${handler ?? "(missing)"}`,
+      );
     }
     return withPermissionProvider(
       {
@@ -457,10 +466,13 @@ async function dispatchResolvedOperation(
 
   if (interfaceName === "cli") {
     if (!operation.command?.trim()) {
-      throw new Error(`CLI operation ${resolved.id} is missing command.`);
+      throw new RaviAppRefusalError("APP_MANIFEST_INVALID", `CLI operation ${resolved.id} is missing command.`);
     }
     if (isRecursiveCliCommand(appId, operation.command, options.staticRootCommands)) {
-      throw new Error(`CLI operation ${resolved.id} recursively invokes ravi ${appId.split("/").join(" ")}.`);
+      throw new RaviAppRefusalError(
+        "APP_MANIFEST_INVALID",
+        `CLI operation ${resolved.id} recursively invokes ravi ${appId.split("/").join(" ")}.`,
+      );
     }
     return withPermissionProvider(
       await runCliOperation(app, resolved, { ...options, composition }),
@@ -475,7 +487,10 @@ async function dispatchResolvedOperation(
     );
   }
 
-  throw new Error(`App operation interface is not supported by the router: ${interfaceName}`);
+  throw new RaviAppRefusalError(
+    "APP_OPERATION_UNSUPPORTED",
+    `App operation interface is not supported by the router: ${interfaceName}`,
+  );
 }
 
 /**
@@ -864,7 +879,7 @@ async function runBuiltinHandler(handler: string, app: RaviAppManifestRecord, ar
       message: "This scaffolded app does not have a domain list implementation yet.",
     };
   }
-  throw new Error(`Unsupported builtin app operation handler: ${handler}`);
+  throw new RaviAppRefusalError("APP_OPERATION_UNSUPPORTED", `Unsupported builtin app operation handler: ${handler}`);
 }
 
 function manifestOperations(app: RaviAppManifestRecord): Record<string, unknown> {

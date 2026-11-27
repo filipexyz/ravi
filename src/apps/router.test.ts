@@ -1675,6 +1675,54 @@ process.exit(3);`,
     });
   });
 
+  // Spec apps/router, "Refusals Before Start": a refusal made before any process starts keeps a stable code and its
+  // cause all the way to what the caller of `ravi apps run` receives. It used to fold into APP_OPERATION_FAILED with
+  // the fixed text "Ravi app operation failed.", which hid why the run was refused (27/11, grupo cassia-omie).
+  it("keeps the code and the cause of a refusal made before the app starts", async () => {
+    const root = makeRepo();
+    writeManifest(root, "khal-tasks", providerManifest(root, "khal-tasks"));
+
+    const unknown = await runWithContext(appToolContext([appCapability("use")]), () =>
+      runAppOperation({ appId: "khal-tasks", operation: "does-not-exist", json: true }),
+    );
+    expect(unknown).toMatchObject({ ok: false, status: "failed", errorCode: "APP_OPERATION_UNKNOWN" });
+
+    const unknownRaised = raiseContractFailure(unknown, true);
+    expect(unknownRaised.error.code).toBe("APP_OPERATION_UNKNOWN");
+    const unknownEnvelope = unknownRaised.error.envelope().error;
+    expect(unknownEnvelope).toMatchObject({
+      code: "APP_OPERATION_UNKNOWN",
+      message: "Ravi app operation was not found.",
+      cause: "Operation not found for app khal-tasks: does-not-exist",
+      context: { operation: "apps run" },
+    });
+    expect(unknownEnvelope.suggestedAction).toContain("ravi apps show");
+    // The envelope the caller reads is the one printed with `--json`.
+    expect(JSON.parse(unknownRaised.stdout.join("\n")).error.code).toBe("APP_OPERATION_UNKNOWN");
+
+    const reserved = await runWithContext(appToolContext([appCapability("use")]), () =>
+      runAppOperation({ appId: "khal-tasks", operation: "permissions.decide", json: true }),
+    );
+    const reservedEnvelope = raiseContractFailure(reserved, true).error.envelope().error;
+    expect(reservedEnvelope).toMatchObject({
+      code: "APP_OPERATION_RESERVED",
+      message: "Ravi app operation is reserved and cannot be run directly.",
+    });
+    expect(reservedEnvelope.cause).toContain("permissions.decide");
+
+    // Text mode prints the headline and the cause, so a person reading the terminal is not told only "failed".
+    const text = raiseContractFailure(unknown, false).stderr.join("\n");
+    expect(text).toContain("Ravi app operation was not found.");
+    expect(text).toContain("Cause: Operation not found for app khal-tasks: does-not-exist");
+    expect(text).not.toContain("Ravi app operation failed.");
+
+    // What nobody classified still folds into the generic code, without leaking what the error said.
+    expect(
+      raiseContractFailure({ ...unknown, errorCode: "APP_OPERATION_FAILED", error: "Ravi app operation failed." }, true)
+        .error.code,
+    ).toBe("APP_OPERATION_FAILED");
+  });
+
   it("does not expose the provider operation as a direct app operation", async () => {
     const root = makeRepo();
     writeManifest(root, "khal-tasks", providerManifest(root, "khal-tasks"));
@@ -1688,8 +1736,9 @@ process.exit(3);`,
     );
     expect(direct.ok).toBe(false);
     expect(direct).toMatchObject({
-      errorCode: "APP_OPERATION_FAILED",
-      error: "Ravi app operation failed.",
+      errorCode: "APP_OPERATION_RESERVED",
+      error:
+        "Operation khal-tasks.permissions.decide is reserved for app permission provider decisions and cannot be run directly.",
     });
 
     const help = await runWithContext(appToolContext([appCapability("use")]), () =>

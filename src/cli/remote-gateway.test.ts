@@ -3097,6 +3097,59 @@ describe("Ravi app CLI failures over the gateway", () => {
     expect(JSON.stringify(remote?.envelope())).not.toContain("SECRET_FIELD_SENTINEL");
   });
 
+  // Spec apps/router, "Refusals Before Start": the gateway answered 422 with "Ravi app operation failed." and no code, so
+  // a person at the other end of the relay could not tell why the run was refused (27/11, group "cassia - omie").
+  it("keeps the code and the cause of a refusal made before the app starts, across the gateway", async () => {
+    const refusal = (() => {
+      const originalLog = console.log;
+      console.log = () => {};
+      try {
+        enforceRaviAppRunResult(
+          {
+            ok: false,
+            appId: "vault",
+            operation: "nope",
+            operationId: null,
+            interface: null,
+            mutating: false,
+            durationMs: 0,
+            status: "failed",
+            errorCode: "APP_OPERATION_UNKNOWN",
+            error: "Operation not found for app vault: nope",
+          },
+          true,
+        );
+      } catch (error) {
+        if (error instanceof ContractError) return error;
+        throw error;
+      } finally {
+        console.log = originalLog;
+      }
+      throw new Error("The refused run did not raise a contract error.");
+    })();
+
+    const response = contractErrorResponse(refusal);
+    expect(response.status).toBe(422);
+    const remote = remoteGatewayErrorToContractError(
+      "apps run",
+      result({ status: response.status, body: JSON.stringify(await response.clone().json()) }),
+    );
+    expect(remote).toMatchObject({
+      code: "APP_OPERATION_UNKNOWN",
+      exitCode: 1,
+      message: "Ravi app operation was not found.",
+      details: {
+        cause: "Operation not found for app vault: nope",
+        context: { operation: "apps run" },
+      },
+    });
+    expect(remote?.details.suggestedAction).toContain("ravi apps show");
+    // It is Ravi's own text: nothing in it names an app, so the relay adds no `appReported` and no exit of an app.
+    expect(remote?.details).not.toHaveProperty("appReported");
+    expect(remote?.details).not.toHaveProperty("appExitCode");
+    expect(remote?.message).not.toBe("Ravi app operation failed.");
+  });
+
   it("keeps a stderr message on one line under appReported and the multi-line explanation in the cause", async () => {
     const remote = await relayed(
       "apps run",

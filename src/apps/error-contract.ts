@@ -8,6 +8,7 @@ import {
   renderContractError,
 } from "../cli/agent-contract.js";
 import { describeUnavailableDependency } from "./composition.js";
+import { RAVI_APP_REFUSALS, isRaviAppRefusalCode } from "./refusal.js";
 import { RaviAppError, type RaviAppRunResult } from "./types.js";
 
 const APP_OPERATION_FAILED_MESSAGE = "Ravi app operation failed.";
@@ -100,6 +101,17 @@ export function enforceRaviAppRunResult(result: RaviAppRunResult, asJson: boolea
         details: { retryable: true, suggestedAction: "Inspect provider health and retry" },
       },
       diagnostic: errorDiagnostic("Ravi app permission provider failed.", { operation: "apps run" }),
+    });
+  }
+
+  // Refusals before any process starts (spec apps/router, "Refusals Before Start"): the code is stable and the cause is
+  // Ravi's own text built from identifiers the manifest validation accepted, so it crosses as the diagnostic.
+  if (isRaviAppRefusalCode(result.errorCode)) {
+    const refusal = RAVI_APP_REFUSALS[result.errorCode];
+    contractFail("apps run", result.errorCode, refusal.headline, {
+      asJson,
+      details: { suggestedAction: refusal.suggestedAction },
+      diagnostic: errorDiagnostic(result.error ?? refusal.headline, { operation: "apps run" }),
     });
   }
 
