@@ -111,7 +111,17 @@ jobs:
           TODAY=$(date -u +%y%m%d)
           PATTERN="${PREFIX}.${TODAY}."
 
-          VERSIONS_JSON=$(npm view "$PACKAGE" versions --json 2>/dev/null || echo '[]')
+          # A package that was never published answers E404 on stdout with exit 1. That, and only that, means no
+          # version yet; any other failure stops the release, so a network error never repeats a version.
+          if VERSIONS_JSON=$(npm view "$PACKAGE" versions --json 2>/dev/null); then
+            :
+          elif echo "$VERSIONS_JSON" | grep -Eq '"code": *"E404"'; then
+            echo "${PACKAGE} is not on npm yet; this is its first version."
+            VERSIONS_JSON='[]'
+          else
+            echo "::error::npm view ${PACKAGE} versions failed and did not answer E404; refusing to derive a version."
+            exit 1
+          fi
           if [ -z "$VERSIONS_JSON" ]; then
             VERSIONS_JSON='[]'
           fi

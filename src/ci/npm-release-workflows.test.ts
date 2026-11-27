@@ -362,6 +362,86 @@ console.log(process.env.FAKE_REGISTRY);
       expect(resolvePrefix("", "")).toEqual({ status: 0, prefix: "0" });
     });
 
+    function deriveVersion(npm: { status: number; stdout: string }) {
+      const run = findStep("Derive version");
+      const result = execute(run, {
+        env: { PREFIX: "0", FAKE_NPM_STATUS: String(npm.status), FAKE_NPM_STDOUT: npm.stdout },
+        fakes: {
+          npm: `
+if (!process.argv.includes("versions")) process.exit(1);
+process.stdout.write(process.env.FAKE_NPM_STDOUT ?? "");
+process.exit(Number(process.env.FAKE_NPM_STATUS ?? 0));
+`,
+        },
+      });
+      return {
+        status: result.status,
+        output: result.output,
+        version: /^version=(.*)$/m.exec(result.githubOutput)?.[1],
+        build: /^build_number=(.*)$/m.exec(result.githubOutput)?.[1],
+      };
+    }
+
+    const today = () => {
+      const now = new Date();
+      return `${String(now.getUTCFullYear()).slice(-2)}${String(now.getUTCMonth() + 1).padStart(2, "0")}${String(now.getUTCDate()).padStart(2, "0")}`;
+    };
+
+    it("derives the first version of a package that npm does not know yet (E404)", () => {
+      const notFound = JSON.stringify(
+        {
+          error: {
+            code: "E404",
+            summary: "Not Found - GET https://registry.npmjs.org/@ravi-os%2fx - Not found",
+            detail:
+              "\n'@ravi-os/x@*' is not in this registry.\n\nNote that you can also install from a\ntarball, folder, http url, or git url.",
+          },
+        },
+        null,
+        2,
+      );
+      const result = deriveVersion({ status: 1, stdout: notFound });
+      expect(result.status).toBe(0);
+      expect(result.build).toBe("1");
+      expect(result.version).toBe(`0.${today()}.1`);
+    });
+
+    it("derives the first version when npm prints the E404 detail with raw line breaks", () => {
+      // npm 11.6 printed the detail with literal newlines inside the JSON string (seen in the review of #1055): the old
+      // "|| echo '[]'" fallback handed that to jq, which failed to parse it and stopped the release.
+      const rawNotFound = [
+        "{",
+        '  "error": {',
+        '    "code": "E404",',
+        '    "summary": "Not Found - GET https://registry.npmjs.org/@ravi-os%2fx - Not found",',
+        '    "detail": "The requested resource could not be found.',
+        "",
+        'Note that you can also install from a tarball."',
+        "  }",
+        "}",
+        "",
+      ].join("\n");
+      const result = deriveVersion({ status: 1, stdout: rawNotFound });
+      expect(result.status).toBe(0);
+      expect(result.version).toBe(`0.${today()}.1`);
+    });
+
+    it("counts the versions already published today", () => {
+      const result = deriveVersion({
+        status: 0,
+        stdout: JSON.stringify([`0.${today()}.1`, `0.${today()}.2`, "0.261009.1"]),
+      });
+      expect(result.status).toBe(0);
+      expect(result.version).toBe(`0.${today()}.3`);
+    });
+
+    it("refuses to derive a version when npm fails for a reason other than E404", () => {
+      const result = deriveVersion({ status: 1, stdout: JSON.stringify({ error: { code: "ECONNRESET" } }) });
+      expect(result.status).not.toBe(0);
+      expect(result.output).toContain("::error::");
+      expect(result.version).toBeUndefined();
+    });
+
     it("keeps an explicit prefix even when the registry is ahead", () => {
       expect(resolvePrefix("2", "1.261125.1")).toEqual({ status: 0, prefix: "2" });
     });
