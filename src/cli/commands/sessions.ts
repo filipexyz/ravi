@@ -124,6 +124,7 @@ import { DEFAULT_RUNTIME_PROBE_TIMEOUT_MS } from "../../runtime/runtime-probe.js
 import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
 import { enforceCliCommandAccess, listCliCommandAccessCandidates } from "../command-access.js";
 import { canWithCapabilities } from "../../permissions/capability-snapshot.js";
+import { formatDecisionQuestion, resolveDecisionQuestion } from "../../decisions/question.js";
 import { askDecisionForWait } from "../../decisions/service.js";
 import { retireDecisionIfWaitFails } from "../../decisions/store.js";
 import { redactText } from "../../session-trace/session-trace-db.js";
@@ -8452,6 +8453,22 @@ export class SessionCommands {
         "With --awaiting review and --ref <full SHA>: the PR to review. When that SHA is the PR head and its quality gate passed, the runtime opens the independent review itself (reviewer on another model)",
     })
     pr?: string,
+    @Option({
+      flags: "--ask <question>",
+      description:
+        "With --awaiting decision: the question in one line (up to 280 characters). The owner reads this, not the report",
+    })
+    ask?: string,
+    @Option({
+      flags: "--option <choice...>",
+      description: "With --awaiting decision and --ask: the choices the owner picks from (up to 6)",
+    })
+    options?: string[],
+    @Option({
+      flags: "--recommend <recommendation>",
+      description: "With --awaiting decision and --ask: what this thread recommends",
+    })
+    recommend?: string,
   ) {
     if (!message.trim()) {
       throw new CliExpectedError("Report message is required", "USAGE_ERROR", 2);
@@ -8464,6 +8481,25 @@ export class SessionCommands {
         2,
       );
     }
+    if ((ask?.trim() || options?.length || recommend?.trim()) && awaitingKind !== "decision") {
+      throw new CliExpectedError(
+        "--ask, --option and --recommend only apply with --awaiting decision",
+        "USAGE_ERROR",
+        2,
+      );
+    }
+    // The question is settled before anything is published: a refused question sends no report and opens no wait.
+    const decisionQuestion =
+      awaitingKind === "decision"
+        ? formatDecisionQuestion(
+            resolveDecisionQuestion({
+              ask: ask ?? null,
+              options: options ?? null,
+              recommend: recommend ?? null,
+              report: decodeLiteralLineBreaks(message),
+            }),
+          )
+        : null;
     if (ref?.trim() && awaitingKind === undefined) {
       throw new CliExpectedError("--ref only applies with --awaiting", "USAGE_ERROR", 2);
     }
@@ -8593,9 +8629,9 @@ export class SessionCommands {
       // A decision wait records its question as a decision, so the answer is recorded (not just a message) and
       // closes the wait. A decision that cannot be recorded leaves an ordinary wait, as before.
       try {
-        // The question is the decoded report, as the parent read it, without the appended wait line.
+        // The question is the short one resolved above, never the report: the report is the parent's context.
         pendingHandoff.decisionId = (
-          await askDecisionForWait(session.sessionKey, pendingHandoff.ref, decodeLiteralLineBreaks(message))
+          await askDecisionForWait(session.sessionKey, pendingHandoff.ref, decisionQuestion!)
         ).id;
       } catch (error) {
         logger.child("cli:sessions").warn("Decision wait not recorded as a decision; the wait opens without one", {

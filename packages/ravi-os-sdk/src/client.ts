@@ -8047,8 +8047,11 @@ export class RaviClient {
     },
     /** Report progress from a Slack thread to its parent session without closing the thread */
     report: async (message: string, options?: {
+      ask?: string;
       awaiting?: string;
+      option?: string[];
       pr?: string;
+      recommend?: string;
       ref?: string;
       session?: string;
     }): Promise<SessionsReportReturn> => {

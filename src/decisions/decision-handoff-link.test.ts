@@ -23,6 +23,7 @@ import {
 } from "./service.js";
 import { getDecision, retireDecisionIfWaitFails } from "./store.js";
 import { decisionQuestionNotice } from "./delivery.js";
+import { formatDecisionQuestion } from "./question.js";
 import { listHandoffs } from "../handoffs/store.js";
 import type { DecisionOrigin } from "./types.js";
 
@@ -401,7 +402,7 @@ describe("follow-ups of decision waits", () => {
       "Faço o deploy hoje?\nContexto longo do relatório que não deve se repetir na thread.",
     );
     const notice = decisionQuestionNotice(decision);
-    expect(notice).toContain(`Decisão pendente: ${decision.key}`);
+    expect(notice).toContain("Decisão pendente");
     expect(notice).toContain("Faço o deploy hoje?");
     expect(notice).not.toContain("Contexto longo do relatório");
     expect(notice).not.toContain(OWNER);
@@ -411,6 +412,37 @@ describe("follow-ups of decision waits", () => {
     const plainNotice = decisionQuestionNotice(plain.decision);
     expect(plainNotice).toContain("Pergunta direta?");
     expect(plainNotice).not.toContain(OWNER);
+  });
+
+  it("a structured question renders as question, options and recommendation, without the report", async () => {
+    const origin = await thread();
+    const { decision } = await waitOnDecision(
+      origin,
+      null,
+      formatDecisionQuestion({
+        question: "Qual modo é o padrão para quem escreve sem ravi link?",
+        options: ["vinculado: só o convite", "conversa: agente sem ferramentas"],
+        recommendation: "vinculado em toda org",
+      }),
+    );
+    const notice = decisionQuestionNotice(decision);
+    expect(notice).toBe(
+      [
+        "**Decisão pendente**",
+        "",
+        "> Qual modo é o padrão para quem escreve sem ravi link?",
+        "",
+        "- vinculado: só o convite",
+        "- conversa: agente sem ferramentas",
+        "",
+        "**Recomendação:** vinculado em toda org",
+        "",
+        "Responsável: uma pessoa. Para responder, fale com a sessão que abriu esta thread.",
+        "O contexto completo está no relatório enviado a essa sessão.",
+        `_Ref. ${decision.id}_`,
+      ].join("\n"),
+    );
+    expect(notice).not.toContain(OWNER);
   });
 });
 

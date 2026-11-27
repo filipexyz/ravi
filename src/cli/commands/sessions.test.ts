@@ -3114,6 +3114,17 @@ describe("SessionCommands attach hints", () => {
     await expect(new SessionCommands().report("\\n", undefined, true, "merge")).rejects.toMatchObject({
       code: "USAGE_ERROR",
     });
+    // A decision wait never turns a long report into the owner's question: refused before anything is published.
+    const reportsBefore = reportedSlackThreads.length;
+    await expect(
+      new SessionCommands().report(`Desenho pronto. ${"contexto longo ".repeat(40)}`, undefined, true, "decision"),
+    ).rejects.toMatchObject({ code: "DECISION_QUESTION_INVALID" });
+    // The question flags only go with a decision wait.
+    await expect(
+      new SessionCommands().report("pronta", undefined, true, "merge", undefined, undefined, "Mergeio?"),
+    ).rejects.toMatchObject({ code: "USAGE_ERROR" });
+    expect(reportedSlackThreads.length).toBe(reportsBefore);
+    expect(listOpenHandoffs(parentKey).map((h) => h.id)).toEqual([result.handoff.id]);
     // A replacement report that fails to publish leaves the current wait open and untouched.
     reportSlackThreadError = new Error("broker down");
     await expect(new SessionCommands().report("agora espera merge", undefined, true, "merge")).rejects.toThrow();

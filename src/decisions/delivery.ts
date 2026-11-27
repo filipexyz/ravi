@@ -12,6 +12,7 @@ import { buildChannelTextOutboundJob } from "../channels/outbound-stream.js";
 import { publishChannelOutboundJobDurably } from "../channels/outbound-publish-outbox.js";
 import { getDecision, decisionWrite } from "./store.js";
 import type { Decision } from "./types.js";
+import { parseDecisionQuestion } from "./question.js";
 import { requireDecisionThread } from "./service.js";
 import { DecisionError, DecisionDispatchRejectedError } from "./model.js";
 import { logger } from "../utils/logger.js";
@@ -335,8 +336,20 @@ export function decisionQuestionNotice(decision: Decision): string {
       : decision.ownerType === "agent"
         ? "um agente"
         : "ainda sem responsável";
+  const structured = parseDecisionQuestion(decision.ask);
+  const title = decision.key === "default" ? "**Decisão pendente**" : `**Decisão pendente: ${decision.key}**`;
+  const how = "Para responder, fale com a sessão que abriu esta thread.";
+  if (structured) {
+    const lines = [title, "", `> ${structured.question}`];
+    if (structured.options.length) lines.push("", ...structured.options.map((option) => `- ${option}`));
+    if (structured.recommendation) lines.push("", `**Recomendação:** ${structured.recommendation}`);
+    lines.push("", `Responsável: ${owner}. ${how}`);
+    if (askedByWait) lines.push("O contexto completo está no relatório enviado a essa sessão.");
+    lines.push(`_Ref. ${decision.id}_`);
+    return lines.join("\n");
+  }
   const body = askedByWait ? summarizeWaitQuestion(decision.ask) : decision.ask;
-  return `**Decisão pendente: ${decision.key}**\n\n${body}\n\nResponsável: ${owner}.\nPara registrar a resposta, peça à sessão que abriu esta thread ou use o CLI de decisões.\nReferência: ${decision.id}`;
+  return `${title}\n\n${body}\n\nResponsável: ${owner}. ${how}\n_Ref. ${decision.id}_`;
 }
 
 const WAIT_QUESTION_MAX = 280;
