@@ -319,6 +319,7 @@ The existing thread reconciler also drains decision effects. Exact origin bindin
 
 ## Closing after runtime pruning
 
+- The session that opened a thread (the lifecycle's recorded parent session key) MUST be able to close it with `close-thread --session <child>` without a grant on the child, as it already sends to it with `thread-send`, provided it may modify itself. The caller is identified by the running turn's session key, never by a name. Any other session still needs its own grant on the child.
 - The durable lifecycle/card MUST remain closable after the child session is pruned. `close-thread --session` resolves its exact child name, key or lifecycle request id without recreating runtime state.
 - An orphan close MUST require modify authority over the child or its recorded parent. Missing, ambiguous and unauthorized references MUST be cloaked as `SESSION_NOT_FOUND`; public copy MUST distinguish this condition from an execution failure without revealing private names.
 - Closing an orphan uses the same card update, pending-decision guard, close sequence, parent-return delivery and idempotency as a live child.
