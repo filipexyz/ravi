@@ -31094,14 +31094,16 @@ class TagsDoctorOptions {
 }
 
 class TagsDoctorReturn {
-  const TagsDoctorReturn({required this.bindingsByAssetType, required this.consumers, required this.generatedAt, required this.legacyMirrors, required this.limit, required this.orphanBindings, required this.powerTags, required this.summary, required this.tagRuleErrors, required this.tagsWithoutConsumer, required this.unboundDefinitions});
+  const TagsDoctorReturn({required this.bindingsByAssetType, this.chatGrantPower, required this.consumers, required this.generatedAt, required this.legacyMirrors, required this.limit, required this.orphanBindings, this.power, required this.powerTags, required this.summary, required this.tagRuleErrors, required this.tagsWithoutConsumer, required this.unboundDefinitions});
 
   final List<RaviJson> bindingsByAssetType;
+  final List<RaviJson>? chatGrantPower;
   final List<RaviJson> consumers;
   final double generatedAt;
   final List<RaviJson> legacyMirrors;
   final double limit;
   final RaviJson orphanBindings;
+  final String? power;
   final List<RaviJson> powerTags;
   final RaviJson summary;
   final List<RaviJson> tagRuleErrors;
@@ -31111,11 +31113,13 @@ class TagsDoctorReturn {
   factory TagsDoctorReturn.fromJson(Map<String, Object?> json) {
     return TagsDoctorReturn(
       bindingsByAssetType: raviJsonAsList(json["bindingsByAssetType"], RaviJson.from),
+      chatGrantPower: json["chatGrantPower"] == null ? null : raviJsonAsList(json["chatGrantPower"], RaviJson.from),
       consumers: raviJsonAsList(json["consumers"], RaviJson.from),
       generatedAt: raviJsonAsDouble(json["generatedAt"]),
       legacyMirrors: raviJsonAsList(json["legacyMirrors"], RaviJson.from),
       limit: raviJsonAsDouble(json["limit"]),
       orphanBindings: RaviJson.from(json["orphanBindings"]),
+      power: json["power"] == null ? null : raviJsonAsString(json["power"]),
       powerTags: raviJsonAsList(json["powerTags"], RaviJson.from),
       summary: RaviJson.from(json["summary"]),
       tagRuleErrors: raviJsonAsList(json["tagRuleErrors"], RaviJson.from),

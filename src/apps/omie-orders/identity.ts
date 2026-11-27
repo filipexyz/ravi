@@ -20,7 +20,9 @@ export function verifiedCaller(store: IdentityStore): VerifiedIdentity {
   if (store.authority.channelType !== SCOPE.channelType) deny();
   const claimed = store.current();
   let context = claimed && store.live(claimed.contextId);
-  if (!context || context.contextKey !== claimed?.contextKey) deny();
+  // `claimed` was resolved from the caller's own key; the registry keeps only key
+  // hashes, so the live record is matched by id, never by a stored key.
+  if (!context || !claimed || context.contextId !== claimed.contextId) deny();
   const child = context;
   if (
     child.kind !== "app-runtime" ||

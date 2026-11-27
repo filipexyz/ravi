@@ -254,4 +254,76 @@ describe("buildTagDoctorReport", () => {
     expect(report.bindingsByAssetType.length).toBeLessThanOrEqual(1);
     expect(report.legacyMirrors.length).toBeLessThanOrEqual(1);
   });
+  it("lists chat-scoped grants with capabilities, break-glass first, and parses object ids with colons", () => {
+    const report = buildTagDoctorReport({
+      limit: 500,
+      loadTagRules: noRules,
+      materializeContact: noPower,
+      listChatGrants: () => [
+        { contactId: `${PREFIX}-g1`, profile: "permission-reader", scope: "chat:c-1", capabilities: [] },
+        {
+          contactId: `${PREFIX}-g2`,
+          profile: "permission-reader",
+          scope: "chat:c-1",
+          capabilities: ["read:session:agent:main:main"],
+        },
+        {
+          contactId: `${PREFIX}-g3`,
+          profile: "permission-ops",
+          scope: "chat-tag:ops",
+          capabilities: ["read:tags:*", "execute:executable:*"],
+        },
+        {
+          contactId: `${PREFIX}-g4`,
+          profile: "permission-admin",
+          scope: "chat:c-2",
+          capabilities: ["admin:system:*"],
+        },
+      ],
+    });
+    // A grant whose profile carries nothing is not power.
+    expect(report.chatGrantPower.map((row) => row.contactId)).toEqual([`${PREFIX}-g4`, `${PREFIX}-g3`, `${PREFIX}-g2`]);
+    // The admin profile name and its capability both count, so it sorts ahead of a one-reason grant.
+    expect(report.chatGrantPower[0]?.breakGlass).toEqual(["admin:system:*", "permission-admin (admin profile)"]);
+    expect(report.chatGrantPower[1]?.breakGlass).toEqual(["execute:executable:*"]);
+    expect(report.chatGrantPower[2]?.breakGlass).toEqual([]);
+    expect(report.chatGrantPower[2]?.capabilities).toEqual(["read:session:agent:main:main"]);
+    expect(report.summary.chatGrantsWithCapabilities).toBe(3);
+    expect(report.summary.chatGrantsWithBreakGlass).toBe(2);
+    expect(report.power).toBe("included");
+  });
+
+  it("withholds both power sections and their counts when the caller may not see them", () => {
+    const slug = createTag(`${PREFIX}.withheld-holder`);
+    const powerful = `${PREFIX}-withheld-contact`;
+    dbUpsertTagBinding({ slug, assetType: "contact", assetId: powerful });
+    let materialized = 0;
+    let listed = 0;
+    const report = buildTagDoctorReport({
+      limit: 500,
+      loadTagRules: noRules,
+      includePower: false,
+      listPolicyContactIds: () => [powerful],
+      materializeContact: () => {
+        materialized += 1;
+        return [{ permission: "admin", objectType: "system", objectId: "*" }];
+      },
+      listChatGrants: () => {
+        listed += 1;
+        return [{ contactId: powerful, profile: "admin", scope: "chat:c-1", capabilities: ["admin:system:*"] }];
+      },
+    });
+    expect(report.power).toBe("withheld");
+    expect(report.powerTags).toEqual([]);
+    expect(report.chatGrantPower).toEqual([]);
+    expect(report.summary.contactsWithCapabilities).toBeNull();
+    expect(report.summary.contactsWithBreakGlass).toBeNull();
+    expect(report.summary.chatGrantsWithCapabilities).toBeNull();
+    expect(report.summary.chatGrantsWithBreakGlass).toBeNull();
+    // Withheld means not computed, not computed and hidden.
+    expect(materialized).toBe(0);
+    expect(listed).toBe(0);
+    // The rest of the report is still there.
+    expect(report.summary.bindings).toBeGreaterThanOrEqual(1);
+  });
 });

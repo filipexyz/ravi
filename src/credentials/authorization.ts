@@ -3,8 +3,8 @@ import { getContactById } from "../contacts.js";
 import { authorizePermission, materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
 import { canWithCapabilities } from "../permissions/capability-snapshot.js";
 import type { PermissionProviderRequest } from "../permissions/provider-types.js";
-import { dbGetAgent, dbGetContext, type ContextRecord } from "../router/router-db.js";
-import { resolveRuntimeContext } from "../runtime/context-registry.js";
+import { dbGetAgent, dbGetContext, dbGetContextByKey, type ContextRecord } from "../router/router-db.js";
+import { resolveRuntimeContext, resolveRuntimeContextById } from "../runtime/context-registry.js";
 import { CredentialBrokerError } from "./errors.js";
 
 /** Host-only intent, never accepted from command arguments or gateway payloads. */
@@ -60,11 +60,12 @@ export function authorizeCredentialUse(input: {
   if (hasCaller || key) {
     if (
       !context ||
-      !resolveRuntimeContext(context.contextKey, { touch: false }) ||
+      !resolveRuntimeContextById(context.contextId) ||
       !context.agentId ||
       !dbGetAgent(context.agentId) ||
       (claimed &&
-        (claimed.contextKey !== context.contextKey ||
+        // The claimed key must be the one stored for this context (only its hash is stored).
+        (dbGetContextByKey(claimed.contextKey)?.contextId !== context.contextId ||
           claimed.agentId !== context.agentId ||
           claimed.sessionKey !== context.sessionKey)) ||
       (local?.agentId && local.agentId !== context.agentId) ||

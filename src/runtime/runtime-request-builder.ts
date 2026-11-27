@@ -231,6 +231,63 @@ export function settleInboxTurn(inbox: Pick<InboxTurnBlock, "finish">, state: In
   }
 }
 
+/** What the inbox wiring reads from the streaming session when a turn ends. */
+export type InboxTurnSessionState = Pick<RuntimeHostStreamingSession, "interrupted" | "abortController"> & {
+  currentCrashRecoveryTerminal?: { status: string } | null;
+};
+
+/**
+ * The inbox wiring of one runtime session (runtime/session-inbox): `beginTurn` reserves and renders
+ * the block for the turn being yielded, `endTurn` settles it from the session's terminal state. A
+ * release before the turn starts settles the block once, so `endTurn` never settles it again.
+ */
+export function createInboxTurnWiring(input: {
+  sessionName: string;
+  sessionKey: string | null;
+  session: InboxTurnSessionState;
+  ownerDeps?: InboxOwnerDeps;
+}): {
+  beginTurn: (
+    combinedPrompt: string,
+    deliverableMessages: readonly InboxTurnMessage[],
+  ) => {
+    prompt: string;
+    inbox: Pick<InboxTurnBlock, "commit" | "release"> | null;
+  };
+  endTurn: () => void;
+} {
+  let current: InboxTurnBlock | null = null;
+  return {
+    beginTurn: (combinedPrompt, deliverableMessages) => {
+      const inbox = prepareInboxForTurn(input.sessionName, deliverableMessages, input.sessionKey, input.ownerDeps);
+      if (!inbox) {
+        current = null;
+        return { prompt: combinedPrompt, inbox: null };
+      }
+      const turn: InboxTurnBlock = {
+        ...inbox,
+        release: (reason: string) => {
+          if (current === turn) current = null;
+          inbox.release(reason);
+        },
+      };
+      current = turn;
+      return { prompt: `${inbox.block}\n\n${combinedPrompt}`, inbox: turn };
+    },
+    endTurn: () => {
+      // The inbox block is confirmed only by a turn that completed (runtime/session-inbox).
+      const turn = current;
+      current = null;
+      if (!turn) return;
+      settleInboxTurn(turn, {
+        interrupted: input.session.interrupted === true,
+        aborted: input.session.abortController.signal.aborted,
+        terminalStatus: input.session.currentCrashRecoveryTerminal?.status ?? null,
+      });
+    },
+  };
+}
+
 class RuntimeCrashRecoveryApprovalOwnershipChangedError extends Error {
   constructor() {
     super(CRASH_RECOVERY_APPROVAL_OWNERSHIP_CHANGED_REASON);
@@ -954,14 +1011,11 @@ async function buildRuntimeStartRequestInternal(
   // Set by transformTurnPrompt and read by the trace of the same turn.
   let turnSignals: RuntimeTraceAdapterRequestInput["signals"] = null;
   // The inbox block of the turn in flight, settled when the turn ends (runtime/session-inbox).
-  let currentInboxTurn: InboxTurnBlock | null = null;
-  // A release before the turn starts settles the block once; afterTurnEnd must not settle it again.
-  const wrapInboxRelease =
-    (inbox: InboxTurnBlock) =>
-    (reason: string): void => {
-      if (currentInboxTurn && currentInboxTurn.itemIds === inbox.itemIds) currentInboxTurn = null;
-      inbox.release(reason);
-    };
+  const inboxWiring = createInboxTurnWiring({
+    sessionName,
+    sessionKey: dbSessionKey ?? null,
+    session: streamingSession,
+  });
   const traceTurnStart = async (input: { combinedPrompt: string; deliverableMessages: RuntimeUserMessage[] }) => {
     // A restored retry can expire before its first handoff. Its startup lease
     // is then abandoned by the host; a successor must reserve its own attempt.
@@ -1325,16 +1379,7 @@ async function buildRuntimeStartRequestInternal(
     afterTurnEnd: () => {
       stopActiveContextLease?.();
       stopActiveContextLease = undefined;
-      // The inbox block is confirmed only by a turn that completed (runtime/session-inbox).
-      const inboxTurn = currentInboxTurn;
-      currentInboxTurn = null;
-      if (inboxTurn) {
-        settleInboxTurn(inboxTurn, {
-          interrupted: streamingSession.interrupted === true,
-          aborted: streamingSession.abortController.signal.aborted,
-          terminalStatus: streamingSession.currentCrashRecoveryTerminal?.status ?? null,
-        });
-      }
+      inboxWiring.endTurn();
     },
     transformTurnPrompt: ({ combinedPrompt, deliverableMessages }) => {
       // Deferred notices open the turn that may drain them (runtime/session-inbox). They become
@@ -1349,11 +1394,8 @@ async function buildRuntimeStartRequestInternal(
           runtimeRequestLog.warn("decisions refresh failed for turn", { sessionName, error: String(error) });
         }
       }
-      const inbox = prepareInboxForTurn(sessionName, deliverableMessages, dbSessionKey ?? null);
-      if (inbox) combinedPrompt = `${inbox.block}\n\n${combinedPrompt}`;
-      currentInboxTurn = inbox ? { ...inbox, release: wrapInboxRelease(inbox) } : null;
-      const inboxForTurn = currentInboxTurn;
-      return composeInboxWithTurnPrompt(inboxForTurn, applySignalsToTurnPrompt(combinedPrompt, deliverableMessages));
+      const { prompt, inbox } = inboxWiring.beginTurn(combinedPrompt, deliverableMessages);
+      return composeInboxWithTurnPrompt(inbox, applySignalsToTurnPrompt(prompt, deliverableMessages));
     },
     traceTurnStart,
   });

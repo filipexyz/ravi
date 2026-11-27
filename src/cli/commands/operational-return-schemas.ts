@@ -2997,11 +2997,15 @@ export const tagsDoctorReturnSchema = z
         unboundDefinitions: z.number(),
         orphanBindings: z.number(),
         boundTagsWithoutConsumer: z.number(),
-        contactsWithCapabilities: z.number(),
-        contactsWithBreakGlass: z.number(),
+        contactsWithCapabilities: z.number().nullable(),
+        contactsWithBreakGlass: z.number().nullable(),
+        // Optional here and on `power`/`chatGrantPower`: gateways from before #1044 do not send them.
+        chatGrantsWithCapabilities: z.number().nullable().optional(),
+        chatGrantsWithBreakGlass: z.number().nullable().optional(),
         legacyMirrorBindings: z.number(),
       })
       .strict(),
+    power: z.enum(["included", "withheld"]).optional(),
     bindingsByAssetType: z.array(
       z.object({ assetType: z.string(), bindings: z.number(), assets: z.number(), tags: z.number() }).strict(),
     ),
@@ -3045,6 +3049,19 @@ export const tagsDoctorReturnSchema = z
         })
         .strict(),
     ),
+    chatGrantPower: z
+      .array(
+        z
+          .object({
+            contactId: z.string(),
+            profile: z.string(),
+            scope: z.string(),
+            capabilities: z.array(z.string()),
+            breakGlass: z.array(z.string()),
+          })
+          .strict(),
+      )
+      .optional(),
     legacyMirrors: z.array(z.object({ source: z.string(), bindings: z.number(), rewrites: z.number() }).strict()),
     tagRuleErrors: z.array(z.object({ source: z.string(), error: z.string() }).strict()),
     limit: z.number(),
