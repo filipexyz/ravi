@@ -1,6 +1,15 @@
+import type { Database } from "bun:sqlite";
+import { initializeStateSchema } from "../db/schema-owner.js";
 import { getDb } from "../router/router-db.js";
 import { fromSubjectColumns, resolveSubjectForChat, toSubjectColumns, type SubjectRef } from "../identity/subject.js";
 import type { PermissionGrantMetadata } from "./grant-metadata.js";
+
+/** Current time in epoch milliseconds, in SQL any SQLite version runs (seconds from %s, milliseconds from %f). */
+const SQLITE_NOW_MS =
+  "(CAST(strftime('%s','now') AS INTEGER) * 1000 + CAST(substr(strftime('%f','now'), 4) AS INTEGER))";
+
+export const APPROVAL_CALLER_INVALID_REASON =
+  "O chamador da aprovação expirou ou foi revogado. Inicie uma nova tentativa.";
 
 export type ApprovalRequestType = "plan" | "spec" | "permission";
 export type ApprovalRequestStatus = "pending" | "decided" | "expired";
@@ -18,6 +27,7 @@ export interface ApprovalRequestRecord {
   readonly messageId: string | null;
   readonly sessionName: string | null;
   readonly agentId: string | null;
+  readonly callerContextId?: string;
   readonly permission: string | null;
   readonly objectType: string | null;
   readonly objectId: string | null;
@@ -50,6 +60,7 @@ export interface CreateApprovalRequestInput {
   readonly messageId?: string;
   readonly sessionName?: string;
   readonly agentId?: string;
+  readonly callerContextId?: string;
   readonly permission?: string;
   readonly objectType?: string;
   readonly objectId?: string;
@@ -96,6 +107,7 @@ interface ApprovalRequestRow {
   message_id: string | null;
   session_name: string | null;
   agent_id: string | null;
+  caller_context_id: string | null;
   permission: string | null;
   object_type: string | null;
   object_id: string | null;
@@ -127,9 +139,9 @@ export function createApprovalRequest(input: CreateApprovalRequestInput): Approv
         id, type, channel, account_id, chat_id, instance_id, thread_id, message_id,
         session_name, agent_id, permission, object_type, object_id,
         subject_kind, subject_contact_id, subject_identity_id, subject_agent_id, subject_channel, subject_raw_id,
-        grant_json,
+        grant_json, caller_context_id,
         status, decision, decided_by, reason, created_at, expires_at, decided_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, NULL, ?, ?, NULL)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, NULL, ?, ?, NULL)`,
     )
     .run(
       input.id,
@@ -152,6 +164,7 @@ export function createApprovalRequest(input: CreateApprovalRequestInput): Approv
       subject.subjectChannel,
       subject.subjectRawId,
       input.grant ? JSON.stringify(input.grant) : null,
+      emptyToNull(input.callerContextId),
       input.createdAt,
       input.expiresAt,
     );
@@ -166,7 +179,7 @@ export function attachApprovalRequestMessageId(id: string, messageId: string): A
     .prepare(
       `UPDATE approval_requests
         SET message_id = ?
-        WHERE id = ? AND status = 'pending' AND (message_id IS NULL OR message_id = ?)`,
+        WHERE id = ? AND (message_id IS NULL OR message_id = ?)`,
     )
     .run(messageId, id, messageId);
   return getApprovalRequest(id);
@@ -174,6 +187,7 @@ export function attachApprovalRequestMessageId(id: string, messageId: string): A
 
 export function getApprovalRequest(id: string): ApprovalRequestRecord | null {
   ensureApprovalRequestTable();
+  expireApprovalForInvalidCaller(id, Date.now());
   const row = getDb().prepare("SELECT * FROM approval_requests WHERE id = ?").get(id) as ApprovalRequestRow | undefined;
   return row ? rowToRecord(row) : null;
 }
@@ -218,6 +232,7 @@ export function listApprovalDeliveries(requestId: string): ApprovalDeliveryRecor
 
 export function claimApprovalDecision(input: ClaimApprovalDecisionInput): ApprovalRequestRecord | null {
   ensureApprovalRequestTable();
+  expireApprovalForInvalidCaller(input.id, input.now);
   const result = getDb()
     .prepare(
       `UPDATE approval_requests
@@ -230,7 +245,13 @@ export function claimApprovalDecision(input: ClaimApprovalDecisionInput): Approv
             decided_at = ?
         WHERE id = ?
           AND status = 'pending'
-          AND expires_at > ?`,
+          AND expires_at > ?
+          AND (
+            caller_context_id IS NULL
+            OR EXISTS (SELECT 1 FROM contexts c WHERE c.context_id = caller_context_id
+              AND (c.revoked_at IS NULL OR c.revoked_at = 0 OR c.revoked_at > ${SQLITE_NOW_MS})
+              AND (c.expires_at IS NULL OR c.expires_at = 0 OR c.expires_at > ${SQLITE_NOW_MS}))
+          )`,
     )
     .run(
       input.decision,
@@ -270,6 +291,17 @@ export function expireApprovalRequest(id: string, now: number): ApprovalRequestR
     )
     .run(now, id);
   return getApprovalRequest(id);
+}
+
+/** Reconcile expiry/missing callers as well as revocation; no secret or caller text is persisted. */
+function expireApprovalForInvalidCaller(id: string, now: number): void {
+  getDb()
+    .prepare(`UPDATE approval_requests SET status = 'expired', reason = ?, decided_at = ?
+    WHERE id = ? AND status = 'pending' AND caller_context_id IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM contexts c WHERE c.context_id = caller_context_id
+        AND (c.revoked_at IS NULL OR c.revoked_at = 0 OR c.revoked_at > ?)
+        AND (c.expires_at IS NULL OR c.expires_at = 0 OR c.expires_at > ?))`)
+    .run(APPROVAL_CALLER_INVALID_REASON, now, id, now, now);
 }
 
 export function isApprovalRequestOpen(record: ApprovalRequestRecord, now: number): boolean {
@@ -347,10 +379,10 @@ interface ApprovalDeliveryRow {
   created_at: number;
 }
 
-function ensureApprovalRequestTable(): void {
-  const db = getDb();
-  db.prepare(
-    `CREATE TABLE IF NOT EXISTS approval_requests (
+export function ensureApprovalRequestTable(db: Database = getDb()): void {
+  initializeStateSchema(db, "approval", () => {
+    db.prepare(
+      `CREATE TABLE IF NOT EXISTS approval_requests (
       id TEXT PRIMARY KEY,
       type TEXT NOT NULL,
       channel TEXT NOT NULL,
@@ -372,46 +404,73 @@ function ensureApprovalRequestTable(): void {
       expires_at INTEGER NOT NULL,
       decided_at INTEGER
     )`,
-  ).run();
-  db.prepare(
-    `CREATE INDEX IF NOT EXISTS idx_approval_requests_message
+    ).run();
+    db.prepare(
+      `CREATE INDEX IF NOT EXISTS idx_approval_requests_message
       ON approval_requests(message_id)`,
-  ).run();
-  db.prepare(
-    `CREATE INDEX IF NOT EXISTS idx_approval_requests_status_expires
+    ).run();
+    db.prepare(
+      `CREATE INDEX IF NOT EXISTS idx_approval_requests_status_expires
       ON approval_requests(status, expires_at)`,
-  ).run();
-  const approvalColumns = new Set(
-    (db.prepare("PRAGMA table_info(approval_requests)").all() as Array<{ name: string }>).map((column) => column.name),
-  );
-  for (const column of [
-    "subject_kind",
-    "subject_contact_id",
-    "subject_identity_id",
-    "subject_agent_id",
-    "subject_channel",
-    "subject_raw_id",
-    "grant_json",
-    "grant_intent",
-    "grant_scope",
-    "grant_outcome",
-  ]) {
-    if (!approvalColumns.has(column)) {
-      db.exec(`ALTER TABLE approval_requests ADD COLUMN ${column} TEXT`);
+    ).run();
+    const approvalColumns = new Set(
+      (db.prepare("PRAGMA table_info(approval_requests)").all() as Array<{ name: string }>).map(
+        (column) => column.name,
+      ),
+    );
+    for (const column of [
+      "subject_kind",
+      "subject_contact_id",
+      "subject_identity_id",
+      "subject_agent_id",
+      "subject_channel",
+      "subject_raw_id",
+      "grant_json",
+      "grant_intent",
+      "grant_scope",
+      "grant_outcome",
+      "caller_context_id",
+    ]) {
+      if (!approvalColumns.has(column)) {
+        db.exec(`ALTER TABLE approval_requests ADD COLUMN ${column} TEXT`);
+      }
     }
-  }
-  db.exec("CREATE INDEX IF NOT EXISTS idx_approval_requests_subject_contact ON approval_requests(subject_contact_id)");
-  db.prepare(
-    `CREATE TABLE IF NOT EXISTS approval_card_scopes (
+    db.exec(
+      "CREATE INDEX IF NOT EXISTS idx_approval_requests_caller ON approval_requests(caller_context_id) WHERE status = 'pending'",
+    );
+    // Cancel in the same transaction as revocation, even if the waiter died.
+    // Every context revocation path (including cascades) updates this table.
+    // The clock is portable SQL: a function newer SQLite builds add would fail only when a trigger fires,
+    // that is, during a revocation. Dropped first so a body from an earlier build is replaced.
+    db.exec("DROP TRIGGER IF EXISTS approval_caller_revoked");
+    db.exec("DROP TRIGGER IF EXISTS approval_caller_deleted");
+    db.exec(`CREATE TRIGGER approval_caller_revoked AFTER UPDATE OF revoked_at ON contexts
+    WHEN NEW.revoked_at > 0 AND NEW.revoked_at <= ${SQLITE_NOW_MS}
+    BEGIN
+      UPDATE approval_requests SET status = 'expired', reason = '${APPROVAL_CALLER_INVALID_REASON}',
+        decided_at = NEW.revoked_at
+      WHERE caller_context_id = NEW.context_id AND status = 'pending';
+    END`);
+    db.exec(`CREATE TRIGGER approval_caller_deleted AFTER DELETE ON contexts
+    BEGIN
+      UPDATE approval_requests SET status = 'expired', reason = '${APPROVAL_CALLER_INVALID_REASON}',
+        decided_at = ${SQLITE_NOW_MS}
+      WHERE caller_context_id = OLD.context_id AND status = 'pending';
+    END`);
+    db.exec(
+      "CREATE INDEX IF NOT EXISTS idx_approval_requests_subject_contact ON approval_requests(subject_contact_id)",
+    );
+    db.prepare(
+      `CREATE TABLE IF NOT EXISTS approval_card_scopes (
       request_id TEXT NOT NULL,
       user_id TEXT NOT NULL,
       scope TEXT NOT NULL,
       updated_at INTEGER NOT NULL,
       PRIMARY KEY (request_id, user_id)
     )`,
-  ).run();
-  db.prepare(
-    `CREATE TABLE IF NOT EXISTS approval_request_deliveries (
+    ).run();
+    db.prepare(
+      `CREATE TABLE IF NOT EXISTS approval_request_deliveries (
       request_id TEXT NOT NULL,
       user_id TEXT NOT NULL,
       kind TEXT NOT NULL,
@@ -420,7 +479,8 @@ function ensureApprovalRequestTable(): void {
       created_at INTEGER NOT NULL,
       PRIMARY KEY (request_id, user_id)
     )`,
-  ).run();
+    ).run();
+  });
 }
 
 function rowToRecord(row: ApprovalRequestRow): ApprovalRequestRecord {
@@ -436,6 +496,7 @@ function rowToRecord(row: ApprovalRequestRow): ApprovalRequestRecord {
     messageId: row.message_id,
     sessionName: row.session_name,
     agentId: row.agent_id,
+    ...(row.caller_context_id ? { callerContextId: row.caller_context_id } : {}),
     permission: row.permission,
     objectType: row.object_type,
     objectId: row.object_id,

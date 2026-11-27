@@ -1,6 +1,7 @@
 import { getAccountForAgent, type AgentConfig } from "../router/index.js";
 import { getContactDetails } from "../contacts.js";
 import { logger } from "../utils/logger.js";
+import { approvalOrigin, readApprovalSourceHint } from "./context-source.js";
 import { resolveBridgeInvocation } from "../bridge/authority.js";
 import { assertBridgeProvider, isBridgeSessionRef } from "../bridge/isolation.js";
 import {
@@ -361,7 +362,7 @@ export function refreshRuntimeRequestContextForTurn(options: {
       runtimeProviderId: options.runtimeProviderId,
       model: options.model,
       runtimeResolution: options.runtimeResolution,
-      approvalSource: options.approvalSource,
+      approvalSource: options.prompt._approvalSource,
       replyTarget: options.replyTarget,
     }),
   });
@@ -491,14 +492,32 @@ function deriveRuntimeContextForPrompt(options: {
     return { ...bridge, metadata: { ...options.metadata, ...bridge.metadata } };
   }
   const identity = buildAgentIdentityRuntimeContextInputForPrompt(options);
-  return {
-    capabilities: identity.capabilities,
-    metadata: {
-      ...options.metadata,
-      ...identity.metadata,
-    },
-    source: buildContextSource(options.resolvedSource),
-  };
+  const turnOrigin = resolveRuntimeTurnOrigin(options.prompt._turnOrigin);
+  const callerContextId = turnOrigin?.callerContextId;
+  // A relay that is not the caller's own conversation (an answer through an Ask) narrows the turn
+  // through the caller context but never borrows its chat for approval cards.
+  const borrowsApprovalOrigin = turnOrigin?.borrowApprovalOrigin !== false;
+  // Older hints carry an empty account id; read them with the same tolerance as a stored hint.
+  const suppliedSource = readApprovalSourceHint(options.metadata.approvalSource);
+  // An exact caller with no origin must not fall back to a historical hint.
+  const caller = callerContextId ? dbGetContext(callerContextId) : undefined;
+  const approvalSource = !borrowsApprovalOrigin
+    ? undefined
+    : callerContextId
+      ? caller
+        ? approvalOrigin(caller)
+        : undefined
+      : suppliedSource;
+  // `source` is this turn's own origin only. A borrowed origin lives in `metadata.approvalSource`, which only the
+  // approval path reads, so no command, follow or delivery can take it as an implicit destination.
+  const source = buildContextSource(options.resolvedSource);
+  const metadata = { ...options.metadata, ...identity.metadata };
+  delete metadata.approvalSource;
+  delete metadata.approvalSourceOnly;
+  const borrowedSource = buildContextSource(approvalSource);
+  if (borrowedSource) metadata.approvalSource = borrowedSource;
+  if (!source && borrowedSource) metadata.approvalSourceOnly = true;
+  return { capabilities: identity.capabilities, metadata, source };
 }
 
 function persistRuntimeContextInPlace(

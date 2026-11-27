@@ -1338,6 +1338,116 @@ describe("runtime request context authority", () => {
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Bash")).toBe(true);
   });
 
+  it("persists delegated approval routing on launch and rotation without changing the relay actor", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+    const source = { channel: "telegram", accountId: "bot", chatId: "origin", threadId: "topic" };
+    const prompt = { prompt: "work", _turnOrigin: buildSessionRelayTurnOrigin("execute", { agentId: "origin-agent" }) };
+    const options = {
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: agent.cwd,
+      agent,
+      prompt,
+      runtimeProviderId: "codex" as const,
+      model: "test",
+      runtimeResolution,
+      approvalSource: source,
+    };
+    const built = buildRuntimeRequestContext(options);
+    // Approval-only: the borrowed origin routes cards and never becomes this turn's source.
+    expect(dbGetContext(built.runtimeContext.contextId)?.source).toBeUndefined();
+    expect(dbGetContext(built.runtimeContext.contextId)?.metadata?.approvalSource).toEqual(source);
+    expect(built.runtimeContext.metadata?.actorPrincipal).toBe("agent:origin-agent");
+    const rotated = refreshRuntimeRequestContextForTurn({
+      ...options,
+      runtimeContext: built.runtimeContext,
+      toolContext: built.toolContext,
+      approvalSource: source, // captured launch value must not govern this turn
+      prompt: { ...prompt, _approvalSource: { ...source, chatId: "next-origin" } },
+    });
+    expect(dbGetContext(rotated.contextId)?.source).toBeUndefined();
+    expect(dbGetContext(rotated.contextId)?.metadata?.approvalSource).toMatchObject({ chatId: "next-origin" });
+    expect(rotated.metadata?.actorPrincipal).toBe("agent:origin-agent");
+    const plain = refreshRuntimeRequestContextForTurn({
+      ...options,
+      runtimeContext: rotated,
+      toolContext: built.toolContext,
+      prompt: { prompt: "local work" },
+      approvalSource: source, // even a retained launch hint must be cleared
+    });
+    expect(plain.source).toBeUndefined();
+    expect(plain.metadata?.approvalSource).toBeUndefined();
+    expect(plain.metadata?.approvalSourceOnly).toBeUndefined();
+  });
+
+  it("does not substitute a historical hint when the exact caller has no origin", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+    const caller = createRuntimeContext({ kind: "turn-runtime", agentId: agent.id, capabilities: [] });
+    const stale = { channel: "slack", accountId: "main", chatId: "previous-chat" };
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: agent.cwd,
+      agent,
+      prompt: {
+        prompt: "unsourced work",
+        _approvalSource: stale,
+        _turnOrigin: buildSessionRelayTurnOrigin("execute", { agentId: agent.id, contextId: caller.contextId }),
+      },
+      runtimeProviderId: "codex",
+      model: "test",
+      runtimeResolution,
+      approvalSource: stale,
+    });
+    expect(runtimeContext.source).toBeUndefined();
+    expect(runtimeContext.metadata?.approvalSource).toBeUndefined();
+  });
+
+  it("does not borrow the caller's chat when the relay marks that it must not", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+    const caller = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: agent.id,
+      capabilities: [],
+      metadata: {
+        approvalSourceOnly: true,
+        approvalSource: { channel: "slack", accountId: "main", chatId: "C_CALLER" },
+      },
+    });
+    const own = { channel: "whatsapp", accountId: "main", chatId: "5511999999999@s.whatsapp.net" };
+    const build = (borrowApprovalOrigin: boolean) =>
+      buildRuntimeRequestContext({
+        dbSessionKey: sessionKey,
+        sessionName,
+        sessionCwd: agent.cwd,
+        agent,
+        prompt: {
+          prompt: "[System] Answer",
+          source: own,
+          _turnOrigin: buildSessionRelayTurnOrigin(
+            "answer",
+            { agentId: agent.id, contextId: caller.contextId },
+            { borrowApprovalOrigin },
+          ),
+        },
+        runtimeProviderId: "codex",
+        model: "test",
+        runtimeResolution,
+        resolvedSource: own,
+      }).runtimeContext;
+
+    const borrowing = build(true);
+    expect(borrowing.metadata?.approvalSource).toMatchObject({ chatId: "C_CALLER" });
+
+    const ownOnly = build(false);
+    expect(ownOnly.source).toMatchObject({ chatId: own.chatId });
+    expect(ownOnly.metadata?.approvalSource).toBeUndefined();
+    expect(ownOnly.metadata?.approvalSourceOnly).toBeUndefined();
+  });
+
   it("narrows a relay produced by a contact-overlay turn to that turn's capabilities", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });

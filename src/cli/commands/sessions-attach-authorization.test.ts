@@ -186,6 +186,24 @@ describe("sessions set-provider with no agent provider", () => {
 });
 
 describe("sessions relay delivery override", () => {
+  it("uses the invocation origin including its thread, never the session's last chat", () => {
+    const session = getOrCreateSession("agent:crm:main", "crm", "/tmp/crm");
+    const command = new SessionCommands() as unknown as { resolveCallerApprovalSource(): unknown };
+    const source = { channel: "slack", accountId: "main", chatId: "origin", threadId: "topic" };
+    const caller = {
+      ...BOOTSTRAP,
+      sessionKey: session.sessionKey,
+      context: { ...BOOTSTRAP.context!, source },
+      source: { ...source, chatId: "stale-tool-source" },
+    };
+    expect(runWithContext(caller, () => command.resolveCallerApprovalSource())).toEqual(source);
+    expect(
+      runWithContext({ ...caller, context: { ...caller.context, source: undefined } }, () =>
+        command.resolveCallerApprovalSource(),
+      ),
+    ).toBeUndefined();
+  });
+
   it("refuses --channel/--to naming a chat the target session is not attached to", async () => {
     const own = getOrCreateSession("agent:crm:worker", "crm", "/tmp/crm");
     const send = new SessionCommands().send as (...values: unknown[]) => Promise<unknown>;

@@ -793,7 +793,7 @@ describe("runtime host skill-gate enforcement", () => {
 
     expect(decision.approved).toBe(false);
     expect(decision.reason).not.toContain("RAVI_SKILL_REQUIRED");
-    expect(decision.reason).toContain("No approval source available");
+    expect(decision.reason).toContain("Não há chat de origem para pedir aprovação");
     expect(getSession("agent:main:main")?.runtimeSessionParams?.skillVisibility).toBeUndefined();
   });
 

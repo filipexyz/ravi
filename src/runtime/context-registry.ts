@@ -571,8 +571,15 @@ function buildDerivedContextMetadata(
     }
   }
 
+  // The borrowed approval origin and its marker are host-owned, like the lineage
+  // below: a CLI child cannot replace where its approvals are asked, nor hide
+  // that it borrowed it.
+  delete derived.approvalSource;
+  if (approvalSource !== undefined) derived.approvalSource = approvalSource;
+  delete derived.approvalSourceOnly;
   // Lineage is host-owned. A CLI child must not erase its ancestry and pose
   // as a runtime-issued human turn when it dispatches a relay or bootstrap.
+  if (parent.metadata?.approvalSourceOnly === true) derived.approvalSourceOnly = true;
   derived.parentContextId = parent.contextId;
   derived.parentContextKind = parent.kind;
   derived.issuedFor = cliName;

@@ -24,6 +24,7 @@ export interface SessionRelayOriginContext {
 export function buildSessionRelayTurnOrigin(
   action: SessionRelayAction,
   context?: SessionRelayOriginContext,
+  options: { borrowApprovalOrigin?: boolean } = {},
 ): SessionRelayTurnOriginMetadata {
   const agentId = cleanString(context?.agentId);
   const sessionKey = cleanString(context?.sessionKey);
@@ -42,6 +43,7 @@ export function buildSessionRelayTurnOrigin(
     principal: buildRuntimeCallerPrincipal({ agentId, sessionKey, sessionName }),
     ...(session ? { session } : {}),
     ...(callerContextId ? { callerContextId } : {}),
+    ...(options.borrowApprovalOrigin === false ? { borrowApprovalOrigin: false } : {}),
   };
 }
 
@@ -141,6 +143,7 @@ export function resolveRuntimeTurnOrigin(value: unknown): RuntimeTurnOriginMetad
       principal,
       ...(session ? { session } : {}),
       ...caller,
+      ...(value.borrowApprovalOrigin === false ? { borrowApprovalOrigin: false } : {}),
     };
   }
 

@@ -75,6 +75,26 @@ audit surfaces while still allowing Ravi to perform approved external actions.
   missing contexts MUST NOT fall back to a default credential or local operator.
 - The issued capability snapshot and current executor ceiling MUST both cover
   the request. Provider denial or `needs_approval` MUST stop before backend read.
+- Operation approval MUST bind durably to the exact caller context. Its deadline
+  MUST NOT exceed that context's remaining lease. Revocation or deletion MUST
+  atomically expire pending requests, including cascaded child revocation; a
+  lost waiter MUST NOT leave a claimable request behind.
+- Approval schema MUST participate in daemon state preparation/readiness. CLI
+  and channel consumers MUST NOT migrate the approval store on first use.
+- Delivery adapters MUST persist approval message correlation independently of
+  request-reply listeners and finalize terminal requests even on late delivery.
+- Approval decision claims MUST revalidate caller liveness. Active waiters MUST
+  settle and finalize delivered cards when the caller ends, including when it
+  ends during delivery. A late click MUST NOT revive the caller or read secrets.
+- Caller invalidation MUST surface as `caller_invalid` with a fixed, non-secret
+  explanation to start a new attempt, distinct from `approval_denied`.
+- Missing origin MUST fail closed as `approval_denied` with the fixed detail
+  "Não há chat de origem para pedir aprovação." Delivery/adapter failure MUST
+  also return a fixed diagnostic, never raw transport errors or human text.
+- Approval routing and lifetime MUST use generic channel/account/chat/thread
+  metadata. No provider-specific condition may grant authority or extend a
+  caller's life. Existing legacy requests without caller linkage expire at
+  their original deadline; no caller may be guessed from a session's latest turn.
 - Sensitive runtime actions MUST obtain operation approval without adding a
   capability grant. After waiting, the broker MUST revalidate caller, current
   permissions, provider decision and unchanged active connection before reading.
