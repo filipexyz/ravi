@@ -122,8 +122,7 @@ async function transcribeChunk(
       file,
       model: provider.model,
       language: options.language ?? "pt",
-      response_format: "verbose_json",
-      timestamp_granularities: ["segment"],
+      ...transcriptionResponseFormat(provider.model),
     });
 
     return normalizeTranscriptionResponse(response);
@@ -140,6 +139,17 @@ async function transcribeChunk(
       [provider.credential],
     );
   }
+}
+
+/**
+ * Whisper models answer `verbose_json` with segment timestamps; the GPT transcription models only
+ * accept `json` (or `text`) and no timestamp granularities.
+ */
+export function transcriptionResponseFormat(
+  model: string,
+): { response_format: "verbose_json"; timestamp_granularities: ["segment"] } | { response_format: "json" } {
+  if (/^gpt-/i.test(model)) return { response_format: "json" };
+  return { response_format: "verbose_json", timestamp_granularities: ["segment"] };
 }
 
 function transcriptionFailure(error: unknown, context: ErrorDiagnosticContext, secrets: readonly string[] = []): Error {

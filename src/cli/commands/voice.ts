@@ -169,13 +169,13 @@ function requireOperator(op: string, caller: VoiceCaller, asJson?: boolean): voi
 
 const STT_PROVIDER_KEYS: Record<VoiceSttProvider, string> = { groq: "GROQ_API_KEY", openai: "OPENAI_API_KEY" };
 
-/** Profile management: the operator, or a key the operator issued with `mutate:voice:profiles`. */
+/** Profile management: the operator, or a key the operator issued with `mutate:voice:profiles.*`. */
 function requireProfileManager(op: string, caller: VoiceCaller, asJson?: boolean): void {
   if (!callerMayManageVoiceProfiles(caller)) {
     fail(
       op,
       "VOICE_OPERATOR_ONLY",
-      `${op} needs the operator, or a key issued with mutate:voice:profiles. Device keys only read profiles.`,
+      `${op} needs the operator, or a key issued with mutate:voice:profiles.*. Device keys only read profiles.`,
       asJson,
       CONTRACT_EXIT_POLICY,
     );
@@ -856,7 +856,7 @@ export class VoiceCallsCommands {
         text: heard.text,
         speaker: { ...call.speaker },
         audioInSeconds: heard.durationSec,
-        sttCostUsd: call.engine === "push" ? estimateSttCostUsd(heard.provider, heard.durationSec) : 0,
+        sttCostUsd: call.engine === "push" ? estimateSttCostUsd(heard.provider, heard.durationSec, heard.model) : 0,
       });
       return emit({ callId: call.id, turnId: heard.text ? turnId : null, text: heard.text }, asJson, () =>
         console.log(heard.text ? `🗣 ${heard.text}` : "Nothing was heard."),
@@ -1314,13 +1314,13 @@ export class VoiceProfilesCommands {
   @CommandAccess({ kind: "mutate", resource: "voice", action: "profiles.bind", risk: "low" })
   async bind(
     @Arg("id", { description: "Profile id" }) id: string,
-    @Option({ flags: "--session <name>", description: "Session name or key" }) sessionRef?: string,
+    @Arg("session", { required: true, description: "Session name or key" }) sessionRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const op = "voice profiles bind";
     return run(op, asJson, () => {
       requireProfileManager(op, resolveVoiceCaller(op), asJson);
-      if (!sessionRef) fail(op, "USAGE_ERROR", "--session <name> is required.", asJson, CONTRACT_EXIT_USAGE);
+      if (!sessionRef) fail(op, "USAGE_ERROR", "<session> is required.", asJson, CONTRACT_EXIT_USAGE);
       if (!getVoiceProfile(id)) fail(op, "VOICE_PROFILE_NOT_FOUND", `Profile ${id} not found.`, asJson);
       const session = resolveSession(sessionRef);
       if (!session) fail(op, "VOICE_SESSION_NOT_FOUND", `Session ${sessionRef} not found.`, asJson);
@@ -1335,13 +1335,13 @@ export class VoiceProfilesCommands {
   @Command({ name: "unbind", description: "Remove a session's default profile" })
   @CommandAccess({ kind: "mutate", resource: "voice", action: "profiles.unbind", risk: "low" })
   async unbind(
-    @Option({ flags: "--session <name>", description: "Session name or key" }) sessionRef?: string,
+    @Arg("session", { required: true, description: "Session name or key" }) sessionRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const op = "voice profiles unbind";
     return run(op, asJson, () => {
       requireProfileManager(op, resolveVoiceCaller(op), asJson);
-      if (!sessionRef) fail(op, "USAGE_ERROR", "--session <name> is required.", asJson, CONTRACT_EXIT_USAGE);
+      if (!sessionRef) fail(op, "USAGE_ERROR", "<session> is required.", asJson, CONTRACT_EXIT_USAGE);
       const session = resolveSession(sessionRef);
       if (!session) fail(op, "VOICE_SESSION_NOT_FOUND", `Session ${sessionRef} not found.`, asJson);
       const unbound = setVoiceSessionProfile(session.sessionKey, null);
@@ -1477,6 +1477,16 @@ export class VoiceDevicesCommands {
         return session.sessionKey;
       });
       const profiles = splitList(profilesValue);
+      if (profilesValue !== undefined && profiles.length === 0) {
+        // An empty list must not silently become '*': omit --profiles for every profile.
+        fail(
+          op,
+          "USAGE_ERROR",
+          "--profiles needs at least one profile id (omit it for any).",
+          asJson,
+          CONTRACT_EXIT_USAGE,
+        );
+      }
       for (const id of profiles) {
         if (id !== "*" && !getVoiceProfile(id)) fail(op, "VOICE_PROFILE_NOT_FOUND", `Profile ${id} not found.`, asJson);
       }

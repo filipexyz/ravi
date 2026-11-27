@@ -34711,18 +34711,6 @@ class VoiceEnginesListReturn {
 
 VoiceEnginesListReturn voiceEnginesListReturnFromJson(Object? json) => VoiceEnginesListReturn.fromJsonValue(json);
 
-class VoiceProfilesBindOptions {
-  const VoiceProfilesBindOptions({this.session});
-
-  final String? session;
-
-  void encodeBody(Map<String, RaviJson> into) {
-    if (session != null) {
-      into["session"] = RaviJson.from(session);
-    }
-  }
-}
-
 class VoiceProfilesBindReturn {
   const VoiceProfilesBindReturn({required this.profileId, required this.sessionKey, required this.sessionName});
 
@@ -34906,18 +34894,6 @@ class VoiceProfilesShowReturn {
 }
 
 VoiceProfilesShowReturn voiceProfilesShowReturnFromJson(Object? json) => VoiceProfilesShowReturn.fromJsonValue(json);
-
-class VoiceProfilesUnbindOptions {
-  const VoiceProfilesUnbindOptions({this.session});
-
-  final String? session;
-
-  void encodeBody(Map<String, RaviJson> into) {
-    if (session != null) {
-      into["session"] = RaviJson.from(session);
-    }
-  }
-}
 
 class VoiceProfilesUnbindReturn {
   const VoiceProfilesUnbindReturn({required this.sessionKey, required this.unbound});

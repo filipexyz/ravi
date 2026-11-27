@@ -10683,13 +10683,11 @@ export class RaviClient {
     },
     profiles: {
       /** Make a profile the default for one session's calls */
-      bind: async (id: string, options?: {
-        session?: string;
-      }): Promise<VoiceProfilesBindReturn> => {
+      bind: async (id: string, session: string): Promise<VoiceProfilesBindReturn> => {
         return this.transport.call({
           groupSegments: ["voice","profiles"],
           command: "bind",
-          body: { id, ...(options ?? {}) },
+          body: { id, session },
         });
       },
       /** Create a voice profile */
@@ -10744,13 +10742,11 @@ export class RaviClient {
         });
       },
       /** Remove a session's default profile */
-      unbind: async (options?: {
-        session?: string;
-      }): Promise<VoiceProfilesUnbindReturn> => {
+      unbind: async (session: string): Promise<VoiceProfilesUnbindReturn> => {
         return this.transport.call({
           groupSegments: ["voice","profiles"],
           command: "unbind",
-          body: { ...(options ?? {}) },
+          body: { session },
         });
       },
       /** Update a voice profile */

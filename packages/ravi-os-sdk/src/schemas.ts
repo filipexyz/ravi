@@ -140376,7 +140376,8 @@ export const VoiceProfilesBindInputSchema = {
     }
   },
   "required": [
-    "id"
+    "id",
+    "session"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -140904,6 +140905,9 @@ export const VoiceProfilesUnbindInputSchema = {
       "type": "string"
     }
   },
+  "required": [
+    "session"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 

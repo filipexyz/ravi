@@ -50,10 +50,15 @@ normative: false
   reaches the limit; `voice.test.ts` shows `calls start` refuses only the profile that spent its day.
   Both tests fail when the check reads another profile's meter.
 - Configuration through the SDK (`voice.test.ts`, "configuration through the SDK"): an issued key
-  without `mutate:voice:profiles` is refused and one with it updates; a device key is refused update
+  without `mutate:voice:profiles.*` is refused and one with it updates; a device key is refused update
   and bind but lists profiles; STT provider, model and language are stored, `auto` and empty clear,
   an unknown provider is a usage error, a pinned provider without its key refuses `calls start`, and
   the push engine forwards provider and model; a device paired for one profile starts with it and is
   refused another; a session's bound profile is used until unbound, and deleting the profile drops
   the binding. Six mutants (issued-key path off, device accepted, device check off, session default
   off, delete keeps bindings, push drops the provider) each fail one test.
+- Review of #1063 (Devin): the gateway's own candidate check lets a key holding only
+  `mutate:voice:profiles.*` run create, update, delete, bind and unbind, and not `devices pair`;
+  pairing with an empty `--profiles` list is a usage error, never `*`; GPT transcription models get
+  `response_format: json` and Whisper keeps `verbose_json` with segments; transcription is priced by
+  model, and an unknown model at its provider's highest known rate (`engines.test.ts`).

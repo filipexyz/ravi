@@ -513,3 +513,27 @@ describe("voice engines", () => {
     expect(chunks.every((chunk) => chunk.length <= 1500)).toBe(true);
   });
 });
+
+describe("transcription settings", () => {
+  it("asks Whisper for segments and GPT transcription models for plain json", async () => {
+    const { transcriptionResponseFormat } = await import("../../transcribe/openai.js");
+    expect(transcriptionResponseFormat("whisper-1")).toEqual({
+      response_format: "verbose_json",
+      timestamp_granularities: ["segment"],
+    });
+    expect(transcriptionResponseFormat("whisper-large-v3-turbo").response_format).toBe("verbose_json");
+    expect(transcriptionResponseFormat("gpt-4o-transcribe")).toEqual({ response_format: "json" });
+    expect(transcriptionResponseFormat("gpt-4o-mini-transcribe")).toEqual({ response_format: "json" });
+  });
+
+  it("prices transcription by model, and an unknown model at its provider's highest rate", async () => {
+    const { estimateSttCostUsd } = await import("./push.js");
+    const hour = 3600;
+    expect(estimateSttCostUsd("groq", hour)).toBeCloseTo(0.04, 6);
+    expect(estimateSttCostUsd("groq", hour, "whisper-large-v3-turbo")).toBeCloseTo(0.04, 6);
+    expect(estimateSttCostUsd("groq", hour, "whisper-large-v3")).toBeCloseTo(0.111, 6);
+    expect(estimateSttCostUsd("groq", hour, "some-new-model")).toBeCloseTo(0.111, 6);
+    expect(estimateSttCostUsd("openai", 60, "gpt-4o-mini-transcribe")).toBeCloseTo(0.003, 6);
+    expect(estimateSttCostUsd("openai", 60)).toBeCloseTo(0.006, 6);
+  });
+});

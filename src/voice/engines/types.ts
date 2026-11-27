@@ -34,6 +34,8 @@ export interface SpeechToTextResult {
   text: string;
   durationSec: number;
   provider: string;
+  /** The model that transcribed, when the provider reports it; metering prices by it. */
+  model?: string;
 }
 
 export interface TextToSpeechResult {

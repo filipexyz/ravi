@@ -10,7 +10,7 @@
  *   listed at pairing and only control its own calls.
  * - The speaker never adds authority: the session turn runs with the caller's.
  * - Voice profiles (voices, models, limits) are managed by the operator, or by a key the operator
- *   issued with `mutate:voice:profiles`. Device and worker keys only read them, even though they
+ *   issued with `mutate:voice:profiles.*`. Device and worker keys only read them, even though they
  *   carry `mutate voice *` for their own calls.
  */
 import { getContext, type ToolContext } from "../cli/context.js";
@@ -55,11 +55,14 @@ export interface VoiceCaller {
   capabilities?: ReadonlyArray<{ permission: string; objectType: string; objectId: string }>;
 }
 
-/** The capability an operator issues for managing voice profiles through the gateway or SDK. */
+/**
+ * The capability an operator issues for managing voice profiles through the gateway or SDK. The
+ * gateway checks each write as `mutate:voice:profiles.<action>`, which this pattern covers.
+ */
 export const VOICE_PROFILES_MANAGE_CAPABILITY = {
   permission: "mutate",
   objectType: "voice",
-  objectId: "profiles",
+  objectId: "profiles.*",
 } as const;
 
 /** May this caller create, change, bind or delete voice profiles? Never a device or worker key. */

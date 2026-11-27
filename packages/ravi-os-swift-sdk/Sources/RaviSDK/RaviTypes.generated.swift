@@ -40683,24 +40683,6 @@ public struct VoiceEnginesListReturn: Codable, Sendable {
   }
 }
 
-public struct VoiceProfilesBindOptions: Codable, Sendable {
-  public var session: String?
-
-  public init(session: String? = nil) {
-    self.session = session
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case session = "session"
-  }
-
-  func encodeBody(into body: inout [String: RaviJSON]) throws {
-    if let value = self.session {
-      body["session"] = try RaviJSON.fromEncodable(value)
-    }
-  }
-}
-
 public struct VoiceProfilesBindReturn: Codable, Sendable {
   public var profileId: String
   public var sessionKey: String
@@ -40899,24 +40881,6 @@ public struct VoiceProfilesShowReturn: Codable, Sendable {
 
   enum CodingKeys: String, CodingKey {
     case profile = "profile"
-  }
-}
-
-public struct VoiceProfilesUnbindOptions: Codable, Sendable {
-  public var session: String?
-
-  public init(session: String? = nil) {
-    self.session = session
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case session = "session"
-  }
-
-  func encodeBody(into body: inout [String: RaviJSON]) throws {
-    if let value = self.session {
-      body["session"] = try RaviJSON.fromEncodable(value)
-    }
   }
 }
 

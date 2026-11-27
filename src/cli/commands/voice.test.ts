@@ -294,11 +294,11 @@ describe("ravi voice commands", () => {
       };
     }
 
-    it("profiles are managed by the operator or a key issued with mutate:voice:profiles, never a device key", async () => {
+    it("profiles are managed by the operator or a key issued with mutate:voice:profiles.*, never a device key", async () => {
       await quiet(() => create("calm", { mode: "mock" }));
       currentContext = issuedKey([]);
       expect((await contractError(() => create("other", { mode: "mock" }))).code).toBe("VOICE_OPERATOR_ONLY");
-      currentContext = issuedKey([{ permission: "mutate", objectType: "voice", objectId: "profiles" }]);
+      currentContext = issuedKey([{ permission: "mutate", objectType: "voice", objectId: "profiles.*" }]);
       const updated = (await quiet(() => update("calm", { language: "en" }))) as { profile: { language: string } };
       expect(updated.profile.language).toBe("en");
       currentContext = undefined;
@@ -312,6 +312,46 @@ describe("ravi voice commands", () => {
         profiles: Array<{ id: string }>;
       };
       expect(listed.profiles.some((profile) => profile.id === "calm")).toBe(true);
+    });
+
+    it("the gateway's own check lets a key with only mutate:voice:profiles.* run every profile write", async () => {
+      const { getCommandAccessMetadata } = await import("../decorators.js");
+      const { listCliCommandAccessCandidates } = await import("../command-access.js");
+      const { canWithCapabilities } = await import("../../permissions/capability-snapshot.js");
+      const access = getCommandAccessMetadata(VoiceProfilesCommands);
+      const grant = [{ permission: "mutate", objectType: "voice", objectId: "profiles.*" }];
+      for (const command of ["create", "update", "delete", "bind", "unbind"]) {
+        const options = access.get(command);
+        expect(options).toBeDefined();
+        const candidates = listCliCommandAccessCandidates({
+          group: "voice.profiles",
+          command,
+          access: options!,
+          source: "gateway",
+        } as Parameters<typeof listCliCommandAccessCandidates>[0]);
+        const passes = candidates.some((c) => canWithCapabilities(grant, c.permission, c.objectType, c.objectId));
+        expect({ command, passes }).toEqual({ command, passes: true });
+      }
+      // The grant reaches profile writes only, never other voice writes such as pairing a device.
+      const devicesAccess = getCommandAccessMetadata(VoiceDevicesCommands).get("pair");
+      const pairCandidates = listCliCommandAccessCandidates({
+        group: "voice.devices",
+        command: "pair",
+        access: devicesAccess!,
+        source: "gateway",
+      } as Parameters<typeof listCliCommandAccessCandidates>[0]);
+      expect(pairCandidates.some((c) => canWithCapabilities(grant, c.permission, c.objectType, c.objectId))).toBe(
+        false,
+      );
+    });
+
+    it("pairing with an empty profile list is refused instead of becoming any profile", async () => {
+      const { createContact } = await import("../../contacts.js");
+      const person = createContact({ phone: "5511900000777", name: "Person" });
+      const error = await contractError(() =>
+        new VoiceDevicesCommands().pair(person.id, "phone", "main", false, true, true, " , "),
+      );
+      expect(error.code).toBe("USAGE_ERROR");
     });
 
     it("transcription is set on the profile: provider, model and language; auto clears the provider", async () => {

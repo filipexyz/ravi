@@ -142085,7 +142085,8 @@ class RaviSchemas {
     }
   },
   "required": [
-    "id"
+    "id",
+    "session"
   ],
   "type": "object"
 }
@@ -142623,6 +142624,9 @@ class RaviSchemas {
       "type": "string"
     }
   },
+  "required": [
+    "session"
+  ],
   "type": "object"
 }
 ''';

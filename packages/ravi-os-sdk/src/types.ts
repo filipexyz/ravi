@@ -27517,7 +27517,7 @@ export type VoiceEnginesListReturn = {
 /** Input shape for `voice.profiles.bind`. */
 export type VoiceProfilesBindInput = {
   id: string;
-  session?: string;
+  session: string;
 };
 
 /** Return shape for `voice.profiles.bind`. */
@@ -27653,7 +27653,7 @@ export type VoiceProfilesShowReturn = {
 
 /** Input shape for `voice.profiles.unbind`. */
 export type VoiceProfilesUnbindInput = {
-  session?: string;
+  session: string;
 };
 
 /** Return shape for `voice.profiles.unbind`. */

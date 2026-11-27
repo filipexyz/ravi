@@ -7879,10 +7879,10 @@ public struct VoiceProfilesNamespace: Sendable {
     self.transport = transport
   }
 
-  public func bind(_ id: String, _ options: VoiceProfilesBindOptions = .init()) async throws -> VoiceProfilesBindReturn {
+  public func bind(_ id: String, _ session: String) async throws -> VoiceProfilesBindReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["id"] = try RaviJSON.fromEncodable(id)
-    try options.encodeBody(into: &requestBody)
+    requestBody["session"] = try RaviJSON.fromEncodable(session)
     return try await transport.call(groupSegments: ["voice","profiles"], command: "bind", body: requestBody, as: VoiceProfilesBindReturn.self)
   }
 
@@ -7911,9 +7911,9 @@ public struct VoiceProfilesNamespace: Sendable {
     return try await transport.call(groupSegments: ["voice","profiles"], command: "show", body: requestBody, as: VoiceProfilesShowReturn.self)
   }
 
-  public func unbind(_ options: VoiceProfilesUnbindOptions = .init()) async throws -> VoiceProfilesUnbindReturn {
+  public func unbind(_ session: String) async throws -> VoiceProfilesUnbindReturn {
     var requestBody: [String: RaviJSON] = [:]
-    try options.encodeBody(into: &requestBody)
+    requestBody["session"] = try RaviJSON.fromEncodable(session)
     return try await transport.call(groupSegments: ["voice","profiles"], command: "unbind", body: requestBody, as: VoiceProfilesUnbindReturn.self)
   }
 
