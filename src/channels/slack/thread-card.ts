@@ -168,6 +168,20 @@ export function parseSlackDecisionAnswerValue(value: unknown): { id: string; rev
   return match ? { id: match[1]!, revision: Number(match[2]) } : null;
 }
 
+/**
+ * The card's Responder buttons for the pending decisions of a thread: one per decision a person owns, in order. When
+ * the thread waits on more than one decision (any owner), each button names its decision's key, so a lone person-owned
+ * question behind an agent's is never answered from an unnamed button.
+ */
+export function slackThreadCardDecisions(
+  pending: readonly { id: string; revision: number; key: string; ownerType: string }[],
+): SlackThreadCardDecision[] {
+  const named = pending.length > 1;
+  return pending
+    .filter((decision) => decision.ownerType === "human")
+    .map((decision) => ({ id: decision.id, revision: decision.revision, ...(named ? { key: decision.key } : {}) }));
+}
+
 /** Each Responder's action id: the first is the base id, the next ones add `_2`, `_3`… (unique within the block). */
 export function slackDecisionAnswerActionId(index: number): string {
   return index === 0 ? SLACK_DECISION_ANSWER_ACTION_ID : `${SLACK_DECISION_ANSWER_ACTION_ID}_${index + 1}`;
@@ -178,8 +192,8 @@ export function isSlackDecisionAnswerActionId(value: unknown): boolean {
 }
 
 /**
- * Responder for each pending decision a person owns; nothing to type but the answer itself. With one decision the
- * button says Responder; with more, each names its decision's key.
+ * Responder for each pending decision a person owns; nothing to type but the answer itself. A button names its
+ * decision's key when one is given (the thread waits on more than one decision), else says Responder.
  */
 function decisionAnswerBlock(decisions: readonly SlackThreadCardDecision[]): SlackBlockKitBlock {
   const shown = decisions.slice(0, SLACK_DECISION_ANSWER_MAX_BUTTONS);
@@ -191,7 +205,7 @@ function decisionAnswerBlock(decisions: readonly SlackThreadCardDecision[]): Sla
       action_id: slackDecisionAnswerActionId(index),
       text: {
         type: "plain_text",
-        text: shown.length === 1 || !decision.key ? "Responder" : `Responder: ${decision.key.slice(0, 40)}`,
+        text: decision.key ? `Responder: ${decision.key.slice(0, 40)}` : "Responder",
         emoji: true,
       },
       ...(index === 0 ? { style: "primary" } : {}),

@@ -4,6 +4,7 @@ import {
   buildSlackThreadCard,
   parseSlackDecisionAnswerValue,
   SLACK_DECISION_ANSWER_ACTION_ID,
+  slackThreadCardDecisions,
   SLACK_THREAD_CLOSE_ACTION_ID,
   SLACK_THREAD_STOP_ACTION_ID,
   splitSlackThreadBrief,
@@ -320,5 +321,31 @@ describe("Responder for each decision a person owns", () => {
     });
     const block = card.blocks.find((b) => b.block_id === "ravi_decision_actions") as { elements: unknown[] };
     expect(block.elements).toHaveLength(5);
+  });
+});
+
+describe("which pending decisions the card offers", () => {
+  const pending = (ownerType: string, key: string, id = `dec_${key}`) => ({ id, revision: 1, key, ownerType });
+
+  it("offers a person's question behind an agent's, named so it is never an unnamed button", () => {
+    expect(slackThreadCardDecisions([pending("agent", "deploy"), pending("human", "modelo")])).toEqual([
+      { id: "dec_modelo", revision: 1, key: "modelo" },
+    ]);
+  });
+
+  it("leaves a lone person's question unnamed and offers nothing for agents or unassigned owners", () => {
+    expect(slackThreadCardDecisions([pending("human", "modelo")])).toEqual([{ id: "dec_modelo", revision: 1 }]);
+    expect(slackThreadCardDecisions([pending("agent", "a"), pending("unassigned", "b")])).toEqual([]);
+  });
+
+  it("names the button of a lone person's question behind an agent's", () => {
+    const card = buildSlackThreadCard("Decide\nBrief", {
+      status: "waiting",
+      decisions: slackThreadCardDecisions([pending("agent", "deploy"), pending("human", "modelo")]),
+    });
+    const block = card.blocks.find((b) => b.block_id === "ravi_decision_actions") as {
+      elements: Array<{ text: { text: string } }>;
+    };
+    expect(block.elements.map((e) => e.text.text)).toEqual(["Responder: modelo"]);
   });
 });

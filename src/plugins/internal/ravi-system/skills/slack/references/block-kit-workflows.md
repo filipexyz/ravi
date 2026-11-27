@@ -184,9 +184,12 @@ Regras:
 
 - `triggerId` vem do payload `ravi.inbound.interaction` e expira rapido; abra o
   modal no handler deterministico, sem esperar julgamento de agent.
-- Guarde apenas ponteiros curtos em `private_metadata` (por exemplo `requestId`
-  ou `stateKey`). O CLI redige `private_metadata` em outputs, mas o valor ainda
-  vai para o Slack.
+- Correlacione a submissao pelo `viewId` que `modals-open` devolve: guarde o
+  `viewId` no seu estado ao abrir e procure por ele quando o `view_submission`
+  chegar. O `private_metadata` de um modal seu nao sai do runner do Slack (so o
+  formulario de decisao do Ravi publica o dele), entao nao conte com ele no
+  evento. Se usar `private_metadata`, guarde so ponteiros curtos; o CLI redige o
+  campo em outputs, mas o valor ainda vai para o Slack.
 - Use `view.hash` recebido no evento ao chamar `modals-update --hash`; isso
   protege contra update velho sobrescrevendo modal novo.
 - `view_submission` e `view_closed` chegam como interacoes normais. Extraia
