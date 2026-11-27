@@ -6,3 +6,4 @@
 2. The daemon log line `Connected to NATS` says `role` and `authenticated`. `authenticated: false` on a host that has credentials means the file for that role is missing.
 3. Before locking, confirm daemon, channels and Omni connect with a credential. Keep the previous `server.conf` to roll back.
 4. To roll back a lock, restore the previous `server.conf` and restart `ravi-nats`; clients reconnect on their own.
+5. Every Ravi NATS connection goes through `connectNats` (`src/nats.ts`) or `src/threads/fence-adoption-live.ts`; both use the role credential. A new direct `connect(` from `nats` must do the same, or it will be refused once locked.

@@ -48,6 +48,25 @@ export interface NatsRolePermissions {
 /** Subjects only a channel runner (or the daemon) may publish: input that claims a verified sender. */
 export const CHANNEL_INPUT_SUBJECTS = ["ravi.inbound.>"];
 
+/**
+ * JetStream stream administration. A stream can republish what it stores to
+ * any subject, and the server does that without checking the client's publish
+ * permissions: a client allowed to create or change a stream could forge
+ * channel input through `republish`. Only the daemon and the channels runner
+ * create streams (measured: audit, session prompts, channel outbound, leader KV);
+ * every other role only reads stream info and manages its own consumers.
+ */
+export const STREAM_ADMIN_SUBJECTS = [
+  "$JS.API.STREAM.CREATE.>",
+  "$JS.API.STREAM.UPDATE.>",
+  "$JS.API.STREAM.DELETE.>",
+  "$JS.API.STREAM.PURGE.>",
+  "$JS.API.STREAM.RESTORE.>",
+  "$JS.API.STREAM.SNAPSHOT.>",
+  "$JS.API.STREAM.MSG.DELETE.>",
+  "$JS.API.STREAM.TEMPLATE.>",
+];
+
 export function natsAuthDir(stateDir: string = getRaviStateDir()): string {
   return join(stateDir, "nats");
 }
@@ -73,7 +92,12 @@ export function natsRolePermissions(role: NatsRole, phase: NatsAuthPhase): NatsR
       return everything;
     case "omni":
     case "cli":
-      return { publish: { allow: [">"], deny: [...CHANNEL_INPUT_SUBJECTS] }, subscribe: { allow: [">"] } };
+      // Neither forges channel input (directly or through a stream that republishes it)
+      // nor reads it: channel messages of every chat are not theirs to see.
+      return {
+        publish: { allow: [">"], deny: [...CHANNEL_INPUT_SUBJECTS, ...STREAM_ADMIN_SUBJECTS] },
+        subscribe: { allow: [">"], deny: [...CHANNEL_INPUT_SUBJECTS] },
+      };
   }
 }
 

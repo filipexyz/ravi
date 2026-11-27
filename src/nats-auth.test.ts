@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdtempSync, rmSync, statSync, writeFileSync } f
 import { createServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { connect, type NatsConnection, StringCodec } from "nats";
+import { AckPolicy, connect, type NatsConnection, StringCodec } from "nats";
 import {
   ensureNatsCredentials,
   loadNatsCredential,
@@ -61,8 +61,13 @@ describe("NATS role credentials", () => {
     for (const role of NATS_ROLES) {
       expect(natsRolePermissions(role, "open").publish.deny).toBeUndefined();
     }
-    expect(natsRolePermissions("cli", "locked").publish.deny).toEqual(["ravi.inbound.>"]);
-    expect(natsRolePermissions("omni", "locked").publish.deny).toEqual(["ravi.inbound.>"]);
+    for (const role of ["cli", "omni"] as const) {
+      const locked = natsRolePermissions(role, "locked");
+      expect(locked.publish.deny).toContain("ravi.inbound.>");
+      expect(locked.publish.deny).toContain("$JS.API.STREAM.CREATE.>");
+      expect(locked.publish.deny).toContain("$JS.API.STREAM.UPDATE.>");
+      expect(locked.subscribe.deny).toEqual(["ravi.inbound.>"]);
+    }
     expect(natsRolePermissions("channels", "locked").publish.deny).toBeUndefined();
     expect(natsRolePermissions("daemon", "locked").publish.deny).toBeUndefined();
   });
@@ -138,6 +143,92 @@ const describeWithServer = natsServer ? describe : describe.skip;
 if (!natsServer) console.warn("nats-auth: nats-server not found; skipping the real-server checks");
 
 describeWithServer("NATS role credentials against a real nats-server", () => {
+  async function lockedServer() {
+    const credentials = ensureNatsCredentials(dir);
+    const server = await startServer(
+      renderNatsServerConfig({ phase: "locked", credentials, port: await freePort(), jetstreamDir: join(dir, "js") }),
+    );
+    const as = (role: keyof typeof credentials) =>
+      connect({ servers: server.url, reconnect: false, user: credentials[role].user, pass: credentials[role].pass });
+    return { server, as };
+  }
+
+  it("once locked: cli cannot forge channel input through a stream that republishes it", async () => {
+    const { server, as } = await lockedServer();
+    const daemon = await as("daemon");
+    const cli = await as("cli");
+    try {
+      const forged: string[] = [];
+      const sub = daemon.subscribe("ravi.inbound.>");
+      (async () => {
+        for await (const message of sub) forged.push(message.subject);
+      })();
+      await daemon.flush();
+      const cliStreams = await cli.jetstreamManager();
+      // A new stream that republishes into channel input.
+      await expect(
+        cliStreams.streams.add({
+          name: "FORGE_NEW",
+          subjects: ["forge.new"],
+          republish: { src: "forge.new", dest: "ravi.inbound.interaction" },
+        }),
+      ).rejects.toThrow();
+      // An existing stream (created by the daemon) changed to republish into channel input.
+      const daemonStreams = await daemon.jetstreamManager();
+      await daemonStreams.streams.add({ name: "FORGE_OLD", subjects: ["forge.old"] });
+      await expect(
+        cliStreams.streams.update("FORGE_OLD", {
+          subjects: ["forge.old"],
+          republish: { src: "forge.old", dest: "ravi.inbound.command" },
+        }),
+      ).rejects.toThrow();
+      await expect(cliStreams.streams.delete("FORGE_OLD")).rejects.toThrow();
+      cli.publish("forge.new", StringCodec().encode("forged"));
+      cli.publish("forge.old", StringCodec().encode("forged"));
+      await cli.flush();
+      await sleep(300);
+      expect(forged).toEqual([]);
+      // What the CLI does use keeps working: read stream info, manage its own consumer.
+      expect((await cliStreams.streams.info("FORGE_OLD")).config.name).toBe("FORGE_OLD");
+      await cliStreams.consumers.add("FORGE_OLD", { durable_name: "cli-own", ack_policy: AckPolicy.Explicit });
+      await cliStreams.consumers.delete("FORGE_OLD", "cli-own");
+      sub.unsubscribe();
+    } finally {
+      await Promise.allSettled([daemon.close(), cli.close()]);
+      server.stop();
+    }
+  }, 20_000);
+
+  it("once locked: cli does not read channel input, even through a wildcard", async () => {
+    const { server, as } = await lockedServer();
+    const channels = await as("channels");
+    const cli = await as("cli");
+    try {
+      const seen: string[] = [];
+      const refused: string[] = [];
+      for (const subject of ["ravi.inbound.>", ">"]) {
+        const sub = cli.subscribe(subject);
+        (async () => {
+          for await (const message of sub) seen.push(`${subject} ${message.subject}`);
+        })().catch((error) => refused.push(`${subject} ${String(error)}`));
+      }
+      await cli.flush().catch(() => {});
+      channels.publish("ravi.inbound.reply", StringCodec().encode("a message of some chat"));
+      channels.publish("ravi.events.visible", StringCodec().encode("an event"));
+      await channels.flush();
+      await sleep(300);
+      expect(seen.filter((entry) => entry.includes("ravi.inbound"))).toEqual([]);
+      expect(seen).toContain("> ravi.events.visible");
+      // The explicit subscription is refused by the server, not just left empty.
+      expect(refused.some((entry) => entry.startsWith("ravi.inbound.> ") && /permissions violation/i.test(entry))).toBe(
+        true,
+      );
+    } finally {
+      await Promise.allSettled([channels.close(), cli.close()]);
+      server.stop();
+    }
+  }, 20_000);
+
   it("once locked: cli cannot publish channel input, channels can, and no password means no connection", async () => {
     const credentials = ensureNatsCredentials(dir);
     const server = await startServer(

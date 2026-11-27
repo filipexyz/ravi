@@ -3,10 +3,6 @@ import { dirname, join, resolve } from "node:path";
 import { connect } from "nats";
 import { natsConnectAuth } from "../nats-auth.js";
 
-function natsConnectAuthOptions(): { user?: string; pass?: string } {
-  const auth = natsConnectAuth();
-  return auth.user ? { user: auth.user, pass: auth.pass } : {};
-}
 import { buildRunnerPm2Env } from "../channels/pm2-env.js";
 import { buildChannelsPm2Env, buildChannelsPm2StartArgs } from "../daemon-stdin.js";
 import { openStateDatabase } from "../db/state-boundary.js";
@@ -48,6 +44,11 @@ import {
   restartSnapshotResidue,
 } from "./fence-adoption-residue.js";
 import { prepareRegisteredThreadFence } from "./schema-fence.js";
+
+function natsConnectAuthOptions(): { user?: string; pass?: string } {
+  const auth = natsConnectAuth();
+  return auth.user ? { user: auth.user, pass: auth.pass } : {};
+}
 
 /** Every runtime database of the state directory that holds `ravi.db` (the unverified rules search them all). */
 export function legacyStateDatabasePaths(routerDatabasePath: string): string[] {
