@@ -25284,11 +25284,11 @@ typedef SessionsRenameReturn = Map<String, RaviJson>;
 SessionsRenameReturn sessionsRenameReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
 
 class SessionsReportOptions {
-  const SessionsReportOptions({this.ask, this.awaiting, this.option, this.pr, this.recommend, this.ref, this.session});
+  const SessionsReportOptions({this.ask, this.awaiting, this.options, this.pr, this.recommend, this.ref, this.session});
 
   final String? ask;
   final String? awaiting;
-  final List<String>? option;
+  final String? options;
   final String? pr;
   final String? recommend;
   final String? ref;
@@ -25301,8 +25301,8 @@ class SessionsReportOptions {
     if (awaiting != null) {
       into["awaiting"] = RaviJson.from(awaiting);
     }
-    if (option != null) {
-      into["option"] = RaviJson.from(option);
+    if (options != null) {
+      into["options"] = RaviJson.from(options);
     }
     if (pr != null) {
       into["pr"] = RaviJson.from(pr);

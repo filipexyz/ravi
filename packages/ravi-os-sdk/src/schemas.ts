@@ -108535,12 +108535,9 @@ export const SessionsReportInputSchema = {
       "description": "Progress, blocker or decision the parent session needs now",
       "type": "string"
     },
-    "option": {
-      "description": "With --awaiting decision and --ask: the choices the owner picks from (up to 6)",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
+    "options": {
+      "description": "With --awaiting decision and --ask: the choices the owner picks from, separated by \";\" (up to 6), e.g. --options \"vinculado; conversa\"",
+      "type": "string"
     },
     "pr": {
       "description": "With --awaiting review and --ref <full SHA>: the PR to review. When that SHA is the PR head and its quality gate passed, the runtime opens the independent review itself (reviewer on another model)",

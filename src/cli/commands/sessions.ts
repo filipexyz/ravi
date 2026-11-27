@@ -8481,10 +8481,12 @@ export class SessionCommands {
     })
     ask?: string,
     @Option({
-      flags: "--option <choice...>",
-      description: "With --awaiting decision and --ask: the choices the owner picks from (up to 6)",
+      // One value split on ";": a variadic option would swallow the positional message written after it.
+      flags: "--options <choices>",
+      description:
+        'With --awaiting decision and --ask: the choices the owner picks from, separated by ";" (up to 6), e.g. --options "vinculado; conversa"',
     })
-    options?: string[],
+    optionsText?: string,
     @Option({
       flags: "--recommend <recommendation>",
       description: "With --awaiting decision and --ask: what this thread recommends",
@@ -8502,9 +8504,13 @@ export class SessionCommands {
         2,
       );
     }
-    if ((ask?.trim() || options?.length || recommend?.trim()) && awaitingKind !== "decision") {
+    const options = optionsText
+      ?.split(";")
+      .map((choice) => choice.trim())
+      .filter(Boolean);
+    if ((ask?.trim() || optionsText?.trim() || recommend?.trim()) && awaitingKind !== "decision") {
       throw new CliExpectedError(
-        "--ask, --option and --recommend only apply with --awaiting decision",
+        "--ask, --options and --recommend only apply with --awaiting decision",
         "USAGE_ERROR",
         2,
       );

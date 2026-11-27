@@ -29603,16 +29603,16 @@ public typealias SessionsRenameReturn = [String: RaviJSON]
 public struct SessionsReportOptions: Codable, Sendable {
   public var ask: String?
   public var awaiting: String?
-  public var option: [String]?
+  public var options: String?
   public var pr: String?
   public var recommend: String?
   public var ref: String?
   public var session: String?
 
-  public init(ask: String? = nil, awaiting: String? = nil, option: [String]? = nil, pr: String? = nil, recommend: String? = nil, ref: String? = nil, session: String? = nil) {
+  public init(ask: String? = nil, awaiting: String? = nil, options: String? = nil, pr: String? = nil, recommend: String? = nil, ref: String? = nil, session: String? = nil) {
     self.ask = ask
     self.awaiting = awaiting
-    self.option = option
+    self.options = options
     self.pr = pr
     self.recommend = recommend
     self.ref = ref
@@ -29622,7 +29622,7 @@ public struct SessionsReportOptions: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case ask = "ask"
     case awaiting = "awaiting"
-    case option = "option"
+    case options = "options"
     case pr = "pr"
     case recommend = "recommend"
     case ref = "ref"
@@ -29636,8 +29636,8 @@ public struct SessionsReportOptions: Codable, Sendable {
     if let value = self.awaiting {
       body["awaiting"] = try RaviJSON.fromEncodable(value)
     }
-    if let value = self.option {
-      body["option"] = try RaviJSON.fromEncodable(value)
+    if let value = self.options {
+      body["options"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.pr {
       body["pr"] = try RaviJSON.fromEncodable(value)

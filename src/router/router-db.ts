@@ -8441,6 +8441,7 @@ export function dbListChatMessagesByProviderId(
        WHERE m.provider_message_id = ? AND m.actor_type = 'contact' AND m.contact_id = ?
          AND COALESCE(CASE WHEN m.provider_timestamp < 1000000000000 THEN m.provider_timestamp * 1000
                            ELSE m.provider_timestamp END, m.created_at) >= ?
+         -- Same "direct chat" as isDirectChat (src/decisions/service.ts), which rechecks every row returned.
          AND (m.chat_id = ? OR c.chat_type = 'dm'
               OR (c.chat_type = 'thread' AND json_extract(c.metadata_json, '$.parentChatType') = 'dm')
               OR (c.chat_type = 'thread' AND EXISTS (

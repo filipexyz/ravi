@@ -3246,13 +3246,17 @@ describe("SessionCommands attach hints", () => {
       undefined,
       undefined,
       "Qual modo é o padrão?",
-      ["vinculado", "conversa"],
+      "vinculado; conversa",
       "vinculado",
     )) as Record<string, any>;
     expect(decisionWait.handoff).toMatchObject({ kind: "decision" });
     expect(listOpenHandoffs(parentKey).find((h) => h.id === decisionWait.handoff.id)?.note).toBe(
       "Qual modo é o padrão?",
     );
+    // `--options` is one value split on ";": each choice is kept, in order.
+    const { getDecision } = await import("../../decisions/store.js");
+    const decisionId = listOpenHandoffs(parentKey).find((h) => h.id === decisionWait.handoff.id)?.decisionId;
+    if (decisionId) expect(getDecision(decisionId)?.ask).toContain("Opções:\n- vinculado\n- conversa");
   });
 
   it("report --awaiting review --pr opens the review only for the PR head with a green gate", async () => {

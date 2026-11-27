@@ -21064,7 +21064,7 @@ export type SessionsReportInput = {
   ask?: string;
   awaiting?: string;
   message: string;
-  option?: string[];
+  options?: string;
   pr?: string;
   recommend?: string;
   ref?: string;
