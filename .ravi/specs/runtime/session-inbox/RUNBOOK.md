@@ -12,8 +12,9 @@ normative: false
 
 ## See what waits for a session
 
-The table is created by the first deferred delivery or the first draining turn. Before that,
-the query below fails with `no such table`, which means nothing was ever deferred.
+The daemon creates the table at boot (state schema component `session-inbox`). A command or the
+channel runner that fails with `STATE_SCHEMA_NOT_READY: session-inbox` is running against state the
+installed daemon has not prepared yet: start that daemon, then retry.
 
 ```sql
 SELECT id, source_kind, source_ref, title, state, created_at, reserved_turn

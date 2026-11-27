@@ -25274,6 +25274,73 @@ export type TagsDetachReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `tags.doctor`. */
+export type TagsDoctorInput = {
+  limit?: string;
+};
+
+/** Return shape for `tags.doctor`. */
+export type TagsDoctorReturn = {
+  bindingsByAssetType: Array<{
+    assetType: string;
+    assets: number;
+    bindings: number;
+    tags: number;
+  }>;
+  consumers: Array<{
+    enabled: boolean;
+    kinds: Array<"observer_rule" | "tag_rule" | "permission_provider">;
+    slug: string;
+  }>;
+  generatedAt: number;
+  legacyMirrors: Array<{
+    bindings: number;
+    rewrites: number;
+    source: string;
+  }>;
+  limit: number;
+  orphanBindings: {
+    checked: Array<{
+      assetType: string;
+      bindings: number;
+      orphans: number;
+      sampleAssetIds: string[];
+    }>;
+    uncheckedAssetTypes: string[];
+  };
+  powerTags: Array<{
+    breakGlass: string[];
+    capabilities: string[];
+    contactId: string;
+    sources: string[];
+  }>;
+  summary: {
+    bindings: number;
+    boundTagsWithoutConsumer: number;
+    contactsWithBreakGlass: number;
+    contactsWithCapabilities: number;
+    definitions: number;
+    legacyMirrorBindings: number;
+    orphanBindings: number;
+    unboundDefinitions: number;
+  };
+  tagRuleErrors: Array<{
+    error: string;
+    source: string;
+  }>;
+  tagsWithoutConsumer: Array<{
+    assetTypes: string[];
+    bindings: number;
+    slug: string;
+  }>;
+  unboundDefinitions: Array<{
+    createdAt: number;
+    kind: string;
+    slug: string;
+    source: string;
+  }>;
+};
+
 /** Input shape for `tags.list`. */
 export type TagsListInput = {
   cursor?: string;

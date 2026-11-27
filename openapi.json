@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "d3d7b1a8921cc684"
+    "version": "3368d8f985eef71f"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -148417,6 +148417,358 @@
           }
         ],
         "summary": "Detach a tag from a Ravi asset",
+        "tags": [
+          "tags"
+        ]
+      }
+    },
+    "/api/v1/tags/doctor": {
+      "post": {
+        "operationId": "tags.doctor",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "limit": {
+                    "description": "Max items per list section (default: 50, max: 500)",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "bindingsByAssetType": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "assetType": {
+                            "type": "string"
+                          },
+                          "assets": {
+                            "type": "number"
+                          },
+                          "bindings": {
+                            "type": "number"
+                          },
+                          "tags": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "assetType",
+                          "bindings",
+                          "assets",
+                          "tags"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "consumers": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "kinds": {
+                            "items": {
+                              "enum": [
+                                "observer_rule",
+                                "tag_rule",
+                                "permission_provider"
+                              ],
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "slug": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "slug",
+                          "kinds",
+                          "enabled"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "generatedAt": {
+                      "type": "number"
+                    },
+                    "legacyMirrors": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "bindings": {
+                            "type": "number"
+                          },
+                          "rewrites": {
+                            "type": "number"
+                          },
+                          "source": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "source",
+                          "bindings",
+                          "rewrites"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "limit": {
+                      "type": "number"
+                    },
+                    "orphanBindings": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "checked": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "assetType": {
+                                "type": "string"
+                              },
+                              "bindings": {
+                                "type": "number"
+                              },
+                              "orphans": {
+                                "type": "number"
+                              },
+                              "sampleAssetIds": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              }
+                            },
+                            "required": [
+                              "assetType",
+                              "bindings",
+                              "orphans",
+                              "sampleAssetIds"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "uncheckedAssetTypes": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "checked",
+                        "uncheckedAssetTypes"
+                      ],
+                      "type": "object"
+                    },
+                    "powerTags": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "breakGlass": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "capabilities": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "contactId": {
+                            "type": "string"
+                          },
+                          "sources": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          }
+                        },
+                        "required": [
+                          "contactId",
+                          "capabilities",
+                          "breakGlass",
+                          "sources"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "summary": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "bindings": {
+                          "type": "number"
+                        },
+                        "boundTagsWithoutConsumer": {
+                          "type": "number"
+                        },
+                        "contactsWithBreakGlass": {
+                          "type": "number"
+                        },
+                        "contactsWithCapabilities": {
+                          "type": "number"
+                        },
+                        "definitions": {
+                          "type": "number"
+                        },
+                        "legacyMirrorBindings": {
+                          "type": "number"
+                        },
+                        "orphanBindings": {
+                          "type": "number"
+                        },
+                        "unboundDefinitions": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "definitions",
+                        "bindings",
+                        "unboundDefinitions",
+                        "orphanBindings",
+                        "boundTagsWithoutConsumer",
+                        "contactsWithCapabilities",
+                        "contactsWithBreakGlass",
+                        "legacyMirrorBindings"
+                      ],
+                      "type": "object"
+                    },
+                    "tagRuleErrors": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "error": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "source",
+                          "error"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "tagsWithoutConsumer": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "assetTypes": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "bindings": {
+                            "type": "number"
+                          },
+                          "slug": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "slug",
+                          "bindings",
+                          "assetTypes"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "unboundDefinitions": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "createdAt": {
+                            "type": "number"
+                          },
+                          "kind": {
+                            "type": "string"
+                          },
+                          "slug": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "slug",
+                          "kind",
+                          "source",
+                          "createdAt"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "generatedAt",
+                    "summary",
+                    "bindingsByAssetType",
+                    "unboundDefinitions",
+                    "orphanBindings",
+                    "consumers",
+                    "tagsWithoutConsumer",
+                    "powerTags",
+                    "legacyMirrors",
+                    "tagRuleErrors",
+                    "limit"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Read-only health report: unused tags, orphan bindings, tags without consumer, tags that grant power",
         "tags": [
           "tags"
         ]

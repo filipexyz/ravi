@@ -2987,6 +2987,70 @@ export const tagsListReturnSchema = z
   })
   .passthrough();
 
+export const tagsDoctorReturnSchema = z
+  .object({
+    generatedAt: z.number(),
+    summary: z
+      .object({
+        definitions: z.number(),
+        bindings: z.number(),
+        unboundDefinitions: z.number(),
+        orphanBindings: z.number(),
+        boundTagsWithoutConsumer: z.number(),
+        contactsWithCapabilities: z.number(),
+        contactsWithBreakGlass: z.number(),
+        legacyMirrorBindings: z.number(),
+      })
+      .strict(),
+    bindingsByAssetType: z.array(
+      z.object({ assetType: z.string(), bindings: z.number(), assets: z.number(), tags: z.number() }).strict(),
+    ),
+    unboundDefinitions: z.array(
+      z.object({ slug: z.string(), kind: z.string(), source: z.string(), createdAt: z.number() }).strict(),
+    ),
+    orphanBindings: z
+      .object({
+        checked: z.array(
+          z
+            .object({
+              assetType: z.string(),
+              bindings: z.number(),
+              orphans: z.number(),
+              sampleAssetIds: z.array(z.string()),
+            })
+            .strict(),
+        ),
+        uncheckedAssetTypes: z.array(z.string()),
+      })
+      .strict(),
+    consumers: z.array(
+      z
+        .object({
+          slug: z.string(),
+          kinds: z.array(z.enum(["observer_rule", "tag_rule", "permission_provider"])),
+          enabled: z.boolean(),
+        })
+        .strict(),
+    ),
+    tagsWithoutConsumer: z.array(
+      z.object({ slug: z.string(), bindings: z.number(), assetTypes: z.array(z.string()) }).strict(),
+    ),
+    powerTags: z.array(
+      z
+        .object({
+          contactId: z.string(),
+          capabilities: z.array(z.string()),
+          breakGlass: z.array(z.string()),
+          sources: z.array(z.string()),
+        })
+        .strict(),
+    ),
+    legacyMirrors: z.array(z.object({ source: z.string(), bindings: z.number(), rewrites: z.number() }).strict()),
+    tagRuleErrors: z.array(z.object({ source: z.string(), error: z.string() }).strict()),
+    limit: z.number(),
+  })
+  .strict();
+
 export const tagShowReturnSchema = z
   .object({
     tag: looseObjectSchema,
