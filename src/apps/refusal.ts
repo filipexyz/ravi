@@ -13,7 +13,6 @@ export const RAVI_APP_REFUSAL_CODES = [
   "APP_MANIFEST_INVALID",
   "APP_OPERATION_UNKNOWN",
   "APP_OPERATION_RESERVED",
-  "APP_OPERATION_UNSUPPORTED",
 ] as const;
 
 export type RaviAppRefusalCode = (typeof RAVI_APP_REFUSAL_CODES)[number];
@@ -45,9 +44,5 @@ export const RAVI_APP_REFUSALS: Record<RaviAppRefusalCode, { headline: string; s
   APP_OPERATION_RESERVED: {
     headline: "Ravi app operation is reserved and cannot be run directly.",
     suggestedAction: "Call an operation the app lists for callers; reserved operations are run by Ravi itself",
-  },
-  APP_OPERATION_UNSUPPORTED: {
-    headline: "Ravi app operation uses something the router does not support.",
-    suggestedAction: "Use a supported interface or handler in the app manifest, then retry",
   },
 };

@@ -280,15 +280,14 @@ agent with nothing to act on, even when the app wrote a structured error.
 The router refuses some runs before any app process, credential, or permission
 provider exists: an operation the app does not declare, an app manifest that is
 invalid or that lacks a declared permission on a mutating operation, an operation
-reserved for the permission provider, and an executor or interface the router
-does not support. Each refusal is a `RaviAppRefusalError` with a stable code:
+reserved for the permission provider, and an interface or builtin handler the
+router does not support. Each refusal is a `RaviAppRefusalError` with a stable code:
 
 | Code | When |
 | --- | --- |
 | `APP_OPERATION_UNKNOWN` | the app declares no such operation |
-| `APP_MANIFEST_INVALID` | the manifest is invalid or missing, a mutating operation declares no permission, a CLI operation has no command or invokes `ravi` of its own app |
+| `APP_MANIFEST_INVALID` | the manifest is invalid or missing, a mutating operation declares no permission, a CLI operation has no command or invokes `ravi` of its own app, or an interface or builtin handler is not supported (discovery already marks that manifest invalid, so this is the cause the caller sees) |
 | `APP_OPERATION_RESERVED` | the operation is reserved for permission-provider decisions |
-| `APP_OPERATION_UNSUPPORTED` | the interface or builtin handler is not supported |
 
 - The code, Ravi's own headline for it, and Ravi's own next step cross to the
   caller. The cause (the error text, built from identifiers the manifest
@@ -300,6 +299,9 @@ does not support. Each refusal is a `RaviAppRefusalError` with a stable code:
   failed." with HTTP 422 and no code to act on).
 - An error nobody classified keeps `APP_OPERATION_FAILED` and the fixed text;
   its message is never forwarded.
+- Scope limit: a manifest whose JSON does not parse has no id inside it, so
+  discovery cannot match it to the requested app and `apps run` still answers
+  `not_found`. `ravi apps check` names the parse error.
 
 ## Resolution Order
 

@@ -442,7 +442,7 @@ async function dispatchResolvedOperation(
     const handler = operation.handler?.trim();
     if (!handler || !RAVI_APP_BUILTIN_OPERATION_HANDLERS.has(handler)) {
       throw new RaviAppRefusalError(
-        "APP_OPERATION_UNSUPPORTED",
+        "APP_MANIFEST_INVALID",
         `Unsupported builtin app operation handler: ${handler ?? "(missing)"}`,
       );
     }
@@ -488,7 +488,7 @@ async function dispatchResolvedOperation(
   }
 
   throw new RaviAppRefusalError(
-    "APP_OPERATION_UNSUPPORTED",
+    "APP_MANIFEST_INVALID",
     `App operation interface is not supported by the router: ${interfaceName}`,
   );
 }
@@ -879,7 +879,7 @@ async function runBuiltinHandler(handler: string, app: RaviAppManifestRecord, ar
       message: "This scaffolded app does not have a domain list implementation yet.",
     };
   }
-  throw new RaviAppRefusalError("APP_OPERATION_UNSUPPORTED", `Unsupported builtin app operation handler: ${handler}`);
+  throw new RaviAppRefusalError("APP_MANIFEST_INVALID", `Unsupported builtin app operation handler: ${handler}`);
 }
 
 function manifestOperations(app: RaviAppManifestRecord): Record<string, unknown> {
