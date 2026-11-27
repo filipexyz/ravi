@@ -1,6 +1,12 @@
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { connect } from "nats";
+import { natsConnectAuth } from "../nats-auth.js";
+
+function natsConnectAuthOptions(): { user?: string; pass?: string } {
+  const auth = natsConnectAuth();
+  return auth.user ? { user: auth.user, pass: auth.pass } : {};
+}
 import { buildRunnerPm2Env } from "../channels/pm2-env.js";
 import { buildChannelsPm2Env, buildChannelsPm2StartArgs } from "../daemon-stdin.js";
 import { openStateDatabase } from "../db/state-boundary.js";
@@ -111,7 +117,7 @@ export async function withLiveJetStreamReader<T>(
   use: (reader: JetStreamResidueReader) => Promise<T>,
   url = process.env.NATS_URL || "nats://127.0.0.1:4222",
 ): Promise<T> {
-  const connection = await connect({ servers: url, reconnect: false, timeout: 5_000 });
+  const connection = await connect({ servers: url, reconnect: false, timeout: 5_000, ...natsConnectAuthOptions() });
   try {
     const manager = await connection.jetstreamManager();
     const absentAsNull = async <V>(read: () => Promise<V>): Promise<V | null> => {
@@ -263,7 +269,7 @@ export async function waitForBroker(
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     try {
-      const connection = await connect({ servers: url, reconnect: false, timeout: 2_000 });
+      const connection = await connect({ servers: url, reconnect: false, timeout: 2_000, ...natsConnectAuthOptions() });
       await connection.close();
       return true;
     } catch {
