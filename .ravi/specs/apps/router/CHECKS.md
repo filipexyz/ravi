@@ -48,6 +48,13 @@ ravi specs sync --json
 - The blocked plan contains identifiers and argument count, never raw args.
 - Missing-app, provider, and subprocess failures remain one canonical envelope
   in CLI, tool, and gateway responses and expose no raw stdout/stderr.
+- A refusal made before the app starts keeps its code and its cause in the
+  envelope: an operation the app does not declare is `APP_OPERATION_UNKNOWN`
+  with `cause` `Operation not found for app <id>: <operation>`, the reserved
+  permission-provider operation is `APP_OPERATION_RESERVED`, and neither is
+  `APP_OPERATION_FAILED`. Text mode prints the headline and `Cause:`. (Asserted
+  at the router and through `raiseContractFailure` in JSON and text; mutant:
+  classify every thrown error as `APP_OPERATION_FAILED` and both tests fail.)
 - A CLI that exits non-zero with a JSON error on stdout fails with
   `APP_OPERATION_FAILED`, exit `1`, and Ravi's own headline
   (`Ravi app operation failed.`) and next step (`Resolve the reported cause and

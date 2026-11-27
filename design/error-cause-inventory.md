@@ -155,9 +155,9 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | apps | src/apps/omie-orders/provider.ts | no-cause | Untyped broker/provider exceptions may contain credentials; propagate safe AppError codes only. | src/apps/omie-orders/provider.ts:998bbd3d9fb148d9d7ff1e9f |
 | apps | src/apps/omie-orders/provider.ts | no-cause | Transport diagnostics may echo authenticated request bodies; preserve only typed safe host denials. | src/apps/omie-orders/provider.ts:9cddb6246e0a4cbd113d426c |
 | apps | src/apps/omie-orders/scope.ts | no-cause | Host configuration diagnostics may disclose private installation identifiers and paths. | src/apps/omie-orders/scope.ts:8aca198a9dec20deb3f790ca |
-| apps | src/apps/router.ts | fixed | binding retained / no recognized error surface | src/apps/router.ts:6e8890619b79f20ddba77ff3 |
 | apps | src/apps/router.ts | fixed | binding retained / no recognized error surface | src/apps/router.ts:be7924cab2b6818b47481d9d |
 | apps | src/apps/router.ts | triaged-follow-up | catch-without-binding | src/apps/router.ts:ccbdb880a3313f6d6887530a |
+| apps | src/apps/router.ts | fixed | binding retained / no recognized error surface | src/apps/router.ts:d8b0c2444d49e34555a44829 |
 | apps | src/apps/router.ts | triaged-follow-up | catch-without-binding | src/apps/router.ts:e39c75939f3bada55ce4bba9 |
 | apps | src/apps/scaffold.ts | triaged-follow-up | catch-without-binding | src/apps/scaffold.ts:7539c3f22a40bad7711dec0c |
 | apps | src/apps/script-operation.ts | fixed | binding retained / no recognized error surface | src/apps/script-operation.ts:91d1cf6f8c44d60485cbb2b3 |
