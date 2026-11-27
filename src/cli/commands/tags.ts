@@ -36,6 +36,7 @@ import {
   materializeContactPolicyCapabilities,
 } from "../../permissions/contact-policy-permissions-provider.js";
 import { getScopeContext, scopeHasCapability } from "../../permissions/scope.js";
+import { getDb } from "../../router/router-db.js";
 import { listContactIdsWithPolicyTags } from "../../contacts.js";
 import { assertOrgInternalTagWriteAllowed } from "../../decisions/org-tag.js";
 import {
@@ -390,6 +391,12 @@ function listChatGrantsForDoctor(): Array<{
   scope: string;
   capabilities: string[];
 }> {
+  // The grant reader creates its table on first use; the doctor only reads, so
+  // an installation that never stored a chat grant has none to list.
+  const exists = getDb()
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'permission_contact_chat_grants'")
+    .get();
+  if (!exists) return [];
   return listContactScopedProfileGrants().map((grant) => ({
     contactId: grant.contactId,
     profile: grant.profile,

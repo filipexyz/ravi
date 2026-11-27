@@ -39,5 +39,9 @@
 - `tags doctor` MUST list a chat-scoped grant whose profile carries
   capabilities, skip one that carries none, and count an admin profile name
   as break-glass (`src/tags/doctor.test.ts`, "lists chat-scoped grants").
+- `tags doctor` MUST leave `permission_contact_chat_grants` absent when it was
+  absent (`src/cli/commands/tags.test.ts`, "does not create the chat grant
+  table"), and its return contract MUST accept a report without the power
+  fields ("still accepts a report from a gateway older").
 - `bun test src/cli/commands/tags.test.ts` SHOULD pass after any change to the
   tags contract surface.

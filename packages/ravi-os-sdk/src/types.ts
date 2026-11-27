@@ -25287,7 +25287,7 @@ export type TagsDoctorReturn = {
     bindings: number;
     tags: number;
   }>;
-  chatGrantPower: Array<{
+  chatGrantPower?: Array<{
     breakGlass: string[];
     capabilities: string[];
     contactId: string;
@@ -25315,7 +25315,7 @@ export type TagsDoctorReturn = {
     }>;
     uncheckedAssetTypes: string[];
   };
-  power: "included" | "withheld";
+  power?: "included" | "withheld";
   powerTags: Array<{
     breakGlass: string[];
     capabilities: string[];
@@ -25325,8 +25325,8 @@ export type TagsDoctorReturn = {
   summary: {
     bindings: number;
     boundTagsWithoutConsumer: number;
-    chatGrantsWithBreakGlass: number | null;
-    chatGrantsWithCapabilities: number | null;
+    chatGrantsWithBreakGlass?: number | null;
+    chatGrantsWithCapabilities?: number | null;
     contactsWithBreakGlass: number | null;
     contactsWithCapabilities: number | null;
     definitions: number;

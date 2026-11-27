@@ -6,6 +6,7 @@ import { getDb } from "../../router/router-db.js";
 import { ContractError } from "../agent-contract.js";
 import { runWithContext, type ToolContext } from "../context.js";
 import type { ContextCapability } from "../../router/router-db.js";
+import { tagsDoctorReturnSchema } from "./operational-return-schemas.js";
 import { TagCommands } from "./tags.js";
 
 let stateDir: string | null = null;
@@ -247,5 +248,37 @@ describe("tags agent-first contract", () => {
     const admin = runDoctor([{ permission: "admin", objectType: "system", objectId: "*" }]);
     expect(admin.power).toBe("included");
     expect(admin.powerTags.find((row) => row.contactId === contactId)?.breakGlass).toContain("admin:system:*");
+  });
+  it("tags doctor does not create the chat grant table on an installation that never stored a grant", () => {
+    const grantTable = () =>
+      getDb()
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'permission_contact_chat_grants'")
+        .get();
+    expect(grantTable()).toBeNull();
+    const report = runWithContext(
+      {
+        agentId: "doctor-test-agent",
+        context: {
+          contextId: "ctx_doctor_grants",
+          contextKey: "rctx_doctor_grants",
+          kind: "agent-runtime",
+          agentId: "doctor-test-agent",
+          capabilities: [{ permission: "admin", objectType: "system", objectId: "*" }],
+          createdAt: 0,
+        },
+      },
+      () => withoutLogs(() => new TagCommands().doctor(undefined, true)),
+    );
+    expect(report.power).toBe("included");
+    expect(report.chatGrantPower).toEqual([]);
+    expect(grantTable()).toBeNull();
+  });
+  it("tags doctor return contract still accepts a report from a gateway older than the power fields", () => {
+    const current = withoutLogs(() => new TagCommands().doctor(undefined, true));
+    const { power: _power, chatGrantPower: _grants, ...rest } = current;
+    const { chatGrantsWithCapabilities: _a, chatGrantsWithBreakGlass: _b, ...summary } = current.summary;
+    const older = { ...rest, summary: { ...summary, contactsWithCapabilities: 0, contactsWithBreakGlass: 0 } };
+    expect(tagsDoctorReturnSchema.safeParse(older).success).toBe(true);
+    expect(tagsDoctorReturnSchema.safeParse(current).success).toBe(true);
   });
 });

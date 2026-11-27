@@ -943,11 +943,11 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/tag-rules.ts | 260 | fixed | binding retained / no recognized error surface | src/cli/commands/tag-rules.ts:2c45b619b455ce9d7cb8d32f |
 | cli | src/cli/commands/tag-rules.ts | 348 | fixed | binding retained / no recognized error surface | src/cli/commands/tag-rules.ts:d329bd9938b3ecd0ddfca061 |
 | cli | src/cli/commands/tag-rules.ts | 376 | fixed | binding retained / no recognized error surface | src/cli/commands/tag-rules.ts:d8d7d8106e3aa4d6e4f3452e |
-| cli | src/cli/commands/tags.ts | 101 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:c2c2f86e21aa1c638a81631b |
-| cli | src/cli/commands/tags.ts | 709 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:801345fe6d3f37a500ff402f |
-| cli | src/cli/commands/tags.ts | 892 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:78cedc1c19b2ab730c104a5e |
-| cli | src/cli/commands/tags.ts | 1034 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:28147ffb7304c1450dd98a2c |
-| cli | src/cli/commands/tags.ts | 1216 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:229582d3d997f2d38df16761 |
+| cli | src/cli/commands/tags.ts | 102 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:c2c2f86e21aa1c638a81631b |
+| cli | src/cli/commands/tags.ts | 716 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:801345fe6d3f37a500ff402f |
+| cli | src/cli/commands/tags.ts | 899 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:78cedc1c19b2ab730c104a5e |
+| cli | src/cli/commands/tags.ts | 1041 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:28147ffb7304c1450dd98a2c |
+| cli | src/cli/commands/tags.ts | 1223 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:229582d3d997f2d38df16761 |
 | cli | src/cli/commands/tasks-automations.ts | 103 | fixed | binding retained / no recognized error surface | src/cli/commands/tasks-automations.ts:6a335c9738033cdffcb052e1 |
 | cli | src/cli/commands/tasks-automations.ts | 330 | fixed | binding retained / no recognized error surface | src/cli/commands/tasks-automations.ts:5579a2d508e744aa0948b224 |
 | cli | src/cli/commands/tasks-profiles.ts | 214 | fixed | binding retained / no recognized error surface | src/cli/commands/tasks-profiles.ts:da08d6b34d6512303bf96a14 |

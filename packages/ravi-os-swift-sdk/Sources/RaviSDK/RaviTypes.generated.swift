@@ -36552,20 +36552,20 @@ public struct TagsDoctorOptions: Codable, Sendable {
 
 public struct TagsDoctorReturn: Codable, Sendable {
   public var bindingsByAssetType: [RaviJSON]
-  public var chatGrantPower: [RaviJSON]
+  public var chatGrantPower: [RaviJSON]?
   public var consumers: [RaviJSON]
   public var generatedAt: Double
   public var legacyMirrors: [RaviJSON]
   public var limit: Double
   public var orphanBindings: RaviJSON
-  public var power: String
+  public var power: String?
   public var powerTags: [RaviJSON]
   public var summary: RaviJSON
   public var tagRuleErrors: [RaviJSON]
   public var tagsWithoutConsumer: [RaviJSON]
   public var unboundDefinitions: [RaviJSON]
 
-  public init(bindingsByAssetType: [RaviJSON], chatGrantPower: [RaviJSON], consumers: [RaviJSON], generatedAt: Double, legacyMirrors: [RaviJSON], limit: Double, orphanBindings: RaviJSON, power: String, powerTags: [RaviJSON], summary: RaviJSON, tagRuleErrors: [RaviJSON], tagsWithoutConsumer: [RaviJSON], unboundDefinitions: [RaviJSON]) {
+  public init(bindingsByAssetType: [RaviJSON], chatGrantPower: [RaviJSON]? = nil, consumers: [RaviJSON], generatedAt: Double, legacyMirrors: [RaviJSON], limit: Double, orphanBindings: RaviJSON, power: String? = nil, powerTags: [RaviJSON], summary: RaviJSON, tagRuleErrors: [RaviJSON], tagsWithoutConsumer: [RaviJSON], unboundDefinitions: [RaviJSON]) {
     self.bindingsByAssetType = bindingsByAssetType
     self.chatGrantPower = chatGrantPower
     self.consumers = consumers

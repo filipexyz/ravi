@@ -130724,8 +130724,6 @@ export const TagsDoctorReturnSchema = {
         "boundTagsWithoutConsumer",
         "contactsWithCapabilities",
         "contactsWithBreakGlass",
-        "chatGrantsWithCapabilities",
-        "chatGrantsWithBreakGlass",
         "legacyMirrorBindings"
       ],
       "type": "object"
@@ -130806,14 +130804,12 @@ export const TagsDoctorReturnSchema = {
   "required": [
     "generatedAt",
     "summary",
-    "power",
     "bindingsByAssetType",
     "unboundDefinitions",
     "orphanBindings",
     "consumers",
     "tagsWithoutConsumer",
     "powerTags",
-    "chatGrantPower",
     "legacyMirrors",
     "tagRuleErrors",
     "limit"

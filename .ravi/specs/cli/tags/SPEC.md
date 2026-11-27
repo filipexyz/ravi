@@ -69,7 +69,8 @@ ZERO braked ops — that absence is a decision of this spec, not an omission.
    break-glass first, and bindings from legacy mirrors with their rewrite
    churn. It also lists chat-scoped grants (one chat or a chat tag) whose
    profile carries capabilities, break-glass first; the grants are listed as
-   stored, before the contact eligibility check the runtime applies.
+   stored, before the contact eligibility check the runtime applies; with no
+   grant table it lists none and MUST NOT create the table.
    `--limit` (1..500, default 50; anything else is a usage error, exit 2)
    truncates every list section; `summary` counts are never truncated.
 10. The two power sections of `tags doctor` (contacts with capabilities from
@@ -78,6 +79,9 @@ ZERO braked ops — that absence is a decision of this spec, not an omission.
    alone is not enough. For any other caller the report says
    `power: "withheld"`, both sections are empty and their four `summary`
    counts are `null` (not `0`, which would read as "nobody has power").
+   `power`, `chatGrantPower` and the two chat-grant counts are optional in
+   the return contract, so a newer SDK still decodes a report from an older
+   gateway.
 
 ## Write classification (brake decision per op)
 

@@ -132260,8 +132260,6 @@ class RaviSchemas {
         "boundTagsWithoutConsumer",
         "contactsWithCapabilities",
         "contactsWithBreakGlass",
-        "chatGrantsWithCapabilities",
-        "chatGrantsWithBreakGlass",
         "legacyMirrorBindings"
       ],
       "type": "object"
@@ -132342,14 +132340,12 @@ class RaviSchemas {
   "required": [
     "generatedAt",
     "summary",
-    "power",
     "bindingsByAssetType",
     "unboundDefinitions",
     "orphanBindings",
     "consumers",
     "tagsWithoutConsumer",
     "powerTags",
-    "chatGrantPower",
     "legacyMirrors",
     "tagRuleErrors",
     "limit"

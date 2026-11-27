@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "219e99767e83a6ba"
+    "version": "a4d4e6335f9559d9"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -148732,8 +148732,6 @@
                         "boundTagsWithoutConsumer",
                         "contactsWithCapabilities",
                         "contactsWithBreakGlass",
-                        "chatGrantsWithCapabilities",
-                        "chatGrantsWithBreakGlass",
                         "legacyMirrorBindings"
                       ],
                       "type": "object"
@@ -148814,14 +148812,12 @@
                   "required": [
                     "generatedAt",
                     "summary",
-                    "power",
                     "bindingsByAssetType",
                     "unboundDefinitions",
                     "orphanBindings",
                     "consumers",
                     "tagsWithoutConsumer",
                     "powerTags",
-                    "chatGrantPower",
                     "legacyMirrors",
                     "tagRuleErrors",
                     "limit"
