@@ -85,6 +85,28 @@ describe("rebaseAgentDefaultsObject (deep three-way merge)", () => {
     });
   });
 
+  it("keeps two first grants made from a snapshot without a capability list (Devin #1059)", () => {
+    const gh = { permission: "execute", objectType: "executable", objectId: "gh" };
+    const jq = { permission: "execute", objectType: "executable", objectId: "jq" };
+    const base = { runtimePermissions: { profile: "explicit-only" } };
+    const current = { runtimePermissions: { profile: "explicit-only", capabilities: [gh] } };
+    const next = { runtimePermissions: { profile: "explicit-only", capabilities: [jq] } };
+    expect(rebaseAgentDefaultsObject(current, base, next)).toEqual({
+      runtimePermissions: { profile: "explicit-only", capabilities: [gh, jq] },
+    });
+  });
+
+  it("keeps two first runtimePermissions writes made from a snapshot without the key", () => {
+    const gh = { permission: "execute", objectType: "executable", objectId: "gh" };
+    const jq = { permission: "execute", objectType: "executable", objectId: "jq" };
+    const current = { tts_voice: "x", runtimePermissions: { profile: "explicit-only", capabilities: [gh] } };
+    const next = { tts_voice: "x", runtimePermissions: { profile: "explicit-only", capabilities: [jq] } };
+    expect(rebaseAgentDefaultsObject(current, { tts_voice: "x" }, next)).toEqual({
+      tts_voice: "x",
+      runtimePermissions: { profile: "explicit-only", capabilities: [gh, jq] },
+    });
+  });
+
   it("drops an element the writer removed and keeps one another writer added", () => {
     const base = { tags: ["a", "b"] };
     const current = { tags: ["a", "b", "c"] };

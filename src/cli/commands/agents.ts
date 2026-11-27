@@ -1783,13 +1783,16 @@ SOURCES
     routerConfig.rebaseAgentDefaults(id, agent.defaults, nextDefaults);
     revokeLiveRuntimeContextsForAgent(id);
     const updated = getAgent(id) ?? { ...agent, defaults: nextDefaults };
+    // Report what was stored: the rebase may have kept a grant another writer
+    // landed between this command's read and its write.
+    const storedAfter = getAgentRuntimePermissionsConfigFromDefaults(updated.defaults);
     const payload = {
       action: "permissions" as const,
       changed: true as const,
       agentId: id,
       before,
-      after,
-      defaults: nextDefaults ?? null,
+      after: storedAfter,
+      defaults: updated.defaults ?? null,
       inspectCommand: buildAgentPermissionsInspectCommand(id),
       recurringAccessCommand: buildAgentPermissionsRecurringAccessCommand(id),
       authorityLayer: "agent-defaults" as const,
@@ -1800,7 +1803,7 @@ SOURCES
     if (asJson) {
       printJson(payload);
     } else {
-      console.log(`\u2713 Agent runtime defaults updated: ${id} -> ${describeRuntimePermissionConfig(after)}`);
+      console.log(`\u2713 Agent runtime defaults updated: ${id} -> ${describeRuntimePermissionConfig(storedAfter)}`);
       printAgentRuntimeDefaultsGuidance(id);
       if (after?.profile === "full-access") {
         console.log(

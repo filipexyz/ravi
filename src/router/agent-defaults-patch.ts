@@ -79,6 +79,12 @@ function sameJson(a: unknown, b: unknown): boolean {
  * - Anything else (or a type change) is a leaf: the writer's value wins only
  *   when it differs from `base`.
  */
+function emptyLike(value: unknown): unknown {
+  if (Array.isArray(value)) return [];
+  if (isPlainRecord(value)) return {};
+  return undefined;
+}
+
 export function rebaseAgentDefaultsValue(current: unknown, base: unknown, next: unknown): unknown {
   if (sameJson(base, next)) return current;
   if (isPlainRecord(base) && isPlainRecord(next) && isPlainRecord(current)) {
@@ -90,7 +96,12 @@ export function rebaseAgentDefaultsValue(current: unknown, base: unknown, next: 
       if (inBase && !inNext) {
         delete out[key];
       } else if (!inBase && inNext) {
-        out[key] = next[key];
+        // The writer added a key it did not see. If another writer created it
+        // meanwhile, merge against an empty value of the same shape so both
+        // survive (two first grants from a snapshot without capabilities).
+        out[key] = Object.hasOwn(out, key)
+          ? rebaseAgentDefaultsValue(out[key], emptyLike(next[key]), next[key])
+          : next[key];
       } else if (!sameJson(base[key], next[key])) {
         if (Object.hasOwn(out, key)) out[key] = rebaseAgentDefaultsValue(out[key], base[key], next[key]);
         else out[key] = next[key];
