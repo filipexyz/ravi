@@ -1024,11 +1024,26 @@ function statusForFailure(
   return credential.status === "disabled" ? "disabled" : credential.status;
 }
 
+/**
+ * Re-check window for an exhausted quota whose reset time the provider did not
+ * give in any form (event, header or notice text). Provider usage windows
+ * (Claude five-hour and weekly, Codex windows) can reset at any hour, so a
+ * 24-hour guess kept a credential out of the pool for up to a day after its
+ * limit had already reset (27/11: a weekly limit that reset at 14:00 stayed
+ * blocked until 11:25 the next day and emptied the pool). Re-checking hourly
+ * costs at most one failed attempt per hour on a credential that is still
+ * exhausted; that attempt is classified again and re-arms the window.
+ */
+const UNKNOWN_QUOTA_RESET_RECHECK_MS = 60 * 60_000;
+/** Billing blocks clear on a payment, not on a usage window; keep the day. */
+const BILLING_BLOCK_RECHECK_MS = 24 * 60 * 60_000;
+
 function cooldownUntilForFailure(signal: RuntimeCredentialFailureSignal, now: number): number | undefined {
   if (signal.resetAt) return signal.resetAt;
   if (signal.retryAfterMs) return now + signal.retryAfterMs;
   if (signal.kind === "rate_limited") return now + 60_000;
-  if (signal.kind === "quota_exhausted" || signal.kind === "billing_blocked") return now + 24 * 60 * 60_000;
+  if (signal.kind === "quota_exhausted") return now + UNKNOWN_QUOTA_RESET_RECHECK_MS;
+  if (signal.kind === "billing_blocked") return now + BILLING_BLOCK_RECHECK_MS;
   return undefined;
 }
 

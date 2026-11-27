@@ -80,6 +80,7 @@ import {
   recordRuntimeCredentialSuccess,
 } from "./credential-store.js";
 import type { RuntimeCredentialFailureSignal } from "./credential-types.js";
+import type { RuntimeProviderLimitRejection } from "./types.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { hasRuntimeTurnAttemptInputMutation, type RuntimeTurnAttemptTerminalStatus } from "./crash-recovery-store.js";
 import { createQueuedRuntimeUserMessage, withoutTriggerAuthority } from "./delivery-queue.js";
@@ -634,6 +635,7 @@ async function recordRuntimeCredentialTurnFailure(input: {
   model: string;
   error: string;
   rawEvent?: Record<string, unknown>;
+  providerLimit?: RuntimeProviderLimitRejection;
   effectState: RuntimeModelBrokerEffectState;
 }): Promise<
   | {
@@ -675,6 +677,8 @@ async function recordRuntimeCredentialTurnFailure(input: {
       rawError?.requestId,
       rawError?.request_id,
     ),
+    ...(input.providerLimit?.resetAt !== undefined ? { resetAt: input.providerLimit.resetAt } : {}),
+    ...(input.providerLimit?.limitType ? { limitType: input.providerLimit.limitType } : {}),
     source: "sdk-error",
   });
 
@@ -4769,6 +4773,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               model,
               error: event.error,
               rawEvent: event.rawEvent,
+              ...(event.providerLimit ? { providerLimit: event.providerLimit } : {}),
               effectState: resolveModelBrokerEffectState(currentTurnReplaySafety),
             })
           : undefined;

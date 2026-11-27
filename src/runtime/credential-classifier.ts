@@ -6,6 +6,7 @@ import type {
   RuntimeCredentialLimitDimension,
   RuntimeCredentialLimitPressure,
 } from "./credential-types.js";
+import { normalizeProviderResetEpochMs, parseProviderResetTextEpochMs } from "./credential-reset-time.js";
 import { isRuntimeProviderLoginStub } from "./provider-login-stub.js";
 import type { RuntimeProviderId } from "./types.js";
 
@@ -21,6 +22,16 @@ export interface RuntimeCredentialClassifierInput {
   headers?: Record<string, string | number | undefined>;
   requestId?: string;
   source?: RuntimeCredentialFailureSignal["source"];
+  /**
+   * Provider-reported reset of the limit that failed this attempt, from a
+   * structured provider event (Claude `rate_limit_event.resetsAt`). Epoch
+   * seconds or milliseconds; normalized here.
+   */
+  resetAt?: number;
+  /** Provider name of the limit window that failed (Claude `rateLimitType`). */
+  limitType?: string;
+  /** Clock for parsing reset times written in the provider notice. */
+  now?: number;
 }
 
 const REQUEST_LIMIT_HEADERS = ["x-ratelimit-limit-requests", "anthropic-ratelimit-requests-limit"];
@@ -86,11 +97,24 @@ export function classifyRuntimeCredentialFailure(
   const message = input.message?.trim();
   const text = `${providerCode ?? ""} ${providerType ?? ""} ${message ?? ""}`.toLowerCase();
   const retryAfterMs = parseRetryAfterMs(headers["retry-after"]);
-  const resetAt = parseResetAt(headers);
+  const classified = classifyKind({ status, providerCode, providerType, text, provider: input.runtimeProvider });
+  // Reset evidence, strongest first: the provider's structured limit event,
+  // response headers, then the reset time written in the provider notice. The
+  // notice is read only for limit failures, so an unrelated error that happens
+  // to mention a time never sets a cooldown.
+  const isLimitFailure = classified.kind === "quota_exhausted" || classified.kind === "rate_limited";
+  const eventResetAt = isLimitFailure ? normalizeProviderResetEpochMs(input.resetAt) : undefined;
+  const resetAt =
+    eventResetAt ??
+    parseResetAt(headers) ??
+    (isLimitFailure ? parseProviderResetTextEpochMs(message, input.now ?? Date.now()) : undefined);
   const limitDimensions = extractLimitDimensions(headers);
+  const limitType = input.limitType?.trim();
+  if (isLimitFailure && limitType && eventResetAt !== undefined) {
+    limitDimensions.push({ name: limitType, remaining: 0, resetAt: eventResetAt });
+  }
   const rawHeaders = redactHeaders(headers);
 
-  const classified = classifyKind({ status, providerCode, providerType, text, provider: input.runtimeProvider });
   return {
     kind: classified.kind,
     confidence: classified.confidence,
