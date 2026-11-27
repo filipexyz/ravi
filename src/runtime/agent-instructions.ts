@@ -1,4 +1,13 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  constants as fsConstants,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  writeSync,
+} from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -197,13 +206,11 @@ export function ensureAgentInstructionFiles(
 
   if ((!before.agents || isLegacyAgentsBridge(before.agents.content)) && canonicalAgentsContent) {
     if (!before.agents) {
-      writeFileSync(agentsPath, canonicalAgentsContent);
-      createdAgents = true;
+      createdAgents = writeInstructionFileNoFollow(agentsPath, canonicalAgentsContent);
     } else if (
       normalizeInstructionContent(before.agents.content) !== normalizeInstructionContent(canonicalAgentsContent)
     ) {
-      writeFileSync(agentsPath, canonicalAgentsContent);
-      updatedAgents = true;
+      updatedAgents = writeInstructionFileNoFollow(agentsPath, canonicalAgentsContent);
     }
   }
 
@@ -211,8 +218,11 @@ export function ensureAgentInstructionFiles(
   const originalClaude = before.claude?.content ?? null;
   const originalAgents = before.agents?.content ?? null;
   const originalAgentsWasBridge = originalAgents ? isLegacyAgentsBridge(originalAgents) : false;
+  // AGENTS.md must hold real instructions before CLAUDE.md becomes a pointer to it.
+  // A symlinked legacy bridge is left untouched, so it still points at CLAUDE.md.
   const claudeCanBecomeBridge =
     !!afterAgents &&
+    !isLegacyAgentsBridge(afterAgents) &&
     (!originalClaude ||
       isClaudeCompatibilityBridge(originalClaude) ||
       originalAgentsWasBridge ||
@@ -221,11 +231,9 @@ export function ensureAgentInstructionFiles(
   if (afterAgents && claudeCanBecomeBridge) {
     const currentClaude = readInstructionFileIfExists(claudePath);
     if (!currentClaude) {
-      writeFileSync(claudePath, desiredClaudeBridge);
-      createdClaude = true;
+      createdClaude = writeInstructionFileNoFollow(claudePath, desiredClaudeBridge);
     } else if (normalizeInstructionContent(currentClaude) !== normalizeInstructionContent(desiredClaudeBridge)) {
-      writeFileSync(claudePath, desiredClaudeBridge);
-      updatedClaude = true;
+      updatedClaude = writeInstructionFileNoFollow(claudePath, desiredClaudeBridge);
     }
   }
 
@@ -248,6 +256,31 @@ export async function loadAgentWorkspaceInstructions(cwd: string): Promise<Agent
   }
 
   return agents ?? claude;
+}
+
+/**
+ * Write an instruction file without following a symlink at that path. The
+ * workspace belongs to the agent: a link it planted (even a dangling one) must
+ * not make the daemon create or overwrite a file somewhere else. A symlink is
+ * left as it is and the write is skipped.
+ */
+function writeInstructionFileNoFollow(path: string, content: string): boolean {
+  try {
+    if (lstatSync(path).isSymbolicLink()) return false;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  const fd = openSync(
+    path,
+    fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | (fsConstants.O_NOFOLLOW ?? 0),
+    0o644,
+  );
+  try {
+    writeSync(fd, content);
+  } finally {
+    closeSync(fd);
+  }
+  return true;
 }
 
 function readInstructionFileIfExists(path: string): string | null {

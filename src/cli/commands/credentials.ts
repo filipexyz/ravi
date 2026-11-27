@@ -2,6 +2,7 @@ import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { z } from "zod";
 import {
+  buildCredentialInventory,
   deleteSecret,
   execCredentialBroker,
   explainCredentialPolicy,
@@ -18,7 +19,7 @@ import {
   type CredentialConnectionStatus,
 } from "../../credentials/index.js";
 import { buildCommand, buildOffsetPagination } from "../../utils/pagination.js";
-import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import { CONTRACT_EXIT_USAGE, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { jsonObjectSchema } from "../return-schemas.js";
@@ -90,6 +91,89 @@ const credentialBrokerReturnSchema = z
   })
   .strict();
 
+const credentialSecretDescriptionSchema = z.union([
+  z
+    .object({
+      available: z.literal(true),
+      exists: z.boolean(),
+      version: z.number().nullable(),
+      createdAt: z.number().nullable(),
+      updatedAt: z.number().nullable(),
+      deleted: z.boolean(),
+    })
+    .strict(),
+  z
+    .object({
+      available: z.literal(false),
+      reason: z.enum([
+        "unsupported",
+        "not_configured",
+        "forbidden",
+        "sealed",
+        "unreachable",
+        "invalid_ref",
+        "redirected",
+        "error",
+      ]),
+    })
+    .strict(),
+]);
+const credentialInventoryReturnSchema = z
+  .object({
+    generatedAt: z.number(),
+    degraded: z.boolean(),
+    degradedReasons: z.array(
+      z.enum([
+        "unsupported",
+        "not_configured",
+        "forbidden",
+        "sealed",
+        "unreachable",
+        "invalid_ref",
+        "redirected",
+        "error",
+      ]),
+    ),
+    total: z.number(),
+    items: z.array(
+      z
+        .object({
+          id: z.string(),
+          provider: z.string(),
+          connection: z.string(),
+          label: z.string().nullable(),
+          backend: z.enum(["file", "keychain", "vault"]),
+          secretRefAlias: z.string(),
+          status: z.enum(["active", "disabled"]),
+          scopes: z.array(z.string()),
+          owner: z.string().nullable(),
+          purpose: z.string().nullable(),
+          createdAt: z.number(),
+          updatedAt: z.number(),
+          rotatedAt: z.number().nullable(),
+          expiresAt: z.number().nullable(),
+          disabledAt: z.number().nullable(),
+          lastUsedAt: z.number().nullable(),
+          secret: credentialSecretDescriptionSchema.nullable(),
+        })
+        .strict(),
+    ),
+    audit: z.array(
+      z
+        .object({
+          at: z.number(),
+          provider: z.string(),
+          connection: z.string(),
+          action: z.string(),
+          decision: z.string(),
+          resultStatus: z.string().nullable(),
+          errorCode: z.string().nullable(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
@@ -116,6 +200,32 @@ function collectCsv(value: string | undefined): string[] {
 function backendValue(value: string | undefined): CredentialBackend {
   if (value === "file" || value === "keychain" || value === "vault") return value;
   throw new Error("--backend must be file, keychain or vault");
+}
+
+const EXPIRES_AT_USAGE = "--expires-at must be an ISO date, e.g. 2027-02-16";
+
+/**
+ * ISO 8601 only (date, or date-time with Z/offset) and a real calendar date.
+ * Date.parse alone also takes HTTP-dates and locale strings, and rolls
+ * 2027-02-30 over to March. An invalid value is a usage error (exit 2).
+ */
+function expiresAtValue(value: string | undefined, asJson?: boolean): number | undefined {
+  if (value === undefined) return undefined;
+  const match = /^(\d{4})-(\d{2})-(\d{2})(T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2}))?$/.exec(value);
+  const parsed = match ? Date.parse(value) : Number.NaN;
+  const [year, month, day] = match ? [Number(match[1]), Number(match[2]), Number(match[3])] : [0, 0, 0];
+  const calendar = new Date(Date.UTC(year, month - 1, day));
+  const realDate =
+    calendar.getUTCFullYear() === year && calendar.getUTCMonth() === month - 1 && calendar.getUTCDate() === day;
+  if (!Number.isFinite(parsed) || !realDate) {
+    contractFail("credentials connections add", "USAGE_ERROR", EXPIRES_AT_USAGE, {
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: { suggestedAction: "Pass a date like 2027-02-16 or 2027-02-16T10:00:00Z" },
+      diagnostic: errorDiagnostic(EXPIRES_AT_USAGE, { operation: "credentials connections add" }),
+    });
+  }
+  return parsed;
 }
 
 function statusValue(value: string | undefined): CredentialConnectionStatus | undefined {
@@ -224,6 +334,47 @@ export class CredentialConnectionsCommands {
     return payload;
   }
 
+  @Command({
+    name: "inventory",
+    description:
+      "Metadata-only snapshot of up to 500 connections (active and disabled; `total` counts all): lifecycle, last use, backend version/times and recent audit. Never reads a secret value",
+  })
+  @CommandAccess({ kind: "read", resource: "credentials.connections", action: "inventory", risk: "low" })
+  @Returns(credentialInventoryReturnSchema)
+  async inventory(
+    @Option({ flags: "--skip-describe", description: "Skip backend metadata (versions, times); local data only" })
+    skipDescribe?: boolean,
+    @Option({ flags: "--audit-limit <n>", description: "Recent audit rows to include (0-200)", defaultValue: "20" })
+    auditLimit?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const payload = await buildCredentialInventory({
+      describe: skipDescribe !== true,
+      auditLimit: parseIntOption(auditLimit, 20),
+    });
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    console.log(
+      `Credential inventory (${payload.items.length}/${payload.total})${payload.degraded ? ` degraded: ${payload.degradedReasons.join(", ")}` : ""}`,
+    );
+    for (const item of payload.items) {
+      const secret = item.secret
+        ? item.secret.available
+          ? item.secret.exists
+            ? `v${item.secret.version ?? "?"}${item.secret.deleted ? " deleted" : ""}`
+            : "missing"
+          : `metadata ${item.secret.reason}`
+        : "-";
+      const lastUsed = item.lastUsedAt ? new Date(item.lastUsedAt).toISOString() : "never";
+      console.log(
+        `- ${item.provider}:${item.connection} ${item.status} ${item.secretRefAlias} secret=${secret} lastUsed=${lastUsed}`,
+      );
+    }
+    return payload;
+  }
+
   @Command({ name: "show", description: "Show one credential connection without secret values" })
   @CommandAccess({ kind: "read", resource: "credentials.connections", action: "show", risk: "low" })
   @Returns(credentialConnectionReturnSchema)
@@ -270,12 +421,20 @@ export class CredentialConnectionsCommands {
     @Option({ flags: "--vault-path <path>", description: "Vault logical path" }) vaultPath?: string,
     @Option({ flags: "--vault-key <key>", description: "Vault data key", defaultValue: "token" }) vaultKey?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--owner <who>", description: "Who answers for this credential (lifecycle metadata)" })
+    owner?: string,
+    @Option({ flags: "--purpose <text>", description: "What the credential is for (lifecycle metadata)" })
+    purpose?: string,
+    @Option({ flags: "--expires-at <iso>", description: "When the credential expires, ISO date (lifecycle metadata)" })
+    expiresAt?: string,
   ) {
     if (!provider) fail("--provider is required");
     if (!connection) fail("--connection is required");
     const providerId = normalizeCredentialIdentifier(provider, "provider");
     const connectionId = normalizeCredentialIdentifier(connection, "connection");
     const resolvedBackend = backendValue(backend);
+    const resolvedExpiresAt = expiresAtValue(expiresAt, asJson);
+    const existed = getCredentialConnection(providerId, connectionId) !== null;
     if (secretStdin && secretRef) fail("Use either --secret-stdin or --secret-ref, not both.");
     if (!secretStdin && !secretRef) fail("Provide --secret-stdin or --secret-ref.");
     const resolvedSecretRef = secretRef
@@ -297,6 +456,11 @@ export class CredentialConnectionsCommands {
       secretRef: resolvedSecretRef,
       scopes: collectCsv(scopes),
       status: "active",
+      owner,
+      purpose,
+      expiresAt: resolvedExpiresAt,
+      // A new value written over an existing connection is a rotation.
+      ...(secretStdin && existed ? { rotatedAt: Date.now() } : {}),
     });
     const payload = { connection: publicCredentialConnection(record) };
     if (asJson) {

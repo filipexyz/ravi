@@ -1,5 +1,6 @@
 export {
   deleteSecret,
+  describeSecret,
   readSecret,
   readSecretFromStdin,
   redactSecretRef,
@@ -24,6 +25,8 @@ export {
   getCredentialConnection,
   getCredentialsDbPath,
   listCredentialConnections,
+  listCredentialLastUsedAt,
+  listRecentCredentialAuditEvents,
   normalizeCredentialIdentifier,
   recordCredentialAuditEvent,
   removeCredentialConnection,
@@ -38,6 +41,26 @@ export type {
   CredentialConnectionPage,
   CredentialConnectionRecord,
   CredentialConnectionStatus,
+  CredentialInventory,
+  CredentialInventoryAuditEntry,
+  CredentialInventoryItem,
+  CredentialSecretDescription,
+  CredentialSecretUnavailableReason,
   CredentialPolicyExplanation,
   PublicCredentialConnection,
 } from "./types.js";
+export {
+  buildCredentialInventory,
+  credentialSecretRefAlias,
+  CREDENTIAL_INVENTORY_MAX_ITEMS,
+  type BuildCredentialInventoryInput,
+} from "./inventory.js";
+export {
+  CREDENTIAL_INVENTORY_SYNC_DOMAIN,
+  CREDENTIAL_INVENTORY_SYNC_ENV,
+  credentialInventorySyncPayload,
+  enqueueCredentialInventorySnapshot,
+  isCredentialInventorySyncEnabled,
+  type CredentialInventorySyncPayload,
+  type EnqueueCredentialInventoryResult,
+} from "./inventory-sync.js";

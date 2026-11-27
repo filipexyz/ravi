@@ -2,6 +2,7 @@
  * Sandbox Commands - run one Ravi task in a disposable cloud sandbox (E2B)
  */
 
+import { resolveCallerPath } from "../caller-cwd.js";
 import "reflect-metadata";
 import { readFileSync } from "node:fs";
 import { z } from "zod";
@@ -142,6 +143,8 @@ export class SandboxCommands {
 
     let result;
     try {
+      // Saved where the gate checked: resolved against the caller's cwd.
+      const outputDir = output?.trim() ? resolveCallerPath(output, "write") : undefined;
       result = await runE2bSandboxTask({
         repo,
         instructions,
@@ -151,7 +154,7 @@ export class SandboxCommands {
         model,
         timeoutMin: timeout,
         keep,
-        outputDir: output,
+        outputDir,
         credentials,
         onStep: asJson ? undefined : (message) => console.log(message),
       });

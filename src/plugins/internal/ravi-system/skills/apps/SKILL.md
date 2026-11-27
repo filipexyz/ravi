@@ -9,6 +9,7 @@ description: |
   - Entender o CLI real, o contexto delegado e as superficies consumidoras de um app
   - Usar operations, storage, events, artifacts, skills e health checks declarados em ravi.app.json
   - Ensinar agentes a operar apps via `ravi <app-id> <operation>`
+  - Procurar apps na loja oficial (instalar e liberar sao do operador)
 ---
 
 # Ravi Apps
@@ -59,6 +60,41 @@ testando o router.
 - Se o alias `ravi <app-id> <op>` falhar num turno de agente com `REAL_STATE_ACCESS_REFUSED` (runtime instalado mais antigo), use `ravi apps run <app-id> <op> --execute --json -- <args>`.
 - `ravi pages ship --html|--dir` de dentro do app precisa de `use:tool:Read` no `context.allow`. Prefira passar o conteúdo com `--body` (sem leitura de arquivo), que não pede essa permissão.
 - Operação que faz mais de um ship ou upload pode passar de 25 s e virar job destacado. Confira o resultado por uma operação de leitura do próprio app (ex.: `list --json`), sem repetir a escrita.
+
+## Loja De Apps
+
+Apps de terceiros chegam pela loja oficial (indice assinado em
+`filipexyz/ravi-apps`). Instalar e liberar sao decisoes do operador, no
+terminal dele; de um turno de agente esses comandos saem `APP_STORE_OPERATOR_ONLY`
+(exit 3). O agente pode procurar e conferir:
+
+```bash
+ravi apps search [texto] --json
+ravi apps verify [app-id] --json
+```
+
+O operador instala e escolhe quem ve:
+
+```bash
+ravi apps install <app-id>                 # plano, exit 3
+ravi apps install <app-id> --execute
+ravi apps allow <app-id> --agent <agent> --execute
+```
+
+- App instalado pela loja fica invisivel para todo agente ate `apps allow`,
+  mesmo com `full-access` ou `use:app:*`. Se um app da loja "sumiu", peca ao
+  operador para rodar `ravi apps verify` e `ravi apps allow`.
+- O indice so aceita apps `compose`: todo comando e o proprio `ravi`, e o
+  codigo do app roda como operacao `script` no sandbox (QuickJS em
+  WebAssembly, sem disco, rede, ambiente ou processos). O app nunca faz mais
+  que o agente que chama ja pode; a permissao do comando de baixo (ex.:
+  `pages ship`) continua sendo do agente.
+- Operacao `script` com `input.dir` (ex.: `--posts posts`) le so uma pasta
+  dentro do seu diretorio de trabalho, sem links simbolicos. Erros
+  `APP_SCRIPT_*` dizem o que corrigir.
+- Nao copie pastas para `~/.ravi/apps`: depois que a loja e usada, pasta sem
+  recibo nao carrega. Ferramentas de escrita de arquivo do agente tambem nao
+  escrevem ali.
 
 ## Fluxo Para Operar Um App
 

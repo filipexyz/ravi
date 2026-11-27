@@ -42,3 +42,48 @@
   401/403, malformed/inactive replies and unavailability MUST leave stores
   unchanged. Runtime authority, explicit remote configuration and forged
   transport metadata MUST never activate the local operator path.
+
+- `bun test src/cli/command-access.test.ts` MUST deny the local operator to a
+  `cli` call carrying `RAVI_AUTOMATION_PRINCIPAL=automation:job:*` or a
+  malformed marker, and MUST keep it for `automation:cron:*` and
+  `automation:trigger:*`. Removing the job check, dropping trigger from the
+  operator-owned set, or treating a malformed marker as operator-owned MUST
+  each fail a test.
+
+- `bun test src/omni/workspace-inspection.test.ts` MUST show that the edit
+  notice never runs git in the agent workspace: a planted `core.fsmonitor`
+  script never runs.
+
+- `bun test src/runtime/agent-instructions.test.ts` MUST show that a symlinked
+  `AGENTS.md` or `CLAUDE.md` is never written through, and that a symlinked
+  legacy `AGENTS.md` bridge leaves a regular `CLAUDE.md` with its instructions.
+
+- `bun test src/runtime/ravi-rules.test.ts` MUST show that a `.ravi/rules` link
+  out of the workspace loads nothing and that an import through a symlinked
+  directory is refused before any directory is created outside.
+
+- `bun test src/cli/caller-cwd.test.ts` MUST deny a read outside the session
+  workspace and temp to a person held below break-glass.
+
+- `bun test src/automation/shell-workspace-exposure.test.ts
+  src/cli/commands/doctor.test.ts` MUST flag a shell cron or trigger whose
+  command runs a file under an agent `cwd`, and `ravi doctor` MUST warn with
+  `permissions.shell_automation_in_agent_workspace`.
+
+- `bun test src/runtime/codex-provider.test.ts -t "held|sandbox"` MUST show a
+  held turn sending `sandboxPolicy: {type: "readOnly"}` on `turn/start`, an
+  operator turn after it sending `dangerFullAccess` again, and a thread opened
+  (or resumed) by a held turn in `read-only`.
+
+- `bun test src/runtime/runtime-request-context.test.ts -t "marks the runtime env"`
+  MUST show `RAVI_TURN_HELD_BELOW_AGENT=1` on a held person's turn, the key
+  cleared when the next turn is the owner's, and the key set again for a
+  contact narrowed to a governed chat's grants (no break-glass deny there).
+
+- `bun test src/runtime/codex-provider.test.ts -t "held|sandbox"` MUST show the
+  thread a held turn opens (or resumes) with `web_search: "disabled"` and
+  `tools.view_image: false`, and the next operator thread without them.
+
+- `bun test src/runtime/runtime-request-context.test.ts -t "every executable"`
+  MUST show a governed-chat grant for named executables (`ravi`, `ra*`) held
+  and only `execute:executable:*` keeping the agent's sandbox.

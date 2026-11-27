@@ -21,6 +21,7 @@ import { enforceRaviAppRunResult, raviAppErrorToContractError } from "./error-co
 import { maskedSecretForms, projectAppCliFailure } from "./failure.js";
 import { maybeRunAppAliasRoute, resolveAppAliasInvocation, runAppOperation } from "./router.js";
 import { discoverAppManifests } from "./service.js";
+import { commitChange, prepareLocalInstall, setExposure } from "./store/install.js";
 import { RaviAppError, type RaviAppRunResult } from "./types.js";
 
 declare const Bun: {
@@ -530,6 +531,110 @@ describe("Ravi app router", () => {
       handler: "apps.manifest.check",
     });
     expect(result.result).toMatchObject({ ok: true, checked: 1 });
+  });
+
+  it("runs a store app only when its files match the receipt and the agent was allowed", async () => {
+    const root = makeRepo();
+    const pkg = join(root, "pkg", "store-tasks");
+    mkdirSync(pkg, { recursive: true });
+    writeFileSync(join(pkg, "ravi.app.json"), JSON.stringify(manifest("store-tasks"), null, 2));
+    // An empty registry: other files in this process mock modules the full command registry imports.
+    const registry = { groups: [], commands: [] };
+    commitChange(prepareLocalInstall(pkg, { allowCode: true }, { registry }), { registry });
+
+    const operator = await runAppOperation({ appId: "store-tasks", operation: "check", json: true });
+    expect(operator.ok).toBe(true);
+
+    const agentRun = () =>
+      runWithContext(appToolContext([appCapability("use", "store-tasks")]), () =>
+        runAppOperation({ appId: "store-tasks", operation: "check", json: true }),
+      );
+    expect((await agentRun()).errorCode).toBe("not_found");
+    setExposure("store-tasks", "app-agent", true);
+    expect((await agentRun()).ok).toBe(true);
+
+    writeFileSync(join(process.env.RAVI_STATE_DIR!, "apps", "store-tasks", "extra.md"), "planted\n");
+    const tampered = await runAppOperation({ appId: "store-tasks", operation: "check", json: true });
+    expect(tampered.ok).toBe(false);
+    expect(tampered.errorCode).toBe("APP_TREE_CHANGED");
+  });
+
+  it("runs a script operation in the sandbox with the declared input folder", async () => {
+    const root = makeRepo();
+    const body = manifest("site-gen");
+    body.operations = {
+      "site-gen.build": {
+        interface: "script",
+        script: "lib/build.js",
+        input: { dir: "--posts" },
+        mutating: false,
+      },
+      "site-gen.publish": {
+        interface: "script",
+        script: "lib/build.js",
+        input: { dir: "--posts" },
+        handoff: { command: "ravi pages ship --json {args}", outputFlag: "--dir", flags: ["--route"] },
+        mutating: true,
+        permission: "site:write",
+      },
+    };
+    body.permissions = { required: [], optional: ["site:write"], mutating: ["site:write"] };
+    writeManifest(root, "site-gen", body);
+    const appDir = join(root, "src", "apps", "site-gen");
+    mkdirSync(join(appDir, "lib"), { recursive: true });
+    writeFileSync(
+      join(appDir, "lib", "build.js"),
+      `function main(input) { var names = Object.keys(input.files).sort(); return { files: { "index.html": names.join(",") }, args: ["--route", "/s"], result: { names: names, args: input.args } }; }`,
+    );
+    mkdirSync(join(root, "posts"));
+    writeFileSync(join(root, "posts", "a.md"), "A");
+
+    const built = await runAppOperation({
+      appId: "site-gen",
+      operation: "build",
+      args: ["--posts", "posts", "--title", "T"],
+      json: true,
+    });
+    expect(built.errorCode ?? null).toBeNull();
+    expect(built.ok).toBe(true);
+    expect(built.interface).toBe("script");
+    expect(built.result).toEqual({
+      result: { names: ["a.md"], args: ["--title", "T"] },
+      files: { "index.html": "a.md" },
+      log: [],
+    });
+
+    const escaped = await runAppOperation({
+      appId: "site-gen",
+      operation: "build",
+      args: ["--posts", tmpdir()],
+      json: true,
+    });
+    expect(escaped.errorCode).toBe("APP_SCRIPT_INPUT_INVALID");
+
+    // An agent reads the folder only with the right to read local files, as for any CLI file argument.
+    const agentBuild = (capabilities: ReturnType<typeof appCapability>[]) =>
+      runWithContext(appToolContext(capabilities), () =>
+        runAppOperation({ appId: "site-gen", operation: "build", args: ["--posts", "posts"], json: true }),
+      );
+    expect((await agentBuild([appCapability("use", "site-gen")])).errorCode).toBe("PERMISSION_DENIED");
+    expect(
+      (
+        await agentBuild([
+          appCapability("use", "site-gen"),
+          { permission: "use", objectType: "tool", objectId: "Read" },
+        ])
+      ).ok,
+    ).toBe(true);
+
+    const plan = await runAppOperation({
+      appId: "site-gen",
+      operation: "publish",
+      args: ["--posts", "posts"],
+      json: true,
+    });
+    expect(plan.status).toBe("blocked");
+    expect(plan.dryRun).toBe(true);
   });
 
   it("keeps the operation name when routing <op> --help to the help builtin", () => {

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { runWithContext, type ToolContext } from "../cli/context.js";
+import { buildEffectiveCapabilities } from "../permissions/delegation.js";
 import { listPermissionDenials } from "../permissions/denials.js";
 import type { ContextCapability, ContextRecord } from "../router/router-db.js";
 import { dbCreateAgent, dbUpdateAgent } from "../router/router-db.js";
@@ -40,10 +41,30 @@ async function callBashHook(command: string, agentId?: string, context?: ToolCon
   return context ? runWithContext(context, run) : run();
 }
 
-async function callToolHook(toolName: string, agentId?: string, context?: ToolContext) {
-  const hook = createToolPermissionHook({ getAgentId: () => agentId });
+interface ToolHookCallOptions {
+  mcpServer?: { name?: unknown; source?: unknown };
+  hostMcpServers?: readonly string[];
+}
+
+async function callToolHook(
+  toolName: string,
+  agentId?: string,
+  context?: ToolContext,
+  { mcpServer, hostMcpServers }: ToolHookCallOptions = {},
+) {
+  const hook = createToolPermissionHook({ getAgentId: () => agentId, hostMcpServers });
   const hookFn = hook.hooks[0];
-  const run = () => hookFn({ hook_event_name: "PreToolUse", tool_name: toolName, tool_input: {} }, null, dummyContext);
+  const run = () =>
+    hookFn(
+      {
+        hook_event_name: "PreToolUse",
+        tool_name: toolName,
+        tool_input: {},
+        ...(mcpServer ? { mcp_server: mcpServer } : {}),
+      },
+      null,
+      dummyContext,
+    );
   return context ? runWithContext(context, run) : run();
 }
 
@@ -591,10 +612,182 @@ describe("createToolPermissionHook", () => {
     expect(isDenied(result)).toBe(false);
   });
 
-  it("skips non-SDK tools (MCP tools)", async () => {
-    // "mcp_custom_tool" is not in SDK_TOOLS, should be skipped
-    const result = await callToolHook("mcp_custom_tool", "dev");
-    expect(isDenied(result)).toBe(false);
+  it("denies the tool call when the check itself fails", async () => {
+    const failing = () => {
+      throw new Error("state unavailable");
+    };
+    const input = { hook_event_name: "PreToolUse", tool_name: "Read", tool_input: {} };
+
+    const toolResult = await createToolPermissionHook({ getAgentId: failing }).hooks[0]!(input, null, dummyContext);
+    expect(isDenied(toolResult)).toBe(true);
+    expect(getDenyReason(toolResult)).toContain("permission check failed");
+
+    const bashResult = await createBashPermissionHook({ getAgentId: failing }).hooks[0]!(
+      { ...input, tool_name: "Bash", tool_input: { command: "ls" } },
+      null,
+      dummyContext,
+    );
+    expect(isDenied(bashResult)).toBe(true);
+    expect(getDenyReason(bashResult)).toContain("permission check failed");
+  });
+
+  it("denies a tool call that carries no tool name", async () => {
+    const everyTool = makeToolContext("dev", [{ permission: "use", objectType: "tool", objectId: "*" }]);
+    const hook = createToolPermissionHook({ getAgentId: () => "dev" }).hooks[0]!;
+    const base = { hook_event_name: "PreToolUse", tool_input: {} };
+    // Absent, empty and non-string names: none of them is a name the ceiling can check.
+    const inputs = [base, ...["", undefined, null, 123, ["Read"]].map((tool_name) => ({ ...base, tool_name }))];
+
+    for (const input of inputs) {
+      const result = await runWithContext(everyTool, () => hook(input as never, null, dummyContext));
+      expect(isDenied(result)).toBe(true);
+      expect(getDenyReason(result)).toContain("without a tool name");
+    }
+  });
+
+  describe("tools outside the built-in list", () => {
+    const readOnly = () => makeToolContext("dev", [{ permission: "use", objectType: "tool", objectId: "Read" }]);
+    const projectServer = { name: "github", source: "project" };
+
+    it("denies an MCP tool the context does not hold, and records the server", async () => {
+      const result = await callToolHook(
+        "mcp__github__create_issue",
+        "dev",
+        { ...readOnly(), sessionKey: "agent:dev:main", sessionName: "dev-main" },
+        { mcpServer: projectServer },
+      );
+      expect(isDenied(result)).toBe(true);
+      expect(getDenyReason(result)).toContain("tool:mcp__github__create_issue");
+      expect(listPermissionDenials({ subjectType: "agent", subjectId: "dev", resolved: false })).toContainEqual(
+        expect.objectContaining({
+          relation: "use",
+          objectType: "tool",
+          objectId: "mcp__github__create_issue",
+          detail: expect.objectContaining({ mcpServer: projectServer }),
+        }),
+      );
+    });
+
+    it("denies an MCP tool when no agentId is available", async () => {
+      expect(isDenied(await callToolHook("mcp__github__create_issue", undefined))).toBe(true);
+    });
+
+    it("records the server of a denial cut to a bounded length", async () => {
+      // The server's name and source are text the runtime's configuration chose.
+      const result = await callToolHook("mcp__longname__call", "dev", makeToolContext("dev", []), {
+        mcpServer: { name: "n".repeat(300), source: "s".repeat(300) },
+      });
+      expect(isDenied(result)).toBe(true);
+      expect(listPermissionDenials({ subjectType: "agent", subjectId: "dev", resolved: false })).toContainEqual(
+        expect.objectContaining({
+          objectId: "mcp__longname__call",
+          detail: expect.objectContaining({ mcpServer: { name: "n".repeat(128), source: "s".repeat(32) } }),
+        }),
+      );
+    });
+
+    it("allows an MCP tool by exact name, by server pattern and by wildcard", async () => {
+      for (const objectId of ["mcp__github__create_issue", "mcp__github__*", "*"]) {
+        const context = makeToolContext("dev", [{ permission: "use", objectType: "tool", objectId }]);
+        expect(isDenied(await callToolHook("mcp__github__create_issue", "dev", context))).toBe(false);
+      }
+    });
+
+    it("matches a server pattern as a prefix of the tool name", async () => {
+      const context = makeToolContext("dev", [{ permission: "use", objectType: "tool", objectId: "mcp__github__*" }]);
+      expect(isDenied(await callToolHook("mcp__linear__create_issue", "dev", context))).toBe(true);
+      expect(isDenied(await callToolHook("mcp__github_enterprise__create_issue", "dev", context))).toBe(true);
+      // The grant is a name prefix, not a server identity: a server named
+      // `github__admin` answers under the same prefix and is covered.
+      expect(isDenied(await callToolHook("mcp__github__admin__delete_repo", "dev", context))).toBe(false);
+    });
+
+    for (const toolName of ["ListMcpResourcesTool", "ReadMcpResourceTool", "ReadMcpResourceDirTool"]) {
+      it(`checks the MCP resource reader ${toolName}`, async () => {
+        expect(isDenied(await callToolHook(toolName, "dev", readOnly()))).toBe(true);
+        const granted = makeToolContext("dev", [{ permission: "use", objectType: "tool", objectId: toolName }]);
+        expect(isDenied(await callToolHook(toolName, "dev", granted))).toBe(false);
+      });
+    }
+
+    for (const toolName of ["Monitor", "CronCreate", "RemoteTrigger", "Workflow", "ScheduleWakeup", "FutureTool"]) {
+      it(`checks ${toolName}, a tool the registry does not list`, async () => {
+        expect(isDenied(await callToolHook(toolName, "dev", readOnly()))).toBe(true);
+        expect(getDenyReason(await callToolHook(toolName, "dev", readOnly()))).toContain(`tool:${toolName}`);
+        const all = makeToolContext("dev", [{ permission: "use", objectType: "tool", objectId: "*" }]);
+        expect(isDenied(await callToolHook(toolName, "dev", all))).toBe(false);
+      });
+    }
+  });
+
+  describe("host MCP servers", () => {
+    const noTools = () => makeToolContext("dev", []);
+
+    it("lets a tool of a host in-process server run without the tool capability", async () => {
+      const result = await callToolHook("mcp__spec__enter_spec_mode", "dev", noTools(), {
+        mcpServer: { name: "spec", source: "sdk" },
+        hostMcpServers: ["spec"],
+      });
+      expect(isDenied(result)).toBe(false);
+    });
+
+    it("lets a host tool run when the session has no agent identity", async () => {
+      // Host tools are part of the runtime and were never tied to the agent's
+      // ceiling; every other tool is denied without an identity.
+      const options = { mcpServer: { name: "spec", source: "sdk" }, hostMcpServers: ["spec"] };
+      expect(isDenied(await callToolHook("mcp__spec__enter_spec_mode", undefined, undefined, options))).toBe(false);
+      expect(isDenied(await callToolHook("Read", undefined, undefined, options))).toBe(true);
+    });
+
+    it("never exempts a built-in tool name, whatever server arrives beside it", async () => {
+      const options = { mcpServer: { name: "spec", source: "sdk" }, hostMcpServers: ["spec"] };
+      for (const toolName of ["Read", "Bash", "Monitor", "ReadMcpResourceTool", "mcp_spec_tool"]) {
+        expect(isDenied(await callToolHook(toolName, "dev", noTools(), options))).toBe(true);
+      }
+    });
+
+    it("checks a configured server that reuses the host server's name", async () => {
+      for (const source of ["project", "user", "local", "plugin", "dynamic", "claudeai", "SDK", ""]) {
+        const result = await callToolHook("mcp__spec__enter_spec_mode", "dev", noTools(), {
+          mcpServer: { name: "spec", source },
+          hostMcpServers: ["spec"],
+        });
+        expect(isDenied(result)).toBe(true);
+      }
+    });
+
+    it("checks the host prefix when the runtime reports no server, and says so", async () => {
+      const result = await callToolHook("mcp__spec__enter_spec_mode", "dev", noTools(), { hostMcpServers: ["spec"] });
+      expect(isDenied(result)).toBe(true);
+      expect(getDenyReason(result)).toContain("did not report which MCP server owns this tool");
+
+      // Only a host prefix gets the note: any other denial keeps the plain reason.
+      const other = await callToolHook("mcp__github__create_issue", "dev", noTools(), { hostMcpServers: ["spec"] });
+      expect(getDenyReason(other)).toBe("Permission denied: agent:dev cannot use tool:mcp__github__create_issue");
+    });
+
+    it("checks an in-process server the session did not declare as its own", async () => {
+      const sdkServer = { name: "gateway", source: "sdk" };
+      expect(
+        isDenied(
+          await callToolHook("mcp__gateway__call", "dev", noTools(), {
+            mcpServer: sdkServer,
+            hostMcpServers: ["spec"],
+          }),
+        ),
+      ).toBe(true);
+      expect(isDenied(await callToolHook("mcp__gateway__call", "dev", noTools(), { mcpServer: sdkServer }))).toBe(true);
+    });
+
+    it("ignores a malformed server report", async () => {
+      for (const mcpServer of [{ source: "sdk" }, { name: ["spec"], source: "sdk" }, { name: "spec" }]) {
+        const result = await callToolHook("mcp__spec__enter_spec_mode", "dev", noTools(), {
+          mcpServer,
+          hostMcpServers: ["spec"],
+        });
+        expect(isDenied(result)).toBe(true);
+      }
+    });
   });
 
   it("blocks multiple different SDK tools independently", async () => {
@@ -620,6 +813,178 @@ describe("createToolPermissionHook", () => {
     expect(isDenied(await callToolHook("Bash", "dev", context))).toBe(true);
     expect(isDenied(await callToolHook("Read", "dev", context))).toBe(false);
     expect(isDenied(await callToolHook("Write", "dev", context))).toBe(true);
+  });
+});
+
+// Claude Code renamed its subagent tool from `Task` to `Agent`. The registry, the `execute` tool group and the grants stored
+// before the rename say `Task`; the current Claude Code reports `Agent`, and an older one still reports `Task`. A grant, or a
+// deny, under either name is one for the tool under both. The other task tools are not renamed.
+describe("the subagent tool under both of its names", () => {
+  const names = ["Task", "Agent"] as const;
+  const otherTaskTools = ["TaskOutput", "TaskStop", "TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "TodoWrite"];
+  const grant = (objectType: string, objectId: string): ContextCapability => ({
+    permission: "use",
+    objectType,
+    objectId,
+  });
+  const deny = (objectId: string): ContextCapability => ({ permission: "deny_use", objectType: "tool", objectId });
+  const callWith = (toolName: string, capabilities: ContextCapability[]) =>
+    callToolHook(toolName, "dev", makeToolContext("dev", capabilities));
+
+  for (const granted of names) {
+    for (const called of names) {
+      it(`allows a call of ${called} on a grant of ${granted}`, async () => {
+        expect(isDenied(await callWith(called, [grant("tool", granted)]))).toBe(false);
+      });
+    }
+  }
+
+  it("allows both names on a grant of the execute tool group, which lists Task", async () => {
+    for (const called of names) {
+      expect(isDenied(await callWith(called, [grant("toolgroup", "execute")]))).toBe(false);
+    }
+    // The group is not a wildcard.
+    expect(isDenied(await callWith("Read", [grant("toolgroup", "execute")]))).toBe(true);
+  });
+
+  it("denies both names without a grant, and names the tool that was called", async () => {
+    for (const called of names) {
+      const result = await callToolHook(called, "dev", {
+        ...makeToolContext("dev", [grant("tool", "Read")]),
+        sessionKey: "agent:dev:main",
+        sessionName: "dev-main",
+      });
+      expect(isDenied(result)).toBe(true);
+      expect(getDenyReason(result)).toContain(`tool:${called}`);
+      expect(listPermissionDenials({ subjectType: "agent", subjectId: "dev", resolved: false })).toContainEqual(
+        expect.objectContaining({ relation: "use", objectType: "tool", objectId: called }),
+      );
+    }
+  });
+
+  it("does not extend a grant of the subagent tool to the other task tools", async () => {
+    for (const granted of names) {
+      for (const other of otherTaskTools) {
+        expect(isDenied(await callWith(other, [grant("tool", granted)])), `${granted} → ${other}`).toBe(true);
+      }
+    }
+  });
+
+  it("withholds both names from a wildcard grant when either name is denied, and only those", async () => {
+    for (const denied of names) {
+      for (const called of names) {
+        expect(isDenied(await callWith(called, [grant("tool", "*"), deny(denied)])), `${denied} → ${called}`).toBe(
+          true,
+        );
+      }
+      expect(isDenied(await callWith("Read", [grant("tool", "*"), deny(denied)]))).toBe(false);
+    }
+  });
+
+  it("lets an explicit grant under either name run past a wildcard deny, for both names", async () => {
+    for (const granted of names) {
+      for (const called of names) {
+        expect(isDenied(await callWith(called, [grant("tool", granted), deny("*")])), `${granted} → ${called}`).toBe(
+          false,
+        );
+      }
+      // The explicit grant covers the tool, not the rest.
+      expect(isDenied(await callWith("Bash", [grant("tool", granted), deny("*")]))).toBe(true);
+    }
+  });
+
+  describe("on a live executor ceiling", () => {
+    // A resolved turn is checked against the agent's grants as they are now, not against the snapshot it was issued with.
+    const agentId = "leo";
+    const turnContext = (capabilities: ContextCapability[], metadata: Record<string, unknown> = {}): ToolContext => {
+      const base = makeToolContext(agentId, capabilities, "turn-runtime");
+      return {
+        ...base,
+        context: {
+          ...base.context!,
+          metadata: { authorityMode: "agent-identity", actorResolution: "resolved", ...metadata },
+        },
+      };
+    };
+    const holding = (...capabilities: string[]) =>
+      dbUpdateAgent(agentId, { defaults: { runtimePermissions: { profile: "explicit-only", capabilities } } });
+    const call = (toolName: string, context: ToolContext) => callToolHook(toolName, agentId, context);
+
+    beforeEach(() => {
+      dbCreateAgent({ id: agentId, cwd: "/tmp/leo" });
+    });
+
+    it("allows a call of either name when the agent holds the tool under either name", async () => {
+      for (const held of names) {
+        holding(`use:tool:${held}`);
+        for (const called of names) {
+          expect(isDenied(await call(called, turnContext([]))), `${held} → ${called}`).toBe(false);
+        }
+      }
+    });
+
+    it("allows both names when the agent holds the execute tool group", async () => {
+      holding("use:toolgroup:execute");
+      for (const called of names) expect(isDenied(await call(called, turnContext([])))).toBe(false);
+    });
+
+    it("denies both names when the agent holds neither", async () => {
+      holding("use:tool:Read");
+      for (const called of names) expect(isDenied(await call(called, turnContext([])))).toBe(true);
+      // Nor the other task tools, whatever the agent holds of the subagent tool.
+      holding("use:tool:Task", "use:tool:Agent");
+      for (const other of otherTaskTools) expect(isDenied(await call(other, turnContext([])))).toBe(true);
+    });
+
+    it("keeps the deny a person's turn carries for either name, whichever name the agent was granted", async () => {
+      // A person's turn in an ungoverned chat carries `deny_*` entries for the agent's break-glass; the live ceiling must
+      // not reopen them.
+      holding("use:tool:*");
+      for (const denied of names) {
+        for (const called of names) {
+          expect(isDenied(await call(called, turnContext([deny(denied)]))), `${denied} → ${called}`).toBe(true);
+        }
+        expect(isDenied(await call("Read", turnContext([deny(denied)])))).toBe(false);
+      }
+    });
+
+    it("needs the contact's chat grant and the agent's grant on a user-overlay turn, under either name", async () => {
+      const overlay = { actorAuthorizationMode: "user-overlay", userOverlay: "active" };
+      holding("use:tool:Task");
+      expect(isDenied(await call("Agent", turnContext([grant("tool", "Task")], overlay)))).toBe(false);
+      expect(isDenied(await call("Task", turnContext([grant("tool", "Agent")], overlay)))).toBe(false);
+      // The chat grant is for another tool: the agent's grant alone does not open it.
+      expect(isDenied(await call("Agent", turnContext([grant("tool", "Read")], overlay)))).toBe(true);
+      // The agent does not hold it: the chat grant alone does not open it.
+      holding("use:tool:Read");
+      expect(isDenied(await call("Agent", turnContext([grant("tool", "Agent")], overlay)))).toBe(true);
+    });
+
+    it("applies a governed chat's composed grants and denies to both names, a deny pattern on the other name included", async () => {
+      const overlay = { actorAuthorizationMode: "user-overlay", userOverlay: "active" };
+      holding("use:tool:*");
+      // The snapshot is what the governed-chat builder composes from the agent and the contact's chat grants.
+      const governed = (actor: ContextCapability[]) =>
+        buildEffectiveCapabilities({ agentCapabilities: [grant("tool", "*")], actorCapabilities: actor });
+
+      const open = governed([grant("tool", "Ag*")]);
+      for (const called of names) expect(isDenied(await call(called, turnContext(open, overlay))), called).toBe(false);
+
+      // The chat denies the subagent by a pattern on the name the grant does not use.
+      const withheld = governed([grant("tool", "Ag*"), deny("Task*")]);
+      for (const called of names)
+        expect(isDenied(await call(called, turnContext(withheld, overlay))), called).toBe(true);
+    });
+
+    it("honours a grantor's approval under either name, past the agent's ceiling", async () => {
+      holding("use:tool:Read");
+      for (const approved of names) {
+        const context = turnContext([{ ...grant("tool", approved), source: "approval" }]);
+        for (const called of names) {
+          expect(isDenied(await call(called, context)), `${approved} → ${called}`).toBe(false);
+        }
+      }
+    });
   });
 });
 
@@ -780,6 +1145,28 @@ describe("turn-runtime executor ceiling", () => {
       whatsappToolContext([], { actorAuthorizationMode: "user-overlay", userOverlay: "active" }),
     );
     expect(isDenied(result)).toBe(true);
+  });
+
+  it("bounds an owner-authority turn by its issued snapshot, not the agent's closed ceiling", () => {
+    // The agent holds a closed list; the owner's turn was issued with the owner's own power.
+    dbUpdateAgent(agentId, {
+      defaults: { runtimePermissions: { capabilities: ["execute:executable:git"] } },
+    });
+    const ownerTurn = whatsappTurn([{ permission: "admin", objectType: "system", objectId: "*" }], {
+      ownerAuthority: "contact:owner-1",
+    });
+    expect(evaluateBashPermission("codex exec 'ls'", ownerTurn).allowed).toBe(true);
+    expect(evaluateBashPermission("cd /tmp && ls", ownerTurn).allowed).toBe(true);
+
+    // The same snapshot without the owner mark is a person's turn: the live ceiling still bounds it.
+    const personTurn = whatsappTurn([{ permission: "admin", objectType: "system", objectId: "*" }]);
+    expect(evaluateBashPermission("codex exec 'ls'", personTurn).allowed).toBe(false);
+
+    // The mark never lends power the snapshot lacks.
+    const markedNarrow = whatsappTurn([{ permission: "execute", objectType: "executable", objectId: "git" }], {
+      ownerAuthority: "contact:owner-1",
+    });
+    expect(evaluateBashPermission("codex exec 'ls'", markedNarrow).allowed).toBe(false);
   });
 
   it("still applies a live executor reduction to user-overlay turns", () => {

@@ -22,6 +22,11 @@
 - Bootstrap agent and automation contexts can run the read-only Codex Bash
   policy hook without receiving the broader context command group.
 - Contact permission tags materialize through `contact-policy-permissions`.
+- A fresh process whose first import is `contact-policy-permissions-provider`,
+  `provider-registry` or `provider-runtime` loads without a temporal-dead-zone
+  error and `getConfiguredCapabilityMaterializers()` lists
+  `contact-policy-permissions` (`src/permissions/provider-runtime.test.ts`,
+  "Permission provider registry load order").
 - External resolved contact turns use `authorityMode=agent-identity` and do
   not require contact/surface capabilities for bootstrap tool authority.
 - Agent-identity denials resolve to `agent:<executorAgentId>` as the recurring
@@ -88,7 +93,10 @@ Quoting regressions (`bun test src/bash/`):
   override), `heredoc_quoted_body_is_not_commands`,
   `substitution_and_redirect_allowed_when_command_authorized` (`printf
   "$(date)"`, `echo $(git ...)`, `ls | sort > out` with Write, `diff <(...)`),
-  `unknown_parse_fails_closed_with_named_error`, and regressions for keywords
+  `unknown_parse_fails_closed_with_named_error`,
+  `uutils_coreutils_root_is_trusted_and_nothing_beside_it` (the uutils
+  multicall layout resolves under `/usr/lib/cargo/bin/coreutils`; `sudo`, `su`,
+  `coreutilsx` and copies elsewhere stay untrusted), and regressions for keywords
   (#813), disguised substitutions (#767/#776), quoted assignment values and env
   spoofing inside substitutions.
 - Quoted/escaped executable names, inline flags and piped interpreter receivers
@@ -103,6 +111,73 @@ Quoting regressions (`bun test src/bash/`):
 - Hook tests MUST demonstrate that named-executable grants permit literal search
   arguments, do not permit a later shell, and still permit interpreter file
   scripts: this last case documents the explicitly open capability boundary.
+
+Runtime tool call regressions (`src/bash/hook.test.ts`,
+`src/runtime/host-hooks.test.ts`, `src/permissions/tool-name-equivalence.test.ts`,
+`src/permissions/delegation.test.ts`):
+
+- An MCP tool is denied without a matching capability and allowed by its exact
+  name, by `mcp__<server>__*` and by `*`. The pattern is a name prefix: it
+  does not cover `mcp__github_enterprise__*`, and it does cover a server
+  named `github__admin`.
+- The MCP resource readers and names outside the built-in registry (`Monitor`,
+  `CronCreate`, `RemoteTrigger`, `Workflow`, `ScheduleWakeup`, an invented name)
+  are denied without a matching capability.
+- A call without a tool name, and an MCP call without agent identity, are
+  denied.
+- A tool or Bash permission hook whose check throws denies the call.
+- A `spec` tool runs without the tool capability only when the runtime reports
+  `source: "sdk"` and the session declared `spec`. The same name from any other
+  source, a missing or malformed server report, and an undeclared in-process
+  server are checked. A host name denied without a server report says so.
+- The registered PreToolUse chain attaches `spec` as a host server only for a
+  spec-mode agent.
+- A grant of `use:tool:Task` allows a call reported as `Agent`, and a grant of
+  `use:tool:Agent` allows a call reported as `Task`. So does a tool group that
+  lists `Task` and a prefix pattern that matches either name, and a `deny_use`
+  entry under one name withholds the other. An explicit grant under one name
+  still allows what a `deny_use` pattern withholds from a call under the other.
+  The same holds on a live executor ceiling and on a user-overlay turn. A grant
+  of one name does not cover `TaskOutput`, `TaskStop`, `TaskCreate` or `Agents`,
+  and an agent or a session object called `Agent` is not the tool. Each part
+  has a test that fails when the part is reverted (the evaluator, the registry
+  pair, the tool group, the deny, the explicit-grant exception, the tool-only
+  rule, the spec-mode block and the governed-chat overlap below).
+- A governed chat's composition withholds the subagent tool under either name.
+  A deny of one name drops a grant of the other, exact names and prefix patterns
+  alike, and `Ag*` against a deny `Task*` and the reverse included: through
+  `buildEffectiveCapabilities`, `materializeDelegatedAuthority` and the tool
+  hook on the composed snapshot. It keeps a grant that no deny reaches, leaves an
+  exact `TaskOutput` grant alone beside a deny of the subagent, reaches `tool`
+  objects only, drops a whole prefix grant that covers the denied tool exactly as
+  a deny under its own name does, and intersects a prefix on each branch that
+  reaches a different name to nothing while exact names intersect.
+- With spec mode on, the registered PreToolUse chain blocks the subagent tool as
+  `Task` and as `Agent` and leaves `TaskOutput`, `TaskStop`, `Read` and `Grep`
+  alone; with spec mode off, a grant of every tool passes both names.
+- Live check, when the Claude Agent SDK is upgraded: in a session with a
+  project `.mcp.json` server and an in-process server of the same name, the
+  PreToolUse input for each `mcp__*` call carries `mcp_server` with the right
+  source, a `Monitor` shell command reaches the `Bash`-matched hook, and a
+  PreToolUse hook that throws still lets the tool run (the reason the hooks
+  catch their own failures). When a configured server exposes the same full
+  tool name as a host tool, the call runs the host tool and reports
+  `source: "sdk"`. With every tool denied, a prompt holding `@/abs/path` does
+  not put the file in the model's context, `@AGENTS.md` in `CLAUDE.md` still
+  loads, and `@server:uri` does not make the runtime read the MCP resource
+  (the server sees no read). Last run on Claude Code 2.1.323 (2026-11-24).
+
+Prompt text regressions (`src/runtime/claude-provider.test.ts`,
+`src/remote-spawn.test.ts`, `src/remote-spawn-nats.test.ts`,
+`src/hooks/pre-compact-spawn-env.test.ts`):
+
+- `buildClaudeCodeEnvironment` returns `CLAUDE_CODE_DISABLE_FILE_MENTIONS=1` on
+  every path (plain, managed auth, model broker, no input) and over a caller
+  value of `0` or empty.
+- The SSH remote command exports the switch whatever the caller's env says;
+  the NATS spawn payload carries it with and without the credential opt-in.
+- The memory agent is spawned with the switch set to `1` while the daemon env
+  holds `0`: the fake Claude Code records the value it received.
 
 Provider settings regressions (`src/bash/provider-config-writes.test.ts`):
 
@@ -119,7 +194,11 @@ Provider settings regressions (`src/bash/provider-config-writes.test.ts`):
 
 ```bash
 bun test src/permissions/provider-runtime.test.ts
+bun test src/permissions/tool-name-equivalence.test.ts src/permissions/delegation.test.ts
 bun test src/bash/provider-config-writes.test.ts src/bash/parser.test.ts src/bash/hook.test.ts
+bun test src/runtime/host-hooks.test.ts
+bun test src/runtime/claude-provider.test.ts src/remote-spawn.test.ts src/remote-spawn-nats.test.ts
+bun test src/hooks/pre-compact-spawn-env.test.ts
 bun test src/cli/commands/permissions.test.ts
 bun test src/runtime/runtime-request-context.test.ts
 bun test src/cli/commands/agents.test.ts

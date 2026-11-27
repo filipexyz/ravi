@@ -30,6 +30,7 @@ import { materializeRuntimeModelBroker } from "./model-broker-materializer.js";
 import { SANITIZED_ENV_VARS } from "../hooks/sanitize-bash.js";
 import { logger } from "../utils/logger.js";
 import { coalesceAssistantTextBlocks } from "./assistant-transcript.js";
+import { applyClaudeRequiredPromptEnv } from "./claude-prompt-env.js";
 import { isRuntimeProviderLoginStub } from "./provider-login-stub.js";
 import {
   CLAUDE_INHERITED_AUTH_ENV_KEYS,
@@ -272,8 +273,18 @@ async function* runClaudeTurns(
 
     const terminalTracker = createRuntimeTerminalEventTracker();
     let droppedSelfStartedTurn = false;
+    const leadingNotificationTurn = createLeadingNotificationTurnGuard();
     try {
       for await (const event of normalizeClaudeEvents(queryResult)) {
+        if (!terminalTracker.terminalEmitted && leadingNotificationTurn.shouldSkip(event)) {
+          // Claude Code drained a task notification it had queued (a subagent
+          // stopped by the interrupt that preceded this resume) as a turn of
+          // its own before the prompt. That turn's result is not this
+          // prompt's: completing on it would drop the real reply as a
+          // self-started turn and leave the person without an answer.
+          claudeLog.warn("Skipping the result of a turn Claude Code opened for a task notification before the prompt");
+          continue;
+        }
         if (terminalTracker.terminalEmitted) {
           // Claude Code keeps the query open while its own background tasks run
           // and starts a turn by itself when one finishes. Ravi handed that turn
@@ -446,6 +457,9 @@ export function buildClaudeCodeEnvironment(inputEnv?: Record<string, string>): R
     : Object.fromEntries(
         Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
       );
+
+  // Set before every return: no path below may start Claude Code without it.
+  applyClaudeRequiredPromptEnv(env);
 
   if (env.RAVI_MODEL_BROKER_ACTIVE === "1") {
     for (const key of SANITIZED_ENV_VARS) delete env[key];
@@ -723,6 +737,50 @@ function isRecoverableClaudeApiStatus(status: number): boolean {
  * them fed without flooding the event loop with per-token events.
  */
 export const CLAUDE_STREAM_ACTIVITY_INTERVAL_MS = 5_000;
+
+/**
+ * Recognizes the result of a turn Claude Code opened by itself for a queued
+ * task notification before the prompt of the current query. Only a result
+ * that arrives after a task notification and before any content of the
+ * prompt, with no model usage, qualifies: that is a notification turn the
+ * model never ran. Anything else is the prompt's own result.
+ */
+export function createLeadingNotificationTurnGuard(): { shouldSkip(event: RuntimeEvent): boolean } {
+  let promptContentSeen = false;
+  let notificationPending = false;
+  return {
+    shouldSkip(event: RuntimeEvent): boolean {
+      if (event.type === "provider.raw") {
+        const raw = event.rawEvent as { type?: unknown; subtype?: unknown } | undefined;
+        if (!promptContentSeen && raw?.type === "system" && raw.subtype === "task_notification") {
+          notificationPending = true;
+        }
+        return false;
+      }
+      if (event.type === "provider.activity" || event.type === "status") return false;
+      if (event.type === "turn.complete" && notificationPending && !promptContentSeen && isZeroUsage(event.usage)) {
+        notificationPending = false;
+        return true;
+      }
+      promptContentSeen = true;
+      return false;
+    },
+  };
+}
+
+function isZeroUsage(
+  usage:
+    | { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheCreationTokens?: number }
+    | undefined,
+): boolean {
+  return (
+    !usage ||
+    ((usage.inputTokens ?? 0) === 0 &&
+      (usage.outputTokens ?? 0) === 0 &&
+      (usage.cacheReadTokens ?? 0) === 0 &&
+      (usage.cacheCreationTokens ?? 0) === 0)
+  );
+}
 
 export async function* normalizeClaudeEvents(
   queryResult: Query,

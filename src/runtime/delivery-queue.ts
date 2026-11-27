@@ -32,8 +32,31 @@ export interface RuntimePromptDeliveryMessage extends Partial<Omit<RuntimeLaunch
   commands?: RaviCommandPromptMetadata[];
 }
 
+/**
+ * Barreira efetiva de uma mensagem que chega a uma sessão.
+ *
+ * Aviso de sistema (retorno de thread, alerta de saúde, handoff) nunca corta o
+ * turno em curso: sem barreira explícita, ele espera a resposta terminar. Antes,
+ * o retorno `thread.closed` e o alerta `thread.attention` saíam com `after_tool`,
+ * o runtime abortava a ferramenta seguinte e o modelo recebia "the user doesn't
+ * want to proceed", sem que pessoa alguma tivesse recusado nada (24/11).
+ * Só quem pede explicitamente (`deliveryBarrierSource: "explicit"`) pode
+ * interromper; mensagem de pessoa segue com o padrão `after_tool`.
+ */
 export function getRuntimePromptDeliveryBarrier(prompt: RuntimePromptDeliveryMessage): DeliveryBarrier {
-  return prompt.deliveryBarrier ?? DEFAULT_DELIVERY_BARRIER;
+  const barrier = prompt.deliveryBarrier ?? DEFAULT_DELIVERY_BARRIER;
+  if (isSystemNotice(prompt) && prompt.deliveryBarrierSource !== "explicit" && interruptsTurn(barrier)) {
+    return "after_response";
+  }
+  return barrier;
+}
+
+function isSystemNotice(prompt: RuntimePromptDeliveryMessage): boolean {
+  return prompt.source?.actorType === "system";
+}
+
+function interruptsTurn(barrier: DeliveryBarrier): boolean {
+  return barrier === "immediate_interrupt" || barrier === "after_tool";
 }
 
 export function createQueuedRuntimeUserMessage(prompt: RuntimePromptDeliveryMessage): RuntimeUserMessage {
@@ -109,7 +132,10 @@ export function pickRuntimeTurnAuthorityEnvelope(
 
 export function hasIsolatedRuntimeTurnEnvelope(
   prompt:
-    | Pick<RuntimeLaunchPrompt, "_channelBackend" | "_turnOrigin" | "_cronRunId" | "_triggerAuthority">
+    | Pick<
+        RuntimeLaunchPrompt,
+        "_channelBackend" | "_turnOrigin" | "_cronRunId" | "_triggerAuthority" | "_observationNotice"
+      >
     | null
     | undefined,
 ): boolean {
@@ -117,6 +143,9 @@ export function hasIsolatedRuntimeTurnEnvelope(
     prompt?._channelBackend !== undefined ||
     prompt?._turnOrigin !== undefined ||
     prompt?._cronRunId !== undefined ||
+    // An observation notice is its own turn: batched with a person's message, the turn would take
+    // one provenance for both (observer turns emit no observation events).
+    prompt?._observationNotice !== undefined ||
     // A trigger fire that lends its owner's authority: no other prompt's text may share its turn.
     triggerAuthorityLendsOwner(prompt?._triggerAuthority)
   );
@@ -406,6 +435,12 @@ export function canReleaseRuntimeDeliveryBarrier(
  */
 function retainsAttemptInput(message: RuntimeUserMessage): boolean {
   return message.replay === true || message.providerCapacityRetry !== undefined || message.retainsInputCohort === true;
+}
+
+function collectCorrelationIds(messages: RuntimeUserMessage[]): string[] {
+  return messages
+    .map((message) => message.launchPrompt?._correlationId)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
 }
 
 export function getDeliverableRuntimeMessages(
@@ -958,6 +993,7 @@ export async function* createRuntimeMessageGenerator({
       message.clientMessageId = clientMessageId;
     }
     session.currentTurnPendingIds = [...yieldedIds];
+    session.currentTurnCorrelationIds = collectCorrelationIds(deliverable);
     session.currentTurnSuperseded = false;
     session.currentTurnYieldContinuationId = undefined;
     const combined = combineSessionSurfacePromptContents(deliverable.map((message) => message.message.content));

@@ -33,6 +33,12 @@ mock.module("../omni/session-stream.js", () => ({
 }));
 
 const {
+  bindChildRunSession,
+  childRunSurfaceRef,
+  markChildRunLaunched,
+  onChildRunBound,
+  pendingChildRunSession,
+  registerChildRunSurface,
   CHILD_RUN_RETURN_GIVE_UP_MS,
   CHILD_RUN_STALE_MS,
   buildChildRunParentNotice,
@@ -85,6 +91,147 @@ function age(id: string, field: "created_at" | "closed_at", byMs: number) {
     .query(`UPDATE automation_child_runs SET ${field} = ? WHERE id = ?`)
     .run(Date.now() - byMs, id);
 }
+
+describe("visible surfaces", () => {
+  function openSurfacedRun(id: string) {
+    getOrCreateSession(PARENT_KEY, "agent-a", stateDir!, { name: "grupo" });
+    return openChildRun({
+      id,
+      originKind: "cron",
+      originId: "job-s",
+      originName: "updates",
+      agentId: "agent-a",
+      parentSessionKey: PARENT_KEY,
+      parentSessionName: "grupo",
+      childSessionKey: pendingChildRunSession(id),
+      childSessionName: pendingChildRunSession(id),
+      surface: "slack-thread",
+      surfaceRef: childRunSurfaceRef(id),
+      launch: { prompt: "[Cron: updates]", _cron: true, _cronRunId: id },
+    });
+  }
+
+  it("hands the launch back until its publish is confirmed, binds once, and tells the bind listeners once", () => {
+    openSurfacedRun("s-bind");
+    const ref = childRunSurfaceRef("s-bind");
+    const launch = { prompt: "[Cron: updates]", _cron: true, _cronRunId: "s-bind" };
+    const bound: string[] = [];
+    const stop = onChildRunBound((run) => bound.push(run.childSessionName));
+    try {
+      const first = bindChildRunSession("slack-thread", ref, "agent:a:x:thread:1.2", "a-t-12");
+      expect(first).toMatchObject({ launch, closed: false });
+      expect(first?.run).toMatchObject({ childSessionKey: "agent:a:x:thread:1.2", childSessionName: "a-t-12" });
+      // A creation retried after a failed publish (the same session) still gets the launch.
+      expect(bindChildRunSession("slack-thread", ref, "agent:a:x:thread:1.2", "a-t-12")?.launch).toEqual(launch);
+      markChildRunLaunched("s-bind");
+      expect(bindChildRunSession("slack-thread", ref, "agent:a:x:thread:1.2", "a-t-12")?.launch).toBeNull();
+      // Another session gets nothing; nor does a reference no run waits for.
+      expect(bindChildRunSession("slack-thread", ref, "agent:a:x:thread:9.9", "a-t-99")).toBeNull();
+      expect(bindChildRunSession("slack-thread", childRunSurfaceRef("nobody"), "k", "n")).toBeNull();
+    } finally {
+      stop();
+    }
+    expect(bound).toEqual(["a-t-12"]);
+  });
+
+  it("never binds a run that closed before its surface made its session: nothing starts there", async () => {
+    openSurfacedRun("s-late");
+    await closeChildRun(getChildRun("s-late")!, null);
+
+    const late = bindChildRunSession("slack-thread", childRunSurfaceRef("s-late"), "agent:a:x:thread:5.6", "a-t-56");
+
+    expect(late).toMatchObject({ launch: null, closed: true });
+    expect(getChildRun("s-late")?.childSessionKey).toBe(pendingChildRunSession("s-late"));
+  });
+
+  it("asks a surface that could not close again on reconciliation, and keeps its run until it does", async () => {
+    let refuse = true;
+    const asked: string[] = [];
+    const unregister = registerChildRunSurface({
+      id: "slack-thread",
+      canHost: () => true,
+      open: async () => {},
+      closeSurface: async (run) => {
+        asked.push(run.id);
+        return !refuse;
+      },
+    });
+    try {
+      openSurfacedRun("s-decision");
+      bindChildRunSession(
+        "slack-thread",
+        childRunSurfaceRef("s-decision"),
+        "agent:agent-a:x:thread:7.8",
+        "agent-a-t-78",
+      );
+      getOrCreateSession("agent:agent-a:x:thread:7.8", "agent-a", stateDir!, { name: "agent-a-t-78" });
+      // A decision is still open in the thread: its surface refuses to close.
+      await closeChildRun(getChildRun("s-decision")!, null);
+      expect(asked).toEqual(["s-decision"]);
+      expect(getChildRun("s-decision")?.surfaceClosedAt).toBeUndefined();
+      expect(pruneClosedChildRuns("cron", "job-s", 0)).toEqual([]);
+
+      refuse = false;
+      const result = await reconcileChildRuns({ releaseSource: "test" });
+
+      expect(result.surfacesClosed).toBe(1);
+      expect(asked).toEqual(["s-decision", "s-decision"]);
+      expect(getChildRun("s-decision")?.surfaceClosedAt).toBeNumber();
+      expect(pruneClosedChildRuns("cron", "job-s", 0)).toEqual(["agent:agent-a:x:thread:7.8"]);
+    } finally {
+      unregister();
+    }
+  });
+
+  it("prunes a run whose surface never closed once a day has passed since it closed", async () => {
+    const unregister = registerChildRunSurface({
+      id: "slack-thread",
+      canHost: () => true,
+      open: async () => {},
+      closeSurface: async () => false,
+    });
+    try {
+      openSurfacedRun("s-stuck");
+      bindChildRunSession("slack-thread", childRunSurfaceRef("s-stuck"), "agent:agent-a:x:thread:9.1", "agent-a-t-91");
+      await closeChildRun(getChildRun("s-stuck")!, null);
+      expect(pruneClosedChildRuns("cron", "job-s", 0)).toEqual([]);
+
+      age("s-stuck", "closed_at", CHILD_RUN_RETURN_GIVE_UP_MS + 1);
+
+      expect(pruneClosedChildRuns("cron", "job-s", 0)).toEqual(["agent:agent-a:x:thread:9.1"]);
+    } finally {
+      unregister();
+    }
+  });
+
+  it("closes the surface when the run closes, keeps the return the core's, and never prunes its session", async () => {
+    const closed: string[] = [];
+    const unregister = registerChildRunSurface({
+      id: "slack-thread",
+      canHost: () => true,
+      open: async () => {},
+      closeSurface: async (run) => {
+        closed.push(run.id);
+        return true;
+      },
+    });
+    try {
+      openSurfacedRun("s-close");
+      bindChildRunSession("slack-thread", childRunSurfaceRef("s-close"), "agent:agent-a:x:thread:3.4", "agent-a-t-34");
+      getOrCreateSession("agent:agent-a:x:thread:3.4", "agent-a", stateDir!, { name: "agent-a-t-34" });
+      await closeChildRun(getChildRun("s-close")!, { kind: "result", text: "feito" });
+
+      expect(closed).toEqual(["s-close"]);
+      expect(publishCalls).toHaveLength(1);
+      expect(String(publishCalls[0]!.payload.prompt)).toContain("\n> feito");
+      expect(pruneClosedChildRuns("cron", "job-s", 0)).toEqual(["agent:agent-a:x:thread:3.4"]);
+      expect(getSession("agent:agent-a:x:thread:3.4")).not.toBeNull();
+      expect(getChildRun("s-close")).toBeNull();
+    } finally {
+      unregister();
+    }
+  });
+});
 
 describe("parent notice", () => {
   it("quotes the run's text line by line, so none of it passes for a [System] line", () => {
@@ -231,6 +378,18 @@ describe("reconciliation", () => {
     expect(after.returnState).toBe("error");
     expect(after.parentNotifiedAt).toBeUndefined();
     expect(pruneClosedChildRuns("cron", "job-1", 0)).toEqual([run.childSessionKey]);
+  });
+
+  it("reports a stale run it closed even when its error return could not be published, so its origin settles it", async () => {
+    openRun("stale-unpublished");
+    age("stale-unpublished", "created_at", CHILD_RUN_STALE_MS + 1);
+    publishFails = true;
+
+    const result = await reconcileChildRuns({ releaseSource: "test" });
+
+    expect(result.staleClosed.map((run) => run.id)).toEqual(["stale-unpublished"]);
+    // The return stays pending: the next pass delivers it again.
+    expect(getChildRun("stale-unpublished")).toMatchObject({ status: "closed", returnState: "pending" });
   });
 
   it("closes a run left open past the stale limit with one error return, and releases its runtime", async () => {

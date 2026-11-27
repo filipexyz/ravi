@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { parseSessionKey } from "../../router/session-key.js";
 import type { RuntimeLaunchPrompt } from "../../runtime/message-types.js";
 import { buildSessionRelayTurnOrigin } from "../../runtime/turn-origin.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
@@ -54,12 +53,6 @@ function deps(overrides: Partial<KnowledgeAudienceDeps> = {}): KnowledgeAudience
   return {
     ownerContactIds: () => [OWNER],
     sessionKeyFor: () => "agent:main:whatsapp:dm:5511900000001",
-    // The session-key half of readIsPrivateDirectSession (its route and
-    // attachment reads are covered in src/link/connector-turn.test.ts).
-    isPrivateDirectSession: ({ sessionKey }) => {
-      const parsed = sessionKey ? parseSessionKey(sessionKey) : null;
-      return parsed?.peerKind === "dm" && parsed.dmScope !== "main";
-    },
     dmContact: ({ chatId }) => (chatId === OWNER_CHAT ? OWNER : chatId === CLIENT_CHAT ? CLIENT : null),
     packet: () => {
       throw new Error("packet must not be built");
@@ -85,13 +78,13 @@ describe("knowledgeAudienceForPrompt", () => {
     expect(knowledgeAudienceForPrompt(cli, ctx, deps({ isOperatorSession: () => false }))).toBe("none");
   });
 
-  it("gives none for the owner's DM in a dmScope main session other contacts share", () => {
+  it("gives operator for the owner's DM in the agent's shared session (dmScope main)", () => {
     expect(
       knowledgeAudienceForPrompt(dm(OWNER, OWNER_CHAT), ctx, deps({ sessionKeyFor: () => "agent:main:main" })),
-    ).toBe("none");
+    ).toBe("operator");
   });
 
-  it("gives none for the owner in a group", () => {
+  it("gives operator for the owner in a group: sharing there is the owner's choice", () => {
     const prompt = dm(OWNER, "120363000000000001@g.us");
     prompt.context = { ...prompt.context!, isGroup: true };
     expect(
@@ -100,13 +93,13 @@ describe("knowledgeAudienceForPrompt", () => {
         ctx,
         deps({ sessionKeyFor: () => "agent:main:whatsapp:wa-main:group:120363000000000001" }),
       ),
-    ).toBe("none");
+    ).toBe("operator");
   });
 
   it("treats a chat whose session key is a group as a group even without context", () => {
     const prompt: RuntimeLaunchPrompt = {
       prompt: "oi",
-      source: { channel: "whatsapp", accountId: "wa-main", chatId: OWNER_CHAT, contactId: OWNER },
+      source: { channel: "whatsapp", accountId: "wa-main", chatId: CLIENT_CHAT, contactId: CLIENT },
     };
     expect(
       knowledgeAudienceForPrompt(
@@ -141,6 +134,24 @@ describe("knowledgeAudienceForPrompt", () => {
         ctx,
         deps(),
       ),
+    ).toBe("none");
+  });
+
+  it("a relay from a person's credential is that person, never the operator's terminal or relay", () => {
+    // The voice door publishes exactly this: a CLI-destination relay carrying a paired person's key.
+    const prompt: RuntimeLaunchPrompt = {
+      prompt: "q",
+      _cliDestination: true,
+      _turnOrigin: buildSessionRelayTurnOrigin("send", { contextId: "ctx_person_key" }),
+    };
+    const stranger = deps({ personCredential: () => ({ contactId: CLIENT, usable: true }) });
+    expect(knowledgeAudienceForPrompt(prompt, ctx, stranger)).toBe("none");
+    // The linked owner's own key in the operator's own session reads as the operator.
+    const owner = deps({ personCredential: () => ({ contactId: OWNER, usable: true }) });
+    expect(knowledgeAudienceForPrompt(prompt, ctx, owner)).toBe("operator");
+    expect(knowledgeAudienceForPrompt(prompt, ctx, { ...owner, isOperatorSession: () => false })).toBe("none");
+    expect(
+      knowledgeAudienceForPrompt(prompt, ctx, deps({ personCredential: () => ({ contactId: OWNER, usable: false }) })),
     ).toBe("none");
   });
 

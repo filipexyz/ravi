@@ -113,6 +113,49 @@ Ungoverned chats keep `agent_identity ∩ turn_caps`, with one exception:
   always allowed; code outside a turn is unaffected; an overlay turn may still
   write a cron job bound to its chat (`creatorChat`). Command guards remain
   for a good error. Binding the job to the creator's ceiling is deferred.
+- A contact whose own power holds full access, in a governed chat (the
+  operator with an admin tag), is not an overlay turn: the overlay is lifted
+  (`permissions/user-overlay`, "Lifted Overlay"), so its automation is not
+  held, a cron job it writes is bound to the chat so each run re-evaluates
+  the owner's full access, a relay built from it re-validates the lift, and
+  the threads it opens are stamped by the rule below. The lift reads the
+  contact's global permission tags, never a chat grant: full access granted
+  in a chat keeps the turn an overlay turn and its automation refused, and a
+  global tag short of full access keeps it too, even when it covers the
+  agent's effective set (it would not cover the live ceiling or a stronger
+  agent a relay or job reaches). Before this (25/11), the operator speaking in
+  a chat where someone else held a grant could not write automation, and every
+  thread it opened was held.
+- A relay the operator asked for (a thread the main session opens for a verified
+  human request, a session relay of the operator's turn) is not a held turn.
+  `relayNarrowing` only says the turn carries its caller's capabilities as a
+  ceiling, for the lineage a revocation follows; it is set for every verified
+  human work handoff, the operator's included. `resolveRelayCaller` stamps the
+  relay `relayCallerUnrestricted` when its caller was none of: narrowed to a
+  contact's chat grants, held below break-glass (`deny_*`), revoked, or itself a
+  held relay, and its ceiling covers the target agent's own authority, by the core matcher and never by count (a plain
+  contact relaying to a full-access agent is held: the relay would otherwise let
+  automation run later as the worker's full authority). The automation guards (command and store) read
+  `isRelayHeldBelowAgent` (`permissions/actor-limit.ts`), not the bare flag, so
+  only a held relay is refused. A relay without the stamp (an older context, a
+  chain through a held turn) stays held: the rule fails closed. Before this,
+  every thread of the operator lost the CI follow of `ravi pr publish` (24/11,
+  3.261124.15) and `triggers add`/`cron add`/follow-ups from it were refused.
+- The refusal names its cause, because the remedy differs
+  (`automationHoldCause`, `permissions/user-overlay-automation.ts`; causes and
+  advice in `permissions/automation-hold.ts`): a relayed turn whose caller does
+  not carry the agent's whole authority (named first, also when the turn is
+  narrowed to a contact's grants too, as a thread opened from a governed chat), a
+  turn narrowed to a contact's chat grants, or a person with no grant in the
+  chat. No advice points at a grant: a held relay says requesting access for a
+  contact does not lift it; an overlay turn says more chat permissions do not;
+  approving full access for a person without a grant only makes their next turn
+  an overlay turn, still refused. The cause travels as the `automationHold`
+  control field (command, store and the `pr publish` follow refusal), and the
+  remote CLI maps it to the same fixed advice instead of the generic "request
+  the permission", never forwarding server text. On 24/11 a relay refused with
+  "limited to a contact's chat permissions" and the generic remote advice led the
+  main session to request full access for the operator, who already held it.
 - What "everything except break-glass" still includes (declared): the admin
   shortcut still grants every other `(permission, objectType)`, e.g.
   `execute:group:*` CLI groups, `write_contacts:system:*` and `admin` on types

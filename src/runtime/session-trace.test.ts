@@ -14,6 +14,11 @@ import {
 } from "../router/sessions.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
 import {
+  dbUpsertObserverRule,
+  ensureObserverBindingsForSession,
+  setObservationPromptPublisherForTests,
+} from "./observation-plane.js";
+import {
   getOrCreateSession,
   getSession,
   updateSessionName,
@@ -23,7 +28,7 @@ import {
   type SessionEntry,
 } from "../router/index.js";
 import { getSessionTurnUsageSummary } from "../router/sessions.js";
-import { dbGetContext, dbSetSetting, dbUpsertChat, getDb } from "../router/router-db.js";
+import { dbCreateAgent, dbGetContext, dbSetSetting, dbUpsertChat, getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { listSessionEventsForTest } from "../test/session-trace-events.js";
 import { getSessionTraceBlob, getSessionTurn } from "../session-trace/session-trace-db.js";
@@ -1716,6 +1721,7 @@ describe("runtime session trace instrumentation", () => {
       prompt: "first overlapping send",
       deliveryBarrier: "after_response",
       _turnOrigin: buildSessionRelayTurnOrigin("send"),
+      _correlationId: "corr-first",
     });
     const streaming = makeStreamingSession({
       agentMode: "active",
@@ -1792,6 +1798,7 @@ describe("runtime session trace instrumentation", () => {
           _agentId: AGENT_ID,
           deliveryBarrier: "after_response",
           deliveryBarrierSource: "default",
+          _correlationId: "corr-second",
         });
         queuedDuringInFlight = streaming.pendingMessages.some((message) =>
           message.message.content.includes("second overlapping send"),
@@ -1848,6 +1855,8 @@ describe("runtime session trace instrumentation", () => {
           entry.data.type === "turn.interrupted"),
     );
     expect(runtimeTerminals.map((entry) => entry.data.type)).toEqual(["turn.complete", "turn.complete"]);
+    // Each terminal names only the prompts its own physical turn consumed (voice door ownership).
+    expect(runtimeTerminals.map((entry) => entry.data._correlationIds)).toEqual([["corr-first"], ["corr-second"]]);
 
     const history = getRecentHistory(SESSION_NAME, 10);
     expect(history.filter((message) => message.role === "user").map((message) => message.content)).toEqual(
@@ -4575,6 +4584,139 @@ describe("runtime session trace instrumentation", () => {
     expect(terminals[MAX_INACTIVITY_RECOVERIES]).toBe("turn.failed");
     // Never silently: the last attempt tells the session a human is needed.
     expect(exhaustedNotices).toHaveLength(1);
+  });
+
+  it.each([{ lateProviderTerminal: false }, { lateProviderTerminal: true }])(
+    "ends an inactivity-recovered turn for end-of-turn observers, with the person's text and no runtime lines (%j)",
+    async ({ lateProviderTerminal }) => {
+      const previousTimeout = process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS;
+      process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS = "1000";
+      resetInactivityRecoveryBudget(SESSION_NAME);
+      const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+      setObservationPromptPublisherForTests(async (sessionName, payload) => {
+        published.push({ sessionName, payload });
+      });
+      dbCreateAgent({ id: "trace-observer", cwd: stateDir ?? "/tmp" });
+      dbUpsertObserverRule({
+        id: "trace-alerts",
+        scope: "session",
+        sourceSession: SESSION_NAME,
+        observerAgentId: "trace-observer",
+        observerRole: "trace-alerts",
+        observerProfileId: "compact",
+        deliveryPolicy: "end_of_turn",
+        metadata: { when: ["turn.no_final_reply", "turn.interrupt"] },
+      });
+      ensureObserverBindingsForSession({ sessionName: SESSION_NAME, session: makeSession() });
+
+      const request = createQueuedRuntimeUserMessage({
+        prompt:
+          "[session surface] This turn came from a WhatsApp chat. A normal reply returns there.\n" +
+          "[knowledge] audience=none: ravi knowledge will refuse on this turn (exit 3).\n" +
+          "configura o omie pra mim",
+        source,
+        _agentId: AGENT_ID,
+      });
+      const streaming = makeStreamingSession({
+        pendingMessages: [request],
+        currentTurnPendingIds: [request.pendingId!],
+      });
+      seedAdapterTrace(streaming, "turn-inactive-observed");
+
+      try {
+        const events: RuntimeEvent[] = [
+          { type: "assistant.message", text: "Checking the Omie config." },
+          { type: "tool.started", toolUse: { id: "tool-omie", name: "bash", input: {} } },
+          { type: "tool.completed", toolUseId: "tool-omie", toolName: "bash", content: "ok" },
+        ];
+        const runtime = makeRuntimeSessionThenHang(events);
+        if (lateProviderTerminal) {
+          // A provider that still reports the aborted turn after the recovery closed it.
+          const close = runtime.close!;
+          let closed!: () => void;
+          const closedPromise = new Promise<void>((resolve) => {
+            closed = resolve;
+          });
+          runtime.close = async () => {
+            await close();
+            closed();
+          };
+          runtime.events = (async function* () {
+            for (const event of events) yield event;
+            await closedPromise;
+            yield { type: "turn.interrupted" } as RuntimeEvent;
+          })();
+        }
+        await runTraceLoop(streaming, runtime, { stashedMessages: new Map() });
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      } finally {
+        setObservationPromptPublisherForTests();
+        if (previousTimeout === undefined) {
+          delete process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS;
+        } else {
+          process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS = previousTimeout;
+        }
+        resetInactivityRecoveryBudget(SESSION_NAME);
+      }
+
+      // One delivery for the dead turn, not one from the recovery and another from a late terminal.
+      expect(published).toHaveLength(1);
+      const prompt = String(published[0]?.payload.prompt);
+      expect(prompt).toContain("user: configura o omie pra mim");
+      expect(prompt).not.toContain("[session surface]");
+      expect(prompt).toContain("⚠ turn.no_final_reply");
+      expect(prompt).toContain("⚠ turn.interrupt");
+      expect(prompt).toContain("end: interrupted:");
+    },
+  );
+
+  it.each([
+    { label: "a chat", withChat: true, notices: 1 },
+    { label: "no chat", withChat: false, notices: 0 },
+  ])("counts narration only for replies that reach a chat ($label)", async ({ withChat, notices }) => {
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    setObservationPromptPublisherForTests(async (sessionName, payload) => {
+      published.push({ sessionName, payload });
+    });
+    dbCreateAgent({ id: "trace-narration-observer", cwd: stateDir ?? "/tmp" });
+    dbUpsertObserverRule({
+      id: "trace-narration",
+      scope: "session",
+      sourceSession: SESSION_NAME,
+      observerAgentId: "trace-narration-observer",
+      observerRole: "trace-narration",
+      observerProfileId: "compact",
+      deliveryPolicy: "end_of_turn",
+      metadata: { when: ["chat.narration"] },
+    });
+    ensureObserverBindingsForSession({ sessionName: SESSION_NAME, session: makeSession() });
+    // Without a chat: no source to fall back on and not a sentinel, so the reply target is unresolved.
+    const streaming = makeStreamingSession(
+      withChat
+        ? { agentMode: "active", currentReplyTarget: source }
+        : { currentSource: undefined, agentMode: "active" },
+    );
+    seedAdapterTrace(streaming, `turn-narration-${withChat ? "chat" : "none"}`);
+    try {
+      await runTraceLoop(
+        streaming,
+        makeRuntimeSession([
+          { type: "assistant.message", text: "Looking at it." },
+          { type: "assistant.message", text: "Done." },
+          {
+            type: "turn.complete",
+            providerSessionId: "native-narration",
+            session: { displayId: "native-narration", params: { sessionId: "native-narration" } },
+            usage: { inputTokens: 10, outputTokens: 4, cacheReadTokens: 0, cacheCreationTokens: 0 },
+            execution: { model: MODEL },
+          },
+        ]),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    } finally {
+      setObservationPromptPublisherForTests();
+    }
+    expect(published).toHaveLength(notices);
   });
 
   it("includes a task checkpoint on the incompatible-session fallback after tool use", async () => {

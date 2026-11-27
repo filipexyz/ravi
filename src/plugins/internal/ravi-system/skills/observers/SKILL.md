@@ -1,11 +1,11 @@
 ---
 name: observers
 description: |
-  Gerencia o Observation Plane do Ravi. Use quando precisar:
-  - Listar, explicar ou atualizar observer bindings
-  - Criar regras de observer por global/agent/session/task/profile/tag
-  - Criar, validar ou pré-visualizar observer profiles Markdown
-  - Entender o observer embutido das tasks (`task-observer`) ou trocá-lo por uma rule própria
+  Vigia sessões do Ravi sem custo de modelo no caminho. Use quando precisar:
+  - "Quero vigiar a sessão X": `ravi sessions observe` (aviso quando um turno dá errado, ou resumo de cada turno)
+  - Saber o que o observador recebe, quanto custa e quais condições existem
+  - Observador sem memória (`memory: none`) ou com memória (`rolling`)
+  - Rules por global/agent/session/task/profile/tag, profiles Markdown e o observer embutido das tasks (`task-observer`)
 ---
 
 # Observers
@@ -13,205 +13,61 @@ description: |
 > Verbos: CAPTAR (extrair calado). Compõe com: bases.
 > Solução com mais de uma peça? `ravi skills show solucoes` primeiro.
 
-Observers são sessões sidecar que recebem eventos canônicos de uma sessão fonte.
-Eles são assíncronos e isolados: não contaminam o prompt, permissões ou runtime
-da sessão observada.
+Observar é olhar o comportamento de **outra sessão do Ravi** (resposta, turno sem mensagem final, narração num chat, falha). Evento de fonte externa (GitHub, e-mail, comentário de page) não é observer: é `watch` + trigger (skill `triggers`).
 
-## Modelo Mental
-
-- `source session`: sessão observada.
-- `observer session`: sessão Ravi comum que recebe o prompt de observação.
-- `rule`: decide quando criar o observer.
-- `binding`: relação durável entre source e observer.
-- `profile`: decide como eventos viram Markdown para o observer.
-
-Rules escolhem **quando** observar. Profiles escolhem **como** formatar.
-
-## Contrato Do CLI
-
-Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha sai em envelope `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?|acceptedFlags?}}`.
-
-Taxonomia de saída:
-
-- `0` sucesso.
-- `1` erro de execução (ex.: `OBSERVER_NOT_FOUND` para binding/rule/profile, `SESSION_NOT_FOUND` para sessão fonte). O envelope de `OBSERVER_NOT_FOUND` traz `suggestions` com ids reais parecidos — consulte antes de concluir "não existe". `SESSION_NOT_FOUND` NÃO traz `suggestions` de propósito: o isolamento de escopo mascara sessão não-autorizada como not-found, e sugerir nomes reais vazaria sessões de outros escopos.
-- `2` erro de uso (flag/argumento inválido). Corrija a chamada, não insista na mesma sintaxe.
-- `3` freio de escrita — não é erro. Nada foi gravado; o envelope traz `dryRun:true` e `plan` com exatamente o que seria feito. Revise o plano e repita com `--execute`.
-
-Onde o freio existe hoje: só `observers rules rm` (deletar rule é destrutivo — o único reverso é recriar na mão) é dry-run por default e exige `--execute`:
+## Quero vigiar a sessão X
 
 ```bash
-ravi observers rules rm <rule-id> --json            # dry-run: mostra o plan e sai com exit 3
-ravi observers rules rm <rule-id> --json --execute  # apaga de verdade
+ravi sessions observe xone-setup                  # avisa nesta sessão quando um turno dá errado
+ravi sessions observe xone-setup --to main        # avisa em outra sessão
+ravi sessions observe xone-setup --when turn.failed,chat.narration
+ravi sessions observe xone-setup --follow         # resumo curto de todo turno terminado
+ravi sessions observing --json                    # quem vigia quem
+ravi sessions unobserve xone-setup [--to main]    # para
 ```
 
-Todas as demais escritas gravam na hora, sem dry-run: `refresh`, `rules set`, `rules enable|disable`, `profiles init`. Nessas o freio é você: confira o alvo antes de rodar (`rules set` sobrescreve a rule inteira com o mesmo id; `disable` é o reverso barato de `enable`).
+- **Sem flag = alertas.** O daemon confere as condições a cada turno terminado e só acorda quem vigia quando uma casa. Nenhum modelo roda para decidir.
+- **Condições** (default: as quatro primeiras):
 
-Compact mode: `observers list`, `observers rules list` e `observers profiles list` aceitam `--fields a,b,c` (ex.: `--fields id,enabled`) — use em varredura para não arrastar o objeto inteiro.
+| condição | casa quando |
+|---|---|
+| `turn.no_final_reply` | o turno acabou sem resposta do agente depois da mensagem da pessoa, ou o agente trabalhou (tools) depois da última resposta. `@@SILENT@@` intencional não conta |
+| `chat.narration` | duas ou mais respostas do agente num turno que um chat via (narração de trabalho num grupo de cliente) |
+| `turn.failed` | o turno falhou |
+| `tool.idle` | uma tool ficou parada (`tool.inactive`) no turno |
+| `turn.interrupt` | o turno foi interrompido (fora do default) |
 
-Checklist antes de responder sobre observers:
+- **O aviso** chega como `[System] Inform: [from: ravi observer] …`, um turno isolado da sessão que vigia, no profile `compact`: um bloco por turno da fonte com o que a pessoa disse, quantas mensagens o agente mandou e a última, as tools em contagem e como o turno terminou. Ids, uso e custo ficam no metadado, fora do prompt.
+- **Custo:** um turno da sessão que recebe, por aviso. Com `--follow` numa fonte movimentada isso é um turno por turno da fonte; prefira alertas.
+- **Permissão:** é preciso alcançar as duas sessões (fora do escopo = `SESSION_NOT_FOUND`) e poder mutar o agent de quem recebe. Uma sessão não vigia a si mesma; sessão própria de trigger não é fonte nem recebe.
+- Rodar `observe` de novo no mesmo par troca o modo no lugar; nunca cria um segundo vigia. Renomear a sessão mantém a observação.
 
-- Tratei exit 3 como freio (revisei o `plan`) e não como falha?
-- Consultei `suggestions` do envelope antes de declarar not-found?
-- Rodei o `rm` de novo com `--execute` só depois de confirmar que a rule certa está no plano?
+## Observador dedicado: memória e custo
 
-## Inspeção Cruzada
+Quando o vigia não é uma conversa (é uma sessão observadora própria, criada por rule), o custo dominante é o histórico dela: um observador com memória relê todas as entregas anteriores a cada uma (medido em 23/11: ~556 mil tokens de cache por entrega no observador de voz do `main`, para uma entrega de ~400).
 
-Observers vivem em cima do resto do CRM. Antes de criar ou debugar, inspecione o ecossistema todo:
+- `metadata.memory: "none"`: cada entrega começa conversa nova, só com as instruções do observador e aquela entrega. Use para veredito, alerta, contagem.
+- `metadata.memory: "rolling"` (default): uma conversa só, entre entregas. Use só quando o observador precisa de estado (hipótese, voz).
 
 ```bash
-ravi observers rules list --json                 # quais regras observam o quê
-ravi observers list --json                       # bindings ativos
-ravi tag-rules list --json                       # quem produz as tags que observers consomem
-ravi contacts list --json                        # base sob observação
-ravi chats lists list --json                     # filas de leitura (se observers usam reading lists)
+ravi observers rules set meu-vigia <observer-agent> --scope session --source-session <fonte> \
+  --profile compact --delivery end_of_turn --mode observe --meta '{"memory":"none"}'
 ```
 
-⚠️ **Observer rule sem source matching** = dorme pra sempre. Use `ravi observers rules explain --session <session>` pra ver porque uma rule específica não disparou.
+Desligar a rule desliga os bindings dela na hora. Religar não reata os bindings de uma sessão que já está rodando: rode `ravi observers refresh <sessão> --reconcile attach-missing` (sem isso, eles voltam só quando a fonte partir de novo).
 
-⚠️ **Observer rule por tag de contato** depende de `session_participants` ter o contato linkado. Confirme via `ravi observers rules explain` que `source.contactIds` está preenchido.
+## Antes de criar qualquer rule
 
-## Comandos
-
-```bash
-ravi observers list
-ravi observers show <binding-id>
-ravi observers refresh <session>
-ravi observers refresh <session> --reconcile full-reconcile
-
-ravi observers rules list
-ravi observers rules show <rule-id>
-ravi observers rules set <rule-id> <observer-agent> [--scope profile] [--source-profile observed-task] [--profile tasks] [--selector <expression>]
-ravi observers rules enable <rule-id>
-ravi observers rules disable <rule-id>
-ravi observers rules rm <rule-id> --execute   # sem --execute é dry-run (exit 3)
-ravi observers rules validate
-ravi observers rules explain --session <session>
-
-ravi observers profiles list
-ravi observers profiles show <profile-id>
-ravi observers profiles preview <profile-id> --event message.assistant
-ravi observers profiles validate [profile-id]
-ravi observers profiles init <profile-id>
-```
-
-## Selectors Genéricos
-
-`--selector` usa um predicado restrito, sem JavaScript/eval, sobre `source.*`, `turn.*` e `event.*`. Operadores: `==`, `!=`, `startsWith`, `endsWith`, `includes`, `!`, `&&`, `||` e parênteses.
-
-Exemplo para observar somente turnos interativos, mesmo quando um cron executa dentro da sessão `main`:
-
-```bash
-ravi observers rules set proactive-followups proactive-followup-observer \
-  --scope global \
-  --selector 'turn.background == "false"'
-```
-
-Selectors de `source.*` são avaliados antes de criar o binding. Selectors com `turn.*` ou `event.*` são avaliados por evento e sobrevivem corretamente a debounce. Expressões inválidas falham fechadas. Use `--selector clear` para remover.
-
-`metadata.sourceExclusions` continua sendo lido para compatibilidade com regras antigas, mas novas regras devem preferir `--selector`.
-
-Reconciliação é explícita: `attach-missing` (padrão), `detach-disabled`, `refresh-profile` ou `full-reconcile`. Ela desativa bindings obsoletos sem apagar o histórico.
-
-## Profiles
-
-Observer profiles são bundles Markdown:
-
-```text
-.ravi/observers/profiles/<id>/
-  PROFILE.md
-  delivery/end-of-turn.md
-  delivery/realtime.md
-  delivery/debounce.md
-  events/message-user.md
-  events/message-assistant.md
-  events/turn-complete.md
-  events/turn-failed.md
-  events/turn-interrupt.md
-  events/default.md
-```
-
-Não use manifest JSON/YAML separado. O frontmatter fica no `PROFILE.md`.
-
-System profiles atuais:
-
-- `default`: renderer genérico.
-- `tasks`: renderer para observers que atualizam status de tasks via comandos.
-- `task-observer`: renderer do observer embutido das tasks; precisa de uma sessão fonte com task ativa (usa `{{input.task.*}}`).
-
-Profiles leem `{{event.detailText}}` (texto inteiro da resposta, ou o preview) e
-`{{event.toolInput}}` (uma linha do input da tool). O texto inteiro só chega para
-bindings com `metadata.observationDetail: true`; os demais veem o preview.
-
-## Observer Embutido Das Tasks
-
-Toda task cujo profile tem `observer.enabled: true` (os built-ins `default` e
-`observed-task`) ganha um observer sem regra cadastrada: role `task-observer`,
-rule id `builtin:task-observer`, profile `task-observer`, o agent do worker num
-modelo leve, eventos de tool, pulso de 5 min e grant `none` (nenhuma tool). Ele
-responde um bloco `<task-verdict>` e o runtime aplica o status. Ele aparece em
-`ravi observers bindings` como qualquer binding.
-
-Não crie rule para tasks desses profiles: já existe observer. Uma rule própria
-em modo `report` na mesma sessão substitui o embutido (ele fica desligado), para
-quem quer outro agent, outro prompt ou permissões de task.
-
-Grant `none` em `--permissions` deixa o observer sem tools: o turno fica
-restrito a uma capability que nada satisfaz. Lista vazia mantém o teto do agent.
-
-## Rule Própria De Status
-
-Use quando quiser um observer de status diferente do embutido (outro agent,
-outro prompt, grants de task).
-
-Setup típico:
-
-```bash
-ravi observers rules set observed-task-status <observer-agent> \
-  --scope profile \
-  --source-profile observed-task \
-  --role task-status \
-  --mode report \
-  --profile tasks \
-  --delivery end_of_turn \
-  --permissions tasks.report,tasks.block,tasks.done,tasks.fail
-```
-
-`--permissions` aceita atalhos como `tasks.report` ou capability completa como
-`use:tool:tasks_report`. Esses grants entram apenas no runtime context do
-observer, não na sessão fonte. Para acesso recorrente de contato/agent fora do
-contexto do observer, use `ravi permissions resolve <denial-id>` ou
-`ravi permissions allow <profile> --to <subject> --agent <agent>
---capabilities <cap>`.
-
-Depois:
-
-```bash
-ravi tasks create "..." --profile observed-task
-ravi tasks dispatch <task-id> --agent <worker-agent> --execute
-```
-
-O worker faz o trabalho e deixa sinais claros. O observer recebe Markdown do
-profile `tasks` e decide se chama `ravi tasks report|block|done|fail`. Um report
-vindo do observer zera o checkpoint do worker.
-
-## Tag-Driven Observers em Contatos
-
-Rules com `--scope tag --tag-target contact --tag <slug>` agora veem tags ligadas a contatos vinculados à sessão fonte. A resolução acontece via `session_participants` (owner_type=`contact`).
-
-Casos típicos:
-
-- Instância configurada com `defaultContactTags` aplica tag em contatos novos. Rule observer com a mesma tag dispara automaticamente.
-- Para mudar de observer, mude a tag do contato (`ravi contacts tag/untag`). Novas bindings serão criadas na próxima avaliação.
-- DM-per-peer é o cenário ideal: 1 contato por sessão. Em sessões com vários contatos (group/main), todas as tags presentes são consideradas.
-
-Detalhes operacionais e exemplos completos estão na skill `ravi-system:contacts` no playbook *Tag → Observer por Contato*.
-
-## Invariantes
-
+- Comece por `ravi sessions observe`. Rule própria só quando precisa de observer dedicado, de rule por agent/tag/profile ou de profile próprio.
 - Não crie rules por padrão em sistemas novos.
 - Não injete conteúdo do observer na sessão fonte.
-- Não use dumps JSON como formato primário para o observer.
 - Não use modo `observe` com permissões mutáveis.
 - Não reinicie daemon para validar profile; use `profiles preview|validate`.
-- Não confie em remoção automática de bindings quando a tag de contato muda. Faça housekeeping manual quando preciso (`ravi observers ...`).
+- Tag de contato que muda não remove binding sozinha: faça a limpeza (`ravi observers ...`).
+
+## Referências
+
+Abra só o que precisar: `ravi skills show observers --file references/<arquivo>`.
+
+- `cli.md`: contrato do CLI (`--json`, exit codes, freio do `rules rm`), lista de comandos e inspeção cruzada.
+- `rules-e-profiles.md`: selectors, profiles Markdown, observer embutido das tasks, rule própria de status, observers por tag de contato.

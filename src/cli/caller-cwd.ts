@@ -18,8 +18,13 @@
  * the same tools it would need to touch them directly.
  */
 
+import { homedir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
-import { providerConfigWriteDenial, isActorBreakGlassLimited } from "../permissions/provider-config-paths.js";
+import {
+  isActorBreakGlassLimited,
+  providerConfigWriteDenial,
+  providerFileReadDenial,
+} from "../permissions/provider-config-paths.js";
 import { canWithCapabilityContext } from "../permissions/provider-runtime.js";
 import { getContext } from "./context.js";
 import { CliExpectedError } from "./expected-error.js";
@@ -53,7 +58,10 @@ export type CallerPathMode = "read" | "write";
  * refuse it when the calling runtime context cannot read or write local files.
  */
 export function resolveCallerPath(path: string, mode: CallerPathMode = "read"): string {
-  const trimmed = path.trim();
+  // A leading `~` is the home directory, as a shell would read it: values from a
+  // profile or the gateway arrive unexpanded, and the path handed to a worker
+  // must be the one checked here.
+  const trimmed = path.trim().replace(/^~(?=\/|$)/, homedir());
   const resolved = !trimmed || isAbsolute(trimmed) ? trimmed : resolve(getCallerCwd(), trimmed);
   assertCallerFileAccess(resolved || getCallerCwd(), mode);
   return resolved;
@@ -75,10 +83,35 @@ export function assertCallerFileAccess(path: string, mode: CallerPathMode): void
           can,
           agentId: ctx?.agentId ?? context.agentId,
           targets: [path],
+          // A limited person's workspace is the authenticated session's, never the cwd the
+          // caller declares (`x-ravi-cwd` is chosen by the caller: a `cd` would move it).
+          cwd: isActorBreakGlassLimited(context) ? authenticatedSessionWorkspace(context) : getCallerCwd(),
           restrictToWorkspace: isActorBreakGlassLimited(context),
         })
-      : undefined;
+      : providerFileReadDenial({
+          can,
+          agentId: ctx?.agentId ?? context.agentId,
+          targets: [path],
+          cwd: isActorBreakGlassLimited(context) ? authenticatedSessionWorkspace(context) : getCallerCwd(),
+          restrictToWorkspace: isActorBreakGlassLimited(context),
+        });
   if (denial) {
     throw new CliExpectedError(denial, "PERMISSION_DENIED", 1, "Ask the operator for file access, or use stdout");
   }
+}
+
+/**
+ * The workspace of the session the runtime context was issued for, as the
+ * runtime runs it (`expandHome(session.agentCwd)`). Without a session the
+ * filesystem root is returned, which the write boundary never treats as a
+ * workspace: only temp directories stay writable.
+ */
+function authenticatedSessionWorkspace(context: { sessionKey?: string }): string {
+  if (!context.sessionKey) return "/";
+  // Lazily required: the session store reaches the router DB, which reaches
+  // the permissions modules that import this file.
+  const { getSession } = require("../router/sessions.js") as typeof import("../router/sessions.js");
+  const { expandHome } = require("../router/resolver.js") as typeof import("../router/resolver.js");
+  const agentCwd = getSession(context.sessionKey)?.agentCwd;
+  return agentCwd ? expandHome(agentCwd) : "/";
 }

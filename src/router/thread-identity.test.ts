@@ -159,6 +159,7 @@ describe("session handoffs schema", () => {
       "acknowledged_at",
       "ack_reason",
       "updated_at",
+      "decision_id",
     ]);
     const insert = (kind: string, status: string) =>
       db

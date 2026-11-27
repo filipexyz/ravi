@@ -34,6 +34,11 @@ function record(overrides: Partial<CredentialConnectionRecord> = {}): Credential
     status: "active",
     createdAt: 1,
     updatedAt: 1,
+    owner: null,
+    purpose: null,
+    rotatedAt: null,
+    expiresAt: null,
+    disabledAt: null,
     ...overrides,
   };
 }

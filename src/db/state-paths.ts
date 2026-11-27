@@ -15,6 +15,7 @@ export function runtimeStateDatabasePaths(env: NodeJS.ProcessEnv = process.env):
     join(root, "insights.db"),
     join(root, "knowledge.db"),
     join(root, "devin.db"),
+    join(root, "voice.db"),
     join(root, "human-bridge", "bridge.db"),
   ];
 }

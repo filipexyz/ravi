@@ -11,6 +11,7 @@ import type { RuntimeLaunchPrompt } from "../runtime/message-types.js";
 import { buildChannelTextOutboundJob } from "../channels/outbound-stream.js";
 import { publishChannelOutboundJobDurably } from "../channels/outbound-publish-outbox.js";
 import { getDecision, decisionWrite } from "./store.js";
+import type { Decision } from "./types.js";
 import { requireDecisionThread } from "./service.js";
 import { DecisionError, DecisionDispatchRejectedError } from "./model.js";
 import { logger } from "../utils/logger.js";
@@ -90,7 +91,10 @@ async function deliver(candidate: DeliveryRow, deps: DecisionDeliveryDeps): Prom
   try {
     const decision = getDecision(row.decisionId)!;
     const { record, child, chat } = requireDecisionThread(decision.origin);
-    if (row.kind === "question" && (decision.status !== "open" || row.revision !== decision.revision)) {
+    if (
+      (row.kind === "question" && (decision.status !== "open" || row.revision !== decision.revision)) ||
+      (row.kind === "answer" && decision.status === "superseded")
+    ) {
       finish(row.id, claim, "superseded");
       return;
     }
@@ -103,7 +107,7 @@ async function deliver(candidate: DeliveryRow, deps: DecisionDeliveryDeps): Prom
       threadId: record.providerThreadId,
     };
     if (row.kind === "question") {
-      const text = `**Decisão pendente: ${decision.key}**\n\n${decision.ask}\n\nResponsável: ${decision.ownerType}${decision.ownerId ? `:${decision.ownerId}` : ""}.\nPara registrar a resposta, peça à sessão que abriu esta thread ou use o CLI de decisões.\nReferência: ${decision.id}`;
+      const text = decisionQuestionNotice(decision);
       const job = row.payload
         ? (JSON.parse(row.payload) as ReturnType<typeof buildChannelTextOutboundJob>)
         : buildChannelTextOutboundJob({
@@ -211,6 +215,8 @@ export async function admitDecisionAnswer(
       throw new DecisionError("DECISION_ORIGIN_MISMATCH", "Decision delivery envelope differs.");
     }
     if (["delivered", "accepting", "uncertain"].includes(row.status)) return null;
+    // A replaced decision's answer never resumes work, even when its envelope was already published.
+    if (row.status === "superseded" || decision.status === "superseded") return null;
     const claim = randomUUID();
     runThreadMutation(
       db,
@@ -312,4 +318,35 @@ export function resolveUncertainDecisionDelivery(decisionId: string, outcome: st
       Date.now(),
     );
   });
+}
+
+/**
+ * The thread notice for an open question. A question asked by a wait is the wait's whole report, which reaches
+ * the parent session but is not necessarily posted in the thread: the notice keeps its first line (bounded)
+ * instead of repeating the full report. The owner is named by role, never by an internal contact id.
+ */
+export function decisionQuestionNotice(decision: Decision): string {
+  const askedByWait = Boolean(
+    getDb().query("SELECT 1 FROM session_handoffs WHERE decision_id = ? LIMIT 1").get(decision.id),
+  );
+  const owner =
+    decision.ownerType === "human"
+      ? "uma pessoa"
+      : decision.ownerType === "agent"
+        ? "um agente"
+        : "ainda sem responsável";
+  const body = askedByWait ? summarizeWaitQuestion(decision.ask) : decision.ask;
+  return `**Decisão pendente: ${decision.key}**\n\n${body}\n\nResponsável: ${owner}.\nPara registrar a resposta, peça à sessão que abriu esta thread ou use o CLI de decisões.\nReferência: ${decision.id}`;
+}
+
+const WAIT_QUESTION_MAX = 280;
+
+function summarizeWaitQuestion(ask: string): string {
+  const first =
+    ask
+      .split("\n")
+      .find((line) => line.trim())
+      ?.trim() ?? ask.trim();
+  const clipped = first.length > WAIT_QUESTION_MAX ? `${first.slice(0, WAIT_QUESTION_MAX - 1)}…` : first;
+  return clipped === ask.trim() ? clipped : `${clipped}\n(relatório completo enviado à sessão que abriu esta thread)`;
 }

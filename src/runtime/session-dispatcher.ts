@@ -62,12 +62,17 @@ import { triggerAuthorityLendsOwner, triggerOwnSessionAdmitsPrompt } from "../tr
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import {
   CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY,
+  captureRestartTurnAuthority,
+  DAEMON_RESTART_INTERRUPTED_ATTEMPT_METADATA_KEY,
+  RESTART_TURN_AUTHORITY_METADATA_KEY,
   resolveCrashRecoveryRestartResumeMode,
+  resolveRestartSnapshotInterruptedAttemptId,
 } from "./daemon-restart-resume.js";
 import {
   getCrashRecoveryReplayablePendingRuntimeMessages,
   getPendingRuntimeTurnSuccessors,
   getRuntimeTurnReplaySafety,
+  isReleasableDoneRuntimeSession,
   runtimeTurnAttemptTerminalEventType,
   shutdownRuntimeStreamingSession,
   stashPendingRuntimeMessages,
@@ -215,6 +220,30 @@ export interface RuntimeAbortProvenance {
   request?: unknown;
 }
 
+const STATELESS_OBSERVATION_POLL_MS = 500;
+const STATELESS_OBSERVATION_MAX_WAIT_MS = 10 * 60_000;
+
+/** A runtime still serving work: starting, in a turn, compacting, running a tool or holding input. */
+function runtimeSessionIsServing(session: RuntimeHostStreamingSession): boolean {
+  return (
+    session.starting ||
+    session.turnActive ||
+    session.compacting ||
+    session.toolRunning ||
+    session.pendingMessages.length > 0 ||
+    Boolean(session.pendingWake)
+  );
+}
+
+/**
+ * Prompts whose turn runs their own text only: a trigger fire that lends its owner's authority, and
+ * an observation notice (its turn is observer-originated, so a person's text riding along would go
+ * unobserved). Held `!!` text never joins them.
+ */
+function promptRunsOnlyItsOwnText(prompt: RuntimeLaunchPrompt): boolean {
+  return triggerAuthorityLendsOwner(prompt._triggerAuthority) || prompt._observationNotice !== undefined;
+}
+
 export class RuntimeSessionDispatcher {
   readonly streamingSessions = new Map<string, RuntimeHostStreamingSession>();
   readonly debounceStates = new Map<string, DebounceState>();
@@ -227,6 +256,8 @@ export class RuntimeSessionDispatcher {
   readonly startingSessions = new Set<string>();
   readonly deferredBootstraps = new Map<string, RuntimeLaunchPrompt>();
   readonly heldSkipTurnMessages = new Map<string, string[]>();
+  /** Stateless observer deliveries waiting for the observer's live turn to end, per session. */
+  readonly statelessObservationWaits = new Map<string, { prompts: RuntimeLaunchPrompt[]; since: number }>();
   private readonly runtimeRecoveryRestartAttempts = new Map<string, Readonly<Partial<Record<string, number>>>>();
   private readonly barrierStuckTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly barrierStuckAlerted = new Set<string>();
@@ -333,6 +364,10 @@ export class RuntimeSessionDispatcher {
         pendingMessages: [],
         metadata: {
           reason: options.reason,
+          // A session without a live turn (queued, stashed, debounced, starting) has no
+          // turn authority to restore: `{ v: 1 }` says so, and each durable queued
+          // message carries its own envelope. The live-session loop records the real one.
+          [RESTART_TURN_AUTHORITY_METADATA_KEY]: captureRestartTurnAuthority(undefined),
           ...(overrides.metadata ?? {}),
         },
       };
@@ -391,6 +426,16 @@ export class RuntimeSessionDispatcher {
             ? "pending_only"
             : "skip";
       const nonIdle = !replaySafety.replayable || isDaemonRestartNonIdleSession(session) || pendingMessages.length > 0;
+      // A turn cut off after it started acting is resumed at boot with a note
+      // to verify state first (never a replay), once per durable attempt.
+      const interruptedAttemptId = resolveRestartSnapshotInterruptedAttemptId({
+        turnActive: session.turnActive,
+        replayable: replaySafety.replayable,
+        terminalTurnConsumed,
+        hasScheduledCapacityRetry,
+        superseded: Boolean(session.currentTurnSuperseded),
+        attemptId: session.currentCrashRecoveryAttemptId,
+      });
       const snapshot = getAccumulator(sessionName, {
         agentId: session.agentId,
         runtimeProvider: session.queryHandle.provider,
@@ -411,6 +456,8 @@ export class RuntimeSessionDispatcher {
           currentTurnPendingIds: session.currentTurnPendingIds ?? [],
           currentTurnSuperseded: Boolean(session.currentTurnSuperseded),
           [CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY]: restartResumeMode,
+          [DAEMON_RESTART_INTERRUPTED_ATTEMPT_METADATA_KEY]: interruptedAttemptId,
+          [RESTART_TURN_AUTHORITY_METADATA_KEY]: captureRestartTurnAuthority(session.currentTurnAuthority),
           crashRecoveryReplaySafety: replaySafety,
           crashRecoveryTerminalStatus: session.currentCrashRecoveryTerminal?.status ?? null,
         },
@@ -1174,6 +1221,30 @@ export class RuntimeSessionDispatcher {
           (barrier === "after_tool" && !sessionEntry?.runtimeProviderOverride?.trim()))
       );
     };
+    let statelessRetired = false;
+    // A delivery already waiting for this observer goes first: a later one queues behind it, even if
+    // the observer turn just ended and the waiting one has not been released yet.
+    if (prompt._observation?.memory === "none" && this.statelessObservationWaits.has(sessionName)) {
+      this.deferStatelessObservation(sessionName, prompt, canonicalSessionKey);
+      return;
+    }
+    // A stateless observer delivery never joins a live conversation: an idle observer runtime is
+    // retired first; a busy one finishes its turn (the delivery's after_response barrier) and the
+    // delivery waits for it, then retires it.
+    if (existing && !existing.done && prompt._observation?.memory === "none") {
+      if (runtimeSessionIsServing(existing)) {
+        this.deferStatelessObservation(sessionName, prompt, canonicalSessionKey);
+        return;
+      }
+      log.info("Streaming: retiring observer runtime for a stateless delivery", { sessionName });
+      shutdownRuntimeStreamingSession(existing, "stateless_observation");
+      if (this.streamingSessions.get(sessionName) === existing) {
+        this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: false });
+        statelessRetired = true;
+      }
+      existing = this.streamingSessions.get(sessionName);
+    }
+
     if (
       existing &&
       (shouldDeferSavedProviderChange(existing) ||
@@ -1203,7 +1274,7 @@ export class RuntimeSessionDispatcher {
     // The broker lease and observation override retain their higher priority.
     refreshProviderSelection();
     existing = this.streamingSessions.get(sessionName);
-    let retainReleasedSlot = false;
+    let retainReleasedSlot = statelessRetired;
 
     if (existing && !existing.done) {
       if (shouldDeferSavedProviderChange(existing)) {
@@ -2197,6 +2268,9 @@ export class RuntimeSessionDispatcher {
     if (!prompt) {
       return;
     }
+    if (reason === "recoverable_interrupt_failure") {
+      prompt = withRuntimeInterruptNotice(prompt);
+    }
 
     let traceIdentity = this.resolvePendingStartTraceIdentity(sessionName, prompt);
     const maxRestartAttempts = RUNTIME_RECOVERY_RESTART_LIMITS[reason];
@@ -2472,6 +2546,7 @@ export class RuntimeSessionDispatcher {
 
     for (const [sessionName, session] of this.streamingSessions) {
       if (session.done) {
+        if (this.holdsClosingSlot(sessionName, session, now)) continue;
         this.releaseRuntimeSessionSlot(sessionName);
         continue;
       }
@@ -2551,18 +2626,80 @@ export class RuntimeSessionDispatcher {
     });
   }
 
+  /**
+   * Hold a stateless observer delivery until the observer's live runtime finishes its turn, then
+   * dispatch it again (which retires that runtime). One queue per session keeps delivery order.
+   */
+  private deferStatelessObservation(
+    sessionName: string,
+    prompt: RuntimeLaunchPrompt,
+    canonicalSessionKey?: string,
+  ): void {
+    const queued = this.statelessObservationWaits.get(sessionName);
+    if (queued) {
+      queued.prompts.push(prompt);
+      return;
+    }
+    const wait = { prompts: [prompt], since: Date.now() };
+    this.statelessObservationWaits.set(sessionName, wait);
+    log.info("Holding a stateless observer delivery until the observer turn ends", { sessionName });
+    const tick = () => {
+      const live = this.streamingSessions.get(sessionName);
+      const timedOut = Date.now() - wait.since > STATELESS_OBSERVATION_MAX_WAIT_MS;
+      if (live && !live.done && runtimeSessionIsServing(live) && !timedOut) {
+        setTimeout(tick, STATELESS_OBSERVATION_POLL_MS).unref?.();
+        return;
+      }
+      // Release the queue before dispatching: anything still waiting is re-queued behind this one.
+      this.statelessObservationWaits.delete(sessionName);
+      const [next, ...rest] = wait.prompts;
+      if (!next) return;
+      if (timedOut) {
+        log.warn("Stateless observer delivery waited too long; delivering into the live conversation", {
+          sessionName,
+          waitedMs: Date.now() - wait.since,
+        });
+      }
+      const delivery: RuntimeLaunchPrompt =
+        timedOut && next._observation ? { ...next, _observation: { ...next._observation, memory: undefined } } : next;
+      void this.handlePromptImmediate(sessionName, delivery, canonicalSessionKey)
+        .catch((error) => log.error("Stateless observer delivery failed", { sessionName, error }))
+        .finally(() => {
+          for (const other of rest) void this.handlePromptImmediate(sessionName, other, canonicalSessionKey);
+        });
+    };
+    setTimeout(tick, STATELESS_OBSERVATION_POLL_MS).unref?.();
+  }
+
+  /**
+   * A `done` session whose event loop is still closing the provider keeps its
+   * slot: the loop releases it and restarts any stashed recovery. Taking it
+   * from a periodic sweep makes the loop skip that restart and strands the
+   * queue (25/11). Only a cleanup that has not finished within the turn
+   * inactivity window, timed from when it was first seen closing (not from the
+   * last turn event), is released, with a warning.
+   */
+  private holdsClosingSlot(sessionName: string, session: RuntimeHostStreamingSession, now: number): boolean {
+    if (!session.done || isReleasableDoneRuntimeSession(session)) return false;
+    session.closingObservedAt ??= now;
+    const closingMs = now - session.closingObservedAt;
+    const timeoutMs = this.turnInactivityMs();
+    if (closingMs < timeoutMs) return true;
+    log.warn("Releasing a finished runtime session whose event loop never settled its slot", {
+      sessionName,
+      closingMs,
+      timeoutMs,
+      stashedQueueSize: this.stashedMessages.get(sessionName)?.length ?? 0,
+    });
+    return false;
+  }
+
   reclaimIdleObserverSessions(now = Date.now(), options: { drainPendingStarts?: boolean } = {}): string[] {
     const reclaimed: string[] = [];
     for (const [sessionName, session] of this.streamingSessions) {
       if (!isObserverRuntimeSessionName(sessionName)) continue;
-      const servingWork =
-        session.starting ||
-        session.turnActive ||
-        session.compacting ||
-        session.toolRunning ||
-        session.pendingMessages.length > 0 ||
-        Boolean(session.pendingWake);
-      if (servingWork) continue;
+      if (this.holdsClosingSlot(sessionName, session, now)) continue;
+      if (runtimeSessionIsServing(session)) continue;
       const idleMs = session.lastActivity ? now - session.lastActivity : now;
       log.info("Reclaiming idle observer runtime session", { sessionName, idleMs });
       shutdownRuntimeStreamingSession(session, "idle_observer_reclaim");
@@ -2654,8 +2791,9 @@ export class RuntimeSessionDispatcher {
   ): void {
     const debounce = this.debounceStates.get(sessionName);
     const lastDebounced = debounce?.messages.at(-1);
-    // Never onto a trigger fire that lends its owner's authority: `!!` text is someone else's.
-    if (debounce && lastDebounced && !triggerAuthorityLendsOwner(lastDebounced._triggerAuthority)) {
+    // Never onto a trigger fire that lends its owner's authority, nor onto an observation notice
+    // (an observer turn emits no observation events): `!!` text is someone else's.
+    if (debounce && lastDebounced && !promptRunsOnlyItsOwnText(lastDebounced)) {
       // Ride along with the batch that is already waiting so arrival order
       // holds, without extending its window.
       debounce.messages[debounce.messages.length - 1] = appendSkipTurnText(lastDebounced, prompt);
@@ -2699,9 +2837,9 @@ export class RuntimeSessionDispatcher {
     if (prompt._deferRuntimeStart || prompt._resumeStashedMessages || prompt._daemonRestartResume) {
       return prompt;
     }
-    // A trigger fire that lends its owner's authority runs its own text only;
-    // the held `!!` text waits for the next turn.
-    if (triggerAuthorityLendsOwner(prompt._triggerAuthority)) {
+    // A trigger fire that lends its owner's authority, and an observation notice, run their own
+    // text only; the held `!!` text waits for the next turn.
+    if (promptRunsOnlyItsOwnText(prompt)) {
       return prompt;
     }
     const held = this.heldSkipTurnMessages.get(sessionName);
@@ -3596,6 +3734,20 @@ function appendUniqueRuntimeMessagesToStash(
   appendUniqueRuntimeMessages(queued, messages);
   stashedMessages.set(sessionName, queued);
   return queued;
+}
+
+/**
+ * O provider entrega ao modelo a interrupção de uma ferramenta como recusa do
+ * usuário ("the user doesn't want to proceed ... STOP and wait"). Quando quem
+ * interrompeu foi o runtime, para entregar a mensagem seguinte, o modelo precisa
+ * saber disso; senão ele para e espera uma pessoa que não recusou nada.
+ */
+export const RUNTIME_INTERRUPT_NOTICE =
+  "[Runtime] A ferramenta anterior foi interrompida pelo runtime para entregar esta mensagem; ninguém recusou nada. Confira se ela rodou antes de repetir e siga.";
+
+export function withRuntimeInterruptNotice(prompt: RuntimeLaunchPrompt): RuntimeLaunchPrompt {
+  if (prompt.prompt.startsWith(RUNTIME_INTERRUPT_NOTICE)) return prompt;
+  return { ...prompt, prompt: `${RUNTIME_INTERRUPT_NOTICE}\n\n${prompt.prompt}` };
 }
 
 export function buildStashedRestartPrompt(messages: RuntimeUserMessage[]): RuntimeLaunchPrompt | null {

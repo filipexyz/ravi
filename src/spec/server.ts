@@ -57,9 +57,20 @@ function loadSpecPrompt(cwd: string): string {
 
 // --- MCP Server factory ---
 
+/**
+ * The key this server is registered under in a session's `mcpServers`. The
+ * tool permission hook exempts host servers by this name, so the registration
+ * and the exemption must use the same value. The tool names it produces
+ * (`mcp__spec__*`) are also written out in `runtime/host-hooks.ts` (the exit
+ * approval matcher and the spec-mode block), `runtime/tool-liveness.ts` and
+ * `hooks/tool-safety.ts`: a rename must change those too, or
+ * `exit_spec_mode` stops asking for approval.
+ */
+export const SPEC_MCP_SERVER_NAME = "spec";
+
 export function createSpecServer(sessionId: string, cwd: string) {
   return createSdkMcpServer({
-    name: "spec",
+    name: SPEC_MCP_SERVER_NAME,
     version: "1.0.0",
     tools: [
       tool(

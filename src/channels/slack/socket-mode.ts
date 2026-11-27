@@ -26,7 +26,7 @@ import {
   RouteSessionAgentConflictError,
 } from "../../router/index.js";
 import { isExplicitSessionAttach } from "../../router/route-sticky-attach.js";
-import { evaluateOwnerDmGuard, isOperatorChosenDestination } from "../owner-dm-guard.js";
+import { evaluateOwnerDmGuard } from "../owner-dm-guard.js";
 import { pendingReviewEvents } from "../pending-review-event.js";
 import { resolveSubscriptionPrecedence } from "../subscription-precedence.js";
 import {
@@ -102,6 +102,13 @@ import {
   isCredentialIntakeEnvelope,
   type CredentialIntakeDependencies,
 } from "./credential-intake.js";
+import {
+  isSlackDecisionAnswerOpenEnvelope,
+  isSlackDecisionAnswerSubmitEnvelope,
+  openSlackDecisionAnswerForm,
+  SLACK_DECISION_ANSWER_SUBMIT_CALLBACK_ID,
+  slackDecisionAnswerFormErrors,
+} from "./decision-answer.js";
 import { extractSlackMessageText } from "./message-content.js";
 import { slackInboundReactionFromEnvelope } from "./reactions.js";
 import {
@@ -932,6 +939,26 @@ export class SlackSocketModeService {
     }
     if (envelope.type === SLACK_COMMAND_ENVELOPE_TYPE) {
       return this.processSlashCommandEnvelope(envelope, ack);
+    }
+    // Responder on a card waiting for a decision: Slack's trigger lasts three seconds, so the form opens here.
+    if (isSlackDecisionAnswerOpenEnvelope(envelope)) {
+      await openSlackDecisionAnswerForm({
+        envelope,
+        client: this.webClient,
+        ack,
+        accountId: this.options.accountId,
+        instanceId: this.options.instanceId ?? this.options.accountId,
+      });
+      return "processed";
+    }
+    // A decision form whose answer the core would refuse for its shape stays open with the draft.
+    if (isSlackDecisionAnswerSubmitEnvelope(envelope)) {
+      const errors = slackDecisionAnswerFormErrors(envelope);
+      const formEnvelopeId = cleanSlackId(envelope.envelope_id);
+      if (errors && formEnvelopeId) {
+        await ack(formEnvelopeId, { response_action: "errors", errors });
+        return "processed";
+      }
     }
     const envelopeId = cleanSlackId(envelope.envelope_id);
     const messageEvent = envelopeEvent(envelope);
@@ -1802,6 +1829,11 @@ export class SlackSocketModeService {
       containerType: stringField(container, "type"),
       viewId: stringField(view, "id"),
       viewCallbackId: stringField(view, "callback_id"),
+      // The pointer a decision answer form keeps; the consumer rechecks everything it names. No other form's
+      // metadata leaves the runner.
+      ...(stringField(view, "callback_id") === SLACK_DECISION_ANSWER_SUBMIT_CALLBACK_ID
+        ? { viewPrivateMetadata: stringField(view, "private_metadata") }
+        : {}),
       actionId: stringField(firstAction, "action_id"),
       blockId: stringField(firstAction, "block_id"),
       actionType: stringField(firstAction, "type"),
@@ -2148,9 +2180,6 @@ export class SlackSocketModeService {
       peerKind,
       threadId: routeThreadId,
     });
-    // Where the route alone sends the message, before a subscription reroutes it.
-    const routeMatched = matched;
-
     const existingSubscription = findSessionByAttachedChat(canonicalChat.id);
     let trustedSubscription = false;
     let staleSubscription: typeof existingSubscription = null;
@@ -2234,12 +2263,14 @@ export class SlackSocketModeService {
           (!contact.allowedAgents?.length || contact.allowedAgents.includes(matched.agentId)),
       );
     }
-    // A DM from anyone but the owner never lands in the owner's shared
-    // session, whatever the instance policy (spec channels/owner-dm-guard).
-    // It reads the session the commit will land in: a route that forces a
-    // session redirects there, away from `matched.sessionKey`.
+    // A DM from anyone but the owner never lands in an agent's shared DM
+    // session, whatever the instance policy, routes or attached chats say
+    // (spec channels/owner-dm-guard). Another app's bot is not the owner
+    // either: its DM would receive the session's answers. It reads the
+    // session the commit will land in: a route that forces a session
+    // redirects there, away from `matched.sessionKey`.
     let ownerSessionBlocked = false;
-    if (!isGroup && matched && message.senderKind !== "bot") {
+    if (!isGroup && matched) {
       const landingSessionKey = previewCommittedSessionKey(matched, { threadId: routeThreadId });
       const ownerGuard = evaluateOwnerDmGuard({
         peerKind,
@@ -2250,13 +2281,6 @@ export class SlackSocketModeService {
           platformUserId: message.slackUserId ?? message.userId,
           senderKind: message.senderKind,
         }).contactId,
-        explicit: isOperatorChosenDestination({
-          routePattern: routeMatched?.route?.pattern,
-          routeSessionKey: routeMatched ? previewCommittedSessionKey(routeMatched, { threadId: routeThreadId }) : null,
-          attachExplicit: explicitAttach,
-          attachSessionKey: existingSubscription?.sessionKey,
-          landingSessionKey,
-        }),
       });
       if (ownerGuard.blocked) {
         ownerSessionBlocked = true;

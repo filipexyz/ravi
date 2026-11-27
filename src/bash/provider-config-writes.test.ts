@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { runWithContext, type ToolContext } from "../cli/context.js";
 import {
+  canonicalCase,
   fileWriteToolTargets,
+  isHardlinkedFile,
   isProviderConfigPath,
   providerConfigWriteDenial,
 } from "../permissions/provider-config-paths.js";
@@ -220,6 +222,33 @@ describe("writes to runtime provider settings", () => {
     expect(plain.approved).toBe(true);
   });
 
+  it("refuses a pathless file-change approval for a person held below break-glass", async () => {
+    const context = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId,
+      capabilities: [
+        ...WRITER,
+        { permission: "deny_execute", objectType: "executable", objectId: "*" },
+        { permission: "deny_admin", objectType: "system", objectId: "*" },
+      ],
+      metadata: { authorityMode: "agent-identity", executorAgentId: agentId },
+    });
+    const services = createRuntimeHostServices({
+      context,
+      agentId,
+      sessionName: `${agentId}-main`,
+      toolContext: {},
+      cwd: workspace,
+    });
+    const pathless = await services.authorizeToolUse({ toolName: "Edit", input: { itemId: "item_1" } });
+    expect(pathless.approved).toBe(false);
+    const inside = await services.authorizeToolUse({
+      toolName: "Write",
+      input: { file_path: "notes.md", content: "ok" },
+    });
+    expect(inside.approved).toBe(true);
+  });
+
   it("reads the paths out of patch-style tool inputs", () => {
     const patch = "*** Begin Patch\n*** Add File: .codex/config.toml\n+x\n*** Update File: src/a.ts\n*** End Patch";
     expect(fileWriteToolTargets("apply_patch", { input: patch })).toEqual([".codex/config.toml", "src/a.ts"]);
@@ -268,6 +297,57 @@ describe("file writes for a person held below the agent's break-glass", () => {
     expect(deniedFor(".env", getRaviStateDir())).toContain("outside the session workspace");
     expect(deniedFor(join(home, ".ravi", ".env"), join(home, ".ravi"))).toContain("outside the session workspace");
     expect(deniedFor(".zshrc", home)).toContain("outside the session workspace");
+  });
+
+  it("refuses a hardlink inside the workspace (a second name of another file)", () => {
+    const outsideFile = join(outside, "secret.env");
+    writeFileSync(outsideFile, "X=1\n");
+    linkSync(outsideFile, join(workspace, "linked.env"));
+    expect(deniedFor(join(workspace, "linked.env"))).toContain("outside the session workspace");
+  });
+
+  // A root user reads through chmod 000, so the unreadable cases only mean something otherwise.
+  const unreadableMeaningful = process.getuid?.() !== 0;
+
+  it("refuses a file under an unreadable directory, and treats a file it cannot stat as hardlinked", () => {
+    if (!unreadableMeaningful) return;
+    const locked = join(workspace, "locked");
+    mkdirSync(locked);
+    chmodSync(locked, 0o000);
+    try {
+      expect(deniedFor(join(locked, "notes.md"))).toContain("outside the session workspace");
+      // Defensive: resolution already refuses this path; the hardlink check must fail closed on its own.
+      expect(isHardlinkedFile(join(locked, "notes.md"))).toBe(true);
+      expect(isHardlinkedFile(join(workspace, "missing.md"))).toBe(false);
+    } finally {
+      chmodSync(locked, 0o755);
+    }
+  });
+
+  it("keeps the given spelling when a component cannot be resolved for another reason than missing", () => {
+    if (!unreadableMeaningful) return;
+    const real = join(workspace, "real");
+    const locked = join(real, "locked");
+    mkdirSync(locked, { recursive: true });
+    symlinkSync(real, join(workspace, "alias"));
+    chmodSync(locked, 0o000);
+    try {
+      const given = join(workspace, "alias", "locked", "notes.md");
+      // Walking up past an unreadable component would silently rewrite the path.
+      expect(canonicalCase(given)).toBe(given);
+    } finally {
+      chmodSync(locked, 0o755);
+    }
+  });
+
+  it("refuses another spelling of a protected directory on a case-insensitive volume", () => {
+    const state = getRaviStateDir();
+    mkdirSync(state, { recursive: true });
+    const upper = join(dirname(state), basename(state).toUpperCase());
+    // Only meaningful where the volume folds case (macOS default); elsewhere it is another directory.
+    if (upper !== state && existsSync(upper)) {
+      expect(deniedFor(".env", upper)).toContain("outside the session workspace");
+    }
   });
 
   it("refuses a symlink inside the workspace that points outside", () => {

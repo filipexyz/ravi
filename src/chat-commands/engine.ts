@@ -191,7 +191,7 @@ export type ChatCommandResult =
   | { readonly kind: "access_metadata_missing" }
   | {
       readonly kind: "not_authorized_command";
-      readonly operation: "interrupt" | "close-thread";
+      readonly operation: "interrupt" | "close-thread" | "clone";
       readonly capability?: string;
     }
   | { readonly kind: "threads_unsupported" }
@@ -239,6 +239,17 @@ export type ChatCommandResult =
   | { readonly kind: "nothing_running"; readonly sessionName: string }
   | { readonly kind: "session_not_active"; readonly sessionName: string }
   | { readonly kind: "stop_failed"; readonly code: string }
+  /** `clone <name>`: the new chat and session, as facts. */
+  | {
+      readonly kind: "cloned";
+      readonly sessionName: string;
+      readonly cloneName: string;
+      readonly chatId: string;
+      readonly messages: number;
+      readonly redacted: boolean;
+      readonly inviteFailed: boolean;
+    }
+  | { readonly kind: "clone_refused"; readonly code: string; readonly message: string }
   | { readonly kind: "failed" };
 
 /** What a channel adapter provides for one command. */
@@ -263,9 +274,35 @@ export interface ChatCommandChannel {
    * a command that needs it and gets none is refused.
    */
   closeAccess?(): Promise<InheritedCommandAccess | undefined>;
+  /**
+   * Clone the chat's session into a new chat of this channel (`sessions clone`). Absent when the
+   * channel cannot create chats: `clone` then says so.
+   */
+  clone?(input: ChatCommandCloneInput): Promise<ChatCommandCloneOutcome>;
+  /** The access metadata the CLI declares for `sessions clone`, as for `closeAccess`. */
+  cloneAccess?(): Promise<InheritedCommandAccess | undefined>;
   /** Say the result in this channel. Must not throw: a delivery failure is the adapter's to log. */
   reply(result: ChatCommandResult): Promise<void>;
 }
+
+export interface ChatCommandCloneInput {
+  readonly session: SessionEntry;
+  readonly name: string;
+  readonly contactId: string;
+  /** The person on their platform: the channel decides whether it can invite them. */
+  readonly actorId: string;
+}
+
+export type ChatCommandCloneOutcome =
+  | {
+      readonly kind: "cloned";
+      readonly sessionName: string;
+      readonly chatId: string;
+      readonly messages: number;
+      readonly redacted: boolean;
+      readonly inviteFailed: boolean;
+    }
+  | { readonly kind: "refused"; readonly code: string; readonly message: string };
 
 /** What tests replace. Every default reads the real stores. */
 export interface ChatCommandDeps {
@@ -273,7 +310,9 @@ export interface ChatCommandDeps {
   routerConfig?: () => RouterConfig;
   capabilitiesFor?: (contactId: string) => ContextCapability[];
   commandAccess?: (input: CliCommandAccessInput) => CliCommandAccessResult;
-  inheritedAccess?: (operation: "close-thread" | "interrupt") => Promise<InheritedCommandAccess | undefined>;
+  inheritedAccess?: (operation: "close-thread" | "interrupt" | "clone") => Promise<InheritedCommandAccess | undefined>;
+  /** Replaces the channel's `clone` (tests). */
+  cloneSession?: (input: ChatCommandCloneInput) => Promise<ChatCommandCloneOutcome>;
   /** What a thread is doing right now, read at the moment it is needed. */
   activity?: (thread: ChatThreadSummary) => ChatThreadActivity;
   activeTurn?: (sessionKey: string) => { turnId: string; startedAt: number } | null;
@@ -292,6 +331,9 @@ export const CHAT_COMMAND_SESSION_RIGHT: Readonly<Record<ChatCommandAction, "acc
   close: "modify",
   close_idle: "modify",
   stop: "modify",
+  // What a clone copies is what the person can already read (the recap): access to the session,
+  // plus the mutating capability of `sessions clone` itself, asked below like close and stop.
+  clone: "access",
 };
 
 /**
@@ -320,9 +362,11 @@ function sessionRef(session: SessionEntry): string {
 }
 
 async function defaultInheritedAccess(
-  operation: "close-thread" | "interrupt",
+  operation: "close-thread" | "interrupt" | "clone",
   channel: ChatCommandChannel,
 ): Promise<InheritedCommandAccess | undefined> {
+  // Cloning creates a chat on the channel's platform, so the channel runs it and declares its access.
+  if (operation === "clone") return channel.cloneAccess?.();
   // The CLI classes carry the access metadata the operation declares, so the command cannot drift
   // from what the CLI asks for. The command that closes a channel's threads is the channel's own
   // (it imports that channel's thread code), so the channel says what it declares; the engine
@@ -525,7 +569,13 @@ export async function runChatCommand(
     }
 
     const operation =
-      parse.kind === "stop" ? "interrupt" : parse.kind === "status" || parse.kind === "threads" ? null : "close-thread";
+      parse.kind === "stop"
+        ? "interrupt"
+        : parse.kind === "clone"
+          ? "clone"
+          : parse.kind === "status" || parse.kind === "threads"
+            ? null
+            : "close-thread";
     if (operation) {
       const inherited = await (deps.inheritedAccess ?? ((name) => defaultInheritedAccess(name, channel)))(operation);
       // No declared metadata means no way to ask the CLI's question: refuse. And a command that
@@ -555,7 +605,7 @@ export async function runChatCommand(
     // right before anything changes.
     if (isStale(channel.receivedAt, now())) return refuseStale();
 
-    const verdict = await run(parse, channel, session, config, deps, now);
+    const verdict = await run(parse, channel, session, config, deps, now, contactId);
     return finish(verdict.result, verdict.outcome);
   };
 
@@ -575,6 +625,7 @@ async function run(
   config: RouterConfig,
   deps: ChatCommandDeps,
   now: () => number,
+  contactId: string,
 ): Promise<Verdict> {
   const activityOf = deps.activity ?? defaultThreadActivity(now);
   const name = sessionRef(session);
@@ -732,6 +783,44 @@ async function run(
           refused: [...refused].map(([code, count]) => ({ code, count })),
           active,
           left: examined < candidates.length ? candidates.length - examined : 0,
+        },
+        outcome: { decision: "allowed", code: "ok" },
+      };
+    }
+
+    case "clone": {
+      const clone = deps.cloneSession ?? channel.clone?.bind(channel);
+      if (!clone) {
+        return {
+          result: {
+            kind: "clone_refused",
+            code: "CLONE_CHANNEL_UNSUPPORTED",
+            message: "This channel cannot create chats yet.",
+          },
+          outcome: { decision: "info", code: "CLONE_CHANNEL_UNSUPPORTED" },
+        };
+      }
+      const outcome = await clone({
+        session,
+        name: parse.name,
+        contactId,
+        actorId: channel.origin.actorId,
+      });
+      if (outcome.kind === "refused") {
+        return {
+          result: { kind: "clone_refused", code: outcome.code, message: outcome.message },
+          outcome: { decision: outcome.code === "CLONE_PROVISION_FAILED" ? "error" : "info", code: outcome.code },
+        };
+      }
+      return {
+        result: {
+          kind: "cloned",
+          sessionName: name,
+          cloneName: outcome.sessionName,
+          chatId: outcome.chatId,
+          messages: outcome.messages,
+          redacted: outcome.redacted,
+          inviteFailed: outcome.inviteFailed,
         },
         outcome: { decision: "allowed", code: "ok" },
       };

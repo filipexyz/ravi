@@ -22,6 +22,7 @@ import {
   getDb,
 } from "../router/router-db.js";
 import {
+  clearProviderSession,
   resolveSession,
   updateRuntimeProviderState,
   updateSessionRuntimeProviderOverride,
@@ -36,7 +37,9 @@ import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import { runRuntimeEventLoop } from "./host-event-loop.js";
 import type { RuntimeHostStreamingSession, RuntimeUserMessage } from "./host-session.js";
 import type { ChannelBackendPromptMetadata, RuntimeLaunchPrompt } from "./message-types.js";
+import { registerRuntimeProvider, unregisterRuntimeProvider } from "./provider-registry.js";
 import { RuntimeSessionDispatcher } from "./session-dispatcher.js";
+import { resolveRuntimeSession } from "./session-resolver.js";
 import type { RuntimeCapabilities, RuntimeSessionHandle } from "./types.js";
 
 const RESET_ERROR = "FIXTURE_NATIVE_SESSION_RESET_REFUSED";
@@ -97,7 +100,15 @@ async function acceptedMetadata(suffix: string): Promise<ChannelBackendPromptMet
  * crash-recovery leases, physical trace and logical terminal writes are real.
  * The temporary SQLite trigger rejects the native-id clear, not accounting.
  */
-async function fixture(options: { rejectReset?: boolean; initiallyRunning?: boolean; realDispatcher?: boolean } = {}) {
+async function fixture(
+  options: {
+    rejectReset?: boolean;
+    initiallyRunning?: boolean;
+    realDispatcher?: boolean;
+    /** The observation publisher clears provider state mid-turn; the turn then completes normally. */
+    clearProviderStateMidTurn?: boolean;
+  } = {},
+) {
   const metadata = await acceptedMetadata("a");
   const session = resolveSession(metadata.binding.sessionId)!;
   const agent = dbGetAgent(metadata.binding.agentId)!;
@@ -106,6 +117,15 @@ async function fixture(options: { rejectReset?: boolean; initiallyRunning?: bool
     provider: "test-provider",
     events: (async function* () {
       providerEvents++;
+      if (options.clearProviderStateMidTurn) {
+        clearProviderSession(session.sessionKey);
+        yield {
+          type: "turn.complete" as const,
+          session: { displayId: "live-conversation-id", params: { sessionId: "live-conversation-id" } },
+          usage: USAGE,
+        };
+        return;
+      }
       yield {
         type: "turn.failed" as const,
         error: PROVIDER_ERROR,
@@ -855,6 +875,52 @@ describe("host context-recovery reset failure", () => {
     expectNoRecovery(f);
     expect(configured).toBeDefined();
     expect(resolveSession(f.session.sessionKey)).toMatchObject(configured!);
+  });
+});
+
+describe("stateless observer delivery after a busy live turn", () => {
+  it.each([
+    { label: "rolling", memory: undefined, resumes: true },
+    { label: "none", memory: "none" as const, resumes: false },
+  ])("a deferred delivery with memory $label resumes the live conversation: $resumes", async ({ memory, resumes }) => {
+    // The publisher clears provider state while the observer runtime is in a turn; the delivery waits.
+    const f = await fixture({ rejectReset: false, clearProviderStateMidTurn: true });
+    await f.run();
+    // The live turn ended and wrote its conversation back over the cleared state.
+    expect(resolveSession(f.session.sessionKey)?.runtimeSessionDisplayId).toBe("live-conversation-id");
+
+    registerRuntimeProvider("test-provider", () => ({
+      id: "test-provider",
+      getCapabilities: () => ({ ...runtimeCapabilities, supportsSessionResume: true }),
+      startSession: () => f.runtime,
+    }));
+    cleanups.push(() => unregisterRuntimeProvider("test-provider"));
+    // The deferred delivery now starts its runtime.
+    const resolved = resolveRuntimeSession({
+      sessionName: f.session.name!,
+      prompt: {
+        prompt: "[observation] deferred delivery",
+        _observation: {
+          sourceSessionKey: "agent:worker:main",
+          sourceSessionName: "worker",
+          bindingId: "ob_mem",
+          ruleId: "mem",
+          role: "mem",
+          mode: "observe",
+          eventIds: [],
+          ...(memory ? { memory } : {}),
+        },
+      },
+      defaultRuntimeProviderId: "test-provider",
+    })!;
+    expect(resolved.canResumeStoredSession).toBe(resumes);
+    if (resumes) {
+      expect(resolved.storedProviderSessionId).toBe("live-conversation-id");
+    } else {
+      expect(resolved.resumeDecision.reason).toBe("stateless_observation");
+      expect(resolved.storedProviderSessionId).toBeUndefined();
+      expect(resolveSession(f.session.sessionKey)?.runtimeSessionDisplayId).toBeUndefined();
+    }
   });
 });
 

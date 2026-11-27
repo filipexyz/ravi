@@ -1894,6 +1894,36 @@ public struct AppsPromptsReturn: Codable, Sendable {
   }
 }
 
+public struct AppsRefreshReturn: Codable, Sendable {
+  public var apps: Double
+  public var blockSerial: Double
+  public var changed: Bool
+  public var indexSerial: Double
+  public var keysSerial: Double
+  public var refreshedAt: RaviJSON
+  public var source: String
+
+  public init(apps: Double, blockSerial: Double, changed: Bool, indexSerial: Double, keysSerial: Double, refreshedAt: RaviJSON, source: String) {
+    self.apps = apps
+    self.blockSerial = blockSerial
+    self.changed = changed
+    self.indexSerial = indexSerial
+    self.keysSerial = keysSerial
+    self.refreshedAt = refreshedAt
+    self.source = source
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case apps = "apps"
+    case blockSerial = "blockSerial"
+    case changed = "changed"
+    case indexSerial = "indexSerial"
+    case keysSerial = "keysSerial"
+    case refreshedAt = "refreshedAt"
+    case source = "source"
+  }
+}
+
 public struct AppsRunOptions: Codable, Sendable {
   public var execute: Bool?
 
@@ -2101,6 +2131,45 @@ public struct AppsScaffoldReturn: Codable, Sendable {
   }
 }
 
+public struct AppsSearchOptions: Codable, Sendable {
+  public var refresh: Bool?
+
+  public init(refresh: Bool? = nil) {
+    self.refresh = refresh
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case refresh = "refresh"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.refresh {
+      body["refresh"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct AppsSearchReturn: Codable, Sendable {
+  public var apps: [RaviJSON]
+  public var indexSerial: Double
+  public var refreshedAt: RaviJSON
+  public var source: String
+
+  public init(apps: [RaviJSON], indexSerial: Double, refreshedAt: RaviJSON, source: String) {
+    self.apps = apps
+    self.indexSerial = indexSerial
+    self.refreshedAt = refreshedAt
+    self.source = source
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case apps = "apps"
+    case indexSerial = "indexSerial"
+    case refreshedAt = "refreshedAt"
+    case source = "source"
+  }
+}
+
 public struct AppsShowReturn: Codable, Sendable {
   public var app: RaviJSON
 
@@ -2110,6 +2179,21 @@ public struct AppsShowReturn: Codable, Sendable {
 
   enum CodingKeys: String, CodingKey {
     case app = "app"
+  }
+}
+
+public struct AppsVerifyReturn: Codable, Sendable {
+  public var apps: [RaviJSON]
+  public var ok: Bool
+
+  public init(apps: [RaviJSON], ok: Bool) {
+    self.apps = apps
+    self.ok = ok
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case apps = "apps"
+    case ok = "ok"
   }
 }
 
@@ -13351,6 +13435,57 @@ public struct CredentialsConnectionsEnableReturn: Codable, Sendable {
   }
 }
 
+public struct CredentialsConnectionsInventoryOptions: Codable, Sendable {
+  public var auditLimit: String?
+  public var skipDescribe: Bool?
+
+  public init(auditLimit: String? = nil, skipDescribe: Bool? = nil) {
+    self.auditLimit = auditLimit
+    self.skipDescribe = skipDescribe
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case auditLimit = "auditLimit"
+    case skipDescribe = "skipDescribe"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.auditLimit {
+      body["auditLimit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.skipDescribe {
+      body["skipDescribe"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct CredentialsConnectionsInventoryReturn: Codable, Sendable {
+  public var audit: [RaviJSON]
+  public var degraded: Bool
+  public var degradedReasons: [String]
+  public var generatedAt: Double
+  public var items: [RaviJSON]
+  public var total: Double
+
+  public init(audit: [RaviJSON], degraded: Bool, degradedReasons: [String], generatedAt: Double, items: [RaviJSON], total: Double) {
+    self.audit = audit
+    self.degraded = degraded
+    self.degradedReasons = degradedReasons
+    self.generatedAt = generatedAt
+    self.items = items
+    self.total = total
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case audit = "audit"
+    case degraded = "degraded"
+    case degradedReasons = "degradedReasons"
+    case generatedAt = "generatedAt"
+    case items = "items"
+    case total = "total"
+  }
+}
+
 public struct CredentialsConnectionsListOptions: Codable, Sendable {
   public var all: Bool?
   public var fields: String?
@@ -15561,8 +15696,9 @@ public struct CronAddOptions: Codable, Sendable {
   public var thread: Bool?
   public var timeout: String?
   public var tz: String?
+  public var visible: Bool?
 
-  public init(account: String? = nil, agent: String? = nil, at: String? = nil, cron: String? = nil, deleteAfter: Bool? = nil, description: String? = nil, envFile: String? = nil, every: String? = nil, exec: String? = nil, idempotencyKey: String? = nil, isolated: Bool? = nil, message: String? = nil, onError: String? = nil, reportTo: String? = nil, shell: String? = nil, thread: Bool? = nil, timeout: String? = nil, tz: String? = nil) {
+  public init(account: String? = nil, agent: String? = nil, at: String? = nil, cron: String? = nil, deleteAfter: Bool? = nil, description: String? = nil, envFile: String? = nil, every: String? = nil, exec: String? = nil, idempotencyKey: String? = nil, isolated: Bool? = nil, message: String? = nil, onError: String? = nil, reportTo: String? = nil, shell: String? = nil, thread: Bool? = nil, timeout: String? = nil, tz: String? = nil, visible: Bool? = nil) {
     self.account = account
     self.agent = agent
     self.at = at
@@ -15581,6 +15717,7 @@ public struct CronAddOptions: Codable, Sendable {
     self.thread = thread
     self.timeout = timeout
     self.tz = tz
+    self.visible = visible
   }
 
   enum CodingKeys: String, CodingKey {
@@ -15602,6 +15739,7 @@ public struct CronAddOptions: Codable, Sendable {
     case thread = "thread"
     case timeout = "timeout"
     case tz = "tz"
+    case visible = "visible"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
@@ -15658,6 +15796,9 @@ public struct CronAddOptions: Codable, Sendable {
     }
     if let value = self.tz {
       body["tz"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.visible {
+      body["visible"] = try RaviJSON.fromEncodable(value)
     }
   }
 }
@@ -16184,17 +16325,29 @@ public struct DaemonUninstallReturn: Codable, Sendable {
 public struct DecisionsAnswerOptions: Codable, Sendable {
   public var by: String?
   public var execute: Bool?
+  public var scope: String?
+  public var sourceMessage: String?
+  public var sourceQuote: String?
+  public var supersedes: String?
   public var text: String?
 
-  public init(by: String? = nil, execute: Bool? = nil, text: String? = nil) {
+  public init(by: String? = nil, execute: Bool? = nil, scope: String? = nil, sourceMessage: String? = nil, sourceQuote: String? = nil, supersedes: String? = nil, text: String? = nil) {
     self.by = by
     self.execute = execute
+    self.scope = scope
+    self.sourceMessage = sourceMessage
+    self.sourceQuote = sourceQuote
+    self.supersedes = supersedes
     self.text = text
   }
 
   enum CodingKeys: String, CodingKey {
     case by = "by"
     case execute = "execute"
+    case scope = "scope"
+    case sourceMessage = "sourceMessage"
+    case sourceQuote = "sourceQuote"
+    case supersedes = "supersedes"
     case text = "text"
   }
 
@@ -16204,6 +16357,18 @@ public struct DecisionsAnswerOptions: Codable, Sendable {
     }
     if let value = self.execute {
       body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.scope {
+      body["scope"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.sourceMessage {
+      body["sourceMessage"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.sourceQuote {
+      body["sourceQuote"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.supersedes {
+      body["supersedes"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.text {
       body["text"] = try RaviJSON.fromEncodable(value)
@@ -16235,15 +16400,17 @@ public struct DecisionsAskOptions: Codable, Sendable {
   public var execute: Bool?
   public var key: String?
   public var owner: String?
+  public var scope: String?
   public var task: String?
   public var thread: String?
 
-  public init(ask: String? = nil, blocks: Bool? = nil, execute: Bool? = nil, key: String? = nil, owner: String? = nil, task: String? = nil, thread: String? = nil) {
+  public init(ask: String? = nil, blocks: Bool? = nil, execute: Bool? = nil, key: String? = nil, owner: String? = nil, scope: String? = nil, task: String? = nil, thread: String? = nil) {
     self.ask = ask
     self.blocks = blocks
     self.execute = execute
     self.key = key
     self.owner = owner
+    self.scope = scope
     self.task = task
     self.thread = thread
   }
@@ -16254,6 +16421,7 @@ public struct DecisionsAskOptions: Codable, Sendable {
     case execute = "execute"
     case key = "key"
     case owner = "owner"
+    case scope = "scope"
     case task = "task"
     case thread = "thread"
   }
@@ -16273,6 +16441,9 @@ public struct DecisionsAskOptions: Codable, Sendable {
     }
     if let value = self.owner {
       body["owner"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.scope {
+      body["scope"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.task {
       body["task"] = try RaviJSON.fromEncodable(value)
@@ -16303,23 +16474,29 @@ public struct DecisionsAskReturn: Codable, Sendable {
 
 public struct DecisionsListOptions: Codable, Sendable {
   public var all: Bool?
+  public var answeredSince: String?
   public var limit: String?
   public var offset: String?
+  public var scope: String?
   public var task: String?
   public var thread: String?
 
-  public init(all: Bool? = nil, limit: String? = nil, offset: String? = nil, task: String? = nil, thread: String? = nil) {
+  public init(all: Bool? = nil, answeredSince: String? = nil, limit: String? = nil, offset: String? = nil, scope: String? = nil, task: String? = nil, thread: String? = nil) {
     self.all = all
+    self.answeredSince = answeredSince
     self.limit = limit
     self.offset = offset
+    self.scope = scope
     self.task = task
     self.thread = thread
   }
 
   enum CodingKeys: String, CodingKey {
     case all = "all"
+    case answeredSince = "answeredSince"
     case limit = "limit"
     case offset = "offset"
+    case scope = "scope"
     case task = "task"
     case thread = "thread"
   }
@@ -16328,11 +16505,17 @@ public struct DecisionsListOptions: Codable, Sendable {
     if let value = self.all {
       body["all"] = try RaviJSON.fromEncodable(value)
     }
+    if let value = self.answeredSince {
+      body["answeredSince"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.limit {
       body["limit"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.offset {
       body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.scope {
+      body["scope"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.task {
       body["task"] = try RaviJSON.fromEncodable(value)
@@ -16460,6 +16643,45 @@ public struct DecisionsShowReturn: Codable, Sendable {
     case decision = "decision"
     case deliveries = "deliveries"
     case history = "history"
+  }
+}
+
+public struct DecisionsSupersedeOptions: Codable, Sendable {
+  public var by: String?
+  public var execute: Bool?
+
+  public init(by: String? = nil, execute: Bool? = nil) {
+    self.by = by
+    self.execute = execute
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case by = "by"
+    case execute = "execute"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.by {
+      body["by"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct DecisionsSupersedeReturn: Codable, Sendable {
+  public var replaced: RaviJSON
+  public var replacement: RaviJSON
+
+  public init(replaced: RaviJSON, replacement: RaviJSON) {
+    self.replaced = replaced
+    self.replacement = replacement
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case replaced = "replaced"
+    case replacement = "replacement"
   }
 }
 
@@ -28075,6 +28297,69 @@ public struct SessionsAttachOptions: Codable, Sendable {
 
 public typealias SessionsAttachReturn = [String: RaviJSON]
 
+public struct SessionsCloneOptions: Codable, Sendable {
+  public var execute: Bool?
+  public var invite: String?
+  public var messages: String?
+  public var session: String?
+
+  public init(execute: Bool? = nil, invite: String? = nil, messages: String? = nil, session: String? = nil) {
+    self.execute = execute
+    self.invite = invite
+    self.messages = messages
+    self.session = session
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case execute = "execute"
+    case invite = "invite"
+    case messages = "messages"
+    case session = "session"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.invite {
+      body["invite"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.messages {
+      body["messages"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.session {
+      body["session"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct SessionsCloneReturn: Codable, Sendable {
+  public var agentId: String
+  public var clone: RaviJSON
+  public var name: String
+  public var origin: RaviJSON
+  public var seed: RaviJSON
+  public var status: String
+
+  public init(agentId: String, clone: RaviJSON, name: String, origin: RaviJSON, seed: RaviJSON, status: String) {
+    self.agentId = agentId
+    self.clone = clone
+    self.name = name
+    self.origin = origin
+    self.seed = seed
+    self.status = status
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agentId = "agentId"
+    case clone = "clone"
+    case name = "name"
+    case origin = "origin"
+    case seed = "seed"
+    case status = "status"
+  }
+}
+
 public struct SessionsCloseThreadOptions: Codable, Sendable {
   public var return_: String?
   public var session: String?
@@ -29108,6 +29393,69 @@ public struct SessionsListReturn: Codable, Sendable {
   }
 }
 
+public struct SessionsObserveOptions: Codable, Sendable {
+  public var follow: Bool?
+  public var to: String?
+  public var when: String?
+
+  public init(follow: Bool? = nil, to: String? = nil, when: String? = nil) {
+    self.follow = follow
+    self.to = to
+    self.when = when
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case follow = "follow"
+    case to = "to"
+    case when = "when"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.follow {
+      body["follow"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.to {
+      body["to"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.when {
+      body["when"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct SessionsObserveReturn: Codable, Sendable {
+  public var observing: RaviJSON
+  public var success: Bool
+
+  public init(observing: RaviJSON, success: Bool) {
+    self.observing = observing
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case observing = "observing"
+    case success = "success"
+  }
+}
+
+public struct SessionsObservingReturn: Codable, Sendable {
+  public var observing: [RaviJSON]
+  public var success: Bool
+  public var total: Int
+
+  public init(observing: [RaviJSON], success: Bool, total: Int) {
+    self.observing = observing
+    self.success = success
+    self.total = total
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case observing = "observing"
+    case success = "success"
+    case total = "total"
+  }
+}
+
 public struct SessionsPruneOptions: Codable, Sendable {
   public var agent: String?
   public var ephemeral: Bool?
@@ -30120,15 +30468,17 @@ public struct SessionsThreadSendReturn: Codable, Sendable {
   public var actionId: String
   public var delivery: RaviJSON?
   public var messageId: String
+  public var openDecisionWaits: [RaviJSON]?
   public var reopened: Bool
   public var requestId: String
   public var status: String
   public var thread: RaviJSON
 
-  public init(actionId: String, delivery: RaviJSON? = nil, messageId: String, reopened: Bool, requestId: String, status: String, thread: RaviJSON) {
+  public init(actionId: String, delivery: RaviJSON? = nil, messageId: String, openDecisionWaits: [RaviJSON]? = nil, reopened: Bool, requestId: String, status: String, thread: RaviJSON) {
     self.actionId = actionId
     self.delivery = delivery
     self.messageId = messageId
+    self.openDecisionWaits = openDecisionWaits
     self.reopened = reopened
     self.requestId = requestId
     self.status = status
@@ -30139,6 +30489,7 @@ public struct SessionsThreadSendReturn: Codable, Sendable {
     case actionId = "actionId"
     case delivery = "delivery"
     case messageId = "messageId"
+    case openDecisionWaits = "openDecisionWaits"
     case reopened = "reopened"
     case requestId = "requestId"
     case status = "status"
@@ -30279,6 +30630,48 @@ public struct SessionsTraceOptions: Codable, Sendable {
 }
 
 public typealias SessionsTraceReturn = [String: RaviJSON]
+
+public struct SessionsUnobserveOptions: Codable, Sendable {
+  public var to: String?
+
+  public init(to: String? = nil) {
+    self.to = to
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case to = "to"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.to {
+      body["to"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct SessionsUnobserveReturn: Codable, Sendable {
+  public var removed: Bool
+  public var ruleId: String
+  public var source: String
+  public var success: Bool
+  public var to: String
+
+  public init(removed: Bool, ruleId: String, source: String, success: Bool, to: String) {
+    self.removed = removed
+    self.ruleId = ruleId
+    self.source = source
+    self.success = success
+    self.to = to
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case removed = "removed"
+    case ruleId = "ruleId"
+    case source = "source"
+    case success = "success"
+    case to = "to"
+  }
+}
 
 public struct SessionsUpdateOptions: Codable, Sendable {
   public var effort: String?
@@ -39176,8 +39569,9 @@ public struct TriggersAddOptions: Codable, Sendable {
   public var thread: Bool?
   public var timeout: String?
   public var topic: String?
+  public var visible: Bool?
 
-  public init(account: String? = nil, agent: String? = nil, cooldown: String? = nil, debounce: String? = nil, envFile: String? = nil, exec: String? = nil, filter: String? = nil, message: String? = nil, onError: String? = nil, replySession: String? = nil, reportTo: String? = nil, session: String? = nil, shell: String? = nil, thread: Bool? = nil, timeout: String? = nil, topic: String? = nil) {
+  public init(account: String? = nil, agent: String? = nil, cooldown: String? = nil, debounce: String? = nil, envFile: String? = nil, exec: String? = nil, filter: String? = nil, message: String? = nil, onError: String? = nil, replySession: String? = nil, reportTo: String? = nil, session: String? = nil, shell: String? = nil, thread: Bool? = nil, timeout: String? = nil, topic: String? = nil, visible: Bool? = nil) {
     self.account = account
     self.agent = agent
     self.cooldown = cooldown
@@ -39194,6 +39588,7 @@ public struct TriggersAddOptions: Codable, Sendable {
     self.thread = thread
     self.timeout = timeout
     self.topic = topic
+    self.visible = visible
   }
 
   enum CodingKeys: String, CodingKey {
@@ -39213,6 +39608,7 @@ public struct TriggersAddOptions: Codable, Sendable {
     case thread = "thread"
     case timeout = "timeout"
     case topic = "topic"
+    case visible = "visible"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
@@ -39263,6 +39659,9 @@ public struct TriggersAddOptions: Codable, Sendable {
     }
     if let value = self.topic {
       body["topic"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.visible {
+      body["visible"] = try RaviJSON.fromEncodable(value)
     }
   }
 }
@@ -39564,6 +39963,1050 @@ public struct VideoAnalyzeReturn: Codable, Sendable {
     case options = "options"
     case success = "success"
     case video = "video"
+  }
+}
+
+public struct VoiceCallsApproveOptions: Codable, Sendable {
+  public var digest: String?
+  public var execute: Bool?
+  public var version: String?
+
+  public init(digest: String? = nil, execute: Bool? = nil, version: String? = nil) {
+    self.digest = digest
+    self.execute = execute
+    self.version = version
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case digest = "digest"
+    case execute = "execute"
+    case version = "version"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.digest {
+      body["digest"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.version {
+      body["version"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct VoiceCallsApproveReturn: Codable, Sendable {
+  public var approvalId: String
+  public var callId: String
+  public var decision: String
+
+  public init(approvalId: String, callId: String, decision: String) {
+    self.approvalId = approvalId
+    self.callId = callId
+    self.decision = decision
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case approvalId = "approvalId"
+    case callId = "callId"
+    case decision = "decision"
+  }
+}
+
+public struct VoiceCallsAudioOptions: Codable, Sendable {
+  public var out: String?
+
+  public init(out: String? = nil) {
+    self.out = out
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case out = "out"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.out {
+      body["out"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct VoiceCallsAudioReturn: Codable, Sendable {
+  public var audioBase64: String?
+  public var bytes: Double
+  public var callId: String
+  public var item: String
+  public var mime: String
+  public var path: String?
+
+  public init(audioBase64: String? = nil, bytes: Double, callId: String, item: String, mime: String, path: String? = nil) {
+    self.audioBase64 = audioBase64
+    self.bytes = bytes
+    self.callId = callId
+    self.item = item
+    self.mime = mime
+    self.path = path
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case audioBase64 = "audioBase64"
+    case bytes = "bytes"
+    case callId = "callId"
+    case item = "item"
+    case mime = "mime"
+    case path = "path"
+  }
+}
+
+public struct VoiceCallsCancelTurnOptions: Codable, Sendable {
+  public var turn: String?
+
+  public init(turn: String? = nil) {
+    self.turn = turn
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case turn = "turn"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.turn {
+      body["turn"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct VoiceCallsCancelTurnReturn: Codable, Sendable {
+  public var callId: String
+  public var cancelRequested: Bool
+  public var turnId: String
+
+  public init(callId: String, cancelRequested: Bool, turnId: String) {
+    self.callId = callId
+    self.cancelRequested = cancelRequested
+    self.turnId = turnId
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case callId = "callId"
+    case cancelRequested = "cancelRequested"
+    case turnId = "turnId"
+  }
+}
+
+public struct VoiceCallsConnectOptions: Codable, Sendable {
+  public var offer: String?
+
+  public init(offer: String? = nil) {
+    self.offer = offer
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case offer = "offer"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.offer {
+      body["offer"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct VoiceCallsConnectReturn: Codable, Sendable {
+  public var callId: String
+  public var connectionKind: String
+  public var lastSeq: Double
+  public var roomToken: RaviJSON
+  public var roomUrl: RaviJSON
+  public var sdpAnswer: RaviJSON
+
+  public init(callId: String, connectionKind: String, lastSeq: Double, roomToken: RaviJSON, roomUrl: RaviJSON, sdpAnswer: RaviJSON) {
+    self.callId = callId
+    self.connectionKind = connectionKind
+    self.lastSeq = lastSeq
+    self.roomToken = roomToken
+    self.roomUrl = roomUrl
+    self.sdpAnswer = sdpAnswer
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case callId = "callId"
+    case connectionKind = "connectionKind"
+    case lastSeq = "lastSeq"
+    case roomToken = "roomToken"
+    case roomUrl = "roomUrl"
+    case sdpAnswer = "sdpAnswer"
+  }
+}
+
+public struct VoiceCallsDenyReturn: Codable, Sendable {
+  public var approvalId: String
+  public var callId: String
+  public var decision: String
+
+  public init(approvalId: String, callId: String, decision: String) {
+    self.approvalId = approvalId
+    self.callId = callId
+    self.decision = decision
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case approvalId = "approvalId"
+    case callId = "callId"
+    case decision = "decision"
+  }
+}
+
+public struct VoiceCallsEndReturn: Codable, Sendable {
+  public var callId: String
+  public var ended: Bool
+
+  public init(callId: String, ended: Bool) {
+    self.callId = callId
+    self.ended = ended
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case callId = "callId"
+    case ended = "ended"
+  }
+}
+
+public struct VoiceCallsEventsOptions: Codable, Sendable {
+  public var after: String?
+  public var limit: String?
+
+  public init(after: String? = nil, limit: String? = nil) {
+    self.after = after
+    self.limit = limit
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case after = "after"
+    case limit = "limit"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.after {
+      body["after"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct VoiceCallsEventsReturn: Codable, Sendable {
+  public var callId: String
+  public var events: [RaviJSON]
+  public var lastSeq: Double
+
+  public init(callId: String, events: [RaviJSON], lastSeq: Double) {
+    self.callId = callId
+    self.events = events
+    self.lastSeq = lastSeq
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case callId = "callId"
+    case events = "events"
+    case lastSeq = "lastSeq"
+  }
+}
+
+public struct VoiceCallsListOptions: Codable, Sendable {
+  public var active: Bool?
+  public var limit: String?
+  public var offset: String?
+
+  public init(active: Bool? = nil, limit: String? = nil, offset: String? = nil) {
+    self.active = active
+    self.limit = limit
+    self.offset = offset
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case active = "active"
+    case limit = "limit"
+    case offset = "offset"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.active {
+      body["active"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct VoiceCallsListReturn: Codable, Sendable {
+  public var calls: [RaviJSON]
+  public var pagination: RaviJSON
+  public var total: Double
+
+  public init(calls: [RaviJSON], pagination: RaviJSON, total: Double) {
+    self.calls = calls
+    self.pagination = pagination
+    self.total = total
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case calls = "calls"
+    case pagination = "pagination"
+    case total = "total"
+  }
+}
+
+public struct VoiceCallsPushOptions: Codable, Sendable {
+  public var audio: String?
+  public var audioData: String?
+  public var mime: String?
+
+  public init(audio: String? = nil, audioData: String? = nil, mime: String? = nil) {
+    self.audio = audio
+    self.audioData = audioData
+    self.mime = mime
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case audio = "audio"
+    case audioData = "audioData"
+    case mime = "mime"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.audio {
+      body["audio"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.audioData {
+      body["audioData"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.mime {
+      body["mime"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct VoiceCallsPushReturn: Codable, Sendable {
+  public var callId: String
+  public var text: String
+  public var turnId: RaviJSON
+
+  public init(callId: String, text: String, turnId: RaviJSON) {
+    self.callId = callId
+    self.text = text
+    self.turnId = turnId
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case callId = "callId"
+    case text = "text"
+    case turnId = "turnId"
+  }
+}
+
+public struct VoiceCallsSendOptions: Codable, Sendable {
+  public var guest: String?
+
+  public init(guest: String? = nil) {
+    self.guest = guest
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case guest = "guest"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.guest {
+      body["guest"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct VoiceCallsSendReturn: Codable, Sendable {
+  public var callId: String
+  public var text: String
+  public var turnId: String
+
+  public init(callId: String, text: String, turnId: String) {
+    self.callId = callId
+    self.text = text
+    self.turnId = turnId
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case callId = "callId"
+    case text = "text"
+    case turnId = "turnId"
+  }
+}
+
+public struct VoiceCallsShowReturn: Codable, Sendable {
+  public var call: RaviJSON
+  public var engine: RaviJSON
+  public var lastSeq: Double
+  public var openApprovals: [RaviJSON]
+  public var turns: [RaviJSON]
+
+  public init(call: RaviJSON, engine: RaviJSON, lastSeq: Double, openApprovals: [RaviJSON], turns: [RaviJSON]) {
+    self.call = call
+    self.engine = engine
+    self.lastSeq = lastSeq
+    self.openApprovals = openApprovals
+    self.turns = turns
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case call = "call"
+    case engine = "engine"
+    case lastSeq = "lastSeq"
+    case openApprovals = "openApprovals"
+    case turns = "turns"
+  }
+}
+
+public struct VoiceCallsSilenceReturn: Codable, Sendable {
+  public var callId: String
+  public var silenced: Bool
+
+  public init(callId: String, silenced: Bool) {
+    self.callId = callId
+    self.silenced = silenced
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case callId = "callId"
+    case silenced = "silenced"
+  }
+}
+
+public struct VoiceCallsStartOptions: Codable, Sendable {
+  public var mode: String?
+  public var offer: String?
+  public var profile: String?
+
+  public init(mode: String? = nil, offer: String? = nil, profile: String? = nil) {
+    self.mode = mode
+    self.offer = offer
+    self.profile = profile
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case mode = "mode"
+    case offer = "offer"
+    case profile = "profile"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.mode {
+      body["mode"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offer {
+      body["offer"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.profile {
+      body["profile"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct VoiceCallsStartReturn: Codable, Sendable {
+  public var callId: String
+  public var capabilities: RaviJSON
+  public var connectionKind: String
+  public var lastSeq: Double
+  public var mode: String
+  public var profileId: String
+  public var roomToken: RaviJSON
+  public var roomUrl: RaviJSON
+  public var sdpAnswer: RaviJSON
+  public var sessionName: String
+  public var state: String
+
+  public init(callId: String, capabilities: RaviJSON, connectionKind: String, lastSeq: Double, mode: String, profileId: String, roomToken: RaviJSON, roomUrl: RaviJSON, sdpAnswer: RaviJSON, sessionName: String, state: String) {
+    self.callId = callId
+    self.capabilities = capabilities
+    self.connectionKind = connectionKind
+    self.lastSeq = lastSeq
+    self.mode = mode
+    self.profileId = profileId
+    self.roomToken = roomToken
+    self.roomUrl = roomUrl
+    self.sdpAnswer = sdpAnswer
+    self.sessionName = sessionName
+    self.state = state
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case callId = "callId"
+    case capabilities = "capabilities"
+    case connectionKind = "connectionKind"
+    case lastSeq = "lastSeq"
+    case mode = "mode"
+    case profileId = "profileId"
+    case roomToken = "roomToken"
+    case roomUrl = "roomUrl"
+    case sdpAnswer = "sdpAnswer"
+    case sessionName = "sessionName"
+    case state = "state"
+  }
+}
+
+public struct VoiceCallsTranscriptReturn: Codable, Sendable {
+  public var callId: String
+  public var lines: [RaviJSON]
+
+  public init(callId: String, lines: [RaviJSON]) {
+    self.callId = callId
+    self.lines = lines
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case callId = "callId"
+    case lines = "lines"
+  }
+}
+
+public struct VoiceDevicesListOptions: Codable, Sendable {
+  public var all: Bool?
+  public var limit: String?
+  public var offset: String?
+
+  public init(all: Bool? = nil, limit: String? = nil, offset: String? = nil) {
+    self.all = all
+    self.limit = limit
+    self.offset = offset
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case all = "all"
+    case limit = "limit"
+    case offset = "offset"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.all {
+      body["all"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct VoiceDevicesListReturn: Codable, Sendable {
+  public var devices: [RaviJSON]
+  public var pagination: RaviJSON
+  public var total: Double
+
+  public init(devices: [RaviJSON], pagination: RaviJSON, total: Double) {
+    self.devices = devices
+    self.pagination = pagination
+    self.total = total
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case devices = "devices"
+    case pagination = "pagination"
+    case total = "total"
+  }
+}
+
+public struct VoiceDevicesPairOptions: Codable, Sendable {
+  public var contact: String?
+  public var execute: Bool?
+  public var label: String?
+  public var session: String?
+  public var worker: Bool?
+
+  public init(contact: String? = nil, execute: Bool? = nil, label: String? = nil, session: String? = nil, worker: Bool? = nil) {
+    self.contact = contact
+    self.execute = execute
+    self.label = label
+    self.session = session
+    self.worker = worker
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case contact = "contact"
+    case execute = "execute"
+    case label = "label"
+    case session = "session"
+    case worker = "worker"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.contact {
+      body["contact"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.label {
+      body["label"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.session {
+      body["session"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.worker {
+      body["worker"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct VoiceDevicesPairReturn: Codable, Sendable {
+  public var contextKey: String
+  public var device: RaviJSON
+  public var shownOnce: Bool
+
+  public init(contextKey: String, device: RaviJSON, shownOnce: Bool) {
+    self.contextKey = contextKey
+    self.device = device
+    self.shownOnce = shownOnce
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case contextKey = "contextKey"
+    case device = "device"
+    case shownOnce = "shownOnce"
+  }
+}
+
+public struct VoiceDevicesRevokeReturn: Codable, Sendable {
+  public var device: RaviJSON
+  public var endDeferred: [String]
+  public var endRequested: [String]
+
+  public init(device: RaviJSON, endDeferred: [String], endRequested: [String]) {
+    self.device = device
+    self.endDeferred = endDeferred
+    self.endRequested = endRequested
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case device = "device"
+    case endDeferred = "endDeferred"
+    case endRequested = "endRequested"
+  }
+}
+
+public struct VoiceEnginesCheckReturn: Codable, Sendable {
+  public var checks: [RaviJSON]
+
+  public init(checks: [RaviJSON]) {
+    self.checks = checks
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case checks = "checks"
+  }
+}
+
+public struct VoiceEnginesListOptions: Codable, Sendable {
+  public var limit: String?
+  public var offset: String?
+
+  public init(limit: String? = nil, offset: String? = nil) {
+    self.limit = limit
+    self.offset = offset
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case limit = "limit"
+    case offset = "offset"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct VoiceEnginesListReturn: Codable, Sendable {
+  public var engines: [RaviJSON]
+  public var pagination: RaviJSON
+  public var total: Double
+
+  public init(engines: [RaviJSON], pagination: RaviJSON, total: Double) {
+    self.engines = engines
+    self.pagination = pagination
+    self.total = total
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case engines = "engines"
+    case pagination = "pagination"
+    case total = "total"
+  }
+}
+
+public struct VoiceProfilesCreateOptions: Codable, Sendable {
+  public var allowGuests: Bool?
+  public var delivery: String?
+  public var label: String?
+  public var language: String?
+  public var liveModel: String?
+  public var liveVoice: String?
+  public var maxCallCost: String?
+  public var maxCallMinutes: String?
+  public var maxDailyCost: String?
+  public var mode: String?
+  public var ttsModel: String?
+  public var voice: String?
+
+  public init(allowGuests: Bool? = nil, delivery: String? = nil, label: String? = nil, language: String? = nil, liveModel: String? = nil, liveVoice: String? = nil, maxCallCost: String? = nil, maxCallMinutes: String? = nil, maxDailyCost: String? = nil, mode: String? = nil, ttsModel: String? = nil, voice: String? = nil) {
+    self.allowGuests = allowGuests
+    self.delivery = delivery
+    self.label = label
+    self.language = language
+    self.liveModel = liveModel
+    self.liveVoice = liveVoice
+    self.maxCallCost = maxCallCost
+    self.maxCallMinutes = maxCallMinutes
+    self.maxDailyCost = maxDailyCost
+    self.mode = mode
+    self.ttsModel = ttsModel
+    self.voice = voice
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case allowGuests = "allowGuests"
+    case delivery = "delivery"
+    case label = "label"
+    case language = "language"
+    case liveModel = "liveModel"
+    case liveVoice = "liveVoice"
+    case maxCallCost = "maxCallCost"
+    case maxCallMinutes = "maxCallMinutes"
+    case maxDailyCost = "maxDailyCost"
+    case mode = "mode"
+    case ttsModel = "ttsModel"
+    case voice = "voice"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.allowGuests {
+      body["allowGuests"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.delivery {
+      body["delivery"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.label {
+      body["label"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.language {
+      body["language"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.liveModel {
+      body["liveModel"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.liveVoice {
+      body["liveVoice"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.maxCallCost {
+      body["maxCallCost"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.maxCallMinutes {
+      body["maxCallMinutes"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.maxDailyCost {
+      body["maxDailyCost"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.mode {
+      body["mode"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.ttsModel {
+      body["ttsModel"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.voice {
+      body["voice"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct VoiceProfilesCreateReturn: Codable, Sendable {
+  public var profile: RaviJSON
+
+  public init(profile: RaviJSON) {
+    self.profile = profile
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case profile = "profile"
+  }
+}
+
+public struct VoiceProfilesDeleteReturn: Codable, Sendable {
+  public var deleted: Bool
+  public var id: String
+
+  public init(deleted: Bool, id: String) {
+    self.deleted = deleted
+    self.id = id
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case deleted = "deleted"
+    case id = "id"
+  }
+}
+
+public struct VoiceProfilesListOptions: Codable, Sendable {
+  public var limit: String?
+  public var offset: String?
+
+  public init(limit: String? = nil, offset: String? = nil) {
+    self.limit = limit
+    self.offset = offset
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case limit = "limit"
+    case offset = "offset"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct VoiceProfilesListReturn: Codable, Sendable {
+  public var pagination: RaviJSON
+  public var profiles: [RaviJSON]
+  public var total: Double
+
+  public init(pagination: RaviJSON, profiles: [RaviJSON], total: Double) {
+    self.pagination = pagination
+    self.profiles = profiles
+    self.total = total
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case pagination = "pagination"
+    case profiles = "profiles"
+    case total = "total"
+  }
+}
+
+public struct VoiceProfilesShowReturn: Codable, Sendable {
+  public var profile: RaviJSON
+
+  public init(profile: RaviJSON) {
+    self.profile = profile
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case profile = "profile"
+  }
+}
+
+public struct VoiceProfilesUpdateOptions: Codable, Sendable {
+  public var allowGuests: Bool?
+  public var delivery: String?
+  public var label: String?
+  public var language: String?
+  public var liveModel: String?
+  public var liveVoice: String?
+  public var maxCallCost: String?
+  public var maxCallMinutes: String?
+  public var maxDailyCost: String?
+  public var mode: String?
+  public var noGuests: Bool?
+  public var ttsModel: String?
+  public var voice: String?
+
+  public init(allowGuests: Bool? = nil, delivery: String? = nil, label: String? = nil, language: String? = nil, liveModel: String? = nil, liveVoice: String? = nil, maxCallCost: String? = nil, maxCallMinutes: String? = nil, maxDailyCost: String? = nil, mode: String? = nil, noGuests: Bool? = nil, ttsModel: String? = nil, voice: String? = nil) {
+    self.allowGuests = allowGuests
+    self.delivery = delivery
+    self.label = label
+    self.language = language
+    self.liveModel = liveModel
+    self.liveVoice = liveVoice
+    self.maxCallCost = maxCallCost
+    self.maxCallMinutes = maxCallMinutes
+    self.maxDailyCost = maxDailyCost
+    self.mode = mode
+    self.noGuests = noGuests
+    self.ttsModel = ttsModel
+    self.voice = voice
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case allowGuests = "allowGuests"
+    case delivery = "delivery"
+    case label = "label"
+    case language = "language"
+    case liveModel = "liveModel"
+    case liveVoice = "liveVoice"
+    case maxCallCost = "maxCallCost"
+    case maxCallMinutes = "maxCallMinutes"
+    case maxDailyCost = "maxDailyCost"
+    case mode = "mode"
+    case noGuests = "noGuests"
+    case ttsModel = "ttsModel"
+    case voice = "voice"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.allowGuests {
+      body["allowGuests"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.delivery {
+      body["delivery"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.label {
+      body["label"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.language {
+      body["language"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.liveModel {
+      body["liveModel"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.liveVoice {
+      body["liveVoice"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.maxCallCost {
+      body["maxCallCost"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.maxCallMinutes {
+      body["maxCallMinutes"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.maxDailyCost {
+      body["maxDailyCost"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.mode {
+      body["mode"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.noGuests {
+      body["noGuests"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.ttsModel {
+      body["ttsModel"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.voice {
+      body["voice"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct VoiceProfilesUpdateReturn: Codable, Sendable {
+  public var profile: RaviJSON
+
+  public init(profile: RaviJSON) {
+    self.profile = profile
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case profile = "profile"
+  }
+}
+
+public struct VoiceTargetsListOptions: Codable, Sendable {
+  public var limit: String?
+  public var offset: String?
+
+  public init(limit: String? = nil, offset: String? = nil) {
+    self.limit = limit
+    self.offset = offset
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case limit = "limit"
+    case offset = "offset"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct VoiceTargetsListReturn: Codable, Sendable {
+  public var pagination: RaviJSON
+  public var targets: [RaviJSON]
+  public var total: Double
+
+  public init(pagination: RaviJSON, targets: [RaviJSON], total: Double) {
+    self.pagination = pagination
+    self.targets = targets
+    self.total = total
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case pagination = "pagination"
+    case targets = "targets"
+    case total = "total"
+  }
+}
+
+public struct VoiceVoicesListOptions: Codable, Sendable {
+  public var limit: String?
+  public var offset: String?
+  public var search: String?
+
+  public init(limit: String? = nil, offset: String? = nil, search: String? = nil) {
+    self.limit = limit
+    self.offset = offset
+    self.search = search
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case limit = "limit"
+    case offset = "offset"
+    case search = "search"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.search {
+      body["search"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct VoiceVoicesListReturn: Codable, Sendable {
+  public var pagination: RaviJSON
+  public var total: Double
+  public var voices: [RaviJSON]
+
+  public init(pagination: RaviJSON, total: Double, voices: [RaviJSON]) {
+    self.pagination = pagination
+    self.total = total
+    self.voices = voices
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case pagination = "pagination"
+    case total = "total"
+    case voices = "voices"
   }
 }
 

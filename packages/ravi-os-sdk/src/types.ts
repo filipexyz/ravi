@@ -1716,7 +1716,7 @@ export type AppsGuideReturn = {
         };
         failClosed: true;
         id: string;
-        interface: "builtin" | "cli";
+        interface: "builtin" | "cli" | "script";
         operation: string;
         requestSchema: {
           kind: "ref" | "inline" | "unknown";
@@ -1861,7 +1861,7 @@ export type AppsListReturn = {
         };
         failClosed: true;
         id: string;
-        interface: "builtin" | "cli";
+        interface: "builtin" | "cli" | "script";
         operation: string;
         requestSchema: {
           kind: "ref" | "inline" | "unknown";
@@ -1903,7 +1903,7 @@ export type AppsListReturn = {
         };
         failClosed: true;
         id: string;
-        interface: "builtin" | "cli";
+        interface: "builtin" | "cli" | "script";
         operation: string;
         requestSchema: {
           kind: "ref" | "inline" | "unknown";
@@ -1965,7 +1965,7 @@ export type AppsPromptsReturn = {
         };
         failClosed: true;
         id: string;
-        interface: "builtin" | "cli";
+        interface: "builtin" | "cli" | "script";
         operation: string;
         requestSchema: {
           kind: "ref" | "inline" | "unknown";
@@ -2008,6 +2008,20 @@ export type AppsPromptsReturn = {
   };
 };
 
+/** Input shape for `apps.refresh`. */
+export type AppsRefreshInput = Record<string, never>;
+
+/** Return shape for `apps.refresh`. */
+export type AppsRefreshReturn = {
+  apps: number;
+  blockSerial: number;
+  changed: boolean;
+  indexSerial: number;
+  keysSerial: number;
+  refreshedAt: string | null;
+  source: string;
+};
+
 /** Input shape for `apps.run`. */
 export type AppsRunInput = {
   args?: string[];
@@ -2029,7 +2043,7 @@ export type AppsRunReturn = {
   errorCode?: string;
   exitCode?: number | null;
   handler?: string;
-  interface: ("builtin" | "cli") | null;
+  interface: ("builtin" | "cli" | "script") | null;
   mutating: boolean;
   ok: boolean;
   operation: string | null;
@@ -2059,7 +2073,7 @@ export type AppsRunReturn = {
       };
       ttlSec?: number;
     };
-    interface: "builtin" | "cli";
+    interface: "builtin" | "cli" | "script";
     providerId: string;
     providerOperationId: string;
     providerVersion: string;
@@ -2071,7 +2085,7 @@ export type AppsRunReturn = {
   plan?: {
     appId: string;
     argumentCount: number;
-    interface: "builtin" | "cli";
+    interface: "builtin" | "cli" | "script";
     mutating: true;
     operationId: string;
   };
@@ -2122,6 +2136,29 @@ export type AppsScaffoldReturn = {
   specPath: string | null;
 };
 
+/** Input shape for `apps.search`. */
+export type AppsSearchInput = {
+  query?: string;
+  refresh?: boolean;
+};
+
+/** Return shape for `apps.search`. */
+export type AppsSearchReturn = {
+  apps: Array<{
+    blocked: boolean;
+    class: ("compose" | "connector" | "code") | null;
+    description: string;
+    id: string;
+    installed: string | null;
+    latest: string | null;
+    name: string;
+    publisher: string;
+  }>;
+  indexSerial: number;
+  refreshedAt: string | null;
+  source: string;
+};
+
 /** Input shape for `apps.show`. */
 export type AppsShowInput = {
   id: string;
@@ -2150,7 +2187,7 @@ export type AppsShowReturn = {
         };
         failClosed: true;
         id: string;
-        interface: "builtin" | "cli";
+        interface: "builtin" | "cli" | "script";
         operation: string;
         requestSchema: {
           kind: "ref" | "inline" | "unknown";
@@ -2172,6 +2209,25 @@ export type AppsShowReturn = {
     version: string | null;
     warnings: string[];
   };
+};
+
+/** Input shape for `apps.verify`. */
+export type AppsVerifyInput = {
+  id?: string;
+};
+
+/** Return shape for `apps.verify`. */
+export type AppsVerifyReturn = {
+  apps: Array<{
+    exposedTo: string[];
+    id: string;
+    ok: boolean;
+    problems: string[];
+    source: "official" | "local";
+    state: "active" | "quarantined";
+    version: string;
+  }>;
+  ok: boolean;
 };
 
 /** Input shape for `artifacts.archive`. */
@@ -11571,6 +11627,58 @@ export type CredentialsConnectionsEnableReturn = {
   }) | null;
 };
 
+/** Input shape for `credentials.connections.inventory`. */
+export type CredentialsConnectionsInventoryInput = {
+  auditLimit?: string;
+  skipDescribe?: boolean;
+};
+
+/** Return shape for `credentials.connections.inventory`. */
+export type CredentialsConnectionsInventoryReturn = {
+  audit: Array<{
+    action: string;
+    at: number;
+    connection: string;
+    decision: string;
+    errorCode: string | null;
+    provider: string;
+    resultStatus: string | null;
+  }>;
+  degraded: boolean;
+  degradedReasons: Array<"unsupported" | "not_configured" | "forbidden" | "sealed" | "unreachable" | "invalid_ref" | "redirected" | "error">;
+  generatedAt: number;
+  items: Array<{
+    backend: "file" | "keychain" | "vault";
+    connection: string;
+    createdAt: number;
+    disabledAt: number | null;
+    expiresAt: number | null;
+    id: string;
+    label: string | null;
+    lastUsedAt: number | null;
+    owner: string | null;
+    provider: string;
+    purpose: string | null;
+    rotatedAt: number | null;
+    scopes: string[];
+    secret: (({
+      available: true;
+      createdAt: number | null;
+      deleted: boolean;
+      exists: boolean;
+      updatedAt: number | null;
+      version: number | null;
+    }) | ({
+      available: false;
+      reason: "unsupported" | "not_configured" | "forbidden" | "sealed" | "unreachable" | "invalid_ref" | "redirected" | "error";
+    })) | null;
+    secretRefAlias: string;
+    status: "active" | "disabled";
+    updatedAt: number;
+  }>;
+  total: number;
+};
+
 /** Input shape for `credentials.connections.list`. */
 export type CredentialsConnectionsListInput = {
   all?: boolean;
@@ -12531,6 +12639,7 @@ export type CronAddInput = {
   thread?: boolean;
   timeout?: string;
   tz?: string;
+  visible?: boolean;
 };
 
 /** Return shape for `cron.add`. */
@@ -12838,6 +12947,10 @@ export type DecisionsAnswerInput = {
   by?: string;
   execute?: boolean;
   id: string;
+  scope?: string;
+  sourceMessage?: string;
+  sourceQuote?: string;
+  supersedes?: string;
   text?: string;
 };
 
@@ -12863,8 +12976,16 @@ export type DecisionsAnswerReturn = {
     };
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
+    revisedAt: number;
     revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
     status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
     updatedAt: number;
   };
   deliveries: Array<{
@@ -12887,6 +13008,7 @@ export type DecisionsAskInput = {
   execute?: boolean;
   key?: string;
   owner?: string;
+  scope?: string;
   task?: string;
   thread?: string;
 };
@@ -12913,8 +13035,16 @@ export type DecisionsAskReturn = {
     };
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
+    revisedAt: number;
     revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
     status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
     updatedAt: number;
   };
   deliveries: Array<{
@@ -12933,8 +13063,10 @@ export type DecisionsAskReturn = {
 /** Input shape for `decisions.list`. */
 export type DecisionsListInput = {
   all?: boolean;
+  answeredSince?: string;
   limit?: string;
   offset?: string;
+  scope?: string;
   task?: string;
   thread?: string;
 };
@@ -12960,8 +13092,16 @@ export type DecisionsListReturn = {
     };
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
+    revisedAt: number;
     revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
     status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
     updatedAt: number;
   }>;
   pagination: {
@@ -13005,8 +13145,16 @@ export type DecisionsResolveDeliveryReturn = {
     };
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
+    revisedAt: number;
     revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
     status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
     updatedAt: number;
   };
   deliveries: Array<{
@@ -13050,8 +13198,16 @@ export type DecisionsRetryReturn = {
     };
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
+    revisedAt: number;
     revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
     status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
     updatedAt: number;
   };
   deliveries: Array<{
@@ -13094,8 +13250,16 @@ export type DecisionsShowReturn = {
     };
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
+    revisedAt: number;
     revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
     status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
     updatedAt: number;
   };
   deliveries: Array<{
@@ -13116,6 +13280,53 @@ export type DecisionsShowReturn = {
     snapshot: string;
     type: string;
   }>;
+};
+
+/** Input shape for `decisions.supersede`. */
+export type DecisionsSupersedeInput = {
+  by?: string;
+  execute?: boolean;
+  id: string;
+};
+
+/** Return shape for `decisions.supersede`. */
+export type DecisionsSupersedeReturn = {
+  replaced: {
+    id: string;
+    status: "superseded";
+    supersededBy: string;
+  };
+  replacement: {
+    answer: string | null;
+    answeredAt: number | null;
+    answeredBy: string | null;
+    ask: string;
+    askedAt: number;
+    askedBy: string | null;
+    blocks: boolean;
+    createdAt: number;
+    id: string;
+    key: string;
+    origin: {
+      chatId: string | null;
+      id: string;
+      sessionKey: string | null;
+      type: "task" | "thread";
+    };
+    ownerId: string | null;
+    ownerType: "human" | "agent" | "unassigned";
+    revisedAt: number;
+    revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
+    status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
+    updatedAt: number;
+  };
 };
 
 /** Input shape for `devin.auth.check`. */
@@ -19856,6 +20067,39 @@ export type SessionsAttachInput = {
 /** Return shape for `sessions.attach`. */
 export type SessionsAttachReturn = Record<string, unknown>;
 
+/** Input shape for `sessions.clone`. */
+export type SessionsCloneInput = {
+  execute?: boolean;
+  invite?: string;
+  messages?: string;
+  name: string;
+  session?: string;
+};
+
+/** Return shape for `sessions.clone`. */
+export type SessionsCloneReturn = {
+  agentId: string;
+  clone: ({
+    chatId: string;
+    inviteFailed: boolean;
+    invited: number;
+    sessionKey: string;
+    sessionName: string;
+  }) | null;
+  name: string;
+  origin: {
+    channel: string;
+    sessionKey: string;
+    sessionName: string;
+  };
+  seed: {
+    messages: number;
+    redacted: boolean;
+    truncated: boolean;
+  };
+  status: "planned" | "cloned";
+};
+
 /** Input shape for `sessions.close-thread`. */
 export type SessionsCloseThreadInput = {
   return?: string;
@@ -20652,6 +20896,42 @@ export type SessionsListReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `sessions.observe`. */
+export type SessionsObserveInput = {
+  follow?: boolean;
+  source: string;
+  to?: string;
+  when?: string;
+};
+
+/** Return shape for `sessions.observe`. */
+export type SessionsObserveReturn = {
+  observing: {
+    mode: "alerts" | "follow";
+    ruleId: string;
+    source: string;
+    to: string;
+    when: string[];
+  };
+  success: true;
+};
+
+/** Input shape for `sessions.observing`. */
+export type SessionsObservingInput = Record<string, never>;
+
+/** Return shape for `sessions.observing`. */
+export type SessionsObservingReturn = {
+  observing: Array<{
+    mode: "alerts" | "follow";
+    ruleId: string;
+    source: string;
+    to: string;
+    when: string[];
+  }>;
+  success: true;
+  total: number;
+};
+
 /** Input shape for `sessions.prune`. */
 export type SessionsPruneInput = {
   agent?: string;
@@ -20791,7 +21071,9 @@ export type SessionsReportInput = {
 /** Return shape for `sessions.report`. */
 export type SessionsReportReturn = ({
   actionId: "thread.report";
+  decisionError?: string;
   handoff?: {
+    decisionId?: string;
     id: string;
     kind: "review" | "decision" | "merge" | "dispatch" | "instruction";
     ref: string | null;
@@ -21452,6 +21734,10 @@ export type SessionsThreadSendReturn = {
     barrierSource: "explicit" | "default" | "inferred";
   };
   messageId: string;
+  openDecisionWaits?: Array<{
+    decisionId: string;
+    handoffId: string;
+  }>;
   reopened: boolean;
   requestId: string;
   status: "published";
@@ -21582,6 +21868,21 @@ export type SessionsTraceInput = {
 
 /** Return shape for `sessions.trace`. */
 export type SessionsTraceReturn = Record<string, unknown>;
+
+/** Input shape for `sessions.unobserve`. */
+export type SessionsUnobserveInput = {
+  source: string;
+  to?: string;
+};
+
+/** Return shape for `sessions.unobserve`. */
+export type SessionsUnobserveReturn = {
+  removed: boolean;
+  ruleId: string;
+  source: string;
+  success: true;
+  to: string;
+};
 
 /** Input shape for `sessions.update`. */
 export type SessionsUpdateInput = {
@@ -26590,6 +26891,7 @@ export type TriggersAddInput = {
   thread?: boolean;
   timeout?: string;
   topic?: string;
+  visible?: boolean;
 };
 
 /** Return shape for `triggers.add`. */
@@ -26767,6 +27069,635 @@ export type VideoAnalyzeReturn = {
     [k: string]: unknown;
   };
   [k: string]: unknown;
+};
+
+/** Input shape for `voice.calls.approve`. */
+export type VoiceCallsApproveInput = {
+  approval: string;
+  call: string;
+  digest?: string;
+  execute?: boolean;
+  version?: string;
+};
+
+/** Return shape for `voice.calls.approve`. */
+export type VoiceCallsApproveReturn = {
+  approvalId: string;
+  callId: string;
+  decision: "approved" | "rejected" | "pending";
+};
+
+/** Input shape for `voice.calls.audio`. */
+export type VoiceCallsAudioInput = {
+  call: string;
+  item: string;
+  out?: string;
+};
+
+/** Return shape for `voice.calls.audio`. */
+export type VoiceCallsAudioReturn = {
+  audioBase64?: string;
+  bytes: number;
+  callId: string;
+  item: string;
+  mime: string;
+  path?: string;
+};
+
+/** Input shape for `voice.calls.cancel-turn`. */
+export type VoiceCallsCancelTurnInput = {
+  call: string;
+  turn?: string;
+};
+
+/** Return shape for `voice.calls.cancel-turn`. */
+export type VoiceCallsCancelTurnReturn = {
+  callId: string;
+  cancelRequested: true;
+  turnId: string;
+};
+
+/** Input shape for `voice.calls.connect`. */
+export type VoiceCallsConnectInput = {
+  call: string;
+  offer?: string;
+};
+
+/** Return shape for `voice.calls.connect`. */
+export type VoiceCallsConnectReturn = {
+  callId: string;
+  connectionKind: "none" | "webrtc" | "room";
+  lastSeq: number;
+  roomToken: string | null;
+  roomUrl: string | null;
+  sdpAnswer: string | null;
+};
+
+/** Input shape for `voice.calls.deny`. */
+export type VoiceCallsDenyInput = {
+  approval: string;
+  call: string;
+};
+
+/** Return shape for `voice.calls.deny`. */
+export type VoiceCallsDenyReturn = {
+  approvalId: string;
+  callId: string;
+  decision: "approved" | "rejected" | "pending";
+};
+
+/** Input shape for `voice.calls.end`. */
+export type VoiceCallsEndInput = {
+  call: string;
+};
+
+/** Return shape for `voice.calls.end`. */
+export type VoiceCallsEndReturn = {
+  callId: string;
+  ended: true;
+};
+
+/** Input shape for `voice.calls.events`. */
+export type VoiceCallsEventsInput = {
+  after?: string;
+  call: string;
+  limit?: string;
+};
+
+/** Return shape for `voice.calls.events`. */
+export type VoiceCallsEventsReturn = {
+  callId: string;
+  events: Array<{
+    callId: string;
+    createdAt: number;
+    data: Record<string, unknown>;
+    seq: number;
+    type: "call.snapshot" | "call.state" | "call.ended" | "agent.state" | "work.state" | "work.tool" | "user.transcript" | "agent.transcript" | "turn.accepted" | "turn.completed" | "turn.approval_requested" | "turn.approval_resolved" | "usage" | "error";
+  }>;
+  lastSeq: number;
+};
+
+/** Input shape for `voice.calls.list`. */
+export type VoiceCallsListInput = {
+  active?: boolean;
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `voice.calls.list`. */
+export type VoiceCallsListReturn = {
+  calls: Array<{
+    agentState: "listening" | "thinking" | "speaking" | "idle";
+    connectionKind: "none" | "webrtc" | "room";
+    createdAt: string;
+    endedAt?: string;
+    endedReason?: string;
+    engine: "push" | "live" | "handsfree" | "mock";
+    id: string;
+    mode: "push" | "live" | "handsfree" | "mock";
+    profileId: string;
+    sessionName: string;
+    speaker: {
+      contactId?: string;
+      id: string;
+      kind: "operator" | "device" | "guest";
+      label?: string;
+    };
+    state: "starting" | "active" | "ending" | "ended";
+    updatedAt: string;
+    usage: {
+      audioInSeconds: number;
+      audioOutSeconds: number;
+      charactersSpoken: number;
+      engineSeconds: number;
+      estimatedCostUsd: number;
+    };
+  }>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  total: number;
+};
+
+/** Input shape for `voice.calls.push`. */
+export type VoiceCallsPushInput = {
+  audio?: string;
+  audioData?: string;
+  call: string;
+  mime?: string;
+};
+
+/** Return shape for `voice.calls.push`. */
+export type VoiceCallsPushReturn = {
+  callId: string;
+  text: string;
+  turnId: string | null;
+};
+
+/** Input shape for `voice.calls.send`. */
+export type VoiceCallsSendInput = {
+  call: string;
+  guest?: string;
+  text: string[];
+};
+
+/** Return shape for `voice.calls.send`. */
+export type VoiceCallsSendReturn = {
+  callId: string;
+  text: string;
+  turnId: string;
+};
+
+/** Input shape for `voice.calls.show`. */
+export type VoiceCallsShowInput = {
+  call: string;
+};
+
+/** Return shape for `voice.calls.show`. */
+export type VoiceCallsShowReturn = {
+  call: {
+    agentState: "listening" | "thinking" | "speaking" | "idle";
+    connectionKind: "none" | "webrtc" | "room";
+    createdAt: string;
+    endedAt?: string;
+    endedReason?: string;
+    engine: "push" | "live" | "handsfree" | "mock";
+    id: string;
+    mode: "push" | "live" | "handsfree" | "mock";
+    profileId: string;
+    sessionName: string;
+    speaker: {
+      contactId?: string;
+      id: string;
+      kind: "operator" | "device" | "guest";
+      label?: string;
+    };
+    state: "starting" | "active" | "ending" | "ended";
+    updatedAt: string;
+    usage: {
+      audioInSeconds: number;
+      audioOutSeconds: number;
+      charactersSpoken: number;
+      engineSeconds: number;
+      estimatedCostUsd: number;
+    };
+  };
+  engine: {
+    capabilities: {
+      bargeIn: boolean;
+      exactSpeech: boolean;
+      needs: string[];
+      serverAudio: boolean;
+      streamingAudio: boolean;
+    };
+    id: "push" | "live" | "handsfree" | "mock";
+    label: string;
+  };
+  lastSeq: number;
+  openApprovals: Array<{
+    approvalId: string;
+    digest: string;
+    text: string;
+    version: number;
+  }>;
+  turns: Array<{
+    createdAt: string;
+    id: string;
+    speaker: {
+      contactId?: string;
+      id: string;
+      kind: "operator" | "device" | "guest";
+      label?: string;
+    };
+    state: "queued" | "running" | "done" | "failed" | "cancelled";
+  }>;
+};
+
+/** Input shape for `voice.calls.silence`. */
+export type VoiceCallsSilenceInput = {
+  call: string;
+};
+
+/** Return shape for `voice.calls.silence`. */
+export type VoiceCallsSilenceReturn = {
+  callId: string;
+  silenced: true;
+};
+
+/** Input shape for `voice.calls.start`. */
+export type VoiceCallsStartInput = {
+  mode?: string;
+  offer?: string;
+  profile?: string;
+  session: string;
+};
+
+/** Return shape for `voice.calls.start`. */
+export type VoiceCallsStartReturn = {
+  callId: string;
+  capabilities: {
+    bargeIn: boolean;
+    exactSpeech: boolean;
+    needs: string[];
+    serverAudio: boolean;
+    streamingAudio: boolean;
+  };
+  connectionKind: "none" | "webrtc" | "room";
+  lastSeq: number;
+  mode: "push" | "live" | "handsfree" | "mock";
+  profileId: string;
+  roomToken: string | null;
+  roomUrl: string | null;
+  sdpAnswer: string | null;
+  sessionName: string;
+  state: string;
+};
+
+/** Input shape for `voice.calls.transcript`. */
+export type VoiceCallsTranscriptInput = {
+  call: string;
+};
+
+/** Return shape for `voice.calls.transcript`. */
+export type VoiceCallsTranscriptReturn = {
+  callId: string;
+  lines: Array<{
+    role: "user" | "assistant";
+    seq: number;
+    text: string;
+  }>;
+};
+
+/** Input shape for `voice.devices.list`. */
+export type VoiceDevicesListInput = {
+  all?: boolean;
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `voice.devices.list`. */
+export type VoiceDevicesListReturn = {
+  devices: Array<({
+    contactId: string;
+    createdAt: string;
+    expiresAt: string;
+    id: string;
+    label: string;
+    lastSeenAt?: string;
+    revoked: boolean;
+    sessions: string[];
+  }) | null>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  total: number;
+};
+
+/** Input shape for `voice.devices.pair`. */
+export type VoiceDevicesPairInput = {
+  contact?: string;
+  execute?: boolean;
+  label?: string;
+  session?: string;
+  worker?: boolean;
+};
+
+/** Return shape for `voice.devices.pair`. */
+export type VoiceDevicesPairReturn = {
+  contextKey: string;
+  device: ({
+    contactId: string;
+    createdAt: string;
+    expiresAt: string;
+    id: string;
+    label: string;
+    lastSeenAt?: string;
+    revoked: boolean;
+    sessions: string[];
+  }) | null;
+  shownOnce: true;
+};
+
+/** Input shape for `voice.devices.revoke`. */
+export type VoiceDevicesRevokeInput = {
+  device: string;
+};
+
+/** Return shape for `voice.devices.revoke`. */
+export type VoiceDevicesRevokeReturn = {
+  device: ({
+    contactId: string;
+    createdAt: string;
+    expiresAt: string;
+    id: string;
+    label: string;
+    lastSeenAt?: string;
+    revoked: boolean;
+    sessions: string[];
+  }) | null;
+  endDeferred: string[];
+  endRequested: string[];
+};
+
+/** Input shape for `voice.engines.check`. */
+export type VoiceEnginesCheckInput = Record<string, never>;
+
+/** Return shape for `voice.engines.check`. */
+export type VoiceEnginesCheckReturn = {
+  checks: Array<{
+    engine: "push" | "live" | "handsfree" | "mock";
+    missing: string[];
+    notes: string[];
+    ready: boolean;
+  }>;
+};
+
+/** Input shape for `voice.engines.list`. */
+export type VoiceEnginesListInput = {
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `voice.engines.list`. */
+export type VoiceEnginesListReturn = {
+  engines: Array<{
+    capabilities: {
+      bargeIn: boolean;
+      exactSpeech: boolean;
+      needs: string[];
+      serverAudio: boolean;
+      streamingAudio: boolean;
+    };
+    connectionKind: "none" | "webrtc" | "room";
+    costPerMinuteUsd: number;
+    id: "push" | "live" | "handsfree" | "mock";
+    label: string;
+  }>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  total: number;
+};
+
+/** Input shape for `voice.profiles.create`. */
+export type VoiceProfilesCreateInput = {
+  allowGuests?: boolean;
+  delivery?: string;
+  id: string;
+  label?: string;
+  language?: string;
+  liveModel?: string;
+  liveVoice?: string;
+  maxCallCost?: string;
+  maxCallMinutes?: string;
+  maxDailyCost?: string;
+  mode?: string;
+  ttsModel?: string;
+  voice?: string;
+};
+
+/** Return shape for `voice.profiles.create`. */
+export type VoiceProfilesCreateReturn = {
+  profile: {
+    allowGuests: boolean;
+    createdAt: number;
+    delivery: "speak" | "when_idle" | "silent";
+    id: string;
+    label: string;
+    language: string;
+    liveModel?: string;
+    liveVoice?: string;
+    maxCallCostUsd: number;
+    maxCallMinutes: number;
+    maxDailyCostUsd: number;
+    mode: "push" | "live" | "handsfree" | "mock";
+    ttsModel?: string;
+    updatedAt: number;
+    voice?: string;
+  };
+};
+
+/** Input shape for `voice.profiles.delete`. */
+export type VoiceProfilesDeleteInput = {
+  id: string;
+};
+
+/** Return shape for `voice.profiles.delete`. */
+export type VoiceProfilesDeleteReturn = {
+  deleted: true;
+  id: string;
+};
+
+/** Input shape for `voice.profiles.list`. */
+export type VoiceProfilesListInput = {
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `voice.profiles.list`. */
+export type VoiceProfilesListReturn = {
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  profiles: Array<{
+    allowGuests: boolean;
+    createdAt: number;
+    delivery: "speak" | "when_idle" | "silent";
+    id: string;
+    label: string;
+    language: string;
+    liveModel?: string;
+    liveVoice?: string;
+    maxCallCostUsd: number;
+    maxCallMinutes: number;
+    maxDailyCostUsd: number;
+    mode: "push" | "live" | "handsfree" | "mock";
+    ttsModel?: string;
+    updatedAt: number;
+    voice?: string;
+  }>;
+  total: number;
+};
+
+/** Input shape for `voice.profiles.show`. */
+export type VoiceProfilesShowInput = {
+  id: string;
+};
+
+/** Return shape for `voice.profiles.show`. */
+export type VoiceProfilesShowReturn = {
+  profile: {
+    allowGuests: boolean;
+    createdAt: number;
+    delivery: "speak" | "when_idle" | "silent";
+    id: string;
+    label: string;
+    language: string;
+    liveModel?: string;
+    liveVoice?: string;
+    maxCallCostUsd: number;
+    maxCallMinutes: number;
+    maxDailyCostUsd: number;
+    mode: "push" | "live" | "handsfree" | "mock";
+    ttsModel?: string;
+    updatedAt: number;
+    voice?: string;
+  };
+};
+
+/** Input shape for `voice.profiles.update`. */
+export type VoiceProfilesUpdateInput = {
+  allowGuests?: boolean;
+  delivery?: string;
+  id: string;
+  label?: string;
+  language?: string;
+  liveModel?: string;
+  liveVoice?: string;
+  maxCallCost?: string;
+  maxCallMinutes?: string;
+  maxDailyCost?: string;
+  mode?: string;
+  noGuests?: boolean;
+  ttsModel?: string;
+  voice?: string;
+};
+
+/** Return shape for `voice.profiles.update`. */
+export type VoiceProfilesUpdateReturn = {
+  profile: {
+    allowGuests: boolean;
+    createdAt: number;
+    delivery: "speak" | "when_idle" | "silent";
+    id: string;
+    label: string;
+    language: string;
+    liveModel?: string;
+    liveVoice?: string;
+    maxCallCostUsd: number;
+    maxCallMinutes: number;
+    maxDailyCostUsd: number;
+    mode: "push" | "live" | "handsfree" | "mock";
+    ttsModel?: string;
+    updatedAt: number;
+    voice?: string;
+  };
+};
+
+/** Input shape for `voice.targets.list`. */
+export type VoiceTargetsListInput = {
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `voice.targets.list`. */
+export type VoiceTargetsListReturn = {
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  targets: Array<{
+    activeCalls: number;
+    agentId: string | null;
+    sessionName: string;
+  }>;
+  total: number;
+};
+
+/** Input shape for `voice.voices.list`. */
+export type VoiceVoicesListInput = {
+  limit?: string;
+  offset?: string;
+  search?: string;
+};
+
+/** Return shape for `voice.voices.list`. */
+export type VoiceVoicesListReturn = {
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  total: number;
+  voices: Array<{
+    category?: string;
+    labels?: Record<string, string>;
+    name: string;
+    voiceId: string;
+  }>;
 };
 
 /** Input shape for `watch.connectors`. */

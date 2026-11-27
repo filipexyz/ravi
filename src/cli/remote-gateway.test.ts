@@ -2,6 +2,7 @@ import { errorDiagnostic } from "../utils/error-diagnostic.js";
 import { describe, expect, it } from "bun:test";
 import { join } from "node:path";
 import { enforceRaviAppRunResult } from "../apps/error-contract.js";
+import { AUTOMATION_HOLD_CAUSES, AUTOMATION_HOLD_SUGGESTED_ACTION } from "../permissions/automation-hold.js";
 import { projectAppCliFailure } from "../apps/failure.js";
 import { resolveAccountHome } from "../utils/account-home.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
@@ -181,6 +182,95 @@ function result(overrides: Partial<RemoteDispatchResult>): RemoteDispatchResult 
     ...overrides,
   };
 }
+
+describe("automation hold refusals over the gateway", () => {
+  // 24/11: the generic denial advice ("request the permission") sent an agent to ask full access
+  // for the operator, when the refusal came from a relayed turn.
+  function denial(automationHold?: unknown) {
+    return remoteGatewayErrorToContractError(
+      "cron add",
+      result({
+        status: 403,
+        body: JSON.stringify({
+          success: false,
+          op: "cron add",
+          exitCode: 1,
+          outcome: "denied",
+          error: {
+            code: "PERMISSION_DENIED",
+            message: "cron add is not available in a relayed turn: it would run later with the agent's full authority.",
+            retryable: false,
+            suggestedAction: "server advice is not forwarded",
+            ...(automationHold === undefined ? {} : { automationHold }),
+          },
+        }),
+      }),
+    );
+  }
+
+  it("gives each cause its fixed advice and keeps the cause", () => {
+    for (const cause of AUTOMATION_HOLD_CAUSES) {
+      const error = denial(cause);
+      expect(error?.code).toBe("PERMISSION_DENIED");
+      expect(error?.details.automationHold).toBe(cause);
+      expect(error?.details.suggestedAction).toBe(AUTOMATION_HOLD_SUGGESTED_ACTION[cause]);
+    }
+    expect(denial("held-relay")?.message).toContain("relayed turn");
+    expect(denial("held-relay")?.details.suggestedAction).toContain("does not lift it");
+  });
+
+  it("never rewrites the advice of a failed or blocked body that carries a cause", () => {
+    // Only a PERMISSION_DENIED denial comes from the automation guard; any other body keeps its advice.
+    const body = (exitCode: number, outcome: string, code: string) =>
+      remoteGatewayErrorToContractError(
+        "cron add",
+        result({
+          status: exitCode === 3 ? 409 : 500,
+          body: JSON.stringify({
+            success: false,
+            op: "cron add",
+            exitCode,
+            outcome,
+            error: {
+              code,
+              message: "cron add could not be completed.",
+              retryable: false,
+              suggestedAction: "Retry after the scheduler is back.",
+              automationHold: "held-relay",
+            },
+          }),
+        }),
+      );
+    const failed = body(1, "failed", "COMMAND_FAILED");
+    const blocked = body(3, "blocked", "POLICY_BLOCKED");
+    // Each half of the gate on its own (the right code on the wrong outcome, the right outcome on the wrong
+    // code) is a body the client rejects before the gate (denied <=> PERMISSION_DENIED), so the halves are
+    // equivalent: these bodies get the malformed-response advice and never the cause's.
+    const failedDeniedCode = body(1, "failed", "PERMISSION_DENIED");
+    const blockedDeniedCode = body(3, "blocked", "PERMISSION_DENIED");
+    const deniedOtherCode = body(1, "denied", "POLICY_BLOCKED");
+    for (const error of [failed, blocked, failedDeniedCode, blockedDeniedCode, deniedOtherCode]) {
+      expect(error).not.toBeNull();
+      expect(error?.details.automationHold).toBeUndefined();
+      expect(error?.details.suggestedAction).not.toBe(AUTOMATION_HOLD_SUGGESTED_ACTION["held-relay"]);
+    }
+    expect(failed?.details.suggestedAction).toBe("Retry after the scheduler is back.");
+    expect(blocked?.details.suggestedAction).toBe("Review the remote policy block before retrying the command");
+    for (const error of [failedDeniedCode, blockedDeniedCode, deniedOtherCode]) {
+      expect(error?.details.suggestedAction).toBe(
+        "Check gateway availability and report this response; do not automatically retry a write",
+      );
+    }
+  });
+
+  it("keeps the generic denial advice for an unknown cause or none", () => {
+    for (const value of [undefined, "contact-full-access", 7]) {
+      const error = denial(value);
+      expect(error?.details.automationHold).toBeUndefined();
+      expect(error?.details.suggestedAction).toBe("Request the required remote permission before retrying the command");
+    }
+  });
+});
 
 describe("remote gateway exit taxonomy", () => {
   it.each([true, false])(
@@ -2453,12 +2543,12 @@ describe("Library refusals over the gateway", () => {
 describe("pages read refusals over the gateway", () => {
   it("keeps the public-only refusal and the turn rule that decided it", async () => {
     const message =
-      "https://acme.ravi.page/weekly is not public. Private Ravi Pages are read only on the operator's own turns (terminal, their direct chat, their routines). This turn is not the operator's own: the owner's direct chat runs in a session other people's chats share (dmScope main, a route that names the session, or another chat attached to it).";
+      "https://acme.ravi.page/weekly is not public. Private Ravi Pages are read only on the operator's own turns (terminal, their direct chat, their routines). This turn is not the operator's own: the operator relayed this turn (ravi sessions send|ask) and the session answers into a chat that is not their direct chat.";
     const local = new ContractError("pages read", "PAGE_ACCESS_DENIED", message, 3, {
       ...errorDiagnostic(message, { operation: "pages read" }),
       ...{
         reason: "public_only",
-        turn: "shared_session",
+        turn: "relay_answer_chat",
         suggestedAction: "Tell the person you cannot open this private Page for them.",
       },
     });
@@ -2471,12 +2561,12 @@ describe("pages read refusals over the gateway", () => {
       code: "PAGE_ACCESS_DENIED",
       exitCode: 3,
       details: {
-        turn: "shared_session",
+        turn: "relay_answer_chat",
         suggestedAction: "Tell the person you cannot open this private Page for them.",
       },
     });
     // The relay sanitizes the message again (the URL reads as a path); the rule that decided stays.
-    expect(remote?.message).toContain("This turn is not the operator's own: the owner's direct chat runs in a session");
+    expect(remote?.message).toContain("This turn is not the operator's own: the operator relayed this turn");
     expect(remote?.message).not.toBe("Remote command was blocked by policy.");
   });
 });

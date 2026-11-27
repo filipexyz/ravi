@@ -61,7 +61,7 @@ The Claude Code provider adapts the current default cloud execution bridge into 
 - Assistant text block -> `assistant.message`
 - Assistant tool-use block -> `tool.started`
 - User tool-result block -> `tool.completed`
-- Successful result -> `turn.complete`
+- Successful result -> `turn.complete`, except the result of a turn Claude Code opens by itself for a queued task notification before the prompt: a successful result that arrives after a `system/task_notification` and before any content of the prompt, with every usage counter at zero, MUST NOT complete the prompt; the adapter keeps reading until the prompt's own result. (Incident of 25/11: on resume after an interrupt that stopped a subagent, completing on that result dropped the real reply.)
 - Non-success result -> `turn.failed`
 - Query exception -> recoverable `turn.failed`
 - Stream end without a terminal result -> recoverable `turn.failed` (desired contract; current code must be audited when this path is changed)
@@ -84,7 +84,17 @@ The Claude Code provider adapts the current default cloud execution bridge into 
   native query. A live provider session MUST observe the newly rotated
   `RAVI_CONTEXT_KEY` and removal of stale managed `RAVI_*` values on the next
   turn without resetting conversation history.
-- The provider MUST use Ravi `canUseTool` for tool permission decisions.
+- The provider MUST pass Ravi `canUseTool`. Claude Code consults it only when
+  it asks for a permission, so it is not the tool gate.
+- Sessions run with `bypassPermissions`, where Claude Code auto-allows tool
+  calls without asking `canUseTool`: the PreToolUse hook chain is the tool
+  gate. It MUST check every tool call by name, including `mcp__*` tools of
+  servers Claude Code loaded from its own configuration or plugins
+  (`permissions/provider-runtime`, Runtime Tool Calls).
+- The provider MUST start Claude Code with `@path` mentions off
+  (`permissions/provider-runtime`, Prompt Text).
+- The provider MUST register the spec server under the name the tool gate
+  declares as a host server (`SPEC_MCP_SERVER_NAME`).
 - The provider MUST attach host hooks only when capabilities allow it.
 - The provider MUST attach spec server only for spec-mode agents.
 - The provider MUST attach remote spawn only for remote agents.

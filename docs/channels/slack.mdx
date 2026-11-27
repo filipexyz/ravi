@@ -55,7 +55,7 @@ At [api.slack.com/apps](https://api.slack.com/apps), choose **Create New App**. 
       {
         "command": "/ravi",
         "description": "Control Ravi: who answers here, threads, stop a turn",
-        "usage_hint": "[help | status [thread] | threads | close <thread> | close idle [12h] | stop [thread]]",
+        "usage_hint": "[help | status [thread] | threads | close <thread> | close idle [12h] | stop [thread] | clone <name>]",
         "should_escape": false
       }
     ],
@@ -328,6 +328,7 @@ At `full-access` few requests need approval. See [Permissions](/guides/permissio
 | `/ravi close <thread>` | Closes a thread, named as `threads` shows it | To modify the session, and the capability of `sessions close-thread` |
 | `/ravi close idle [12h]` | Closes the threads with no activity for more than N hours (12 by default), at most 25 per call. It skips any that has a turn running, an open question or a return pending | The same as `close` |
 | `/ravi stop [thread]` | Interrupts the turn running in this chat's session, or, with a thread (named as `close` names it), in that thread's own session; the queue goes on | To modify the session, and the capability of `sessions runtime interrupt` |
+| `/ravi clone <name>` | Copies this chat's session into a new private channel with that name: same agent, a new session that starts from the last 20 messages (secrets masked) and then goes on by itself. Invites you; the origin does not change | Access to the session, and the capability of `sessions clone` |
 
 - The **owner** (`permission-owner`) can run all of them. Anyone else needs their Slack user linked to a contact, as for [approvals](#approvals), and the rights in the table. A Slack user with no contact is told so, and nothing runs.
 - A command acts on the session of the DM or channel it is typed in. Slack does not run an app's command inside a thread, so type it in the channel or the DM, and name the thread when it is one (`/ravi close <thread>`, `/ravi stop <thread>`).

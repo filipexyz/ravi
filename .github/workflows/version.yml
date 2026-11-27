@@ -24,7 +24,7 @@ concurrency:
 jobs:
   check-changes:
     name: Check For Publishable Changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (
@@ -71,7 +71,7 @@ jobs:
 
   version-and-publish:
     name: Version And Publish
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       id-token: write

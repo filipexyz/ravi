@@ -1,0 +1,67 @@
+---
+title: Apps
+description: Install apps from the official Ravi Apps index, decide which agent sees each one, and keep them up to date.
+icon: boxes
+---
+
+<Note>
+This page describes `ravi.bot@next`. `@latest` has no app store.
+</Note>
+
+Ravi installs apps from one place: the signed [official index](https://github.com/filipexyz/ravi-apps). Installing an app gives no agent anything. You choose, agent by agent, who may use it.
+
+## Install an app
+
+```bash
+ravi apps search
+ravi apps install blog              # shows the plan and exits 3; nothing is written
+ravi apps install blog --execute
+ravi apps allow blog --agent main --execute
+```
+
+The plan shows the version, the hash of its files, and every command the app can run. Apps in the official index only run `ravi` itself, so an app can never do more than the agent calling it is already allowed to do. The blog, for example, publishes with `ravi pages ship`: the agent still needs permission to ship Pages.
+
+These commands run only in your own terminal. An agent, or anything reaching Ravi through the gateway, is refused.
+
+## Keep apps current
+
+```bash
+ravi apps update blog               # plan; a version is installable 24 hours after it is published
+ravi apps update blog --execute
+ravi apps rollback blog --execute   # back to the previous version
+ravi apps verify                    # files unchanged, not blocked, who sees each app
+```
+
+When an update changes what the app can run, the agents that saw it lose access until you allow them again.
+
+The daemon checks the index's block list every 6 hours. A version the maintainers withdraw is quarantined at once: no agent can run it until you update or roll back.
+
+## Remove access or the app
+
+```bash
+ravi apps revoke blog --agent main
+ravi apps uninstall blog            # the files go to the store's trash
+```
+
+## Your own apps
+
+`ravi apps install --from <folder>` installs an app you wrote, with the same plan and the same per-agent choice. An app that runs any program other than `ravi` runs with your authority as the operator, so Ravi asks for `--allow-code` before installing it.
+
+## Apps with code
+
+An app's own logic, such as turning Markdown posts into a site, ships as a JavaScript file and runs as a `script` operation inside Ravi's sandbox: QuickJS in WebAssembly, with no disk, network, environment or other programs, and with limits on memory, time and size. The script gets the files of one folder the caller names (it must be inside the caller's working directory) and returns files. When the operation declares a follow-up command, Ravi hands those files to it, for example `ravi pages ship --dir <files>`, under the calling agent's own grants. These apps stay in the official index.
+
+```json
+"blog.publish": {
+  "interface": "script",
+  "script": "lib/blog.js",
+  "input": { "dir": "--posts" },
+  "handoff": { "command": "ravi pages ship --json {args}", "outputFlag": "--dir", "flags": ["--route", "--title", "--project"] },
+  "mutating": true,
+  "permission": "blog:write"
+}
+```
+
+The script defines `function main(input)`, where `input` is `{ args, files }`, and returns `{ files, args, result }`. `args` may only use the flags listed in `handoff.flags`.
+
+Once the store is in use, a folder copied by hand into `~/.ravi/apps` is not loaded. Apps that were already there keep working.

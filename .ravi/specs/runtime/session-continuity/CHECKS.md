@@ -27,7 +27,15 @@
   `reconcileCurrentTurn`: the stash holds the turn and both successors in queue
   order, and only the reconciled turn is marked `replay`. A credential failure
   before the first tool with a successor queued stashes the successor too. A
-  superseded turn keeps stashing only its successors. Restore that stash
+  superseded turn keeps stashing only its successors, except on the
+  recoverable-interrupt restart: a superseded turn with no effect under the
+  `host_write_ahead` fence keeps its own messages ahead of its successors, the
+  kept turn marked `retainsInputCohort` and the successor not; it is dropped
+  when a tool started, the input was mutated, the fence is `provider_event_only`,
+  the caller does not ask to keep it, the coordinator is not accepting
+  deliveries, or the durable attempt record is missing
+  (`src/runtime/host-session.test.ts`,
+  `src/runtime/recoverable-interrupt-slot-release.test.ts`). Restore that stash
   through the real generator with two ordinary messages from one sender on one
   surface, the second an `after_response` follow-up: the first prompt yielded
   holds only the retried request, as a fresh delivery (`replay` false), and the

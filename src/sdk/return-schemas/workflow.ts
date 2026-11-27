@@ -592,7 +592,14 @@ export function validateReturnSchemaWorkflow(options: ReturnSchemaWorkflowOption
   const summary = summarizeReturnSchemaWorkflow(options);
   const strict = options.strict === true;
   const registry = options.registry ?? getRegistry();
-  const rows = listReturnSchemaCommands({ ...options, limit: Number.MAX_SAFE_INTEGER }).items;
+  // A list page holds at most 1000 rows; the registry has more commands than that, so read every page.
+  const rows: ReturnSchemaCommandRecord[] = [];
+  for (let offset = 0; ; ) {
+    const page = listReturnSchemaCommands({ ...options, limit: 1000, offset });
+    rows.push(...page.items);
+    offset += page.items.length;
+    if (page.items.length === 0 || offset >= page.total) break;
+  }
   const rowByName = new Map(rows.map((row) => [row.fullName, row]));
   const issues: ReturnSchemaValidationIssue[] = [];
   const weakBaselineSet = new Set<string>(WEAK_PUBLIC_RETURN_COMMANDS_BASELINE as ReadonlyArray<string>);

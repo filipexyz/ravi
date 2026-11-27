@@ -599,6 +599,13 @@ const GH_FOLLOW_PR_DESCRIPTION_WORKFLOW = "PR Description";
  *   event (`action_required`, `neutral`, `skipped`, `stale`), where it is the only
  *   signal.
  * - Every run of the PR Description workflow, whatever its outcome.
+ * - A workflow run that has not concluded (`requested`, `in_progress`): the
+ *   conclusion arrives as its own event, so the owner would wake twice per run.
+ *
+ * Bot comments are not dropped: Devin's and CodeRabbit's review findings arrive as
+ * bot comments and are what the author must answer before the independent review
+ * (the PR #833 fixture in runner-debounce.test.ts pins three of them). The message
+ * tells the owner to stay silent on a bot comment that asks nothing.
  *
  * The exclusion is scoped to the local producer because only it emits the pair. The
  * Console reports `workflow_run.completed` and no outcome event, so a Console
@@ -621,7 +628,22 @@ function ghFollowNoiseExclusion(): string {
   return [
     `!(data.placement == "local" && data.eventType == "workflow_run.completed" && (${repeated}))`,
     `!(data.payload.name == ${JSON.stringify(GH_FOLLOW_PR_DESCRIPTION_WORKFLOW)})`,
+    ...GH_FOLLOW_UNCONCLUDED_RUN_EVENTS.map((eventType) => `!(data.eventType == ${JSON.stringify(eventType)})`),
   ].join(" && ");
+}
+
+/** Run events that only say a run started or is running; its conclusion comes later as its own event. */
+const GH_FOLLOW_UNCONCLUDED_RUN_EVENTS = ["workflow_run.requested", "workflow_run.in_progress"] as const;
+
+/** Generation 2: PR scope plus the local `completed` duplicate and PR Description, with no unconcluded-run exclusion. */
+function ghFollowFilterGeneration2(repo: string, prNumber: number): string {
+  const repeated = WORKFLOW_CONCLUSIONS_WITH_OUTCOME_EVENT.map(
+    (conclusion) => `data.payload.conclusion == ${JSON.stringify(conclusion)}`,
+  ).join(" || ");
+  return `${ghFollowScope(repo, prNumber)} && ${[
+    `!(data.placement == "local" && data.eventType == "workflow_run.completed" && (${repeated}))`,
+    `!(data.payload.name == ${JSON.stringify(GH_FOLLOW_PR_DESCRIPTION_WORKFLOW)})`,
+  ].join(" && ")}`;
 }
 
 export function ghFollowFilter(repo: string, prNumber: number): string {
@@ -636,9 +658,10 @@ export function ghFollowFilter(repo: string, prNumber: number): string {
  *
  * Generation 1 listened to the PR and nothing else, so it heard the duplicate
  * `workflow_run.completed` of every run and the PR Description workflow.
+ * Generation 2 still woke its owner for runs that had not concluded.
  */
 export function supersededGhFollowFilters(repo: string, prNumber: number): string[] {
-  return [ghFollowScope(repo, prNumber)];
+  return [ghFollowScope(repo, prNumber), ghFollowFilterGeneration2(repo, prNumber)];
 }
 
 export function isSupersededGhFollowFilter(filter: string | undefined, repo: string, prNumber: number): boolean {

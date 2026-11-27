@@ -5,6 +5,7 @@ import { CliExpectedError } from "../../cli/expected-error.js";
 import { nats } from "../../nats.js";
 import { publishSessionPrompt, type PublishSessionPromptOptions } from "../../omni/session-stream.js";
 import { publishChannelSessionPrompt } from "../session-prompt.js";
+import { bindChildRunSession, isChildRunSurfaceRef, markChildRunLaunched } from "../../automation/child-runs.js";
 import { handOffClosingThreadFollows } from "../../triggers/follow-owner.js";
 import { clearTriggersRefreshPending, markTriggersRefreshPending } from "../../triggers/refresh-intent.js";
 import { prepareThreadAttentionNotice } from "./thread-attention-admission.js";
@@ -64,7 +65,7 @@ import {
   type CloseSlackThreadLifecycleResult,
   type SlackThreadLifecycleRecord,
 } from "./thread-lifecycle-store.js";
-import type { SlackThreadCardState } from "./thread-card.js";
+import { slackThreadCardDecisions, type SlackThreadCardState } from "./thread-card.js";
 import { getLatestSessionTurn } from "../../session-trace/session-trace-db.js";
 import { observeThreadTurn } from "./thread-turn-health.js";
 import {
@@ -72,12 +73,15 @@ import {
   decideThreadParentReturn,
   getThreadReturnWatch,
   markThreadParentReturn,
+  CI_WAKE_NUDGE_EVENT_PREFIX,
+  readThreadTurnGhFollowWake,
   readThreadTurnOrigin,
   readThreadTurnReplyPreview,
   releaseThreadReturnNudge,
   reopenThreadReturnWatch,
   resolveThreadReturnWatch,
   threadHasOpenDecision,
+  threadHasOpenHandoff,
   threadReturnedSince,
   THREAD_RETURN_NUDGES_PER_TICK,
 } from "./thread-parent-return.js";
@@ -184,23 +188,49 @@ export async function finalizeSlackThreadCreation(
 
   try {
     const materialized = materializeSlackThreadChild(record);
-    await publishChannelSessionPrompt(
-      {
-        sessionName: materialized.childSessionName,
-        action: "session.bootstrap",
-        principal: resolveChannelLifecyclePrincipal(
-          "session.bootstrap",
-          record.initiatorSessionKey ?? record.parentSessionKey,
-          materialized.agentId,
-        ),
-        callerContextId: record.initiatorContextId,
-        payload: buildSlackThreadInitialPrompt(record, materialized),
-        options: {
-          messageId: `slack-thread-start:${record.requestId}`,
+    // An automation run's thread starts with the run's own launch (its job's or trigger's
+    // authority envelope), never the agent's bootstrap turn. Handed back until its publish is
+    // confirmed (a retried creation still starts the run; the stable message id keeps it to one).
+    // A run closed or gone before its root landed starts nothing; its thread is closed below.
+    const automationRun = isChildRunSurfaceRef(record.requestId);
+    const bound = automationRun
+      ? bindChildRunSession(
+          "slack-thread",
+          record.requestId,
+          materialized.childSessionKey,
+          materialized.childSessionName,
+        )
+      : null;
+    if (bound?.launch && !bound.closed) {
+      await dependencies.publishPrompt(
+        materialized.childSessionName,
+        {
+          ...bound.launch,
+          source: buildSlackThreadChildSource(record, materialized.threadCanonicalChatId, materialized.agentId),
+          context: buildSlackThreadMessageContext(record, materialized.threadCanonicalChatId, materialized.agentId),
         },
-      },
-      dependencies.publishPrompt,
-    );
+        { messageId: `slack-thread-start:${record.requestId}` },
+      );
+      markChildRunLaunched(bound.run.id);
+    }
+    if (!automationRun)
+      await publishChannelSessionPrompt(
+        {
+          sessionName: materialized.childSessionName,
+          action: "session.bootstrap",
+          principal: resolveChannelLifecyclePrincipal(
+            "session.bootstrap",
+            record.initiatorSessionKey ?? record.parentSessionKey,
+            materialized.agentId,
+          ),
+          callerContextId: record.initiatorContextId,
+          payload: buildSlackThreadInitialPrompt(record, materialized),
+          options: {
+            messageId: `slack-thread-start:${record.requestId}`,
+          },
+        },
+        dependencies.publishPrompt,
+      );
     const completed = completeSlackThreadCreation({
       requestId: record.requestId,
       claimId,
@@ -216,6 +246,12 @@ export async function finalizeSlackThreadCreation(
           error: errorMessage(error),
         });
       });
+    if (automationRun && (!bound || bound.closed)) {
+      // The run was given up while its root was on the way: the late thread closes without a word.
+      await closeSlackThreadRecord(completed, undefined, dependencies).catch((error) => {
+        log.warn("Failed to close the late thread of a closed run", { requestId, error: errorMessage(error) });
+      });
+    }
     return {
       status: "opened",
       requestId,
@@ -322,6 +358,8 @@ async function reconcileThreadTurnHealth(dependencies: SlackThreadLifecycleDepen
       const health = getThreadTurnHealth(requestId)!;
       if (health.state !== "attention" || !health.turnId || !record.childSessionKey || !record.providerThreadId)
         continue;
+      // An automation run's thread needs no notice: the core returns the run's outcome to its parent.
+      if (isChildRunSurfaceRef(record.requestId)) continue;
       claimId = claimThreadTurnNotice(requestId, health.turnId, now);
       if (!claimId) continue;
       // Fence a concurrent close/reopen/new turn before publishing the observation.
@@ -351,7 +389,7 @@ async function reconcileThreadTurnHealth(dependencies: SlackThreadLifecycleDepen
             prompt: buildSlackThreadParentNotice(record, "precisa de atenção.", "Estado", description),
             _agentId: parent.agentId,
             source: buildSlackThreadParentSource(record, record.providerThreadId),
-            deliveryBarrier: "after_tool",
+            deliveryBarrier: "after_response",
             deliveryBarrierSource: "default",
             _slackThreadLifecycle: {
               eventId: messageId,
@@ -392,6 +430,8 @@ async function reconcileThreadParentReturn(
   budget: { nudges: number },
 ): Promise<void> {
   if (!record.childSessionKey || !record.providerThreadId) return;
+  // An automation run's thread ends silently by design (`@@SILENT@@`); its return is the core's.
+  if (isChildRunSurfaceRef(record.requestId)) return;
   const childSessionKey = record.childSessionKey;
   const providerThreadId = record.providerThreadId;
   const turn = getLatestSessionTurn(childSessionKey);
@@ -406,6 +446,9 @@ async function reconcileThreadParentReturn(
     watch,
     openDecision: threadHasOpenDecision(record.requestId),
     returnedSince: (since) => threadReturnedSince(record.requestId, watch, since),
+    turnCiWake: turn?.outputState === "silent" && readThreadTurnGhFollowWake(turn.turnId),
+    openHandoff: threadHasOpenHandoff(childSessionKey),
+    watchedTurnCiWake: watch?.stage === "nudged" && watch.nudgeEventId?.startsWith(CI_WAKE_NUDGE_EVENT_PREFIX) === true,
   });
 
   if (action.kind === "none") return;
@@ -425,7 +468,7 @@ async function reconcileThreadParentReturn(
     const child = getSession(childSessionKey);
     const parent = getSession(record.parentSessionKey);
     if (!child || !parent) return;
-    const eventId = `slack-thread-return-nudge:${record.requestId}:${action.turnId}`;
+    const eventId = `${action.silentCiWake ? CI_WAKE_NUDGE_EVENT_PREFIX : "slack-thread-return-nudge:"}${record.requestId}:${action.turnId}`;
     if (
       !claimThreadReturnNudge({
         requestId: record.requestId,
@@ -442,7 +485,9 @@ async function reconcileThreadParentReturn(
       await dependencies.publishPrompt(
         child.name ?? child.sessionKey,
         {
-          prompt: buildThreadReturnNudgePrompt(parent.name ?? parent.sessionKey),
+          prompt: action.silentCiWake
+            ? buildCiWakeNudgePrompt(parent.name ?? parent.sessionKey)
+            : buildThreadReturnNudgePrompt(parent.name ?? parent.sessionKey),
           source: buildSlackThreadChildSource(record, record.threadCanonicalChatId, child.agentId),
           context: buildSlackThreadMessageContext(record, record.threadCanonicalChatId, child.agentId),
           // Never interrupt: the follow-up waits for the thread to be idle.
@@ -489,10 +534,13 @@ async function reconcileThreadParentReturn(
   try {
     const parent = getSession(record.parentSessionKey);
     if (!parent) throw new Error(`Slack thread parent session not found: ${record.parentSessionKey}`);
+    const ciWakeSilent = action.reason === "ci_wake_silent";
     const lastMessage =
       (action.followupTurnId ? readThreadTurnReplyPreview(action.followupTurnId) : null) ??
       readThreadTurnReplyPreview(action.turnId) ??
-      "(nenhum texto de resposta registrado)";
+      (ciWakeSilent
+        ? "(a thread não escreveu nada; a PR pode estar parada esperando alguém)"
+        : "(nenhum texto de resposta registrado)");
     const eventId = `slack-thread-unreturned:${record.requestId}:${action.turnId}`;
     await publishChannelSessionPrompt(
       {
@@ -503,8 +551,10 @@ async function reconcileThreadParentReturn(
         payload: {
           prompt: buildSlackThreadParentNotice(
             record,
-            "terminou um turno sem retornar ao pai.",
-            "Última mensagem da thread",
+            ciWakeSilent
+              ? "foi acordada por um evento de PR/CI, terminou calada e, cobrada uma vez, calou de novo."
+              : "terminou um turno sem retornar ao pai.",
+            ciWakeSilent ? "Estado" : "Última mensagem da thread",
             lastMessage,
           ),
           source: buildSlackThreadParentSource(record, providerThreadId),
@@ -540,6 +590,19 @@ function buildThreadReturnNudgePrompt(parentSessionName: string): string {
     'If it continues or is blocked, run `ravi sessions report "<state in one or two lines>"`; if it waits on that session (a review, a decision, a merge, a dispatch or an instruction), end that report with `--awaiting <kind>` and `--ref <sha or id>` when there is one.',
     "If you are waiting for a reply from a person in this thread, do nothing.",
     "In every case, end this turn with @@SILENT@@ so nothing new is posted in the thread.",
+  ].join("\n");
+}
+
+/**
+ * A PR follow wake (CI/review event) ended silent with nothing sent to the parent. Unlike the generic
+ * return nudge, "do nothing, a person is replying" is not offered: no person is on the other side.
+ */
+function buildCiWakeNudgePrompt(parentSessionName: string): string {
+  return [
+    `[System] Execute: [from: ravi runtime] A PR/CI event woke you in this thread and your turn ended without telling ${parentSessionName}, the session that owns this thread. The PR does not move on its own.`,
+    'Decide now and say it in one line with `ravi sessions report "<state>"`: what the event was and what happens next (for example "CI verde, abro a revisão" or "CI ainda rodando, volto no próximo evento").',
+    'If the PR waits on that session (a review, a decision, a merge, a dispatch or an instruction), end the report with `--awaiting <kind>` and `--ref <sha or id>`. If the work is done, run `ravi sessions close-thread --return "<result>"`.',
+    "End this turn with @@SILENT@@ so nothing new is posted in the thread.",
   ].join("\n");
 }
 
@@ -752,7 +815,7 @@ export async function deliverSlackThreadParentReturn(
         payload: {
           prompt: buildSlackThreadParentNotice(record, "concluída.", "Resultado", record.closeResult),
           source: buildSlackThreadCompletionSource(record, record.providerThreadId),
-          deliveryBarrier: "after_tool",
+          deliveryBarrier: "after_response",
           deliveryBarrierSource: "default",
           _slackThreadLifecycle: {
             eventId: record.parentEventId,
@@ -1211,6 +1274,10 @@ export async function updateSlackThreadCard(
         updatedAt: Date.now(),
         ...(record.requestedBy ? { requestedBy: record.requestedBy } : {}),
         ...(slackThreadRuntimeLabel(record) ? { runtime: slackThreadRuntimeLabel(record) } : {}),
+        // Responder is for a person; a question for an agent or with no owner is answered elsewhere.
+        ...(pending.some((decision) => decision.ownerType === "human")
+          ? { decisions: slackThreadCardDecisions(pending) }
+          : {}),
       },
     },
   });

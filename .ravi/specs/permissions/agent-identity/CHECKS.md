@@ -36,6 +36,42 @@
 - A writer that reaches the automation stores directly from a turn with
   `actorBreakGlassWithheld` MUST be refused (`automation-store-guard.test.ts`);
   `watch trigger` MUST refuse even as a dry-run (`watch.test.ts`).
+- The operator's own relay (a thread they asked for) MUST write a trigger, a cron
+  job and the CI follow of `pr publish`; a relay of an overlay turn, of a turn
+  holding `deny_*`, of a held relay, a relay to an agent with more authority than the caller's ceiling (also with N>=3 specific grants inside the target's wildcards), or one without the `relayCallerUnrestricted`
+  stamp MUST still be refused (`runtime-request-context.test.ts`,
+  `user-overlay-automation.test.ts`, `automation-store-guard.test.ts`,
+  `gh-watch.test.ts`, `cron-commands.test.ts`).
+- The return of the operator's thread to the agent that opened it
+  (`session.return`) MUST be stamped and pass the automation guards; the return of
+  a thread opened from a person with no grant MUST stay held
+  (`runtime-request-context.test.ts`).
+- In a chat governed by contact grants, the operator (admin tag, full access over the
+  agent) MUST pass the automation guards, write a cron job bound to the chat, and open
+  stamped threads whose return is stamped; a contact whose power there comes
+  from a chat grant (full access included), a partial grant, no grant, a
+  partial global tag, or an admin narrowed by a `deny_*` (a grant in that
+  chat or one of their own tags, also when the agent holds a `deny_*` of its
+  own) MUST stay held, and so must its threads (`runtime-request-context.test.ts`,
+  "a contact speaking in a chat governed by contact grants";
+  `cron-commands.test.ts`, "binds a job from an overlay turn or a lifted
+  overlay to its chat").
+- The automation refusal MUST name its cause, in the command and the store
+  guard: a held relay (also one narrowed to a governed chat's grants, and a
+  stamped relay that still carries withheld break-glass) says it is a relay and
+  that a grant does not lift it, and never speaks of a contact's chat
+  permissions; a person with no grant and an overlay turn say theirs; no advice
+  points at a grant (`user-overlay-automation.test.ts`,
+  `runtime-request-context.test.ts`). The `automationHold` field MUST reach the
+  envelope (allowlisted; other details dropped, diagnostic and advice not
+  replaceable) and the `pr publish` follow refusal (`agent-contract.test.ts`,
+  `pr/service.test.ts`); the remote CLI MUST map each known cause to its fixed
+  advice and keep the generic denial advice for an unknown cause or none, and a
+  body carrying a cause MUST NOT get the cause's advice unless it is both
+  `denied` and `PERMISSION_DENIED`: a `failed` body keeps its own advice, a
+  `blocked` one the generic advice of its outcome, and a body that pairs only
+  one half (`PERMISSION_DENIED` without `denied`, or the reverse) is rejected as
+  malformed before the gate (`remote-gateway.test.ts`).
 - An app command resolving to anything but Ravi MUST be refused in a turn
   that withholds `execute:executable:*` (`turn-executable.test.ts`); observer
   rules written from such a turn MUST be refused (`automation-store-guard.test.ts`).
@@ -47,3 +83,20 @@
   moving an agent's `cwd` or creating an agent in a limited turn MUST be refused,
   and a derived context with only inherited `deny_*` MUST be held
   (`automation-store-guard.test.ts`).
+- A relative `--out` / `--output` / `--download` / `rules import --cwd` MUST be
+  resolved against the caller's cwd, and the worker or writer MUST receive that
+  resolved path, never the raw value (`meetings.test.ts`, `cloud-agents.test.ts`,
+  `caller-cwd.test.ts`); a limited person downloading cloud outputs or importing
+  rules outside the workspace MUST be refused before the cloud is contacted or
+  any file is written.
+- Disabling an existing observer rule from a limited turn MUST be judged on the
+  stored columns, both sides normalized the same way: repeating what is stored
+  (also a rule whose stored JSON predates normalization) still disables, any
+  other stored change is refused (`automation-store-guard.test.ts`,
+  `observation-plane.test.ts`).
+- A limited person's CLI write boundary MUST be the authenticated session's
+  workspace (`expandHome(session.agentCwd)` from the context's `sessionKey`),
+  never the cwd the caller declares; a context with no session keeps only temp
+  writable (`caller-cwd.test.ts`). A leading `~` in a CLI path MUST be read as
+  the home directory before the check, so the path handed to a worker is the
+  one checked.

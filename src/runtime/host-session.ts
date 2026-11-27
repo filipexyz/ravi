@@ -161,6 +161,16 @@ export interface RuntimeHostStreamingSession {
   lastActivity: number;
   /** Whether the event loop is done (session ended) */
   done: boolean;
+  /**
+   * True while `runRuntimeEventLoop` is still running for this session, through
+   * the end of its `finally`. A `done` session in that window still owns its
+   * slot: the loop releases it and restarts any stashed recovery itself.
+   * Slot sweepers must leave it alone, or the loop loses ownership, skips the
+   * restart and strands the stashed queue with no runtime to deliver it.
+   */
+  eventLoopActive?: boolean;
+  /** When the pool reclaimer first saw this session `done` with its loop still active. */
+  closingObservedAt?: number;
   /** Whether the current turn was interrupted (discard response, keep queue) */
   interrupted: boolean;
   /** Internal cancellation reason; suppresses provider abort noise from user-facing output. */
@@ -198,6 +208,11 @@ export interface RuntimeHostStreamingSession {
   traceRunId?: string;
   /** Pending message ids yielded to the currently active provider turn. */
   currentTurnPendingIds?: string[];
+  /**
+   * `_correlationId`s of the prompts this physical turn consumed. Runtime events carry
+   * them as `_correlationIds`, so a waiter knows which turn is its own.
+   */
+  currentTurnCorrelationIds?: string[];
   /** Whether a newer prompt intentionally preempted the active provider turn. */
   currentTurnSuperseded?: boolean;
   /** Queued continuation owns the logical channel turn after this physical turn yields. */
@@ -294,6 +309,14 @@ export interface RuntimeMessageStashOptions {
   crashRecovery?: RuntimeCrashRecoveryCoordinator;
   /** Reconcile an ambiguously delivered turn before deciding whether it may be retried. */
   reconcileCurrentTurn?: boolean;
+  /**
+   * Keep the messages of a superseded turn that left no effect (no tool started, no output, no input
+   * mutation). A superseded turn is normally dropped because its prompt is already in the provider
+   * history; when the turn is stopped before the provider checked the prompt and the runtime restarts,
+   * that prompt exists nowhere else, and dropping it loses a person's message. Re-sending a prompt the
+   * provider did see is a duplicate; losing one it did not see is not recoverable.
+   */
+  keepSupersededTurnWithoutEffects?: boolean;
 }
 
 export function stashPendingRuntimeMessages(
@@ -303,17 +326,42 @@ export function stashPendingRuntimeMessages(
   options: RuntimeMessageStashOptions = {},
 ): number {
   const safety = getRuntimeTurnReplaySafety(session, options.crashRecovery);
-  const replayableMessages = options.reconcileCurrentTurn
-    ? getReplayablePendingRuntimeMessages(session)
-    : getCrashRecoveryReplayablePendingRuntimeMessages(session, options.crashRecovery);
+  // Only a provider with a durable pre-tool acknowledgement can prove "no tool ran": Codex and Pi report
+  // tool starts asynchronously, so a missing marker there is not evidence of no effect.
+  const keepSupersededTurn =
+    options.keepSupersededTurnWithoutEffects === true &&
+    session.currentTurnSuperseded === true &&
+    session.toolEffectFence === "host_write_ahead" &&
+    // No durable binding (closed coordinator, missing attempt, open trace without attempt) means the
+    // absence of an effect marker is a missing record, not proof: keep the existing replay fence.
+    safety.replayable &&
+    session.currentCrashRecoveryTerminal?.status !== "complete" &&
+    !safety.startedTool &&
+    !safety.materializedOutput &&
+    !safety.inputMutated &&
+    session.currentTurnToolStarted !== true &&
+    session.currentTurnInputMutated !== true;
+  const replayableMessages = keepSupersededTurn
+    ? session.pendingMessages
+    : options.reconcileCurrentTurn
+      ? getReplayablePendingRuntimeMessages(session)
+      : getCrashRecoveryReplayablePendingRuntimeMessages(session, options.crashRecovery);
   if (replayableMessages.length === 0) {
     return 0;
   }
   const reconciliationIds = options.reconcileCurrentTurn ? new Set(session.currentTurnPendingIds ?? []) : undefined;
 
+  const keptTurnIds = keepSupersededTurn ? new Set(session.currentTurnPendingIds ?? []) : undefined;
   stashedMessages.set(
     sessionName,
-    replayableMessages.map((message) => cloneRuntimeMessageForStash(message, reconciliationIds, safety.replayable)),
+    replayableMessages.map((message) => {
+      const stashed = cloneRuntimeMessageForStash(message, reconciliationIds, safety.replayable);
+      // The recovered turn runs as its own turn: without the cohort marker an idle restored runtime would
+      // fold a compatible follow-up from the same chat into it.
+      return message.pendingId && keptTurnIds?.has(message.pendingId)
+        ? { ...stashed, retainsInputCohort: true }
+        : stashed;
+    }),
   );
   return replayableMessages.length;
 }
@@ -574,6 +622,17 @@ export function getPendingRuntimeTurnSuccessors(session: RuntimeHostStreamingSes
   return pendingMessages.filter(
     (message) => typeof message.pendingId === "string" && !currentTurnPendingIds.has(message.pendingId),
   );
+}
+
+/**
+ * A finished session whose slot a sweeper may release. `done` alone is not
+ * enough: while its event loop is still running, the loop owns the slot and
+ * its cleanup restarts any stashed recovery (see `eventLoopActive`).
+ */
+export function isReleasableDoneRuntimeSession(
+  session: Pick<RuntimeHostStreamingSession, "done" | "eventLoopActive">,
+): boolean {
+  return session.done && session.eventLoopActive !== true;
 }
 
 export function shutdownRuntimeStreamingSession(session: RuntimeHostStreamingSession, reason?: string): void {

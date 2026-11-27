@@ -143,6 +143,17 @@ Agents MUST be guided toward explainable least-privilege requests.
 - Approval prompts for a single runtime capability MUST state that the grant is
   scoped to the current context. Recurring access MUST be modeled as a
   provider-owned profile/tag.
+- A runtime capability approval (`authorizeRuntimeContext`) MUST only be
+  shown where someone allowed to decide it can see it. A prompt posted into
+  the turn's own conversation, in a direct chat whose actor is a contact that
+  does not hold the requested capability (as the decision gate reads it), would
+  ask the requester to approve their own missing permission: the runtime MUST
+  refuse without sending it, with a reason that says nobody in that
+  conversation can approve and points an administrator to
+  `ravi permissions resolve <denial-id>`. Group chats keep
+  posting, because another participant may decide; a requester who can grant
+  keeps being asked. The rule reads the core's actor, surface and chat type,
+  never a channel name.
 - Agents asking for authorization MUST include: the missing canonical
   capability, the blocking branch when known, the profile/tag they recommend,
   the command used for inspection, and whether the fallback is break-glass.
@@ -275,7 +286,9 @@ Rules:
   audit snapshots and do not gate tool authority.
 - A chat is governed when at least one chat or chat-tag contact grant covers
   it. Then `actorAuthorizationMode=user-overlay` and the contact's chat
-  capabilities gate the turn (`permissions/user-overlay`).
+  capabilities gate the turn (`permissions/user-overlay`), unless the
+  contact's own power (global permission tags) holds full access: the overlay
+  is then lifted and the turn keeps the agent-identity result.
 - `ravi permissions resolve <denial-id>` for an agent-identity denial MUST
   target `agent:<executorAgentId>`. For a `user-overlay` denial it MUST plan a
   chat-scoped grant for `contact:<actorId>` in the denied chat, plus the agent

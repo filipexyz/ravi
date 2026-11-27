@@ -7,6 +7,7 @@ import {
   type ApprovalTarget,
 } from "../approval/service.js";
 import { createBashPermissionHook, createToolPermissionHook } from "../bash/index.js";
+import { getToolNameEquivalents } from "../cli/tool-registry.js";
 import { createPreCompactHook } from "../hooks/index.js";
 import { createRtkRewriteHook } from "../hooks/rtk-rewrite.js";
 import { createJobPromotionHook } from "../hooks/jobs-promote.js";
@@ -57,6 +58,8 @@ export interface RuntimeHostHooksOptions {
   streamingSession: RuntimeHostHookAttemptSafety["streamingSession"];
   crashRecovery: RuntimeHostHookAttemptSafety["crashRecovery"];
   approvalServices?: RuntimeHostHookApprovalServices;
+  /** In-process MCP servers this session attaches itself; see `createToolPermissionHook`. */
+  hostMcpServers?: readonly string[];
 }
 
 export function createRuntimeHostHooks({
@@ -73,6 +76,7 @@ export function createRuntimeHostHooks({
     requestPollAnswer,
     emitApprovalEvent: (topic, payload) => nats.emit(topic, payload),
   },
+  hostMcpServers,
 }: RuntimeHostHooksOptions): Record<string, RuntimeHookMatcher[]> {
   if (!runtimeCapabilities.supportsHostSessionHooks) {
     return {};
@@ -84,7 +88,7 @@ export function createRuntimeHostHooks({
     PreToolUse: [
       // Ravi Page links go to `ravi pages read`, not a browser or fetch.
       createPagesLinkGuardHook(),
-      createToolPermissionHook(hookOpts),
+      createToolPermissionHook({ ...hookOpts, hostMcpServers }),
       createBashPermissionHook(hookOpts),
       // No secret-stripping hook here: rewriting the command cannot remove
       // secrets (hooks' updatedInput does not compose, and the parent env stays
@@ -269,7 +273,8 @@ function createSpecBlockHook(sessionName: string) {
 
     if (typeof toolName === "string" && toolName.startsWith("mcp__spec__")) return {};
 
-    if (blockedInSpec.includes(toolName)) {
+    // The subagent tool is `Task` here and `Agent` in the current Claude Code: block it under both names.
+    if (typeof toolName === "string" && getToolNameEquivalents(toolName).some((name) => blockedInSpec.includes(name))) {
       log.info("Spec mode blocked tool", { sessionName, toolName });
       return {
         hookSpecificOutput: {

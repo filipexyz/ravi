@@ -1,6 +1,6 @@
 import { resolveToolGroup } from "../cli/tool-registry.js";
 import type { ContextCapability } from "../router/router-db.js";
-import { canWithCapabilities } from "./capability-snapshot.js";
+import { canWithCapabilities, toolObjectIdsReachOneTool } from "./capability-snapshot.js";
 
 export const DELEGATED_AUTHORITY_MODE = "delegated";
 export const TURN_SCOPED_AUTHORITY_KIND = "turn-runtime";
@@ -174,6 +174,11 @@ export function hasAnyCapability(capabilities: ContextCapability[] | undefined):
   return Boolean(capabilities && capabilities.length > 0);
 }
 
+/** Whether `capabilities` cover every one of `required`, by the core permission matcher (wildcards included). */
+export function capabilitySetCovers(capabilities: ContextCapability[], required: ContextCapability[]): boolean {
+  return required.every((candidate) => capabilitySetAllows(capabilities, candidate));
+}
+
 function capabilitySetAllows(capabilities: ContextCapability[], candidate: ContextCapability): boolean {
   if (canWithCapabilities(capabilities, candidate.permission, candidate.objectType, candidate.objectId)) {
     return true;
@@ -199,6 +204,14 @@ function capabilityOverlaps(left: ContextCapability, right: ContextCapability): 
 
   if (left.permission !== right.permission) return false;
   if (left.objectType === right.objectType && (left.objectId === "*" || right.objectId === "*")) return true;
+  // Two patterns can reach one tool under its two names while neither covers the other (`Ag*` and `Task*`).
+  if (
+    left.objectType === "tool" &&
+    right.objectType === "tool" &&
+    toolObjectIdsReachOneTool(left.objectId, right.objectId)
+  ) {
+    return true;
+  }
   if (left.permission === "use" && isToolOrToolGroup(left.objectType) && isToolOrToolGroup(right.objectType)) {
     return left.objectId === "*" || right.objectId === "*";
   }

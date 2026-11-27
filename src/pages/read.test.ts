@@ -104,14 +104,10 @@ describe("pageReadTurnBlock on real turn contexts", () => {
     });
   }
 
-  function deps(context: ContextRecord, isPrivateDirectSession?: () => boolean) {
+  function deps(context: ContextRecord) {
     return {
       readCredentials: () => makeCredentials(),
-      turn: {
-        ...OWNER,
-        env: { RAVI_CONTEXT_KEY: context.contextKey },
-        ...(isPrivateDirectSession ? { isPrivateDirectSession } : {}),
-      },
+      turn: { ...OWNER, env: { RAVI_CONTEXT_KEY: context.contextKey } },
     };
   }
 
@@ -128,13 +124,30 @@ describe("pageReadTurnBlock on real turn contexts", () => {
     expect(pageReadTurnBlock(deps(context))).toBeNull();
   });
 
-  it("names the shared-session rule when the owner's direct chat shares its session", () => {
-    const context = turnContext(ownerDm, OWNER_DM, "luis-dm");
-    const shared = deps(context, () => false);
-    expect(pageReadIsPublicOnly(shared)).toBe(true);
-    expect(pageReadTurnBlock(shared)).toMatchObject({ turn: "shared_session" });
+  it("counts the owner's own direct chat in a shared session too", () => {
     const main = turnContext(ownerDm, "agent:main:main", "main");
-    expect(pageReadTurnBlock(deps(main))).toMatchObject({ turn: "shared_session" });
+    expect(pageReadIsPublicOnly(deps(main))).toBe(false);
+    expect(pageReadTurnBlock(deps(main))).toBeNull();
+  });
+
+  it("counts the owner's own message in a thread of their DM", () => {
+    const thread = turnContext(
+      { ...ownerDm, agentIdentityCompartment: "dm:chat_09f6e6ef7a0d28fc0bcca02f" },
+      "agent:main:main:thread:1795096374.846999",
+      "main-t-1795096374846999",
+    );
+    expect(pageReadIsPublicOnly(deps(thread))).toBe(false);
+    expect(pageReadTurnBlock(deps(thread))).toBeNull();
+  });
+
+  it("lets the owner read in a group: sharing there is the owner's choice", () => {
+    const group = turnContext(
+      { ...ownerDm, agentIdentityCompartment: "chat:120363012345678901@g.us" },
+      "agent:main:whatsapp:wa-main:group:120363012345678901",
+      "client-group",
+    );
+    expect(pageReadIsPublicOnly(deps(group))).toBe(false);
+    expect(pageReadTurnBlock(deps(group))).toBeNull();
   });
 
   it("names the link rule when the owner writes from an account not linked to this login", () => {

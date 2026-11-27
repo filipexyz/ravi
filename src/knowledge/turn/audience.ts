@@ -3,20 +3,20 @@
 // rechecks every call with the turn classifier (src/knowledge/safety/turn.ts),
 // so a wrong line never leaks; it only must not invite a call that will be
 // refused. The rules mirror the classifier: the terminal, the operator's own
-// relay, the operator's own cron routine and the owner's own direct chat in a
-// session no other contact shares are the operator. A turn with no chat
-// (heartbeat, trigger, any other source without one) is never the operator.
+// relay, the operator's own cron routine and the owner's own message, in any
+// session or group, are the operator. A turn with no chat (heartbeat,
+// trigger, any other source without one) is never the operator.
 
 import { readActorBindingForActiveLogin } from "../../cloud-auth/actor-bindings.js";
 import { findContactsByTag } from "../../contacts.js";
 import { readCronRunAuthority } from "../../cron/authority.js";
-import { CRON_OPERATOR_OWNER, readIsPrivateDirectSession } from "../../link/connector-turn.js";
-import type { PrivateDirectSessionInput } from "../../link/connector-turn.js";
+import { CRON_OPERATOR_OWNER } from "../../link/connector-turn.js";
 import { getSessionByName } from "../../router/index.js";
 import { parseSessionKey } from "../../router/session-key.js";
 import { ADMIN_BOOTSTRAP_AGENT_ID } from "../../runtime/context-registry.js";
 import type { MessageTarget, RuntimeLaunchPrompt } from "../../runtime/message-types.js";
 import { resolveRuntimeTurnOrigin } from "../../runtime/turn-origin.js";
+import { resolvePersonCredentialCaller } from "../../runtime/person-credential.js";
 import { dmContactForChat } from "../contacts.js";
 import { OWNER_CONTACT_TAG } from "../owner.js";
 import { isOperatorPrivateSession } from "../safety/turn.js";
@@ -31,7 +31,6 @@ export interface KnowledgeAudienceDeps {
   ownerContactIds?: () => string[];
   /** The session key of a session name. */
   sessionKeyFor?: (sessionName: string) => string | null;
-  isPrivateDirectSession?: (input: PrivateDirectSessionInput) => boolean;
   /** The contact of a known direct chat. */
   dmContact?: (input: { chatId: string; channel: string | null }) => string | null;
   /** `cron_jobs.owner_principal`; `found: false` when the job is gone. */
@@ -40,6 +39,8 @@ export interface KnowledgeAudienceDeps {
   isLinkedOwner?: (contactId: string) => boolean;
   /** Whether a relay or owner cron runs in a session that is the operator's alone, as the classifier requires. */
   isOperatorSession?: (sessionName: string) => boolean;
+  /** The person whose credential produced the prompt (runtime/person-credential), or null. */
+  personCredential?: (prompt: RuntimeLaunchPrompt) => { contactId: string; usable: boolean } | null;
 }
 
 export interface KnowledgeAudienceResult {
@@ -88,6 +89,14 @@ export function resolveKnowledgeAudience(
       if (!isOperatorSession(ctx.sessionName, deps)) return none;
       return !chat || isOwnersDirectChat(prompt, chat, deps) ? operator() : none;
     }
+    // A person's credential is that person speaking, never the operator's
+    // terminal or relay, whatever the producer marked: only the linked owner
+    // in the operator's own session reads as the operator.
+    const person = (deps.personCredential ?? resolvePersonCredentialCaller)(prompt);
+    if (person) {
+      const owner = person.usable && ownerIds(deps).has(person.contactId) && isLinkedOwner(person.contactId, deps);
+      return owner && isOperatorSession(ctx.sessionName, deps) ? operator() : none;
+    }
     if (prompt._cliDestination) return isOperatorSession(ctx.sessionName, deps) ? operator() : none;
 
     const origin = resolveRuntimeTurnOrigin(prompt._turnOrigin);
@@ -99,16 +108,17 @@ export function resolveKnowledgeAudience(
       return !chat || isOwnersDirectChat(prompt, chat, deps) ? operator() : none;
     }
 
-    if (!chat || isGroupTurn(prompt, ctx.sessionName, deps)) return none;
+    if (!chat) return none;
+    const group = isGroupTurn(prompt, ctx.sessionName, deps);
     const contactId = contactOf(prompt, chat, deps);
-    if (!contactId) return none;
-
-    if (ownerIds(deps).has(contactId)) {
-      // The classifier needs the owner's `ravi link` binding: without it the
-      // turn is refused, so the line says so.
-      if (!isLinkedOwner(contactId, deps)) return none;
-      return isPrivateSession(ctx.sessionName, contactId, chat.chatId, deps) ? operator() : none;
+    if (contactId && ownerIds(deps).has(contactId)) {
+      // The owner's own message counts wherever they write: their direct chat
+      // in any session, or a group (sharing there is their choice). The
+      // classifier needs the owner's `ravi link` binding: without it the turn
+      // is refused, so the line says so.
+      return isLinkedOwner(contactId, deps) ? operator() : none;
     }
+    if (group || !contactId) return none;
 
     const packet = (deps.packet ?? buildContactPacket)({
       agentId: ctx.agentId,
@@ -183,25 +193,6 @@ function isOwnersDirectChat(
   if (prompt.context?.isGroup === true) return false;
   const contactId = (deps.dmContact ?? dmContactForChat)({ chatId: chat.chatId, channel: chat.channel });
   return Boolean(contactId && ownerIds(deps).has(contactId));
-}
-
-function isPrivateSession(
-  sessionName: string,
-  contactId: string,
-  chatId: string,
-  deps: KnowledgeAudienceDeps,
-): boolean {
-  const input: PrivateDirectSessionInput = {
-    sessionKey: sessionKey(sessionName, deps),
-    sessionName,
-    contactId,
-    chatId,
-  };
-  try {
-    return (deps.isPrivateDirectSession ?? readIsPrivateDirectSession)(input);
-  } catch {
-    return false;
-  }
 }
 
 function isOperatorSession(sessionName: string, deps: KnowledgeAudienceDeps): boolean {

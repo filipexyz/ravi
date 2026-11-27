@@ -32,6 +32,7 @@ import { attachTagToSelector, detachTagFromSelector, resolveTagTarget } from "..
 import { buildTagDoctorReport, type TagDoctorReport } from "../../tags/doctor.js";
 import { materializeContactPolicyCapabilities } from "../../permissions/contact-policy-permissions-provider.js";
 import { listContactIdsWithPolicyTags } from "../../contacts.js";
+import { assertOrgInternalTagWriteAllowed } from "../../decisions/org-tag.js";
 import {
   assertBreakGlassTagWriteAllowed,
   assertPermissionDefinitionWithoutBreakGlass,
@@ -799,6 +800,7 @@ export class TagCommands {
   ) {
     const metadata = parseMetadata(metadataJson);
     const normalizedSlug = normalizeSlug(slug);
+    assertOrgInternalTagWriteAllowed("tags attach", normalizedSlug);
     const attachedDefinition = dbGetTagDefinition(normalizedSlug);
     assertProviderOwnedTagWriteAuthority(
       "tags attach",
@@ -945,6 +947,7 @@ export class TagCommands {
     asJson?: boolean,
   ) {
     const normalizedSlug = normalizeSlug(slug);
+    assertOrgInternalTagWriteAllowed("tags detach", normalizedSlug);
     const detachedDefinition = dbGetTagDefinition(normalizedSlug);
     assertProviderOwnedTagWriteAuthority(
       "tags detach",

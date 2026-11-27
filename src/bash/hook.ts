@@ -26,6 +26,7 @@ import { collectShellLevels, type ShellLevel } from "./shell-structure.js";
 import { checkExecutablePath, isInterpreterName, isShellName } from "./executable-path.js";
 import { logger } from "../utils/logger.js";
 import { getScopeContext } from "../permissions/scope.js";
+import { findOpenAskGrant } from "../sessions/ask-grants.js";
 import {
   canWithCapabilities,
   canWithCapabilityContext,
@@ -34,7 +35,6 @@ import {
 import { isWithheldByDeny } from "../permissions/capability-snapshot.js";
 import { emitPermissionDeniedAudit, recordAndEmitPermissionDenial } from "../permissions/denials.js";
 import { buildAuditContextProvenance, type AuditContextProvenance } from "../permissions/audit-provenance.js";
-import { SDK_TOOLS } from "../cli/tool-registry.js";
 import {
   fileWriteToolTargets,
   providerConfigWriteDenial,
@@ -124,6 +124,13 @@ interface PreToolUseHookInput {
   tool_input: Record<string, unknown>;
   /** The session's working directory; relative tool paths resolve against it. */
   cwd?: string;
+  /**
+   * For an `mcp__*` tool, where the runtime got the server's definition.
+   * `source: "sdk"` is a server the host process registered itself; any other
+   * value is configuration the runtime loaded on its own (`project`, `user`,
+   * `plugin` and so on), and `name` is then whatever that configuration says.
+   */
+  mcp_server?: { name?: unknown; source?: unknown };
 }
 
 /**
@@ -317,6 +324,68 @@ const SESSION_TARGET_COMMANDS = new Set([
 
 interface BashHookOptions {
   getAgentId: () => string | undefined;
+  /**
+   * Names of the in-process MCP servers this session attached itself. Their
+   * tools are part of the runtime: the agent setting that attaches the server
+   * is the grant. Every other MCP tool needs `use tool:<name>`.
+   */
+  hostMcpServers?: readonly string[];
+}
+
+/**
+ * The Claude runtime ignores a PreToolUse hook that throws and runs the tool.
+ * A permission hook therefore turns its own failure into a denial.
+ */
+function failClosed(name: string, hook: HookCallback): HookCallback {
+  return async (input, toolUseId, context) => {
+    try {
+      return await hook(input, toolUseId, context);
+    } catch (error) {
+      log.error("Permission hook failed; denying the tool call", { hook: name, tool: input?.tool_name, error });
+      return buildPreToolUseDenyResult(
+        `Permission denied: Ravi could not check this ${name === "bash" ? "command" : "tool call"} because its permission check failed.`,
+      );
+    }
+  };
+}
+
+/** The server behind a denied MCP tool, for the denial record. Its text is untrusted. */
+function describeMcpServer(server: PreToolUseHookInput["mcp_server"]): { name: string; source: string } | undefined {
+  if (!server || typeof server.name !== "string" || typeof server.source !== "string") return undefined;
+  return { name: server.name.slice(0, 128), source: server.source.slice(0, 32) };
+}
+
+/**
+ * True only for a tool of an in-process server the host registered. The
+ * `mcp__<server>__` prefix proves nothing: a server from the runtime's own
+ * configuration may reuse the name, and both then answer under that prefix.
+ * The provenance decides, and only for an MCP tool name: a built-in tool is
+ * never exempt, whatever arrives beside it.
+ */
+function isHostMcpTool(
+  input: PreToolUseHookInput,
+  toolName: string,
+  hostMcpServers: readonly string[] | undefined,
+): boolean {
+  const server = input.mcp_server;
+  if (!server || !hostMcpServers || hostMcpServers.length === 0) return false;
+  if (!toolName.startsWith("mcp__")) return false;
+  return server.source === "sdk" && typeof server.name === "string" && hostMcpServers.includes(server.name);
+}
+
+/**
+ * A name under a host server's prefix that arrived without provenance: the
+ * Claude Code that ran the call is too old to report it (a remote-spawn host, a
+ * replaced executable). The call is checked like any other tool; this only
+ * lets the denial say why a host tool was refused.
+ */
+function isUnattributedHostMcpName(
+  input: PreToolUseHookInput,
+  toolName: string,
+  hostMcpServers: readonly string[] | undefined,
+): boolean {
+  if (input.mcp_server !== undefined || !hostMcpServers) return false;
+  return hostMcpServers.some((name) => toolName.startsWith(`mcp__${name}__`));
 }
 
 export interface BashPermissionContext {
@@ -430,6 +499,9 @@ function isDelegatedBashContext(ctx: Pick<BashPermissionContext, "kind" | "metad
 
 function canUseLiveExecutorCeiling(ctx: BashPermissionContext): boolean {
   if (!ctx.agentId) return false;
+  // Owner authority: the turn carries the owner's own power, not the agent's ceiling
+  // (`permissions/owner-authority`); the issued snapshot is the bound.
+  if (typeof ctx.metadata?.ownerAuthority === "string") return false;
   if (!isDelegatedBashContext(ctx)) return false;
   if (isUnresolvedAgentIdentityActor(ctx)) return false;
   if (hasTurnCapabilityNarrowing(ctx)) return false;
@@ -850,6 +922,34 @@ function canAccessSessionWithBashContext(ctx: BashPermissionContext, targetNameO
   return canWithBashContext(ctx, "access", "session", targetNameOrKey);
 }
 
+/** `sessions answer` options that take a value; every other `--flag` is a boolean. */
+const ANSWER_VALUE_OPTIONS = new Set(["--channel", "--to", "--barrier"]);
+
+/**
+ * The asker named by `ravi sessions answer`, read the way the CLI reads it: options may
+ * come before the target, with or without a value. Null when the line cannot be read.
+ */
+function extractAnswerTarget(command: string): string | null {
+  const match = command.match(/(?:^|\s|&&|\|\||;)\s*(?:\S+=\S+\s+)*(?:\/\S+\/)?ravi\s+sessions\s+answer\b(.*)$/s);
+  if (!match) return null;
+  const tokens = match[1].match(/"[^"]*"|'[^']*'|\S+/g) ?? [];
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index];
+    if (token.startsWith("--")) {
+      if (!token.includes("=") && ANSWER_VALUE_OPTIONS.has(token)) index++;
+      continue;
+    }
+    return token.replace(/^["']|["']$/g, "") || null;
+  }
+  return null;
+}
+
+/** An open Ask from the answered session to this one: it authorizes this answer and nothing else. */
+function answersOpenAsk(command: string, ctx: BashPermissionContext): boolean {
+  const target = extractAnswerTarget(command);
+  return Boolean(target && findOpenAskGrant(target, ctx.sessionKey));
+}
+
 function checkScopePermissionForContext(
   command: string,
   toolName: string | null,
@@ -859,7 +959,13 @@ function checkScopePermissionForContext(
 
   if (SESSION_TARGET_COMMANDS.has(toolName)) {
     const target = extractRaviTarget(command);
-    if (target && !canAccessSessionWithBashContext(ctx, target)) {
+    if (
+      target &&
+      !canAccessSessionWithBashContext(ctx, target) &&
+      !(toolName === "sessions_answer" && answersOpenAsk(command, ctx))
+    ) {
+      // An open Ask from the target to this session lets it answer that Ask, and only
+      // answer: read, recap, send and the rest still need access to the session.
       return {
         allowed: false,
         reason: `Permission denied: agent:${ctx.agentId ?? "unknown"} cannot access session:${target}`,
@@ -1061,8 +1167,11 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
   };
 
   return {
+    // The Claude runtime also runs `Bash`-matched hooks, with a Bash-shaped
+    // input, for the shell command of its Monitor tool. Keep this matcher: a
+    // hook without one sees that call only under the tool's own name.
     matcher: "Bash",
-    hooks: [bashPermissionHook],
+    hooks: [failClosed("bash", bashPermissionHook)],
   };
 }
 
@@ -1072,19 +1181,26 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
  * Intercepts ALL tool calls and checks via the Permission Provider Runtime.
  * This ensures permission changes take effect immediately without
  * needing to restart the session.
+ *
+ * Every tool name is checked against `use tool:<name>`: built-in tools, tools
+ * of MCP servers the runtime loaded from its own configuration or plugins
+ * (`mcp__<server>__<tool>`), and tools a newer runtime adds. A list of known
+ * names is not consulted, because a name outside it would run unchecked.
  */
 export function createToolPermissionHook(options: BashHookOptions): HookCallbackMatcher {
   const toolPermissionHook: HookCallback = async (input) => {
     const agentId = options.getAgentId();
     const toolName = input.tool_name;
-    if (!toolName) return {};
+    if (typeof toolName !== "string" || !toolName) {
+      return buildPreToolUseDenyResult("Permission denied: a tool call without a tool name cannot be checked");
+    }
 
-    // Only check SDK built-in tools — MCP tools and CLI tools are not gated here
-    if (!SDK_TOOLS.includes(toolName)) return {};
+    if (isHostMcpTool(input, toolName, options.hostMcpServers)) return {};
 
     if (!agentId) {
       const reason = `Permission denied: missing agent identity cannot use tool:${toolName}`;
-      log.warn("Tool blocked without agent identity", { tool: toolName });
+      const mcpServer = describeMcpServer(input.mcp_server);
+      log.warn("Tool blocked without agent identity", { tool: toolName, ...(mcpServer ? { mcpServer } : {}) });
       emitPermissionDeniedAudit({
         type: "tool",
         agentId: "unknown",
@@ -1116,8 +1232,19 @@ export function createToolPermissionHook(options: BashHookOptions): HookCallback
     // Check whether the agent can use this tool.
     if (!canWithBashContext(bashContext, "use", "tool", toolName)) {
       const provenance = buildAuditContextProvenance(scopeCtx);
-      const reason = `Permission denied: agent:${agentId} cannot use tool:${toolName}`;
-      log.warn("Tool blocked", { agentId, tool: toolName });
+      const mcpServer = describeMcpServer(input.mcp_server);
+      const unattributedHostTool = isUnattributedHostMcpName(input, toolName, options.hostMcpServers);
+      const reason = `Permission denied: agent:${agentId} cannot use tool:${toolName}${
+        unattributedHostTool
+          ? ". The runtime did not report which MCP server owns this tool, so it is checked like a tool of a configured server"
+          : ""
+      }`;
+      log.warn("Tool blocked", {
+        agentId,
+        tool: toolName,
+        ...(mcpServer ? { mcpServer } : {}),
+        ...(unattributedHostTool ? { unattributedHostTool } : {}),
+      });
       recordAndEmitPermissionDenial({
         subjectType: "agent",
         subjectId: agentId,
@@ -1129,7 +1256,10 @@ export function createToolPermissionHook(options: BashHookOptions): HookCallback
         objectType: "tool",
         objectId: toolName,
         reason,
-        detail: provenance ? { context: provenance } : undefined,
+        detail:
+          provenance || mcpServer
+            ? { ...(provenance ? { context: provenance } : {}), ...(mcpServer ? { mcpServer } : {}) }
+            : undefined,
         audit: {
           type: "tool",
           agentId,
@@ -1171,7 +1301,7 @@ export function createToolPermissionHook(options: BashHookOptions): HookCallback
 
   return {
     // No matcher = fires for ALL tools
-    hooks: [toolPermissionHook],
+    hooks: [failClosed("tool", toolPermissionHook)],
   };
 }
 

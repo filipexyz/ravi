@@ -84,6 +84,11 @@ const DEFAULT_TRUSTED_ROOTS = [
   "/usr/bin",
   "/usr/sbin",
   "/usr/libexec",
+  // uutils coreutils (Ubuntu 25.10+): /usr/bin/ls, env, sort... are symlinks to
+  // hardlinks of one multicall binary in this root-owned package directory. Only
+  // this directory is trusted, not /usr/lib/cargo/bin (sudo-rs, su) nor
+  // /usr/lib/cargo, so other packaged Rust binaries stay outside the roots.
+  "/usr/lib/cargo/bin/coreutils",
   "/usr/local",
   "/opt/homebrew",
   "/opt/local",
@@ -132,6 +137,16 @@ function isExecutableFile(path: string): boolean {
 
 function within(path: string, root: string): boolean {
   return path === root || path.startsWith(root.endsWith(sep) ? root : root + sep);
+}
+
+/** The roots trusted by default, before RAVI_BASH_TRUSTED_EXECUTABLE_ROOTS and PATH entries. */
+export function defaultTrustedExecutableRoots(): readonly string[] {
+  return DEFAULT_TRUSTED_ROOTS;
+}
+
+/** True when `realPath` is a root itself or a path below one of `roots` (segment boundary, not a prefix). */
+export function isWithinTrustedRoots(realPath: string, roots: readonly string[]): boolean {
+  return roots.some((root) => within(realPath, root) || within(dirname(realPath), root));
 }
 
 export function trustedExecutableRoots(options: ExecutablePathOptions = {}): string[] {
@@ -341,7 +356,7 @@ export function checkExecutablePath(word: string, options: ExecutablePathOptions
     return { ok: false, rule: "untrusted_executable_path", reason: `Executable ${word} is not an executable file` };
   }
   const roots = trustedExecutableRoots(options);
-  if (!roots.some((root) => within(realPath, root) || within(dirname(realPath), root))) {
+  if (!isWithinTrustedRoots(realPath, roots)) {
     return {
       ok: false,
       rule: "untrusted_executable_path",

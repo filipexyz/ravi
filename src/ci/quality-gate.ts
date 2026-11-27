@@ -23,6 +23,9 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/channels/runner.ts": ["src/channels/runner.test.ts", "src/db/schema-owner.test.ts"],
   "src/channels/slack/socket-mode.ts": ["src/channels/slack/socket-mode.test.ts"],
   "src/channels/": [
+    // Owner DM guard: no one else's DM lands in an agent's shared DM session, on the key the commit lands in.
+    "src/channels/owner-dm-guard.test.ts",
+    "src/channels/owner-dm-guard.routing.test.ts",
     // Grant requests: the Slack adapter (reach approvers, private card, click handled by the core).
     "src/channels/slack/grant-request-adapter.test.ts",
     "src/channels/whatsapp/grant-request-adapter.test.ts",
@@ -71,6 +74,9 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/slack/thread-controls.test.ts",
     // Message shortcuts on a thread: the tap, the confirmation card and its click, and the private card they answer with.
     "src/channels/slack/thread-shortcuts.test.ts",
+    // `/ravi clone`: the Slack provisioner (private channel, route, invite) and the command's words and access.
+    "src/channels/slack/session-clone-provisioner.test.ts",
+    "src/channels/slack/slash-command-clone.test.ts",
     "src/channels/slack/private-card.test.ts",
     "src/channels/slack/envelope-dedupe.test.ts",
     // Slack thread lifecycle: create/close, parent returns, report and thread-send orchestration.
@@ -78,6 +84,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/slack/thread-turn-health.test.ts",
     // Thread → parent return rule: one follow-up per turn without a return, then an Inform; any provider.
     "src/channels/slack/thread-parent-return.test.ts",
+    // Automation runs shown as Slack threads: the run's own launch at materialization, never the bootstrap.
+    "src/channels/slack/automation-surface.test.ts",
     // Parent-owned thread runtime options: lifecycle authorization, validation and atomic configuration.
     "src/channels/slack/thread-runtime.test.ts",
     // `create-thread` repeats: the idempotency key's request id, and the recent identical request an asker repeats.
@@ -96,11 +104,16 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/subscription-precedence.test.ts",
   ],
   "src/omni/": [
+    "src/omni/workspace-inspection.test.ts",
     "src/omni/consumer-context.test.ts",
     "src/omni/consumer-policy.test.ts",
     "src/omni/session-stream.test.ts",
     // Headless Omni stub: presence/renew no-ops when Omni is not installed.
     "src/omni/stub-consumer.test.ts",
+    // Outbound mentions: one mention per person, and an explicit target already written in the text is not prefixed again.
+    "src/omni/mentions.test.ts",
+    // Omni REST client: request timeouts and the live group members endpoint behind `group info`.
+    "src/omni/client.test.ts",
   ],
   "src/db.ts": ["src/db.test.ts", "src/db/journal-mode-retry.test.ts"],
   "src/db/schema-owner.ts": ["src/db/schema-owner.test.ts", "src/db/schema-lock.test.ts"],
@@ -109,6 +122,9 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/db/runtime-state.ts": ["src/db/schema-owner.test.ts"],
   "src/db/state-boundary.ts": ["src/router/state-boundary.test.ts"],
   "src/router/": [
+    // session_asks: an open Ask lets the asked session answer the asker, and only answer.
+    "src/sessions/ask-grants.test.ts",
+    "src/cli/commands/sessions-ask-answer.test.ts",
     // Daemon/consumer initialization exercises the router's journal/schema boundary.
     "src/db/schema-owner.test.ts",
     "src/db/journal-mode-retry.test.ts",
@@ -144,7 +160,14 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/cli/commands/skills.test.ts",
     "src/runtime/allowed-skills.test.ts",
   ],
+  "src/session-inbox/": ["src/session-inbox/session-inbox.test.ts"],
   "src/runtime/": [
+    "src/runtime/agent-instructions.test.ts",
+    "src/runtime/ravi-rules.test.ts",
+    // Person credentials: a relay made with one person's key is that person's turn, never the agent's.
+    "src/runtime/person-credential.test.ts",
+    // A finishing session keeps its slot until its loop restarts the stashed recovery (pool reclaimer race).
+    "src/runtime/recoverable-interrupt-slot-release.test.ts",
     // Agent runtime env: the provider spawn carries no daemon secret (allowlist, per-provider login).
     "src/runtime/agent-env-policy.test.ts",
     // Codex stored-session control spawns through the same env filter.
@@ -161,6 +184,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/runtime-events.test.ts",
     // Signals piggyback: the transformTurnPrompt seam in the delivery queue.
     "src/signals/delivery-seam.test.ts",
+    // Session inbox: deferred notices drained only by a human (or opted-in heartbeat) turn.
+    "src/session-inbox/session-inbox.test.ts",
     "src/runtime/index.test.ts",
     "src/runtime/model-catalog.test.ts",
     // Fail-fast model existence (catalog-driven) on every runtime write path.
@@ -189,6 +214,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/session-goals.test.ts",
     "src/runtime/session-resolver.test.ts",
     "src/runtime/session-trace.test.ts",
+    // Turn provenance: the origin, the automation id and the fired event topic every trigger wake carries.
+    "src/runtime/turn-provenance.test.ts",
     "src/runtime/daemon-restart-resume.test.ts",
     "src/runtime/compaction-announcement.test.ts",
     "src/runtime/codex-transport.test.ts",
@@ -233,6 +260,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/runtime-system-prompt.test.ts",
     // The Page link guard installed in host-hooks.ts PreToolUse.
     "src/hooks/pages-link-guard.test.ts",
+    // The registered PreToolUse chain: tool gate, host MCP servers, Bash hook.
+    "src/runtime/host-hooks.test.ts",
     // Empty-join mash split: initials such as "R.M." stay inside one reply.
     "src/runtime/assistant-transcript.test.ts",
   ],
@@ -314,6 +343,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/chat-commands/": [
     // Chat commands: the channel-free engine every channel's adapter feeds, and the authority it asks.
     "src/chat-commands/engine.test.ts",
+    "src/sessions/clone.test.ts",
+    "src/cli/commands/sessions-clone.test.ts",
     "src/cli/command-access.test.ts",
     "src/channels/slack/slash-command-handler.test.ts",
   ],

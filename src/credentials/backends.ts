@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { CredentialBrokerError } from "./errors.js";
-import type { CredentialBackend } from "./types.js";
+import type { CredentialBackend, CredentialSecretDescription } from "./types.js";
 import { deleteFileSecret, readFileSecret, writeFileSecret } from "./file-backend.js";
 
 export interface SecretWriteInput {
@@ -52,6 +52,129 @@ export async function deleteSecret(secretRef: string): Promise<boolean> {
   if (secretRef.startsWith("keychain:")) return deleteKeychainSecret(secretRef);
   if (secretRef.startsWith("vault:")) return deleteVaultSecret(secretRef);
   throw new Error(`Unsupported secret ref: ${redactSecretRef(secretRef)}`);
+}
+
+/**
+ * Describe a secret WITHOUT reading its value. Vault: KV v2 metadata endpoint
+ * (`GET <mount>/metadata/<path>`), which returns versions and times only.
+ * Any refusal (no permission, sealed, unreachable) degrades to
+ * `available: false` with a fixed reason; it never throws and never falls
+ * back to a data read.
+ */
+export async function describeSecret(
+  secretRef: string,
+  deps: { fetch?: typeof fetch; env?: NodeJS.ProcessEnv; timeoutMs?: number; now?: number } = {},
+): Promise<CredentialSecretDescription> {
+  if (!secretRef.startsWith("vault:")) return { available: false, reason: "unsupported" };
+  let parsed: { mount: string; path: string; key: string };
+  try {
+    parsed = parseVaultRef(secretRef);
+  } catch {
+    // no-cause: The parser error quotes the ref; the description carries only the fixed reason.
+    return { available: false, reason: "invalid_ref" };
+  }
+  const env = deps.env ?? process.env;
+  const addr = env.VAULT_ADDR?.replace(/\/+$/, "");
+  const token = env.VAULT_TOKEN;
+  if (!addr || !token) return { available: false, reason: "not_configured" };
+  const url = vaultMetadataUrl(addr, parsed.mount, parsed.path);
+  if (!url) return { available: false, reason: "invalid_ref" };
+  let response: Response;
+  try {
+    response = await (deps.fetch ?? fetch)(url, {
+      method: "GET",
+      headers: { "x-vault-token": token },
+      // Never follow: a 3xx could point at the data endpoint or another origin, carrying the token.
+      redirect: "manual",
+      signal: AbortSignal.timeout(deps.timeoutMs ?? 5_000),
+    });
+  } catch {
+    // no-cause: Transport errors can carry the Vault URL and path; degrade to the fixed reason, never retry a data read.
+    return { available: false, reason: "unreachable" };
+  }
+  // Fail closed on any redirect (HA standby nodes answer 307): report it, never re-request elsewhere.
+  if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
+    return { available: false, reason: "redirected" };
+  }
+  if (response.status === 404) {
+    return { available: true, exists: false, version: null, createdAt: null, updatedAt: null, deleted: false };
+  }
+  if (response.status === 403) return { available: false, reason: "forbidden" };
+  if (response.status === 503) return { available: false, reason: "sealed" };
+  if (!response.ok) return { available: false, reason: "error" };
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    // no-cause: A malformed metadata body is a backend fault with no secret to report; the item degrades to "error".
+    return { available: false, reason: "error" };
+  }
+  const data = asRecord(asRecord(payload).data);
+  const version = typeof data.current_version === "number" ? data.current_version : null;
+  const versions = asRecord(data.versions);
+  const current = version === null ? {} : asRecord(versions[String(version)]);
+  const deletionTime = typeof current.deletion_time === "string" ? current.deletion_time : "";
+  return {
+    available: true,
+    exists: true,
+    version,
+    createdAt: parseVaultTime(data.created_time),
+    updatedAt: parseVaultTime(data.updated_time),
+    // A future deletion_time is a scheduled delete (delete_version_after): the version is still readable.
+    deleted: current.destroyed === true || isPastVaultTime(deletionTime, deps.now ?? Date.now()),
+  };
+}
+
+function isPastVaultTime(value: string, now: number): boolean {
+  const at = parseVaultTime(value);
+  return at !== null && at <= now;
+}
+
+function parseVaultTime(value: unknown): number | null {
+  if (typeof value !== "string" || !value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * One mount or path segment of a describable ref: starts with a letter, digit
+ * or underscore, then letters, digits, `.`, `_`, `-`. Rejects `""`, `.`, `..`,
+ * `%`-encodings, `\`, `?`, `#` and anything a URL parser would reinterpret.
+ */
+const VAULT_SEGMENT = /^[A-Za-z0-9_][A-Za-z0-9._-]*$/;
+
+/**
+ * The KV v2 metadata URL for a ref, or null when the ref could reach anything
+ * else. Two independent checks, both fail closed: every segment passes the
+ * allowlist, and the URL as `fetch` will send it (after WHATWG normalization
+ * of dot segments and encodings) is exactly `/v1/<mount>/metadata/<path>` on
+ * the configured origin.
+ */
+export function vaultMetadataUrl(addr: string, mount: string, path: string): string | null {
+  const segments = path.split("/");
+  if (!VAULT_SEGMENT.test(mount) || !segments.every((segment) => VAULT_SEGMENT.test(segment))) return null;
+  const url = `${addr}/v1/${mount}/metadata/${segments.join("/")}`;
+  return isExactVaultMetadataUrl(url, addr, mount, segments) ? url : null;
+}
+
+/** Compares the normalized URL, never the raw string: `..` and encodings collapse before the request leaves. */
+export function isExactVaultMetadataUrl(url: string, addr: string, mount: string, segments: string[]): boolean {
+  let target: URL;
+  let base: URL;
+  try {
+    target = new URL(url);
+    base = new URL(addr);
+  } catch {
+    // no-cause: An unparsable Vault address or URL only means "do not call"; the caller reports invalid_ref.
+    return false;
+  }
+  const basePath = base.pathname.replace(/\/+$/, "");
+  return (
+    target.origin === base.origin &&
+    target.search === "" &&
+    target.hash === "" &&
+    target.pathname === `${basePath}/v1/${mount}/metadata/${segments.join("/")}`
+  );
 }
 
 export function redactSecretRef(secretRef: string): string {

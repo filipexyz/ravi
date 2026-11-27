@@ -363,6 +363,94 @@ describe("CronCommands --json", () => {
     ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
   });
 
+  it("binds a job from an overlay turn or a lifted overlay to its chat; a held relay still binds nothing", async () => {
+    const addJob = (name: string) =>
+      captureJson(() =>
+        new CronCommands().add(
+          name,
+          undefined,
+          "30m",
+          undefined,
+          undefined,
+          "hello",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        ),
+      );
+
+    // A contact narrowed to a governed chat's grants: the job keeps running under those grants.
+    mockCliContext = {
+      agentId: "dev",
+      context: {
+        metadata: { actorAuthorizationMode: "user-overlay", userOverlay: "active", userOverlayChat: "chat:chat-bob" },
+      },
+    };
+    await addJob("Overlay");
+    expect(cronJob?.creatorChat).toBe("chat-bob");
+
+    // The same chat, a contact whose own full access lifted the overlay: bound too, so each run re-evaluates
+    // the owner and the job stops running as the agent once that full access is withdrawn (review of #990, N3).
+    mockCliContext = {
+      agentId: "dev",
+      context: {
+        metadata: { actorAuthorizationMode: "invoke-only", userOverlay: "lifted", userOverlayChat: "chat:chat-bob" },
+      },
+    };
+    await addJob("Lifted");
+    expect(cronJob?.creatorChat).toBe("chat-bob");
+
+    // An ungoverned chat records its overlay as inactive, with the chat: no binding, as before (review of #991, N1).
+    mockCliContext = {
+      agentId: "dev",
+      context: {
+        metadata: { actorAuthorizationMode: "invoke-only", userOverlay: "inactive", userOverlayChat: "chat:chat-bob" },
+      },
+    };
+    await addJob("Ungoverned");
+    expect(cronJob?.creatorChat).toBeUndefined();
+
+    // A held relay whose own overlay is lifted (a thread to an agent stronger than its caller) still writes no job:
+    // the held-relay guard reads the overlay mode, not the lift.
+    cronJob = null;
+    mockCliContext = {
+      agentId: "dev",
+      context: {
+        metadata: {
+          actorAuthorizationMode: "invoke-only",
+          userOverlay: "lifted",
+          userOverlayChat: "chat:chat-bob",
+          relayNarrowing: true,
+        },
+      },
+    };
+    await expect(
+      new CronCommands().add("Held relay", undefined, "30m", undefined, undefined, "hello"),
+    ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+    expect(cronJob).toBeNull();
+  });
+
+  it("binds a job its owner rewrites from a lifted overlay to that chat", async () => {
+    cronJob = { ...cronJob, ownerPrincipal: "operator", creatorChat: undefined };
+    cronUpdatePatches = [];
+    mockCliContext = {
+      agentId: "dev",
+      context: {
+        metadata: { actorAuthorizationMode: "invoke-only", userOverlay: "lifted", userOverlayChat: "chat:chat-bob" },
+      },
+    };
+    await captureJson(() => new CronCommands().set("cron-1", "message", "new text", true));
+    expect(cronUpdatePatches[0]).toMatchObject({ creatorChat: "chat-bob" });
+  });
+
   it("does not make a trigger's own session the reply session of a job created during its turn", async () => {
     const addJob = () =>
       captureJson(() =>
@@ -1751,7 +1839,13 @@ describe("CronCommands --thread", () => {
   const MAIN_DM = { sessionKey: "agent:main:slack:ravi-slack:dm:d1", name: "main-dm", agentId: "main" };
   const GROUP = { sessionKey: "agent:ravi-updates:whatsapp:main:group:120363", name: "grupo", agentId: "ravi-updates" };
 
-  function addJob(opts: { isolated?: boolean; thread?: boolean; reportTo?: string; agent?: string }) {
+  function addJob(opts: {
+    isolated?: boolean;
+    thread?: boolean;
+    reportTo?: string;
+    agent?: string;
+    visible?: boolean;
+  }) {
     return new CronCommands().add(
       "Updates",
       undefined,
@@ -1773,6 +1867,7 @@ describe("CronCommands --thread", () => {
       undefined,
       opts.thread,
       opts.reportTo,
+      opts.visible,
     );
   }
 
@@ -1935,6 +2030,44 @@ describe("CronCommands --thread", () => {
 
     await captureJson(() => new CronCommands().set("cron-1", "reply-session", "main-dm", true));
     expect(cronJob).toMatchObject({ replySession: MAIN_DM.sessionKey });
+  });
+
+  it("shows runs only when asked: --visible goes with --thread and is absent otherwise", async () => {
+    mockCliContext = { sessionKey: MAIN_DM.sessionKey, agentId: "main" };
+    await expect(addJob({ visible: true })).rejects.toThrow("--visible only applies with --thread");
+
+    await captureJson(() => addJob({ thread: true }));
+    // Absent, not false: the idempotency fingerprint of a job that never asked stays the same.
+    expect(cronJob).not.toHaveProperty("threadVisible");
+
+    await captureJson(() => addJob({ thread: true, visible: true }));
+    expect(cronJob).toMatchObject({ sessionTarget: "thread", threadVisible: true });
+  });
+
+  it("sets visible on a thread job only, and turns it off when the job leaves thread mode", async () => {
+    cronJob = {
+      id: "cron-1",
+      name: "Updates",
+      agentId: "main",
+      enabled: true,
+      deleteAfterRun: false,
+      sessionTarget: "thread",
+      replySession: MAIN_DM.sessionKey,
+      executionType: "agent",
+      schedule: { type: "every", every: 1_800_000 },
+      message: "Read the blog",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    await expect(new CronCommands().set("cron-1", "visible", "maybe", true)).rejects.toThrow(/Invalid boolean/);
+    const payload = await captureJson(() => new CronCommands().set("cron-1", "visible", "on", true));
+    expect(payload).toMatchObject({ property: "visible", value: true });
+    expect(cronJob).toMatchObject({ threadVisible: true });
+
+    await captureJson(() => new CronCommands().set("cron-1", "session", "main", true));
+    expect(cronJob).toMatchObject({ sessionTarget: "main", threadVisible: false });
+    await expect(new CronCommands().set("cron-1", "visible", "yes", true)).rejects.toThrow(/thread jobs only/);
   });
 
   it("still creates an --isolated job, with a deprecation warning", async () => {

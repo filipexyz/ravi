@@ -13,7 +13,8 @@ import {
   resolveSession,
   findSessionByChatId,
 } from "../session-targets.js";
-import { randomUUID } from "node:crypto";
+import { findOpenAskGrant, recordAskGrant, revokeAskGrant } from "../../sessions/ask-grants.js";
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { Group, Command, CommandAccess, CliOnly, Arg, Option } from "../decorators.js";
 import {
@@ -25,6 +26,18 @@ import {
   projectRuntimeUpdateAxisValue,
 } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
+import {
+  dbDeleteObserverRule,
+  dbListObserverRules,
+  dbUpsertObserverRule,
+  ensureObserverBindingsForSession,
+  liveReceiverSourceRefusal,
+} from "../../runtime/observation-plane.js";
+import {
+  DEFAULT_ALERT_CONDITIONS,
+  OBSERVATION_CONDITIONS,
+  parseObservationConditions,
+} from "../../runtime/observation-conditions.js";
 import { isTriggerOwnSessionKey, triggerOfSessionKey } from "../../triggers/authority.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -36,6 +49,16 @@ import {
   sessionRecapReturnSchema,
 } from "./operational-return-schemas.js";
 import { buildSessionRecap, formatSessionRecap, parseSessionRecapTailCount } from "../../sessions/recap.js";
+import {
+  parseSessionCloneMessages,
+  runSessionClone,
+  SESSION_CLONE_DEFAULT_MESSAGES,
+  SESSION_CLONE_MAX_MESSAGES,
+  SessionCloneError,
+  type SessionCloneDeps,
+  type SessionClonePlan,
+} from "../../sessions/clone.js";
+import { ensureSessionCloneProvisioners } from "../../channels/session-clone-provisioners.js";
 import { nats } from "../../nats.js";
 import { SESSION_MODEL_CHANGED_TOPIC, type SessionModelChangedEvent } from "../../session-control.js";
 import { publishSessionPrompt } from "../../omni/session-stream.js";
@@ -57,6 +80,7 @@ import {
   deleteSession,
   resetSession,
   getOrCreateSession,
+  getSessionByName,
   isReservedSessionKey,
   updateSessionDisplayName,
   renameSessionName,
@@ -100,6 +124,9 @@ import { DEFAULT_RUNTIME_PROBE_TIMEOUT_MS } from "../../runtime/runtime-probe.js
 import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
 import { enforceCliCommandAccess, listCliCommandAccessCandidates } from "../command-access.js";
 import { canWithCapabilities } from "../../permissions/capability-snapshot.js";
+import { askDecisionForWait } from "../../decisions/service.js";
+import { retireDecisionIfWaitFails } from "../../decisions/store.js";
+import { redactText } from "../../session-trace/session-trace-db.js";
 import { CliExpectedError } from "../expected-error.js";
 import { resolveEffectiveSessionRuntime } from "../../runtime/runtime-selection.js";
 import type {
@@ -108,7 +135,9 @@ import type {
   ResponseMessage,
   SessionRelayAction,
 } from "../../runtime/message-types.js";
-import { buildSessionRelayTurnOrigin } from "../../runtime/turn-origin.js";
+import { buildRuntimeCallerPrincipal, buildSessionRelayTurnOrigin } from "../../runtime/turn-origin.js";
+import type { RuntimeTurnOriginPrincipal } from "../../runtime/message-types.js";
+import { buildSessionCloneSeedTurn } from "../../sessions/clone-seed-turn.js";
 import { toPersistedChannelContext } from "../../channels/context.js";
 import {
   CHAT_ACTION_DESCRIPTORS,
@@ -521,6 +550,27 @@ const sessionReadMessageReturnSchema = z
   })
   .passthrough();
 const sessionReadReturnSchema = z.union([sessionReadHistoryReturnSchema, sessionReadMessageReturnSchema]);
+/** `sessions clone`: the plan (dry-run) or what was created. */
+export const sessionCloneReturnSchema = z
+  .object({
+    status: z.enum(["planned", "cloned"]),
+    name: z.string(),
+    origin: z.object({ sessionKey: z.string(), sessionName: z.string(), channel: z.string() }).strict(),
+    agentId: z.string(),
+    seed: z.object({ messages: z.number(), redacted: z.boolean(), truncated: z.boolean() }).strict(),
+    clone: z
+      .object({
+        chatId: z.string(),
+        sessionKey: z.string(),
+        sessionName: z.string(),
+        invited: z.number(),
+        inviteFailed: z.boolean(),
+      })
+      .strict()
+      .nullable(),
+  })
+  .strict();
+
 export const sessionCreateThreadReturnSchema = z
   .object({
     status: z.literal("queued"),
@@ -650,11 +700,15 @@ const slackThreadReportReturnSchema = z
         kind: z.enum(HANDOFF_KINDS),
         ref: z.string().nullable(),
         status: z.enum(["open", "acknowledged", "superseded"]),
+        // A decision wait records its question as a decision; answer it with `ravi decisions answer <id>`.
+        decisionId: z.string().optional(),
       })
       .strict()
       .optional(),
     // The report was delivered but its wait could not be written: do not send the report again.
     handoffError: z.string().optional(),
+    // The decision could not be recorded: the wait opened without one (redacted text).
+    decisionError: z.string().optional(),
     reviewDispatch: z
       .discriminatedUnion("status", [
         z
@@ -699,6 +753,34 @@ export const sessionHandoffsReturnSchema = z
     ),
   })
   .strict();
+const sessionObservationSchema = z
+  .object({
+    ruleId: z.string(),
+    source: z.string(),
+    to: z.string(),
+    mode: z.enum(["alerts", "follow"]),
+    when: z.array(z.string()),
+  })
+  .strict();
+export const sessionObserveReturnSchema = z
+  .object({ success: z.literal(true), observing: sessionObservationSchema })
+  .strict();
+export const sessionUnobserveReturnSchema = z
+  .object({
+    success: z.literal(true),
+    removed: z.boolean(),
+    ruleId: z.string(),
+    source: z.string(),
+    to: z.string(),
+  })
+  .strict();
+export const sessionObservingReturnSchema = z
+  .object({
+    success: z.literal(true),
+    observing: z.array(sessionObservationSchema),
+    total: z.number().int().nonnegative(),
+  })
+  .strict();
 export const sessionHandoffAckReturnSchema = z
   .object({
     id: z.string(),
@@ -723,6 +805,8 @@ export const sessionThreadSendReturnSchema = z
       })
       .strict()
       .optional(),
+    // Recorded decision waits this message did not close: only `decisions answer` closes them.
+    openDecisionWaits: z.array(z.object({ handoffId: z.string(), decisionId: z.string() }).strict()).optional(),
   })
   .strict();
 const threadRuntimeOverridesSchema = z
@@ -1087,6 +1171,17 @@ function buildSessionActionToolHints(sessionRef: string): Record<string, Record<
 
 function sessionActionRef(session: Pick<SessionEntry, "name" | "sessionKey">): string {
   return session.name ?? session.sessionKey;
+}
+
+const OBSERVE_RULE_PREFIX = "observe:";
+
+/**
+ * One rule per (receiver, source) pair, so observe is idempotent and unobserve finds it. Derived
+ * from the session keys, not names: no two pairs share an id, and a rename keeps the rule.
+ */
+function observeRuleId(target: SessionEntry, source: SessionEntry): string {
+  const digest = createHash("sha256").update(`${target.sessionKey}\n${source.sessionKey}`).digest("hex");
+  return `${OBSERVE_RULE_PREFIX}${digest.slice(0, 32)}`;
 }
 
 function resolveCurrentSessionRef(): string | undefined {
@@ -1921,6 +2016,73 @@ function loadSessionReadTranscript(session: SessionEntry, maxMessages: number): 
       runtimeProvider: session.runtimeProvider ?? null,
     },
   };
+}
+
+/** How the CLI delivers a clone's seed: always through the no-authority seed turn (clone-seed-turn.ts). */
+export function sessionCloneSeedPublisher(
+  requestedBy: RuntimeTurnOriginPrincipal,
+  transport: (sessionName: string, payload: Record<string, unknown>) => Promise<void> = publishSessionPrompt,
+): SessionCloneDeps["publishSeed"] {
+  return async ({ sessionKey, agentId, sessionName, prompt, source }) => {
+    await transport(
+      sessionName,
+      buildSessionCloneSeedTurn({ agentId, sessionKey, sessionName, prompt, source, requestedBy }),
+    );
+  };
+}
+
+/**
+ * `sessions clone` with the real stores: the recap the way `sessions recap` reads it, the
+ * session row, and the seed published as the new session's first prompt. Also the chat
+ * command's default (`/ravi clone`), so the two cannot drift.
+ */
+export async function runSessionCloneFromCli(
+  origin: SessionEntry,
+  input: {
+    name: string;
+    messages: number;
+    inviteActorIds: readonly string[];
+    execute: boolean;
+    /** Who asked. A CLI caller is resolved from its context; the chat command names the contact. */
+    principal?: RuntimeTurnOriginPrincipal;
+  },
+): Promise<SessionClonePlan> {
+  ensureSessionCloneProvisioners();
+  const principal = input.principal ?? buildRuntimeCallerPrincipal(getContext());
+  return runSessionClone(
+    {
+      origin,
+      name: input.name,
+      messages: input.messages,
+      inviteActorIds: input.inviteActorIds,
+      execute: input.execute,
+    },
+    {
+      loadRecap: (session, count) => {
+        const loaded = loadSessionReadTranscript(session, count);
+        return buildSessionRecap({
+          session,
+          goal: loadSessionGoalSafe(session.sessionKey),
+          tailLimit: count,
+          history: {
+            available: loaded.transcript.available,
+            ...(loaded.transcript.source ? { source: loaded.transcript.source } : {}),
+            ...(loaded.transcript.reason ? { reason: loaded.transcript.reason } : {}),
+            totalMessages: loaded.totalMessages,
+            messages: loaded.messages.map((message) => ({
+              role: message.role,
+              text: message.text,
+              time: message.time,
+            })),
+          },
+        });
+      },
+      sessionNameTaken: (name) => getSessionByName(name) !== null,
+      createSession: ({ sessionKey, agentId, agentCwd, name }) =>
+        getOrCreateSession(sessionKey, agentId, agentCwd, { name }),
+      publishSeed: sessionCloneSeedPublisher(principal),
+    },
+  );
 }
 
 function loadSessionGoalSafe(sessionKey: string): ReturnType<typeof getSessionGoal> {
@@ -4036,15 +4198,14 @@ export class SessionCommands {
       return;
     }
 
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = buildSessionMutationJson("rename", result.before, result.after, result.changed, {
         oldName: result.oldName,
         newName: result.newName,
         routeReferencesUpdated: result.routeReferencesUpdated,
         sessionKeyChanged: false,
       });
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
 
     if (!result.changed) {
@@ -4924,7 +5085,7 @@ export class SessionCommands {
       revokedContexts: revokedContexts.length,
       durationMs: Date.now() - startedAt,
     });
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = buildSessionMutationJson("reset", s, afterSession, changed, {
         nextMessageStartsFreshConversation: true,
         audit: {
@@ -4934,8 +5095,7 @@ export class SessionCommands {
         },
         revokedContexts: revokedContexts.length,
       });
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
     console.log(`Session reset: ${s.name ?? s.sessionKey}`);
     console.log("Next message will start a fresh conversation.");
@@ -5018,7 +5178,7 @@ export class SessionCommands {
       revokedContexts: revokedContexts.length,
       durationMs: Date.now() - startedAt,
     });
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = buildSessionMutationJson("delete", s, null, changed, {
         audit: {
           requested: true,
@@ -5027,8 +5187,7 @@ export class SessionCommands {
         },
         revokedContexts: revokedContexts.length,
       });
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
     console.log(`🗑️ Session deleted: ${s.name ?? s.sessionKey}`);
     if (revokedContexts.length > 0) {
@@ -5269,14 +5428,13 @@ export class SessionCommands {
         ephemeral: true,
         expiresAt: expiresAt.getTime(),
       } as SessionEntry);
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = buildSessionMutationJson("set-ttl", s, after, true, {
         duration,
         ttlMs,
         expiresAt: expiresAt.getTime(),
       });
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
     console.log(`⏳ Session "${s.name ?? s.sessionKey}" is now ephemeral.`);
     console.log(`   Expires: ${formatDate(expiresAt.getTime())}`);
@@ -5333,14 +5491,13 @@ export class SessionCommands {
         ephemeral: true,
         expiresAt: newExpiry,
       } as SessionEntry);
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = buildSessionMutationJson("extend", s, after, true, {
         duration: effectiveDuration,
         ttlMs,
         expiresAt: newExpiry,
       });
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
     console.log(`⏳ Extended "${s.name ?? s.sessionKey}" by ${duration ?? "5h"}.`);
     console.log(`   New expiry: ${formatDate(newExpiry)}`);
@@ -5372,12 +5529,11 @@ export class SessionCommands {
     }
 
     if (!s.ephemeral) {
-      if (asJson) {
+      if (shouldReturnStructuredResult(asJson)) {
         const payload = buildSessionMutationJson("keep", s, s, false, {
           reason: "already_permanent",
         });
-        printJson(payload);
-        return payload;
+        return returnStructuredResult(payload, asJson);
       }
       console.log(`Session "${s.name ?? s.sessionKey}" is already permanent.`);
       return;
@@ -5391,10 +5547,9 @@ export class SessionCommands {
         ephemeral: false,
         expiresAt: undefined,
       } as SessionEntry);
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = buildSessionMutationJson("keep", s, after, true);
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
     console.log(`✅ Session "${s.name ?? s.sessionKey}" is now permanent.`);
   }
@@ -5804,20 +5959,35 @@ export class SessionCommands {
     const deliveryBarrier = delivery.barrier;
     const { source, context } = this.resolveSource(session, channel, to);
 
-    await this.emitToSession(
-      "ask",
-      session.name ?? target,
-      prompt,
-      session,
-      channel,
-      to,
-      deliveryBarrier,
-      delivery.source,
-      undefined,
-      false,
-      asJson,
-    );
-    if (asJson) {
+    // The Ask is what lets the asked session answer back, and only that: record it before
+    // the prompt exists, so an answer can never arrive before its authorization. A trigger's
+    // own session takes no prompts, so it cannot be answered and gets no grant.
+    this.assertSessionTakesPrompts(session);
+    const grant =
+      origin !== "unknown" && origin !== session.sessionKey && !isTriggerOwnSessionKey(origin)
+        ? recordAskGrant({ originSessionKey: origin, targetSessionKey: session.sessionKey, sender: sender ?? null })
+        : null;
+
+    try {
+      await this.emitToSession(
+        "ask",
+        session.name ?? target,
+        prompt,
+        session,
+        channel,
+        to,
+        deliveryBarrier,
+        delivery.source,
+        undefined,
+        false,
+        asJson,
+      );
+    } catch (error) {
+      // An Ask that was never delivered authorizes no answer.
+      if (grant) revokeAskGrant(grant.id);
+      throw error;
+    }
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = {
         action: "ask",
         published: true,
@@ -5826,8 +5996,7 @@ export class SessionCommands {
         sender: sender ?? null,
         delivery: buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context),
       };
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
     console.log(`✓ [ask] sent to ${session.name ?? target}`);
   }
@@ -5876,8 +6045,9 @@ export class SessionCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
   ) {
-    const session = this.resolveTarget(target);
-    if (!session) return;
+    const resolved = this.resolveAnswerTarget(target, { channel, to, barrier, steer, immediate });
+    if (!resolved) return;
+    const { session, throughAsk } = resolved;
 
     const origin = getContext()?.sessionKey ?? "unknown";
     const senderTag = sender ? `, sender: ${sender}` : "";
@@ -5903,18 +6073,24 @@ export class SessionCommands {
       undefined,
       false,
       asJson,
+      // The answerer's chat is not where the asker's turn asks for approval or input: through an
+      // Ask the answer carries no approval source, so the asker's own source (or none) applies.
+      { withoutApprovalSource: throughAsk },
     );
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
+      // An answer sent through an Ask grants no view of the asker: the receipt names only the
+      // key the Ask already gave, never its record, workspace or chat.
       const payload = {
         action: "answer",
         published: true,
-        session: buildSessionJson(session),
+        session: throughAsk ? { sessionKey: session.sessionKey } : buildSessionJson(session),
         messageLength: message.length,
         sender: sender ?? null,
-        delivery: buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context),
+        delivery: throughAsk
+          ? { barrier: deliveryBarrier, barrierSource: delivery.source }
+          : buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context),
       };
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
     console.log(`✓ [answer] sent to ${session.name ?? target}`);
   }
@@ -5983,7 +6159,7 @@ export class SessionCommands {
       false,
       asJson,
     );
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = {
         action: "execute",
         published: true,
@@ -5991,10 +6167,241 @@ export class SessionCommands {
         messageLength: message.length,
         delivery: buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context),
       };
+      return returnStructuredResult(payload, asJson);
+    }
+    console.log(`✓ [execute] sent to ${session.name ?? target}`);
+  }
+
+  @Command({
+    name: "observe",
+    description: "Watch another session and get a short notice in this one when something is wrong (or on every turn)",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "observe",
+    risk: "medium",
+  })
+  observe(
+    @Arg("source", { description: "Session to observe" }) sourceRef: string,
+    @Option({
+      flags: "--to <session>",
+      description: "Session that receives the notices (default: the current session)",
+    })
+    toRef?: string,
+    @Option({
+      flags: "--when <conditions>",
+      description: `Comma-separated conditions (default: ${DEFAULT_ALERT_CONDITIONS.join(",")}); one of ${OBSERVATION_CONDITIONS.join(", ")}`,
+    })
+    whenRaw?: string,
+    @Option({
+      flags: "--follow",
+      description: "Get a compact summary of every finished turn instead of only when a condition holds",
+    })
+    follow?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
+    if (follow && whenRaw) {
+      throw new CliExpectedError(
+        "Use either --follow (every turn) or --when (only on conditions), not both.",
+        "USAGE_ERROR",
+        2,
+      );
+    }
+    const { source, target } = this.resolveObservePair(sourceRef, toRef);
+    if (!source || !target) return;
+    let when: string[] | null = null;
+    if (!follow) {
+      try {
+        when = parseObservationConditions(whenRaw ? whenRaw.split(",") : [...DEFAULT_ALERT_CONDITIONS]);
+      } catch (error) {
+        throw new CliExpectedError(error instanceof Error ? error.message : String(error), "USAGE_ERROR", 2);
+      }
+    }
+    const ruleId = observeRuleId(target, source);
+    const rule = dbUpsertObserverRule({
+      id: ruleId,
+      enabled: true,
+      scope: "session",
+      // Keys, not names: a rename keeps the observation, and a reused name never receives it.
+      sourceSession: source.sessionKey,
+      observerAgentId: target.agentId,
+      observerRole: ruleId.replace(/[^a-z0-9_-]/g, "-").slice(0, 64),
+      observerMode: "observe",
+      observerProfileId: "compact",
+      deliveryPolicy: "end_of_turn",
+      eventTypes: [
+        "message.user",
+        "message.assistant",
+        "tool.start",
+        "tool.end",
+        "tool.inactive",
+        "turn.complete",
+        "turn.failed",
+        "turn.interrupt",
+      ],
+      permissionGrants: [],
+      metadata: { deliverTo: target.sessionKey, ...(when ? { when } : {}), createdBy: "sessions observe" },
+    });
+    // Attach now: a running source session would otherwise only pick the rule up on its next launch.
+    ensureObserverBindingsForSession({ sessionName: sessionLabel(source), session: source });
+    const payload = {
+      success: true as const,
+      observing: {
+        ruleId: rule.id,
+        source: sessionLabel(source),
+        to: sessionLabel(target),
+        mode: (when ? "alerts" : "follow") as "alerts" | "follow",
+        when: when ?? [],
+      },
+    };
+    if (asJson) {
       printJson(payload);
       return payload;
     }
-    console.log(`✓ [execute] sent to ${session.name ?? target}`);
+    console.log(
+      when
+        ? `✓ ${sessionLabel(target)} now gets a notice when ${sessionLabel(source)} hits: ${when.join(", ")}`
+        : `✓ ${sessionLabel(target)} now gets a summary of every turn of ${sessionLabel(source)}`,
+    );
+    console.log(
+      `  Stop with: ravi sessions unobserve ${sessionLabel(source)}${toRef ? ` --to ${sessionLabel(target)}` : ""}`,
+    );
+    return payload;
+  }
+
+  @Command({
+    name: "unobserve",
+    description: "Stop watching a session started with 'ravi sessions observe'",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "observe",
+    risk: "low",
+  })
+  unobserve(
+    @Arg("source", { description: "Observed session" }) sourceRef: string,
+    @Option({
+      flags: "--to <session>",
+      description: "Session that was receiving the notices (default: the current session)",
+    })
+    toRef?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
+    const { source, target } = this.resolveObservePair(sourceRef, toRef);
+    if (!source || !target) return;
+    const ruleId = observeRuleId(target, source);
+    // Deleting the rule disables its binding in the same transaction.
+    const removed = dbDeleteObserverRule(ruleId);
+    const payload = {
+      success: true as const,
+      removed,
+      ruleId,
+      source: sessionLabel(source),
+      to: sessionLabel(target),
+    };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    console.log(
+      removed
+        ? `✓ ${sessionLabel(target)} no longer observes ${sessionLabel(source)}`
+        : `${sessionLabel(target)} was not observing ${sessionLabel(source)}`,
+    );
+    return payload;
+  }
+
+  @Command({
+    name: "observing",
+    description: "List the observations started with 'ravi sessions observe' that you can see",
+  })
+  @CommandAccess({
+    kind: "read",
+    resource: "sessions",
+    action: "observing",
+    risk: "low",
+  })
+  observing(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+    const scopeCtx = getScopeContext();
+    const enforced = isScopeEnforced(scopeCtx);
+    const items = dbListObserverRules()
+      .filter((rule) => rule.id.startsWith(OBSERVE_RULE_PREFIX) && rule.enabled)
+      .map((rule) => {
+        const when = Array.isArray(rule.metadata?.when) ? (rule.metadata?.when as string[]) : [];
+        const sourceKey = rule.sourceSession ?? "";
+        const toKey = typeof rule.metadata?.deliverTo === "string" ? rule.metadata.deliverTo : "";
+        const label = (key: string) => {
+          const session = getSession(key);
+          return session ? sessionLabel(session) : key;
+        };
+        return {
+          ruleId: rule.id,
+          source: label(sourceKey),
+          to: label(toKey),
+          mode: (when.length > 0 ? "alerts" : "follow") as "alerts" | "follow",
+          when,
+        };
+      })
+      .filter((item) => !enforced || (canAccessSession(scopeCtx, item.source) && canAccessSession(scopeCtx, item.to)));
+    const payload = { success: true as const, observing: items, total: items.length };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    if (items.length === 0) {
+      console.log("No observations. Start one with: ravi sessions observe <session>");
+      return payload;
+    }
+    for (const item of items) {
+      console.log(`${item.to} ← ${item.source} (${item.mode}${item.when.length ? `: ${item.when.join(", ")}` : ""})`);
+    }
+    return payload;
+  }
+
+  /** Both ends of an observation, each scope-checked like any other session target. */
+  private resolveObservePair(
+    sourceRef: string,
+    toRef?: string,
+  ): { source: SessionEntry | null; target: SessionEntry | null } {
+    const targetRef = toRef?.trim() || resolveCurrentSessionRef();
+    if (!targetRef) {
+      fail("No current session to receive the notices. Pass --to <session>.");
+      return { source: null, target: null };
+    }
+    const source = this.resolveTarget(sourceRef);
+    if (!source) return { source: null, target: null };
+    const target = this.resolveTarget(targetRef);
+    if (!target) return { source, target: null };
+    if (source.sessionKey === target.sessionKey) {
+      fail("A session cannot observe itself.");
+      return { source: null, target: null };
+    }
+    const sourceRefusal = liveReceiverSourceRefusal(source.sessionKey);
+    if (sourceRefusal) {
+      // Its turns hold what was read for the trigger's owner; they may not reach a conversation.
+      fail(`${sessionLabel(source)} cannot be observed from a session: ${sourceRefusal}.`);
+      return { source: null, target: null };
+    }
+    if (isTriggerOwnSessionKey(target.sessionKey)) {
+      // A trigger's own session only takes that trigger's fires: every notice would be dropped.
+      fail(`${sessionLabel(target)} is a trigger's own session and cannot receive observation notices.`);
+      return { source: null, target: null };
+    }
+    // The notices run as a turn of the target's agent: that agent must be the caller's own or one it may mutate.
+    const scopeCtx = getScopeContext();
+    if (
+      isScopeEnforced(scopeCtx) &&
+      target.agentId !== scopeCtx.agentId &&
+      !canAccessResource(scopeCtx, target.agentId, "mutate")
+    ) {
+      fail(`Permission denied: notices for ${sessionLabel(target)} would run as agent ${target.agentId}.`);
+      return { source: null, target: null };
+    }
+    return { source, target };
   }
 
   @Command({
@@ -6061,7 +6468,7 @@ export class SessionCommands {
       false,
       asJson,
     );
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = {
         action: "inform",
         published: true,
@@ -6069,8 +6476,7 @@ export class SessionCommands {
         messageLength: message.length,
         delivery: buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context),
       };
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
     console.log(`✓ [inform] sent to ${session.name ?? target}`);
   }
@@ -6233,6 +6639,107 @@ export class SessionCommands {
 
     console.log(formatSessionRecap(recap));
     return recap;
+  }
+
+  @Command({
+    name: "clone",
+    description:
+      "Clone a session into a new chat with the chosen name: same agent, new session seeded with the recap; dry-run unless --execute",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "clone",
+    risk: "high",
+    requiresConfirmation: true,
+  })
+  async clone(
+    @Arg("name", { description: "Name of the new chat and session (lowercase, digits, - or _)" })
+    name: string,
+    @Option({
+      flags: "--session <nameOrKey>",
+      description: "Session to clone (defaults to current session)",
+    })
+    sessionOverride?: string,
+    @Option({
+      flags: "-n, --messages <count>",
+      description: `Recent messages copied as context (default: ${SESSION_CLONE_DEFAULT_MESSAGES}, max: ${SESSION_CLONE_MAX_MESSAGES})`,
+    })
+    messages?: string,
+    @Option({
+      flags: "--invite <ids>",
+      description:
+        "Comma-separated platform user ids to invite to the new chat (operator terminal only; the channel decides which it accepts)",
+    })
+    invite?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Create the chat and the session; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
+  ) {
+    const op = "sessions clone";
+    const target = sessionOverride?.trim() || resolveCurrentSessionRef();
+    if (!target) {
+      fail("No current session context found. Use ravi sessions clone <name> inside a session, or pass --session.");
+      return;
+    }
+    const origin = this.resolveCloneOrigin(target, op, asJson);
+    if (!origin) return;
+    const inviteActorIds = invite
+      ? invite
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean)
+      : [];
+    // Inviting puts the copied history in front of other people, who may not read the origin. From a
+    // turn (an agent, or a person through one) only the operator's terminal may name them; the chat
+    // command invites the verified person who asked, and nobody else.
+    if (inviteActorIds.length > 0 && getContext()?.agentId) {
+      throw new CliExpectedError(
+        "--invite is only accepted from the operator's terminal: the copied history must not reach people the caller chose.",
+        "CLONE_INVITE_REQUIRES_OPERATOR",
+        2,
+        "Run without --invite and add people to the new chat yourself, or use /ravi clone, which invites only you.",
+      );
+    }
+    let plan: SessionClonePlan;
+    try {
+      plan = await runSessionCloneFromCli(origin, {
+        name,
+        messages: parseSessionCloneMessages(messages),
+        inviteActorIds,
+        execute: execute === true,
+      });
+    } catch (error) {
+      if (error instanceof SessionCloneError) {
+        throw new CliExpectedError(error.message, error.code, error.code === "CLONE_PROVISION_FAILED" ? 1 : 2);
+      }
+      throw error;
+    }
+    if (execute !== true) {
+      contractDryRun(op, plan as unknown as Record<string, unknown>, { asJson });
+    }
+    if (asJson) printJson(plan);
+    else {
+      console.log(`Cloned ${plan.origin.sessionName} → ${plan.clone?.sessionName} (chat ${plan.clone?.chatId})`);
+      console.log(`  context: ${plan.seed.messages} messages${plan.seed.redacted ? ", secrets masked" : ""}`);
+      if (plan.clone?.inviteFailed) console.log("  invite: failed (add the people to the chat by hand)");
+    }
+    return plan;
+  }
+
+  /** The origin of a clone: a session the caller may read (what is copied is what `sessions recap` shows them). */
+  private resolveCloneOrigin(nameOrKey: string, op: string, asJson?: boolean): SessionEntry | null {
+    const session = resolveSession(nameOrKey);
+    const scopeCtx = getScopeContext();
+    if (!session || (isScopeEnforced(scopeCtx) && !canAccessSession(scopeCtx, session.name ?? session.sessionKey))) {
+      failSessionNotFound(op, nameOrKey, asJson);
+      return null;
+    }
+    return session;
   }
 
   private resolveRecapTarget(nameOrKey: string, asJson?: boolean): SessionEntry | null {
@@ -6626,6 +7133,61 @@ export class SessionCommands {
     return { session };
   }
 
+  /**
+   * The target of `sessions answer`. Access to the session answers as before. Without it, an
+   * open Ask from that session to the caller authorizes this delivery and nothing more: the
+   * caller still cannot read, recap or prompt the asker, and cannot redirect the delivery.
+   */
+  private resolveAnswerTarget(
+    nameOrKey: string,
+    overrides: { channel?: string; to?: string; barrier?: string; steer?: boolean; immediate?: boolean } = {},
+  ): { session: SessionEntry; throughAsk: boolean } | null {
+    const { channel, to } = overrides;
+    const direct = (): { session: SessionEntry; throughAsk: boolean } | null => {
+      const session = this.resolveTarget(nameOrKey);
+      return session ? { session, throughAsk: false } : null;
+    };
+    const scopeCtx = getScopeContext();
+    if (!isScopeEnforced(scopeCtx)) return direct();
+    if (isBridgeSessionTarget(nameOrKey)) {
+      fail(`Session not found: ${nameOrKey}`);
+      return null;
+    }
+    const known = resolveSession(nameOrKey) ?? findSessionByChatId(nameOrKey);
+    if (known && canAccessSession(scopeCtx, known.name ?? known.sessionKey)) return direct();
+
+    // Through an Ask the target is named the way the Ask names it, by key or name; the hook
+    // resolves it the same way, so both layers agree on which session is answered.
+    const session = resolveSession(nameOrKey);
+    const grant = session ? findOpenAskGrant(session.sessionKey, getContext()?.sessionKey) : null;
+    if (!session || !grant) {
+      // Same answer as an unknown session: an Ask grant does not reveal which sessions exist.
+      fail(`Session not found: ${nameOrKey}`);
+      return null;
+    }
+    // The caller was asked, so the session is no secret here: these refusals are permission
+    // denials with their own code, unlike the "not found" given to a caller never asked.
+    if (channel || to) {
+      throw new CliExpectedError(
+        "An answer sent through an open Ask goes back where the Ask came from: --channel and --to are refused.",
+        "PERMISSION_DENIED",
+        1,
+        "Run the answer without --channel and --to.",
+      );
+    }
+    // Delivering an answer is not choosing when to cut into the asker's turn: it waits for the
+    // asker's response like any answer.
+    if (overrides.barrier || overrides.steer || overrides.immediate) {
+      throw new CliExpectedError(
+        "An answer sent through an open Ask waits for the asker's current response: --barrier, --steer and --immediate are refused.",
+        "PERMISSION_DENIED",
+        1,
+        "Run the answer without --barrier, --steer and --immediate.",
+      );
+    }
+    return { session, throughAsk: true };
+  }
+
   private resolveTarget(
     nameOrKey: string,
     createWithAgent?: string,
@@ -6820,19 +7382,20 @@ export class SessionCommands {
     promptPayload?: Record<string, unknown>,
     cliDestination = false,
     asJson?: boolean,
+    options: { withoutApprovalSource?: boolean } = {},
   ): Promise<void> {
     this.assertSessionTakesPrompts(session);
     const { source, context } = this.resolveSource(session, channelOverride, toOverride);
 
     // Resolve caller's source for approval delegation (cascading approvals)
-    const _approvalSource = this.resolveCallerApprovalSource();
+    const _approvalSource = options.withoutApprovalSource ? undefined : this.resolveCallerApprovalSource();
 
     try {
       await publishSessionPrompt(sessionName, {
         prompt,
         source,
         context,
-        _approvalSource,
+        ...(_approvalSource ? { _approvalSource } : {}),
         deliveryBarrier,
         deliveryBarrierSource,
         ...(promptPayload ?? {}),
@@ -7159,6 +7722,7 @@ export class SessionCommands {
       return;
     }
     const callerAgentId = getContext()?.agentId;
+    let conflict: Record<string, unknown> | undefined;
     try {
       const result = attachChatToSession({
         sessionKey: session.sessionKey,
@@ -7172,23 +7736,25 @@ export class SessionCommands {
       const sessionRef = session.name ?? session.sessionKey;
       const detachCommand = buildSessionDetachCommand(sessionRef, chat.id);
       const state = describeSessionChatAssociation(session.sessionKey, chat.id, session.name);
-      if (asJson) {
-        printJson({
-          ...state,
-          created: result.created,
-          outputAttached: result.outputAttached,
-          subscription: result.subscription,
-          chat: {
-            id: chat.id,
-            title: chat.title,
-            channel: chat.channel,
-            instanceId: chat.instanceId,
+      if (shouldReturnStructuredResult(asJson)) {
+        return returnStructuredResult(
+          {
+            ...state,
+            created: result.created,
+            outputAttached: result.outputAttached,
+            subscription: result.subscription,
+            chat: {
+              id: chat.id,
+              title: chat.title,
+              channel: chat.channel,
+              instanceId: chat.instanceId,
+            },
+            hints: {
+              detach: detachCommand,
+            },
           },
-          hints: {
-            detach: detachCommand,
-          },
-        });
-        return;
+          asJson,
+        );
       }
       const verb = result.created ? "Attached" : "Already attached";
       console.log(`${verb} chat ${chat.id} (${chat.title ?? "no title"}) to session ${sessionRef}`);
@@ -7196,19 +7762,26 @@ export class SessionCommands {
       console.log(`Detach hint: ${detachCommand}`);
     } catch (err) {
       if (err instanceof SessionAttachConflictError) {
+        // Only an explicit --json takes the conflict as data. A gateway call without it keeps failing, so a caller
+        // that did not ask for the structured form never reads a conflict as a successful attach.
         if (asJson) {
-          printJson({
+          conflict = {
             error: err.code,
             message: err.message,
             currentOwner: err.currentSessionKey,
             chatId: err.chatId,
-          });
+          };
+        } else {
+          fail(err.message);
           return;
         }
-        fail(err.message);
-        return;
+      } else {
+        throw err;
       }
-      throw err;
+    }
+    if (conflict) {
+      printJson(conflict);
+      return conflict;
     }
   }
 
@@ -7248,9 +7821,8 @@ export class SessionCommands {
       return;
     }
     const result = detachChatFromSession(session.sessionKey, chat.id, session.name);
-    if (asJson) {
-      printJson(result);
-      return;
+    if (shouldReturnStructuredResult(asJson)) {
+      return returnStructuredResult(result, asJson);
     }
     if (result.detached) {
       const suffix = result.outputDetached ? " and cleared it as default output" : "";
@@ -7984,6 +8556,7 @@ export class SessionCommands {
         ownerEscalatedAt: null,
         acknowledgedAt: null,
         ackReason: null,
+        decisionId: null,
       };
       reportText = `${reportText}\nAguarda o pai: ${describeHandoff(preview, sessionDisplayName(session.sessionKey), now).replace(/^- /, "")}`;
     }
@@ -8022,18 +8595,38 @@ export class SessionCommands {
     // The report is out: a failed write of the wait must not turn into an error that makes the caller send it
     // again. It is returned instead, and the parent still has the report text.
     let handoffError: string | undefined;
+    let decisionError: string | undefined;
+    if (pendingHandoff?.kind === "decision") {
+      // A decision wait records its question as a decision, so the answer is recorded (not just a message) and
+      // closes the wait. A decision that cannot be recorded leaves an ordinary wait, as before.
+      try {
+        // The question is the decoded report, as the parent read it, without the appended wait line.
+        pendingHandoff.decisionId = (
+          await askDecisionForWait(session.sessionKey, pendingHandoff.ref, decodeLiteralLineBreaks(message))
+        ).id;
+      } catch (error) {
+        logger.child("cli:sessions").warn("Decision wait not recorded as a decision; the wait opens without one", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        decisionError = redactText(error instanceof Error ? error.message : String(error)).value;
+      }
+    }
     if (pendingHandoff) {
       try {
         // A dispatched review leaves nothing for the parent: the wait is recorded already closed, so observers
         // never see a wait that did not exist.
-        handoff = await declareHandoff({
-          ...pendingHandoff,
-          ...(reviewDispatch?.status === "dispatched"
-            ? { closedReason: `review dispatched: ${reviewDispatch.requestId}` }
-            : prClosure
-              ? { closedReason: prClosure.merged ? "PR merged" : "PR closed" }
-              : {}),
-        });
+        // A decision recorded without its wait would block the thread on its own: it is retired if this fails.
+        const wait = pendingHandoff;
+        handoff = await retireDecisionIfWaitFails(wait.decisionId, () =>
+          declareHandoff({
+            ...wait,
+            ...(reviewDispatch?.status === "dispatched"
+              ? { closedReason: `review dispatched: ${reviewDispatch.requestId}` }
+              : prClosure
+                ? { closedReason: prClosure.merged ? "PR merged" : "PR closed" }
+                : {}),
+          }),
+        );
       } catch (error) {
         handoffError = error instanceof Error ? error.message : String(error);
       }
@@ -8047,14 +8640,27 @@ export class SessionCommands {
         sessionKey: result.record.parentSessionKey,
         sessionName: result.record.parentSessionName,
       },
-      ...(handoff ? { handoff: { id: handoff.id, kind: handoff.kind, ref: handoff.ref, status: handoff.status } } : {}),
+      ...(handoff
+        ? {
+            handoff: {
+              id: handoff.id,
+              kind: handoff.kind,
+              ref: handoff.ref,
+              status: handoff.status,
+              ...(handoff.decisionId ? { decisionId: handoff.decisionId } : {}),
+            },
+          }
+        : {}),
       ...(handoffError ? { handoffError } : {}),
+      ...(decisionError ? { decisionError } : {}),
       ...(reviewDispatch ? { reviewDispatch } : {}),
     };
     if (asJson) printJson(payload);
     else {
       console.log(`Reported to ${result.record.parentSessionName}`);
       if (handoffError) console.log(`The wait was not recorded: ${handoffError}`);
+      if (decisionError) console.log(`The decision was not recorded (ordinary wait): ${decisionError}`);
+      else if (handoff?.decisionId) console.log(`Decision ${handoff.decisionId}: answer with ravi decisions answer`);
     }
     return payload;
   }
@@ -8365,6 +8971,12 @@ export class SessionCommands {
         HANDOFF_KINDS_ANSWERED_BY_MESSAGE,
       );
     }
+    // A message does not answer a recorded decision: say so, instead of letting its wait remind everyone later.
+    const openDecisionWaits = result.record.childSessionKey
+      ? listHandoffs({ childSessionKey: result.record.childSessionKey })
+          .filter((h) => h.kind === "decision" && h.decisionId)
+          .map((h) => ({ handoffId: h.id, decisionId: h.decisionId! }))
+      : [];
     const payload = {
       status: "published" as const,
       actionId: "thread.send" as const,
@@ -8373,12 +8985,17 @@ export class SessionCommands {
       reopened: result.reopened,
       thread: summarizeSlackThread(result.record),
       delivery: { barrier: delivery.barrier, barrierSource: delivery.source },
+      ...(openDecisionWaits.length ? { openDecisionWaits } : {}),
     };
     if (asJson) printJson(payload);
     else {
       const name = result.record.childSessionName ?? result.record.requestId;
       const explicitBarrier = delivery.source === "explicit" ? ` (${delivery.barrier})` : "";
       console.log(`Sent to ${name}${result.reopened ? " (reopened)" : ""}${explicitBarrier}`);
+      for (const wait of openDecisionWaits)
+        console.log(
+          `Decision ${wait.decisionId} is still open: a message does not answer it. Record the answer with ravi decisions answer ${wait.decisionId} --text "..." --execute`,
+        );
     }
     return payload;
   }
@@ -8829,7 +9446,7 @@ export class SessionCommands {
       return;
     }
     const subs = listSessionSubscriptions(session.sessionKey);
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const enriched = subs.map((s) => {
         const chat = dbGetChat(s.chatId);
         return {
@@ -8844,12 +9461,14 @@ export class SessionCommands {
             : null,
         };
       });
-      printJson({
-        sessionKey: session.sessionKey,
-        sessionName: session.name,
-        subscriptions: enriched,
-      });
-      return;
+      return returnStructuredResult(
+        {
+          sessionKey: session.sessionKey,
+          sessionName: session.name,
+          subscriptions: enriched,
+        },
+        asJson,
+      );
     }
     if (subs.length === 0) {
       console.log(`No subscriptions for session ${session.name ?? session.sessionKey}`);
@@ -8871,6 +9490,7 @@ declareCommandReturns(SessionCommands, {
   answer: commandEnvelopeReturnSchema,
   ask: commandEnvelopeReturnSchema,
   attach: commandEnvelopeReturnSchema,
+  clone: sessionCloneReturnSchema,
   closeThread: sessionCloseThreadReturnSchema,
   createThread: sessionCreateThreadReturnSchema,
   delete: commandEnvelopeReturnSchema,
@@ -8883,6 +9503,9 @@ declareCommandReturns(SessionCommands, {
   info: commandEnvelopeReturnSchema,
   inform: commandEnvelopeReturnSchema,
   keep: commandEnvelopeReturnSchema,
+  observe: sessionObserveReturnSchema,
+  observing: sessionObservingReturnSchema,
+  unobserve: sessionUnobserveReturnSchema,
   list: pagedItemsReturnSchema,
   prune: commandEnvelopeReturnSchema,
   read: sessionReadReturnSchema,

@@ -6,6 +6,7 @@ import { configStore } from "../config-store.js";
 import { nats } from "../nats.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import {
+  RUNTIME_INTERRUPT_NOTICE,
   RuntimeSessionDispatcher,
   buildStashedRestartPrompt,
   canReuseLivePiSteerAuthority,
@@ -15,6 +16,7 @@ import {
   runtimeModelBrokerRouteRequiresRestart,
   shouldQueuePromptOnLiveSession,
   stashPromptForStartingSession,
+  withRuntimeInterruptNotice,
 } from "./session-dispatcher.js";
 import {
   createQueuedRuntimeUserMessage,
@@ -1001,6 +1003,40 @@ describe("RuntimeSessionDispatcher debounce", () => {
       }
     });
 
+    it("never join a `!!` message to an observation notice", async () => {
+      const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-skip-turn-notice-");
+      try {
+        const { dispatcher, prompts } = capturingDispatcher();
+        const notice = (text: string): RuntimeLaunchPrompt => ({
+          prompt: `[System] Inform: [from: ravi observer] ${text}`,
+          _agentId: "main",
+          _observationNotice: { bindingId: "ob_1", sourceSessionKey: "agent:client:main" },
+        });
+
+        // Waiting in the debounce batch: the `!!` text is held instead of riding along.
+        dispatcher.handlePromptWithDebounce("session", notice("turn ended without a reply"), 60_000);
+        await dispatcher.handlePrompt("session", { prompt: "anota isso", source, _agentId: "main", _skipTurn: true });
+        await dispatcher.flushDebounce("session");
+        expect(prompts.map((prompt) => prompt.prompt)).toEqual([
+          "[System] Inform: [from: ravi observer] turn ended without a reply",
+        ]);
+        expect(dispatcher.heldSkipTurnMessages.get("session")).toEqual(["anota isso"]);
+
+        // Held text is not joined to a notice either; it waits for the next turn.
+        const consume = (prompt: RuntimeLaunchPrompt) =>
+          (
+            dispatcher as unknown as {
+              consumeHeldSkipTurnMessages(sessionName: string, prompt: RuntimeLaunchPrompt): RuntimeLaunchPrompt;
+            }
+          ).consumeHeldSkipTurnMessages("session", prompt);
+        const pending = notice("second notice");
+        expect(consume(pending)).toBe(pending);
+        expect(dispatcher.heldSkipTurnMessages.get("session")).toEqual(["anota isso"]);
+      } finally {
+        await cleanupIsolatedRaviState(stateDir);
+      }
+    });
+
     it("never take the session bootstrap that was waiting for the first turn", () => {
       const { dispatcher } = capturingDispatcher();
       const consume = (prompt: RuntimeLaunchPrompt) =>
@@ -1254,6 +1290,41 @@ describe("RuntimeSessionDispatcher runtime recovery", () => {
     mock.restore();
     await cleanupIsolatedRaviState(recoveryState);
     recoveryState = undefined;
+  });
+
+  it("tells the model the runtime, not a person, interrupted the previous tool", async () => {
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "test",
+      maxConcurrentSessions: 10,
+      interactiveReservedSessions: 0,
+      safeEmit: async () => {},
+      notifyRuntimeRecoveryExhausted: async () => {},
+      getConfigModel: () => "test-model",
+      crashRecovery: crashRecoveryStub,
+    });
+    const launched: string[] = [];
+    dispatcher.startStreamingSession = mock(async (_name: string, prompt: { prompt: string }) => {
+      launched.push(prompt.prompt);
+    }) as unknown as typeof dispatcher.startStreamingSession;
+    const recovery = dispatcher as unknown as {
+      restartStashedSession(sessionName: string, reason: string): Promise<void>;
+    };
+    const stash = (name: string) =>
+      dispatcher.stashedMessages.set(name, [
+        createQueuedRuntimeUserMessage({ prompt: "[System] Inform: thread concluída", _agentId: "main" }),
+      ]);
+
+    stash("interrupted");
+    await recovery.restartStashedSession("interrupted", "recoverable_interrupt_failure");
+    stash("other-recovery");
+    await recovery.restartStashedSession("other-recovery", "model_change_restart");
+
+    expect(launched[0]?.startsWith(RUNTIME_INTERRUPT_NOTICE)).toBe(true);
+    expect(launched[0]).toContain("[System] Inform: thread concluída");
+    expect(launched[1]).toBe("[System] Inform: thread concluída");
+    expect(withRuntimeInterruptNotice(withRuntimeInterruptNotice({ prompt: "x" })).prompt).toBe(
+      `${RUNTIME_INTERRUPT_NOTICE}\n\nx`,
+    );
   });
 
   it("sends only a generic notice to the channel and alerts the operator after repeated event-loop closures", async () => {
@@ -2571,6 +2642,69 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       expect(stashed?.[0]?.message.content).toContain("Daemon reiniciou (version update)");
       expect(stashed?.[0]?.message.content).not.toContain("Continue de onde parou");
       expect(stashed?.[0]?.launchPrompt?._daemonRestartResume?.noticeOnly).toBe(true);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("records the interrupted attempt of an unsafe live turn and hydrates its successors with the verify note", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-verify-continue-restart-");
+    try {
+      const now = Date.now();
+      const sessionKey = "agent:dev:test:restart-verify-continue";
+      const sessionName = "restart-verify-continue";
+      getOrCreateSession(sessionKey, "dev", stateDir, { name: sessionName });
+      dbUpsertDaemonRestartEpoch({ restartEpoch: "epoch-verify-continue", reason: "test", createdAt: now });
+      const crashRecovery = {
+        acceptingDeliveries: true,
+        getActiveTurnAttempt: (attemptId: string) => ({ attemptId, startedTool: true, materializedOutput: false }),
+      } as unknown as RuntimeCrashRecoveryCoordinator;
+      const dispatcher = createDispatcher(1, 0, crashRecovery);
+      const active = createQueuedRuntimeUserMessage({ prompt: "unsafe current turn" });
+      const successor = createQueuedRuntimeUserMessage({ prompt: "message that arrived during the turn" });
+      dispatcher.streamingSessions.set(
+        sessionName,
+        createActiveSession({
+          turnActive: true,
+          toolRunning: true,
+          currentToolName: "bash",
+          currentTraceTurnId: "turn-verify-continue",
+          currentCrashRecoveryAttemptId: "attempt-verify-continue",
+          currentTurnPendingIds: active.pendingId ? [active.pendingId] : [],
+          pendingMessages: [],
+        }),
+      );
+      dispatcher.stashedMessages.set(sessionName, [successor]);
+
+      dispatcher.recordDaemonRestartSnapshot({ restartEpoch: "epoch-verify-continue", reason: "test", stoppedAt: now });
+
+      const snapshot = dbListEligibleDaemonRestartSessionSnapshots({
+        restartEpoch: "epoch-verify-continue",
+        now: now + 1,
+      })[0];
+      expect(snapshot?.metadata?.crashRecoveryAttemptId).toBe("attempt-verify-continue");
+      const payload = buildDaemonRestartResumePrompt({
+        restartEpoch: "epoch-verify-continue",
+        reason: "test",
+        sessionKey,
+        mode: "verify_continue",
+      });
+      expect(payload._daemonRestartResume?.pendingOnly).toBeUndefined();
+      expect(payload._daemonRestartResume?.noticeOnly).toBeUndefined();
+      const prepared = (
+        dispatcher as unknown as {
+          prepareDaemonRestartResumePrompt(
+            requestedSessionName: string,
+            prompt: RuntimeLaunchPrompt,
+            sessionEntry: null,
+          ): { prompt: RuntimeLaunchPrompt; messages: RuntimeUserMessage[] } | null;
+        }
+      ).prepareDaemonRestartResumePrompt(sessionName, payload, null);
+      expect(prepared?.messages.map((message) => message.message.content)).toEqual([
+        "message that arrived during the turn",
+        expect.stringContaining("confira o estado real"),
+      ]);
+      expect(prepared?.messages.some((message) => message.message.content === "unsafe current turn")).toBe(false);
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }
@@ -6483,5 +6617,131 @@ describe("RuntimeSessionDispatcher task-bound live sessions", () => {
       expect(startStreamingSession).not.toHaveBeenCalled();
       expect(existing.pendingMessages.map((message) => message.taskBarrierTaskId)).toEqual([taskId]);
     });
+  });
+});
+
+describe("stateless observer deliveries (memory none)", () => {
+  function liveObserver(overrides: Partial<RuntimeHostStreamingSession> = {}) {
+    const counters = { pushed: 0 };
+    const live = {
+      sessionKey: "obs:abc123:mem",
+      agentId: "observer",
+      queryHandle: { provider: "codex", events: (async function* () {})(), interrupt: async () => {} },
+      abortController: new AbortController(),
+      pendingMessages: [] as unknown[],
+      currentModel: "test-model",
+      toolRunning: false,
+      lastActivity: Date.now() - 2_000,
+      done: false,
+      starting: false,
+      compacting: false,
+      interrupted: false,
+      turnActive: false,
+      // Shutdown wakes the generator with null; only a real message counts as joining the conversation.
+      pushMessage: (message: unknown) => {
+        if (message !== null) counters.pushed += 1;
+      },
+      pendingWake: false,
+      onTurnComplete: null,
+      currentToolSafety: null,
+      pendingAbort: false,
+      toolEffectFence: "provider_event_only",
+      ...overrides,
+    } as unknown as RuntimeHostStreamingSession;
+    return { live, counters };
+  }
+  const delivery = (memory?: "none", text = "[observation] turn.complete") =>
+    ({
+      prompt: text,
+      _agentId: "observer",
+      _observation: {
+        sourceSessionKey: "agent:worker:main",
+        sourceSessionName: "src",
+        bindingId: "b1",
+        ruleId: "r1",
+        role: "mem",
+        mode: "observe",
+        eventIds: [],
+        ...(memory ? { memory } : {}),
+      },
+      deliveryBarrier: "after_response",
+    }) as unknown as RuntimeLaunchPrompt;
+
+  async function setup(overrides: Partial<RuntimeHostStreamingSession> = {}) {
+    const stateDir = await createIsolatedRaviState("ravi-dispatcher-stateless-observer-");
+    dbCreateAgent({ id: "observer", cwd: stateDir });
+    const OBS = "obs:abc123:mem";
+    getOrCreateSession(OBS, "observer", stateDir, { name: OBS });
+    configStore.refresh();
+    const dispatcher = createDispatcher(4);
+    const { live, counters } = liveObserver(overrides);
+    dispatcher.streamingSessions.set(OBS, live);
+    const started: RuntimeLaunchPrompt[] = [];
+    (
+      dispatcher as unknown as { startStreamingSession: (n: string, p: RuntimeLaunchPrompt) => Promise<void> }
+    ).startStreamingSession = async (_name, prompt) => {
+      started.push(prompt);
+    };
+    return { stateDir, dispatcher, live, counters, started, OBS };
+  }
+
+  it("retires an idle observer runtime and starts a fresh one", async () => {
+    const { stateDir, dispatcher, live, counters, started, OBS } = await setup();
+    try {
+      await dispatcher.handlePromptImmediate(OBS, delivery("none"));
+      expect(counters.pushed).toBe(0);
+      expect(live.pendingMessages).toHaveLength(0);
+      expect(started).toHaveLength(1);
+      expect(live.done).toBe(true);
+      expect(dispatcher.streamingSessions.get(OBS)).not.toBe(live);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("waits for a busy observer to finish its turn, then retires it", async () => {
+    const { stateDir, dispatcher, live, counters, started, OBS } = await setup({ turnActive: true });
+    try {
+      await dispatcher.handlePromptImmediate(OBS, delivery("none"));
+      // Nothing joins the running conversation and nothing starts while the turn runs.
+      expect(counters.pushed).toBe(0);
+      expect(started).toHaveLength(0);
+      expect(dispatcher.statelessObservationWaits.get(OBS)?.prompts).toHaveLength(1);
+      live.turnActive = false;
+      await new Promise((resolve) => setTimeout(resolve, 1_200));
+      expect(counters.pushed).toBe(0);
+      expect(started).toHaveLength(1);
+      expect(dispatcher.statelessObservationWaits.has(OBS)).toBe(false);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("keeps delivery order when a later delivery arrives before the waiting one is released", async () => {
+    const { stateDir, dispatcher, live, started, OBS } = await setup({ turnActive: true });
+    try {
+      await dispatcher.handlePromptImmediate(OBS, delivery("none", "[observation] first"));
+      // The observer turn ends; the next delivery arrives before the wait is released.
+      live.turnActive = false;
+      await dispatcher.handlePromptImmediate(OBS, delivery("none", "[observation] second"));
+      expect(started).toHaveLength(0);
+      expect(dispatcher.statelessObservationWaits.get(OBS)?.prompts).toHaveLength(2);
+      await new Promise((resolve) => setTimeout(resolve, 1_200));
+      expect(started.map((prompt) => prompt.prompt)).toEqual(["[observation] first", "[observation] second"]);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("keeps the live conversation for a default (rolling) observer", async () => {
+    const { stateDir, dispatcher, live, counters, started, OBS } = await setup();
+    try {
+      await dispatcher.handlePromptImmediate(OBS, delivery());
+      expect(started).toHaveLength(0);
+      expect(counters.pushed + live.pendingMessages.length).toBeGreaterThan(0);
+      expect(dispatcher.streamingSessions.get(OBS)).toBe(live);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
   });
 });

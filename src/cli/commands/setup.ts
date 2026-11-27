@@ -7,6 +7,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync, chm
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { execSync } from "node:child_process";
+import { isStateNotReadyError } from "../../db/state-readiness.js";
 import { tightenStateDirPermissions } from "../../security/state-dir-permissions.js";
 
 const RAVI_DOT_DIR = join(homedir(), ".ravi");
@@ -319,8 +320,75 @@ async function stepEnvironment(): Promise<void> {
   }
 }
 
+/**
+ * The daemon starts before any step that reads state: on a new machine it is the daemon that creates the
+ * state database, and the CLI never does (`db/state-boundary.ts`). `ravi daemon start` returns once the
+ * daemon has prepared it, within a bound; `stateIsReady` is what the next steps rely on, not this call.
+ */
+async function stepDaemon(): Promise<void> {
+  heading(3, 5, "Daemon", "iniciar via PM2");
+
+  info("Aguardando o daemon preparar o estado (até 45 s na primeira vez)...");
+  try {
+    execSync("ravi daemon start", { stdio: "pipe" });
+    done("Daemon iniciado via PM2");
+  } catch (err: any) {
+    const msg = err?.stderr?.toString() || err?.stdout?.toString() || "";
+    if (msg.includes("already running")) {
+      done("Daemon já está rodando");
+    } else {
+      warning("Não foi possível iniciar — execute: ravi daemon start");
+    }
+  }
+
+  // Save PM2 state
+  try {
+    execSync("pm2 save", { stdio: "pipe" });
+    done("PM2 state salvo");
+  } catch {
+    info("Execute: pm2 save && pm2 startup");
+  }
+}
+
+/** Whether the state the daemon creates can be read now. Any other failure is not this question and propagates. */
+export async function stateIsReady(
+  probe: () => unknown = () => import("../../router/router-db.js").then((db) => db.dbGetSetting("defaultTimezone")),
+): Promise<boolean> {
+  try {
+    await probe();
+    return true;
+  } catch (error) {
+    if (isStateNotReadyError(error)) return false;
+    throw error;
+  }
+}
+
+/**
+ * The agent and settings steps write the state directly, after the daemon is already up. The daemon's config
+ * store reloads on `ravi.config.changed` and otherwise only on its 30 s refresh (`config-store.ts`); the event is
+ * what `ravi agents` and `ravi settings` emit after a write. Best effort: without it the refresh still happens.
+ */
+export async function announceConfigChanged(
+  emit: (topic: string, data: Record<string, unknown>) => Promise<void> = async (topic, data) => {
+    const { nats } = await import("../../nats.js");
+    await nats.emit(topic, data, { quietConnect: true });
+  },
+): Promise<boolean> {
+  try {
+    await emit("ravi.config.changed", {});
+    return true;
+  } catch {
+    // no-cause: best effort; the daemon's config store still refreshes within 30 s without the event.
+    return false;
+  }
+}
+
+async function stepAnnounce(): Promise<void> {
+  if (!(await announceConfigChanged())) info("O daemon aplica o que foi gravado em até 30 s.");
+}
+
 async function stepAgent(): Promise<void> {
-  heading(3, 5, "Agente", "~/ravi/main");
+  heading(4, 5, "Agente", "~/ravi/main");
 
   const { dbListAgents, dbCreateAgent, dbSetSetting } = await import("../../router/router-db.js");
   const { ensureAgentDirs, loadRouterConfig } = await import("../../router/config.js");
@@ -352,7 +420,7 @@ async function stepAgent(): Promise<void> {
 }
 
 async function stepSettings(): Promise<void> {
-  heading(4, 5, "Configurações", "fuso horário, políticas");
+  heading(5, 5, "Configurações", "fuso horário, políticas");
 
   const { dbGetSetting, dbSetSetting } = await import("../../router/router-db.js");
 
@@ -388,47 +456,59 @@ async function stepSettings(): Promise<void> {
   }
 }
 
-async function stepDaemon(): Promise<void> {
-  heading(5, 5, "Daemon", "iniciar via PM2");
-
-  try {
-    execSync("ravi daemon start", { stdio: "pipe" });
-    done("Daemon iniciado via PM2");
-  } catch (err: any) {
-    const msg = err?.stderr?.toString() || err?.stdout?.toString() || "";
-    if (msg.includes("already running")) {
-      done("Daemon já está rodando");
-    } else {
-      warning("Não foi possível iniciar — execute: ravi daemon start");
-    }
-  }
-
-  // Save PM2 state
-  try {
-    execSync("pm2 save", { stdio: "pipe" });
-    done("PM2 state salvo");
-  } catch {
-    info("Execute: pm2 save && pm2 startup");
-  }
-}
-
 // ============================================================================
 // Main entry
 // ============================================================================
 
-export async function runSetup(): Promise<void> {
+/** The wizard's steps, injectable so their order is testable. */
+export interface SetupSteps {
+  omni: () => Promise<void>;
+  environment: () => Promise<void>;
+  daemon: () => Promise<void>;
+  /** Whether the state the daemon creates can be read now; the agent and settings steps need it. */
+  stateReady: () => Promise<boolean>;
+  agent: () => Promise<void>;
+  settings: () => Promise<void>;
+  /** Tells the running daemon what the agent and settings steps wrote, so it does not wait for its 30 s refresh. */
+  announce: () => Promise<void>;
+}
+
+const wizardSteps: SetupSteps = {
+  omni: stepOmni,
+  environment: stepEnvironment,
+  daemon: stepDaemon,
+  stateReady: () => stateIsReady(),
+  agent: stepAgent,
+  settings: stepSettings,
+  announce: stepAnnounce,
+};
+
+export async function runSetup(steps: SetupSteps = wizardSteps): Promise<void> {
   console.log();
   console.log(`  ${c.bold}Ravi Bot${c.reset} ${c.gray}— setup${c.reset}`);
   console.log(`  ${c.gray}${"─".repeat(30)}${c.reset}`);
 
-  await stepOmni();
-  await stepEnvironment();
-  await stepAgent();
-  await stepSettings();
-  await stepDaemon();
+  await steps.omni();
+  await steps.environment();
+  await steps.daemon();
+
+  // The agent and settings live in the state the daemon creates. If it did not get ready, say so and
+  // stop before the first read: it would end the wizard with STATE_SCHEMA_NOT_READY instead of an answer.
+  const stateReady = await steps.stateReady();
+  if (stateReady) {
+    await steps.agent();
+    await steps.settings();
+    await steps.announce();
+  } else {
+    console.log();
+    warning("O daemon não preparou o estado, então o agente e as configurações ficaram para depois.");
+    info("Veja o motivo em: ravi daemon logs");
+    info("Quando o log mostrar 'Daemon ready', rode de novo: ravi setup");
+  }
 
   console.log();
-  console.log(`  ${c.green}${c.bold}Configuração completa!${c.reset}`);
+  if (stateReady) console.log(`  ${c.green}${c.bold}Configuração completa!${c.reset}`);
+  else console.log(`  ${c.yellow}${c.bold}Configuração incompleta${c.reset}`);
   console.log();
   console.log(`  ${c.gray}Próximos passos:${c.reset}`);
   console.log(`    ${bullet} ${c.white}ravi daemon logs -f${c.reset}       ${c.gray}Ver logs do daemon${c.reset}`);

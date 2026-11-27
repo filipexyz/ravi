@@ -1,4 +1,4 @@
-import { lstatSync, readlinkSync } from "node:fs";
+import { lstatSync, readlinkSync, realpathSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, parse, resolve, sep } from "node:path";
 import { normalizeRuntimeBuiltinToolName } from "../cli/tool-registry.js";
@@ -80,6 +80,11 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+/** Whether a tool call writes files (Write, Edit, MultiEdit, NotebookEdit, by native name). */
+export function isFileWriteTool(toolName: string): boolean {
+  return FILE_WRITE_TOOLS.has(normalizeRuntimeBuiltinToolName(toolName) ?? toolName);
+}
+
 /** The paths a file-writing tool call would change, by the input shapes the providers use. */
 export function fileWriteToolTargets(toolName: string, input: unknown): string[] {
   const nativeName = normalizeRuntimeBuiltinToolName(toolName) ?? toolName;
@@ -132,10 +137,54 @@ export function providerConfigWriteDenial(input: {
       return `Permission denied: agent:${input.agentId ?? "unknown"} cannot write outside the session workspace for the person who asked (${outside.join(", ")}); writing there needs execute:executable:* or admin:system:*`;
     }
   }
+  const appTargets = input.targets.filter((target) => isAppStatePath(target, input.cwd));
+  if (appTargets.length > 0 && !breakGlass) {
+    return `Permission denied: agent:${input.agentId ?? "unknown"} cannot write installed Ravi apps (${appTargets.join(", ")}); apps are installed by the operator with ravi apps install`;
+  }
   const protectedTargets = input.targets.filter((target) => isProviderConfigPath(target, input.cwd));
   if (protectedTargets.length === 0) return undefined;
   if (breakGlass) return undefined;
   return `Permission denied: agent:${input.agentId ?? "unknown"} cannot write runtime provider settings (${protectedTargets.join(", ")}); they can run host commands and need execute:executable:* or admin:system:*`;
+}
+
+/**
+ * `$RAVI_STATE_DIR/apps` and `$RAVI_STATE_DIR/app-store`: discovery runs what is
+ * there and the store's receipts decide which agent sees it, so a tool write
+ * there would install an app without the operator (spec apps/store).
+ */
+export function isAppStatePath(path: string, cwd?: string): boolean {
+  if (!path) return false;
+  const expanded = path.replace(/^~(?=\/|$)/, homedir());
+  const resolved = physicalPathForPermissionCheck(expanded, cwd);
+  if (!resolved) return true;
+  const physical = canonicalCase(resolved);
+  const roots = [getRaviStateDir(), join(homedir(), ".ravi")].flatMap((base) =>
+    ["apps", "app-store"].flatMap((name) => {
+      const root = physicalPathForPermissionCheck(join(base, name));
+      return root ? [canonicalCase(root)] : [];
+    }),
+  );
+  return roots.some((root) => isUnder(physical, root) || isUnder(physical.toLowerCase(), root.toLowerCase()));
+}
+
+/**
+ * Reads the daemon does for a person held below break-glass (`pages ship
+ * --html <path>` and other file arguments) stay in the session workspace and
+ * the temp directory, like their writes: the daemon reads with its own
+ * filesystem authority, which reaches `~/.ravi/.env` and other operator files.
+ */
+export function providerFileReadDenial(input: {
+  can: CanCheck;
+  agentId?: string | null;
+  targets: string[];
+  cwd?: string;
+  restrictToWorkspace?: boolean;
+}): string | undefined {
+  const breakGlass = input.can("admin", "system", "*") || input.can("execute", "executable", "*");
+  if (!input.restrictToWorkspace || breakGlass) return undefined;
+  const outside = input.targets.filter((target) => !isWorkspaceOrTempPath(target, input.cwd));
+  if (outside.length === 0) return undefined;
+  return `Permission denied: agent:${input.agentId ?? "unknown"} cannot read outside the session workspace for the person who asked (${outside.join(", ")}); reading there needs execute:executable:* or admin:system:*`;
 }
 
 /** Whether a turn is a person held below the agent's break-glass (metadata or inherited `deny_*`). */
@@ -147,7 +196,7 @@ function tempRoots(): string[] {
   const roots = [tmpdir(), "/tmp", "/private/tmp"];
   return roots.flatMap((root) => {
     const physical = physicalPathForPermissionCheck(root);
-    return physical ? [physical] : [];
+    return physical ? [canonicalCase(physical)] : [];
   });
 }
 
@@ -186,18 +235,58 @@ function alwaysDeniedRoots(): string[] {
   ];
   return roots.flatMap((root) => {
     const physical = physicalPathForPermissionCheck(root);
-    return physical ? [physical] : [];
+    return physical ? [canonicalCase(physical)] : [];
   });
+}
+
+/**
+ * The filesystem's own spelling of a path: the longest existing prefix goes
+ * through `realpath` (which returns the on-disk casing on case-insensitive
+ * volumes), the not-yet-existing suffix is kept as given.
+ */
+/** Exported for tests. */
+export function canonicalCase(path: string): string {
+  let prefix = path;
+  const suffix: string[] = [];
+  while (prefix && prefix !== parse(prefix).root) {
+    try {
+      const real = realpathSync.native(prefix);
+      return suffix.length > 0 ? join(real, ...suffix.reverse()) : real;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      // Only a missing component walks up; anything else keeps the given spelling.
+      if (code !== "ENOENT" && code !== "ENOTDIR") return path;
+      suffix.push(basename(prefix));
+      prefix = dirname(prefix);
+    }
+  }
+  return path;
+}
+
+/** A regular file with more than one name can be the protected file under another name. */
+/** Exported for tests. */
+export function isHardlinkedFile(path: string): boolean {
+  try {
+    const stat = statSync(path);
+    return stat.isFile() && stat.nlink > 1;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    // A file that does not exist yet has no other name; an unreadable one fails closed.
+    return code !== "ENOENT" && code !== "ENOTDIR";
+  }
 }
 
 /** The physical target is inside the session workspace or a temp directory (symlinks followed). */
 function isWorkspaceOrTempPath(target: string, cwd?: string): boolean {
   if (!target) return false;
   const expanded = target.replace(/^~(?=\/|$)/, homedir());
-  const physical = physicalPathForPermissionCheck(expanded, cwd);
-  if (!physical) return false;
+  const resolved = physicalPathForPermissionCheck(expanded, cwd);
+  if (!resolved) return false;
+  const physical = canonicalCase(resolved);
+  if (isHardlinkedFile(physical)) return false;
   if (alwaysDeniedRoots().some((root) => isUnder(physical, root))) return false;
-  const workspace = physicalPathForPermissionCheck(cwd ?? process.cwd());
+  const workspaceResolved = physicalPathForPermissionCheck(cwd ?? process.cwd());
+  const workspace = workspaceResolved ? canonicalCase(workspaceResolved) : null;
   if (workspace && workspace !== parse(workspace).root && workspace !== homedir() && isUnder(physical, workspace)) {
     return true;
   }

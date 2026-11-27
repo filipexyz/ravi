@@ -1,5 +1,8 @@
 import { z } from "zod";
 import { ContractError } from "../cli/agent-contract.js";
+import { CliExpectedError } from "../cli/expected-error.js";
+import { isAutomationHoldCause } from "../permissions/automation-hold.js";
+import { logger } from "../utils/logger.js";
 import { publishGhPr, type GhPrPublicationDeps } from "../hooks/gh-pr-publish.js";
 import type { GhWatchFollowContext } from "../hooks/gh-watch.js";
 import { publicationBudgetMs, publicationTimeoutError } from "./budget.js";
@@ -345,16 +348,14 @@ export async function executePublication(
               `GitHub refused publication (HTTP ${error.status}). Check repository rules and credentials.`,
               { retryable: error.status >= 500 || error.status === 429 },
             )
-          : prError(
-              "PR_PUBLICATION_INCOMPLETE",
-              "Publication did not complete. Rerun the same publication to reconcile its PR and follow.",
-              { retryable: true },
-            );
+          : unexpectedPublicationFailure(error, partial.phase, plan);
     try {
       journal.record(partial.phase, partial.uncertain ? "uncertain" : "failed", {
         errorCode: failure.code,
         refPublished: partial.refPublished,
         prNumber: partial.prNumber,
+        // The reason, so a retry loop is never mistaken for a transient fault again.
+        ...(typeof failure.details?.cause === "string" ? { cause: failure.details.cause } : {}),
       });
     } catch {
       /* The durable intent remains uncertain; never invent a successful result. */
@@ -363,4 +364,54 @@ export async function executePublication(
   } finally {
     journal.close();
   }
+}
+
+const publicationLog = logger.child("pr-publish");
+const CAUSE_LIMIT = 240;
+
+function oneLine(text: string): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > CAUSE_LIMIT ? `${flat.slice(0, CAUSE_LIMIT - 1)}…` : flat;
+}
+
+/**
+ * A failure that is neither a contract error nor a GitHub refusal. It used to
+ * become a bare "rerun the same publication" marked retryable, whatever the
+ * cause: a refusal that repeats forever (a turn held below the agent's
+ * authority, in 24/11) read as a transient fault and its reason was gone from
+ * the result, the journal and the log. Say what stopped, whether a rerun can
+ * help, and the exact command to run.
+ */
+function unexpectedPublicationFailure(
+  error: unknown,
+  phase: PublicationPhase,
+  plan: { repo: string; base: string; localSha: string },
+): ContractError {
+  publicationLog.error("publication stopped by an unexpected failure", { phase, error });
+  const rerun = `ravi pr publish --repo ${plan.repo} --base ${plan.base} --expect-sha ${plan.localSha} --json --execute`;
+  if (error instanceof CliExpectedError) {
+    const cause = oneLine(error.message);
+    // A refusal by policy is not a transient fault: repeating the same publication gives the same refusal.
+    const denied = error.code === "PERMISSION_DENIED";
+    const automationHold = denied ? error.details?.automationHold : undefined;
+    return prError(
+      denied ? "PERMISSION_DENIED" : "PR_PUBLICATION_INCOMPLETE",
+      `Publication stopped in the ${phase} phase: ${cause}`,
+      {
+        retryable: !denied,
+        cause,
+        suggestedAction: denied
+          ? (error.suggestedAction ?? "Ask the operator to complete the step this turn is not allowed to do.")
+          : `Rerun to reconcile the PR and follow: ${rerun}`,
+        // The automation guard's cause travels so a remote caller reads its fixed advice.
+        ...(isAutomationHoldCause(automationHold) ? { automationHold } : {}),
+      },
+    );
+  }
+  const cause = oneLine(error instanceof Error ? `${error.name}: ${error.message}` : String(error));
+  return prError(
+    "PR_PUBLICATION_INCOMPLETE",
+    `Publication stopped in the ${phase} phase (${cause}). Rerun the same publication to reconcile its PR and follow.`,
+    { retryable: true, cause, suggestedAction: `Rerun to reconcile the PR and follow: ${rerun}` },
+  );
 }

@@ -31,6 +31,13 @@ class SessionViewStreamOptions {
   final String? cursor;
 }
 
+class VoiceCallStreamOptions {
+  const VoiceCallStreamOptions({this.after});
+
+  /// Replay stored events with seq greater than this.
+  final double? after;
+}
+
 class EventsStreamOptions {
   const EventsStreamOptions({this.subject, this.filter, this.only, this.noClaude = false, this.noHeartbeat = false});
 
@@ -85,6 +92,33 @@ class SessionViewStreamPayload {
 }
 
 SessionViewStreamPayload sessionViewStreamPayloadFromJson(Object? json) => SessionViewStreamPayload.fromJsonValue(json);
+
+class VoiceCallStreamPayload {
+  const VoiceCallStreamPayload({required this.callId, required this.seq, required this.type, required this.data, this.createdAt});
+
+  final String callId;
+  /// Per-call sequence number; resume with ?after=<seq>.
+  final double seq;
+  final RaviJson type;
+  final RaviJson data;
+  final double? createdAt;
+
+  factory VoiceCallStreamPayload.fromJson(Map<String, Object?> json) {
+    return VoiceCallStreamPayload(
+      callId: raviJsonAsString(json["callId"]),
+      seq: raviJsonAsDouble(json["seq"]),
+      type: RaviJson.from(json["type"]),
+      data: RaviJson.from(json["data"]),
+      createdAt: json["createdAt"] == null ? null : raviJsonAsDouble(json["createdAt"]),
+    );
+  }
+
+  static VoiceCallStreamPayload fromJsonValue(Object? json) {
+    return VoiceCallStreamPayload.fromJson(raviJsonObject(json, "VoiceCallStreamPayload"));
+  }
+}
+
+VoiceCallStreamPayload voiceCallStreamPayloadFromJson(Object? json) => VoiceCallStreamPayload.fromJsonValue(json);
 
 class GatewayTopicEvent {
   const GatewayTopicEvent({required this.type, required this.topic, required this.data, this.timestamp, this.count});
@@ -378,6 +412,15 @@ class RaviStreamClient {
     _appendString(query, "conversationId", options.conversationId);
     _appendString(query, "cursor", options.cursor);
     return _stream(pathSegments: ["session-view"], query: query, decode: sessionViewStreamPayloadFromJson);
+  }
+
+  ///
+  /// Follow one voice call: call.snapshot first, then stored events after `after`, then live events (transcripts, agent state, work state, approvals, usage). Resume with the last `seq` seen.
+  ///
+  Stream<RaviSseEvent<VoiceCallStreamPayload>> voiceCall(String call, [VoiceCallStreamOptions options = const VoiceCallStreamOptions()]) {
+    final query = <String, String>{};
+    _appendDouble(query, "after", options.after);
+    return _stream(pathSegments: ["voice", call], query: query, decode: voiceCallStreamPayloadFromJson);
   }
 
   ///

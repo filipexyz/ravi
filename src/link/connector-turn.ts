@@ -93,11 +93,6 @@ export type ConnectorTurnResult =
       /** The speaker is the owner, blocked only by where the answer would go (a group). */
       speakerIsOwner?: boolean;
       /**
-       * The owner in their own direct chat, refused only because other
-       * people's chats share its session (and so its transcript).
-       */
-      sharedSession?: boolean;
-      /**
        * The operator's own relay (`ravi sessions send|ask`), refused only for
        * where the session posts its answer (a chat that is not the owner's
        * direct chat, or one Ravi could not read): the relay turn, with that
@@ -368,11 +363,9 @@ export function resolveConnectorTurn(deps: ConnectorTurnDeps = {}): ConnectorTur
     if (surface?.type !== "dm") {
       return { ...notOwner(actorPrincipal, unknownTurnMessage(owner)), speakerIsOwner: true };
     }
-    // The owner's own chat, but in a session other people's chats share,
-    // what the account returns stays in a transcript they can ask about.
-    if (!candidate || !isPrivateDirectChat(candidate, deps)) {
-      return withCandidate(ownerSharedSessionBlocked(actorPrincipal, owner), candidate);
-    }
+    // The owner's own turn counts wherever the session runs, shared or not
+    // (owner decision, 26/11: "se eu escrevo eu quero que esse dado venha,
+    // independente de onde estar"). Sharing in a group is their choice too.
     return {
       ok: true,
       turn: {
@@ -651,7 +644,7 @@ function personAskingSharedSessionBlocked(turn: ConnectorTurn, owner: OwnerIdent
 
 /**
  * The operator's own turn (the terminal, the owner's own linked direct chat,
- * also in a shared session, or the owner's own `ravi sessions send|ask`,
+ * in any session, or the owner's own `ravi sessions send|ask`,
  * wherever the session posts its answer), for changes to how an agent uses
  * connected accounts. Contacts, routines and agents never pass, in any mode.
  */
@@ -662,11 +655,6 @@ export function resolveOperatorTurn(deps: ConnectorTurnDeps & { action: string }
   // mudar como a conta é usada continua sendo coisa de terminal ou do DM dele.
   const ownerInGroup = result.ok && result.turn.speaker.kind === "owner" && result.turn.conversation === "group";
   if (result.ok && result.turn.speaker.kind === "owner" && !ownerInGroup) return result;
-  // The owner's own direct chat in a shared session: changing a mode returns
-  // nothing from an account, so the transcript is no reason to refuse it.
-  if (!result.ok && result.sharedSession && result.candidate?.speaker.kind === "owner") {
-    return { ok: true, turn: result.candidate };
-  }
   // The operator's own relay, whatever chat the session posts into: the
   // same, and the operator is the one asking, not the people in that chat.
   if (!result.ok && result.relay?.speaker.kind === "owner") return { ok: true, turn: result.relay };
@@ -1380,33 +1368,6 @@ function relayBlocked(
     }),
     speakerIsOwner: true,
     relay,
-  };
-}
-
-/**
- * The owner in their own direct chat, in a session other people's chats
- * share (`dmScope: main`, a route that sends several chats to one session,
- * an attached chat): what their accounts return would stay in a transcript
- * the others can ask about. The owner is also the operator, so the line tells
- * them how to allow it.
- */
-function ownerSharedSessionBlocked(actorPrincipal: string, owner: OwnerIdentity): BlockedTurn {
-  const chatLine = `I can't use your ${owner.service} in this conversation: other people's chats share its session. Give each person their own session (dmScope per-peer), then ask me again.`;
-  const chatLinePt = `Não posso usar o seu ${owner.service} nesta conversa: as conversas de outras pessoas compartilham a sessão dela. Dê a cada pessoa a própria sessão (dmScope per-peer) e me peça de novo.`;
-  return {
-    ...blocked(
-      "CONNECTOR_GROUP_BLOCKED",
-      actorPrincipal,
-      `${owner.label} asked in their own direct chat, but its session is shared with other people's chats (dmScope main, a route that sends several chats to one session, or an attached chat), so they could read what ${owner.possessiveEn} ${owner.service} returns. Do not retry. Reply: "${chatLine}"`,
-      {
-        chatLine,
-        chatLinePt,
-        replyTo: "same_chat",
-        suggestedAction: `reply in this chat with the chat line, and do not retry until ${owner.label} gives each person their own session (dmScope per-peer)`,
-      },
-    ),
-    speakerIsOwner: true,
-    sharedSession: true,
   };
 }
 

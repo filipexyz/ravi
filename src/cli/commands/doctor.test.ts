@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { NatsExposureReport } from "../../security/nats-exposure.js";
+import type { OmniDbAuthReport } from "../../security/omni-db-auth.js";
 import type { StateDirPermissionsInspection } from "../../security/state-dir-permissions.js";
 import { PREPARE_STATE_COMMAND } from "../../db/state-readiness.js";
 import type { ManagedRuntimeMemberIdentity } from "../../managed-runtime.js";
@@ -246,6 +247,7 @@ function makeHealthyDeps() {
     statDisk: () => ({ totalBytes: 500 * 1024 ** 3, freeBytes: 200 * 1024 ** 3, deviceId: 66 }),
     probeDir: () => ({ ok: true }),
     probeNatsExposure: async () => natsReport(),
+    probeOmniDatabaseAuth: async () => omniDbReport(),
     inspectStateDirPermissions: (path: string) => stateDirPermissions(path),
     inspectKnowledgeExposure: () => ({ ok: true, offenders: [], checkedAgents: 2 }),
     knowledgeSettings: () => knowledgeSettingsFixture(),
@@ -903,6 +905,112 @@ describe("inspectDoctor", () => {
   });
 });
 
+function omniDbReport(overrides: Partial<OmniDbAuthReport> = {}): OmniDbAuthReport {
+  return {
+    status: "requires_credentials",
+    databaseUrl: "postgresql://omni:***@127.0.0.1:5432/omni",
+    host: "127.0.0.1",
+    port: 5432,
+    user: "omni",
+    database: "omni",
+    passwordlessAddresses: [],
+    addresses: [{ address: "127.0.0.1", state: "password_required" }],
+    message: 'Omni\'s database asks user "omni" for a password',
+    remediation: [],
+    ...overrides,
+  };
+}
+
+const PASSWORDLESS_OMNI_DB: OmniDbAuthReport = omniDbReport({
+  status: "no_password_login",
+  databaseUrl: "postgresql://root@localhost:5432/omni",
+  user: "root",
+  passwordlessAddresses: ["127.0.0.1", "::1"],
+  addresses: [
+    { address: "127.0.0.1", state: "accepts_without_password" },
+    { address: "::1", state: "accepts_without_password" },
+  ],
+  message: 'Omni\'s database lets user "root" log in to "omni" without a password on 127.0.0.1, ::1',
+  remediation: ["replace the `trust` lines for Omni's database in pg_hba.conf with `scram-sha-256`"],
+});
+
+describe("doctor Omni database authentication check", () => {
+  it("passes when Omni's database asks for a password", () => {
+    const report = inspectDoctor(makeHealthyDeps(), { omniDbAuth: omniDbReport() });
+    const check = report.checks.find((item) => item.id === "runtime.omni_db_auth");
+    expect(check?.status).toBe("pass");
+    expect(check?.domain).toBe("runtime");
+    expect(report.summary.warnings).toBe(0);
+  });
+
+  it("warns when Omni's database lets its user in without a password, with remediation", () => {
+    const report = inspectDoctor(makeHealthyDeps(), { omniDbAuth: PASSWORDLESS_OMNI_DB });
+    const check = report.checks.find((item) => item.id === "runtime.omni_db_auth");
+    expect(check?.status).toBe("fail");
+    expect(check?.severity).toBe("warn");
+    expect(report.summary.warnings).toBe(1);
+    const finding = report.findings.find((item) => item.id === "runtime.omni_db_auth");
+    expect(finding?.fixHint).toContain("scram-sha-256");
+    const labels = finding?.evidence.map((evidence) => evidence.label) ?? [];
+    expect(labels).toContain("address ::1: accepts_without_password (plaintext probe, no TLS)");
+    expect(finding?.data).toMatchObject({ status: "no_password_login", passwordlessAddresses: ["127.0.0.1", "::1"] });
+  });
+
+  it("skips when not probed, not configured, remote or unknown", () => {
+    expect(inspectDoctor(makeHealthyDeps()).checks.find((item) => item.id === "runtime.omni_db_auth")?.status).toBe(
+      "skip",
+    );
+    for (const status of ["not_configured", "remote", "unknown"] as const) {
+      const report = inspectDoctor(makeHealthyDeps(), { omniDbAuth: omniDbReport({ status }) });
+      expect(report.checks.find((item) => item.id === "runtime.omni_db_auth")?.status).toBe("skip");
+      expect(report.summary.warnings).toBe(0);
+    }
+  });
+
+  it("runs the async probe in runDoctor, only for the runtime domain, and survives a throwing probe", async () => {
+    const deps = makeHealthyDeps();
+    let probes = 0;
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      const warned = await runDoctor(
+        { json: true },
+        {
+          ...deps,
+          probeOmniDatabaseAuth: async () => {
+            probes++;
+            return PASSWORDLESS_OMNI_DB;
+          },
+        },
+      );
+      expect(warned.checks.find((item) => item.id === "runtime.omni_db_auth")?.status).toBe("fail");
+      await runDoctor(
+        { json: true, domain: "apps" },
+        {
+          ...deps,
+          probeOmniDatabaseAuth: async () => {
+            probes++;
+            return PASSWORDLESS_OMNI_DB;
+          },
+        },
+      );
+      const thrown = await runDoctor(
+        { json: true },
+        {
+          ...deps,
+          probeOmniDatabaseAuth: async () => {
+            throw new Error("probe exploded");
+          },
+        },
+      );
+      expect(thrown.checks.find((item) => item.id === "runtime.omni_db_auth")?.status).toBe("skip");
+    } finally {
+      console.log = originalLog;
+    }
+    expect(probes).toBe(1);
+  });
+});
+
 describe("doctor security checks", () => {
   it("passes NATS exposure and state dir permissions when private", () => {
     const deps = makeHealthyDeps();
@@ -1099,6 +1207,33 @@ describe("runDoctor", () => {
       expect(finding?.fixHint).toContain("chat-only");
       expect(JSON.stringify(finding?.evidence)).toContain("agent:main");
       expect(report.ok).toBe(false);
+    });
+
+    it("warns when a shell automation runs code from an agent workspace", () => {
+      const report = inspectDoctor({
+        ...makeHealthyDeps(),
+        dbListAgents: () => [{ id: "workflows", cwd: "/srv/agents/workflows" }],
+        listShellAutomations: () => [
+          { kind: "trigger", id: "t1", enabled: true, shellCommand: "cd /srv/agents/workflows && bun run.ts" },
+        ],
+      } as any);
+      const check = report.checks.find((item) => item.id === "permissions.shell_automation_in_agent_workspace");
+      // A legacy "warn" check reports as fail with warn severity.
+      expect(check?.status).toBe("fail");
+      expect(check?.severity).toBe("warn");
+      expect(JSON.stringify(check?.data)).toContain('"agentId":"workflows"');
+      const finding = report.findings.find((item) => item.id === "permissions.shell_automation_in_agent_workspace");
+      expect(JSON.stringify(finding?.evidence)).toContain("agent:workflows");
+    });
+
+    it("passes the shell automation check when no command touches an agent workspace", () => {
+      const report = inspectDoctor({
+        ...makeHealthyDeps(),
+        dbListAgents: () => [{ id: "workflows", cwd: "/srv/agents/workflows" }],
+        listShellAutomations: () => [{ kind: "cron", id: "c1", enabled: true, shellCommand: "/opt/tools/run.sh" }],
+      } as any);
+      const check = report.checks.find((item) => item.id === "permissions.shell_automation_in_agent_workspace");
+      expect(check?.status).toBe("pass");
     });
 
     it("warns on F2 misconfigurations without failing", () => {

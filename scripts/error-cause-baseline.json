@@ -2894,13 +2894,6 @@
       "count": 1
     },
     {
-      "id": "src/knowledge/turn/audience.ts:ea85140b674efc5bc81dd4d4",
-      "file": "src/knowledge/turn/audience.ts",
-      "boundary": "knowledge",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
       "id": "src/knowledge/turn/preamble.ts:a714b2f5508113e5d021ad0b",
       "file": "src/knowledge/turn/preamble.ts",
       "boundary": "knowledge",
@@ -3563,13 +3556,6 @@
       "file": "src/omni/client.ts",
       "boundary": "omni",
       "rule": "cause-not-forwarded-at-surface",
-      "count": 1
-    },
-    {
-      "id": "src/omni/consumer.ts:0a59ad0dd07833b1a237797d",
-      "file": "src/omni/consumer.ts",
-      "boundary": "omni",
-      "rule": "catch-without-binding",
       "count": 1
     },
     {
@@ -4679,13 +4665,6 @@
       "count": 1
     },
     {
-      "id": "src/runtime/prompt-subscription.ts:040a78dc8b9735fea837bde0",
-      "file": "src/runtime/prompt-subscription.ts",
-      "boundary": "runtime-chat",
-      "rule": "surface-bypasses-constructor",
-      "count": 1
-    },
-    {
       "id": "src/runtime/provider-device-login.ts:44b82e71718640cce7ee55d8",
       "file": "src/runtime/provider-device-login.ts",
       "boundary": "runtime-chat",
@@ -5744,7 +5723,7 @@
     }
   ],
   "totals": {
-    "violations": 859,
+    "violations": 856,
     "byDirectory": {
       "src/access": 2,
       "src/adapters": 2,
@@ -5794,14 +5773,14 @@
       "src/knowledge/packet": 3,
       "src/knowledge/safety": 12,
       "src/knowledge/store": 6,
-      "src/knowledge/turn": 6,
+      "src/knowledge/turn": 5,
       "src/leader": 4,
       "src/library": 51,
       "src/link": 20,
       "src/mailbox": 2,
       "src/meetings": 4,
       "src/meetings/google-meet": 2,
-      "src/omni": 13,
+      "src/omni": 12,
       "src/pages": 14,
       "src/permissions": 20,
       "src/plugins": 1,
@@ -5810,7 +5789,7 @@
       "src/prox/calls": 5,
       "src/reference": 1,
       "src/router": 24,
-      "src/runtime": 97,
+      "src/runtime": 96,
       "src/sandbox": 3,
       "src/sdk/gateway": 9,
       "src/sdk/gateway/streaming": 6,

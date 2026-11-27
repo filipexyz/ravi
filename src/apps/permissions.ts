@@ -3,6 +3,7 @@ import { buildAuditContextProvenance } from "../permissions/audit-provenance.js"
 import { recordAndEmitPermissionDenial } from "../permissions/denials.js";
 import { agentCan, canWithCapabilityContext, localOperatorCan } from "../permissions/provider-runtime.js";
 import { normalizeAppId } from "./service.js";
+import { storeExposureFor } from "./store/gate.js";
 import { RaviAppError, type RaviAppCheckResult, type RaviAppManifestRecord } from "./types.js";
 
 export class RaviAppPermissionDeniedError extends Error {
@@ -24,6 +25,8 @@ export function canAccessApp(appId: string, relation: "use" | "execute"): boolea
   const normalizedAppId = normalizeAppId(appId);
   const ctx = getContext();
   if (!ctx?.agentId) return localOperatorCan(relation, "app", normalizedAppId);
+  // A store app needs the operator's `ravi apps allow` on top of the agent's own grants (spec apps/store).
+  if (storeExposureFor(normalizedAppId, ctx.context?.agentId ?? ctx.agentId) === "hidden") return false;
 
   return ctx.context
     ? canWithCapabilityContext(

@@ -143,6 +143,7 @@ import {
   createObservationEvent,
   deliverObservationEvents,
   observedUserPreview,
+  truncateObservationText,
   getObservationDebounceMs,
   getObservationPulseMs,
   logObservationDeliveryFailure,
@@ -1069,6 +1070,10 @@ async function waitForProviderCapacityRetry(
  * not establish remote delivery or exactly-once execution.
  */
 export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): Promise<void> {
+  // The loop owns its slot until its own cleanup settles it, including the
+  // window after `done` is set while the provider is still closing. Slot
+  // sweepers read this flag instead of treating `done` alone as abandoned.
+  options.streaming.eventLoopActive = true;
   const {
     runId,
     sessionName,
@@ -1319,8 +1324,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   const observationEvents: ObservationEvent[] = [];
   const debouncedObservationEvents: ObservationEvent[] = [];
   let debounceObservationTimer: ReturnType<typeof setTimeout> | undefined;
-  const truncateObservationPreview = (value: string, maxLength = 500): string =>
-    value.length > maxLength ? `${value.slice(0, maxLength - 15)}... [truncated]` : value;
+  const truncateObservationPreview = truncateObservationText;
   let pulseObservationTimer: ReturnType<typeof setInterval> | undefined;
   let pulseCheckedTurnId: string | undefined;
   const clearObservationPulse = () => {
@@ -1672,6 +1676,16 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         ...(streaming.currentSource ? { _source: streaming.currentSource } : {}),
       });
     }
+    // Observers must see this turn end: the runtime is closed below without a provider terminal, and
+    // a turn that dies on inactivity is exactly what an end-of-turn observer exists to catch.
+    flushObservationEvents(exhausted ? "turn.failed" : "turn.interrupt", {
+      provider: runtimeSession.provider,
+      reason: exhausted ? "inactivity_recovery_exhausted" : input.reason,
+      kind: input.kind,
+      name: input.name,
+      timeoutMs: input.timeoutMs,
+      autoRecovered: !exhausted,
+    });
     recordTraceEvent({
       turnId: streaming.currentTraceTurnId,
       provider: runtimeSession.provider,
@@ -1795,6 +1809,16 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       return { kind: "target", target: resolution.target };
     }
     return { kind: streaming.agentMode === "sentinel" ? "sentinel" : "unresolved" };
+  };
+
+  /**
+   * Whether an agent reply of this turn lands in a chat: a resolved chat target, or a channel
+   * backend the turn answers through. Suppressed turns, sentinels and sessions with no chat at all
+   * (a headless worker, a cron or trigger run) do not.
+   */
+  const replyReachesChat = (): boolean => {
+    const emit = resolveChatEmitTarget();
+    return emit.kind === "target" || (emit.kind !== "suppressed" && streaming.currentChannelBackend !== undefined);
   };
 
   const slowToolWatchConfig = resolveSlowToolWatchConfig();
@@ -2281,6 +2305,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     const augmented = {
       ...event,
       ...(streaming.currentBridgeTurnId ? { _bridgeTurnId: streaming.currentBridgeTurnId } : {}),
+      // The waiting producers whose prompts this physical turn carries (voice door ownership).
+      _correlationIds: streaming.currentTurnCorrelationIds ?? [],
       ...(streaming.currentSource ? { _source: streaming.currentSource } : {}),
       ...(!streaming.suppressChatEmit && !isObserverRuntimeSessionName(sessionName) && streaming.currentReplyTarget
         ? { _replyTarget: streaming.currentReplyTarget }
@@ -3941,6 +3967,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                   preview: truncateObservationPreview(text),
                   payload: {
                     chars: text.length,
+                    commentary: commentaryResponse,
+                    // Whether this reply reaches a chat: narration only counts what a chat sees.
+                    chatEmitted: replyReachesChat(),
                     metadata: event.metadata ?? null,
                     detail: { text: truncateObservationPreview(text, OBSERVATION_DETAIL_TEXT_MAX) },
                   },
@@ -4466,6 +4495,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           usage: event.usage,
           costUsd: resolvedCost?.totalCost ?? null,
           responseChars: responseText.trim().length,
+          // An intentional silence (@@SILENT@@, heartbeat, no response requested) is not a missing reply.
+          silent: intentionalSilence,
           providerSessionIdAfter,
           promptTooLongReset: streaming._promptTooLong ?? false,
         });
@@ -5046,7 +5077,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           let logicalRequestContinues = false;
           try {
             if (mayContinueInterruptedRequest()) {
-              stashedCount = stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
+              stashedCount = stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, {
+                crashRecovery,
+                keepSupersededTurnWithoutEffects: true,
+              });
               if (stashedCount > 0) {
                 // Selection, stash inspection and restart arming are synchronous.
                 // Successors alone do not continue the failed logical request.
@@ -5577,18 +5611,48 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
     // Feedback can yield to a replacement. Decide ownership only after every
     // cleanup await, immediately before releasing the slot and its queued work.
-    if (ownsRuntimeSlot()) {
-      streamingSessions.delete(sessionName);
-      try {
-        if (restartStashedReason && restartStashedSession) {
-          await restartStashedSession({
-            sessionName,
-            reason: restartStashedReason,
-          });
+    try {
+      if (ownsRuntimeSlot()) {
+        streamingSessions.delete(sessionName);
+        try {
+          if (restartStashedReason && restartStashedSession) {
+            await restartStashedSession({
+              sessionName,
+              reason: restartStashedReason,
+            });
+          }
+        } finally {
+          drainPendingStarts();
         }
-      } finally {
-        drainPendingStarts();
+      } else if (restartStashedReason) {
+        // Someone else released the slot before this cleanup finished. A live
+        // replacement re-injects the stash when it starts; with no replacement
+        // the stash waits for the next prompt. Never skip that restart silently.
+        const replacementOwnsSlot = streamingSessions.has(sessionName);
+        const stashedQueueSize = stashedMessages.get(sessionName)?.length ?? 0;
+        log.warn("Skipping stashed recovery restart: the runtime slot was released before cleanup finished", {
+          runId,
+          sessionName,
+          reason: restartStashedReason,
+          stashedQueueSize,
+          replacementOwnsSlot,
+        });
+        recordTraceEvent({
+          provider: runtimeSession.provider,
+          model,
+          eventType: "dispatch.restart_skipped",
+          eventGroup: "dispatch",
+          status: "skipped",
+          payloadJson: {
+            reason: restartStashedReason,
+            skippedReason: "runtime_slot_released",
+            stashedQueueSize,
+            replacementOwnsSlot,
+          },
+        });
       }
+    } finally {
+      streaming.eventLoopActive = false;
     }
   }
 }

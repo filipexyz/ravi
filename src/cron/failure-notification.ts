@@ -5,6 +5,8 @@ import {
   listLocalInboxEvents,
   markLocalInboxItem,
   upsertLocalInboxItem,
+  listOpenLocalInboxItemsForSource,
+  peekLocalInboxItemStatus,
 } from "../inbox/local-db.js";
 import { resolveOwnerDirectTarget, resolveOwnerDirectTargets, type OwnerDirectTarget } from "../knowledge/owner.js";
 import { createOmniClient } from "../omni/client.js";
@@ -70,6 +72,8 @@ const SETTLED_EVENTS = new Set([
   "cron.failure.aggregated",
   "cron.failure.undeliverable",
   "cron.failure.stale",
+  // The job ran fine after this failure: a notice about it would describe a state that no longer holds.
+  "cron.failure.resolved",
 ]);
 
 /** When this job last messaged its owner about a failure, from the inbox ledger; null if never. */
@@ -110,6 +114,46 @@ export function recordUnreadableCronFailure(run: { id: string; job_id: string; a
   });
   if (listLocalInboxEvents(item.id).some((event) => event.eventType === "cron.failure.unreadable")) return;
   markLocalInboxItem(item.id, item.status, { eventType: "cron.failure.unreadable", actorType: "system" });
+}
+
+/** Recording a delivery outcome never reopens an alert that was closed meanwhile (its job recovered). */
+function deliveryStatus(itemId: string) {
+  return peekLocalInboxItemStatus(itemId) ?? "open";
+}
+
+/** Inbox event that closes a failure item because its job ran fine afterwards. */
+export const CRON_FAILURE_RESOLVED_EVENT = "cron.failure.resolved" as const;
+
+/**
+ * A job that ran fine closes its open failure items: an alert is about a state, and that state no longer
+ * holds. `admittedAt` is the successful run's admission time, the same order `settleCronRun` uses: only
+ * failures of runs admitted strictly before it close. A run admitted later (a manual run that failed while
+ * an older scheduled run was still going) keeps its alert, whatever order the outcomes arrive in.
+ * Returns how many items were closed. Never throws: a broken inbox must not fail the run that succeeded.
+ */
+export function resolveCronFailureAlerts(jobId: string, admittedAt: number): number {
+  try {
+    const open = listOpenLocalInboxItemsForSource({
+      sourceDomain: "cron",
+      sourceType: "run_failed",
+      sourceId: jobId,
+      occurredBefore: admittedAt,
+    });
+    for (const item of open) {
+      markLocalInboxItem(item.id, "done", {
+        eventType: CRON_FAILURE_RESOLVED_EVENT,
+        actorType: "system",
+        payload: { jobId, supersededByRunAdmittedAt: admittedAt },
+      });
+    }
+    return open.length;
+  } catch (error) {
+    log.warn("Failed to resolve cron failure alerts", {
+      jobId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return 0;
+  }
 }
 
 /** Whether a chat can be reached now: true, false, or null when it cannot be told (keep trying it). */
@@ -317,7 +361,7 @@ export async function deliverCronFailureReports(
     }
     for (const report of group) {
       if (sentTo) {
-        markLocalInboxItem(report.itemId, "open", {
+        markLocalInboxItem(report.itemId, deliveryStatus(report.itemId), {
           eventType: "cron.failure.notified",
           actorType: "system",
           payload: { channel: sentTo.channel, accountId: sentTo.accountId, digest: group.length > 1 },
@@ -329,13 +373,13 @@ export async function deliverCronFailureReports(
       // No chat of the owner is reachable (all known offline, or none resolves): retrying at every
       // start cannot help, so fail closed now. A delivery that errored may be transient: retry, bounded.
       const hopeless = ordered.length === 0;
-      markLocalInboxItem(report.itemId, "open", {
+      markLocalInboxItem(report.itemId, deliveryStatus(report.itemId), {
         eventType: "cron.failure.delivery_failed",
         actorType: "system",
         payload: { attempt: attempts, targets: report.targets.length, offline: down },
       });
       if (hopeless || attempts >= CRON_FAILURE_MAX_DELIVERY_ATTEMPTS) {
-        markLocalInboxItem(report.itemId, "open", {
+        markLocalInboxItem(report.itemId, deliveryStatus(report.itemId), {
           eventType: "cron.failure.undeliverable",
           actorType: "system",
           payload: {
@@ -430,6 +474,9 @@ export async function notifyUndeliveredRunReturn(
     sourceId: run.originId,
     dedupeKey: `run-return-undelivered:${run.runId}`,
     title: `Resultado não entregue: ${name}`,
+    // The local inbox is the operator's record: `ravi inbox` reads it (no contact grant reaches
+    // `read:inbox`, nothing filters by the assigned contact) and these items emit no event, so the
+    // summary keeps the session names. The contact's own words are the message below.
     summary: `O resultado de uma execução do ${kind} “${name}” não chegou a ${run.parentSessionName} em 24 h e foi descartado. A execução: ravi sessions read ${run.runSessionName}.`,
     priority: "normal",
     assignedToAgentId: run.agentId,

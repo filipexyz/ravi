@@ -1,6 +1,50 @@
 import { getContext } from "../cli/context.js";
 import { CliExpectedError } from "../cli/expected-error.js";
-import { isActorBreakGlassLimitedContext } from "./actor-limit.js";
+import { type ActorLimitContextLike, isActorBreakGlassLimitedContext, isRelayHeldBelowAgent } from "./actor-limit.js";
+import { AUTOMATION_HOLD_SUGGESTED_ACTION, type AutomationHoldCause } from "./automation-hold.js";
+
+export type { AutomationHoldCause } from "./automation-hold.js";
+
+/**
+ * Why a turn may not write automation that runs later as the executor agent
+ * (causes in `automation-hold.ts`), or null when it may. A held relay is named
+ * first, also when the relayed turn is narrowed to a contact's chat grants too
+ * (a thread opened from a governed chat): no grant lifts it, and that is what
+ * the caller must read. The refusal names the cause because the remedy
+ * differs; whether the turn is refused does not depend on the order.
+ */
+export function automationHoldCause(
+  context: ActorLimitContextLike | null | undefined = getContext()?.context,
+): AutomationHoldCause | null {
+  const metadata = context?.metadata ?? undefined;
+  const withheld = isActorBreakGlassLimitedContext(context);
+  // A relay carrying its caller's withheld break-glass is held by the relay, not by its own actor.
+  if (metadata?.relayNarrowing === true && (withheld || isRelayHeldBelowAgent(metadata))) return "held-relay";
+  if (metadata?.actorAuthorizationMode === "user-overlay") return "contact-chat-grants";
+  return withheld ? "person-without-chat-grant" : null;
+}
+
+const HOLD_TEXT: Record<AutomationHoldCause, { turn: string; store: string }> = {
+  "contact-chat-grants": {
+    turn: "a turn limited to a contact's chat permissions",
+    store: "a contact's chat permissions",
+  },
+  "held-relay": {
+    turn: "a relayed turn (a thread, a thread's return or a session message) whose caller does not carry the agent's whole authority",
+    store: "a relay whose caller does not carry the agent's whole authority",
+  },
+  "person-without-chat-grant": {
+    turn: "the turn of a person with no grant in this chat (held below the agent's break-glass)",
+    store: "a person with no grant in this chat",
+  },
+};
+
+/** The refusal, with the cause as a control field the remote CLI maps to the same fixed advice. */
+function automationHoldError(message: string, cause: AutomationHoldCause): CliExpectedError {
+  return new CliExpectedError(message, "PERMISSION_DENIED", 1, AUTOMATION_HOLD_SUGGESTED_ACTION[cause], {
+    automationHold: cause,
+  });
+}
 
 /**
  * A turn narrowed to a contact's chat grants (`actorAuthorizationMode:
@@ -10,26 +54,23 @@ import { isActorBreakGlassLimitedContext } from "./actor-limit.js";
  * such a turn (`relayNarrowing`) is held to the same rule, and so is a
  * person's turn in an ungoverned chat that was held below the agent's
  * break-glass (`actorBreakGlassWithheld`). Cron jobs record the overlay chat
- * instead (`creatorChat`).
+ * instead (`creatorChat`). The operator's own relay (a thread they asked for)
+ * carries `relayNarrowing` too, but holds the agent's authority
+ * (`relayCallerUnrestricted`) and writes automation as itself. The operator
+ * speaking in a governed chat is not narrowed either: a contact whose own
+ * power holds full access gets a lifted overlay (`userOverlay: lifted`), not
+ * an overlay turn (`permissions/user-overlay`, "Lifted Overlay").
  */
 export function isUserOverlayAutomationTurn(): boolean {
-  const metadata = getContext()?.context?.metadata;
-  return (
-    metadata?.actorAuthorizationMode === "user-overlay" ||
-    metadata?.relayNarrowing === true ||
-    // A person's turn (or a relay or derived context of it) held to "agent
-    // minus break-glass": automation written here would run later as the whole agent.
-    isActorBreakGlassLimitedContext(getContext()?.context)
-  );
+  return automationHoldCause() !== null;
 }
 
 export function assertNoUserOverlayAutomationWrite(op: string): void {
-  if (!isUserOverlayAutomationTurn()) return;
-  throw new CliExpectedError(
-    `${op} is not available in a turn limited to a contact's chat permissions: it would run later with the agent's full authority.`,
-    "PERMISSION_DENIED",
-    1,
-    "Ask the operator to set it up.",
+  const cause = automationHoldCause();
+  if (!cause) return;
+  throw automationHoldError(
+    `${op} is not available in ${HOLD_TEXT[cause].turn}: it would run later with the agent's full authority.`,
+    cause,
   );
 }
 
@@ -54,15 +95,13 @@ export function assertAutomationStoreWrite(
   if (options.disablesOnly) return;
   const context = getContext()?.context;
   if (!context) return;
-  const metadata = context.metadata ?? {};
-  const withheld = isActorBreakGlassLimitedContext(context);
-  const narrowed = metadata.actorAuthorizationMode === "user-overlay" || metadata.relayNarrowing === true;
-  if (!withheld && (!narrowed || options.bindableToOverlayChat)) return;
-  throw new CliExpectedError(
-    `${store} cannot be written in a turn limited below the agent's authority: it would run later with the agent's full authority.`,
-    "PERMISSION_DENIED",
-    1,
-    "Ask the operator to set it up.",
+  const cause = automationHoldCause(context);
+  if (!cause) return;
+  // Binding to the overlay chat excuses a narrowed turn, never a withheld break-glass.
+  if (options.bindableToOverlayChat && !isActorBreakGlassLimitedContext(context)) return;
+  throw automationHoldError(
+    `${store} cannot be written in a turn limited below the agent's authority (${HOLD_TEXT[cause].store}): it would run later with the agent's full authority.`,
+    cause,
   );
 }
 

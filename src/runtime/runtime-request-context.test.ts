@@ -1,16 +1,27 @@
 import { existsSync } from "node:fs";
+import { sessionCloneSeedPublisher } from "../cli/commands/sessions.js";
+import { buildSessionCloneSeedTurn } from "../sessions/clone-seed-turn.js";
+import { isActorBreakGlassLimitedContext, isRelayHeldBelowAgent } from "../permissions/actor-limit.js";
+import {
+  assertAutomationStoreWrite,
+  assertNoUserOverlayAutomationWrite,
+  automationHoldCause,
+} from "../permissions/user-overlay-automation.js";
+import { runWithContext } from "../cli/context.js";
 import { join } from "node:path";
 import { authorizeContextCapabilities } from "../permissions/context-capabilities-provider.js";
 import { canWithCapabilityContext } from "../permissions/capability-context.js";
 import { recordBridgeRuntimeEvent } from "../bridge/native.js";
 import { bridgeContextCapabilities, bridgeContextLive } from "../bridge/authority.js";
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { blockContact, createContact } from "../contacts.js";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import { nats } from "../nats.js";
+import { blockContact, createContact, removeContactTag } from "../contacts.js";
 import { accessActorFromTurn } from "../access/actor.js";
 import { resolveConnectorExecRoute, resolveConnectorTurn, resolveOperatorTurn } from "../link/connector-turn.js";
 import { upsertPermissionProfileDefinition } from "../permissions/apply-grant.js";
 import { dbDeleteContactChatGrant, dbEnsureContactChatGrant } from "../permissions/contact-chat-grants.js";
-import { dbCreateCronJob, dbUpdateCronJob } from "../cron/cron-db.js";
+import { dbCreateCronJob, dbListCronJobs, dbUpdateCronJob } from "../cron/cron-db.js";
+import { CronCommands } from "../cli/commands/cron.js";
 import { canWithCapabilities } from "../permissions/provider-runtime.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
@@ -34,12 +45,14 @@ import {
   createRuntimeContext,
   issueRuntimeContext,
   resolveRuntimeContext,
+  revokeLiveRuntimeContextsForContactGrant,
   revokeRuntimeContext,
 } from "./context-registry.js";
 import { pickRuntimeTurnAuthorityEnvelope } from "./delivery-queue.js";
 import {
   buildRuntimeRequestContext,
   refreshRuntimeRequestContextForTurn,
+  turnRunsBelowAgentExecution,
   startActiveRuntimeRequestContextLease,
 } from "./runtime-request-context.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
@@ -1027,7 +1040,7 @@ describe("runtime request context authority", () => {
     expect(resolveRuntimeContext(runtimeEnv.RAVI_CONTEXT_KEY, { touch: false })?.contextId).toBe(refreshed.contextId);
   });
 
-  it("does not require admin-tagged contact authority for agent identity group turns", () => {
+  it("keeps an admin-tagged contact (not the owner) under the agent's ceiling in group turns", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     dbUpdateAgent(agent.id, {
       defaults: {
@@ -1065,6 +1078,9 @@ describe("runtime request context authority", () => {
     });
     expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "pages")).toBe(true);
     expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "sessions_trace")).toBe(true);
+    // Admin is someone else's full access, not the installation owner: no owner authority
+    // (`permissions/owner-authority`), the agent's ceiling still holds.
+    expect(runtimeContext.metadata?.ownerAuthority).toBeUndefined();
     expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
   });
 
@@ -2210,6 +2226,190 @@ describe("runtime request context chat-scoped user overlay", () => {
     }
   });
 
+  it("keeps the agent's sandbox for a chat grant only when it runs every executable", () => {
+    const overlay = (objectId: string) => ({
+      metadata: { userOverlay: "active" },
+      capabilities: [{ permission: "execute", objectType: "executable", objectId, source: "test" }],
+    });
+    // A grant for named executables is still held: the provider's own tools are not limited to them.
+    expect(turnRunsBelowAgentExecution(overlay("ravi"))).toBe(true);
+    expect(turnRunsBelowAgentExecution(overlay("ra*"))).toBe(true);
+    expect(turnRunsBelowAgentExecution(overlay("*"))).toBe(false);
+    expect(turnRunsBelowAgentExecution({ metadata: { userOverlay: "active" }, capabilities: [] })).toBe(true);
+    // Outside an active overlay, a turn without a held marker keeps the agent's sandbox.
+    expect(turnRunsBelowAgentExecution({ metadata: { userOverlay: "lifted" }, capabilities: [] })).toBe(false);
+  });
+
+  it("marks the runtime env of a held person's turn and clears it on the next turn", () => {
+    dbUpdateAgent(agent.id, {
+      defaults: { runtimePermissions: { capabilities: ["admin:system:*", "execute:executable:*"] } },
+    });
+    const chat = groupChat("120363400000000095@g.us");
+    const stranger = createContact({ phone: "5511900000095", name: "Stranger" });
+    const owner = createContact({
+      phone: "5511900000096",
+      name: "Owner",
+      tags: ["permission-owner"],
+      status: "allowed",
+    });
+    const heldSessionKey = `agent:provider-agent:chat:${chat.id}:held-env`;
+    const heldSessionName = `held-env-${chat.id}`;
+    getOrCreateSession(heldSessionKey, agent.id, agent.cwd, { name: heldSessionName });
+    const strangerPrompt = promptInChat(stranger.id, chat);
+    const built = buildRuntimeRequestContext({
+      dbSessionKey: heldSessionKey,
+      sessionName: heldSessionName,
+      sessionCwd: agent.cwd,
+      agent,
+      prompt: strangerPrompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: strangerPrompt.source,
+    });
+    const runtimeEnv: Record<string, string> = { ...built.raviEnv };
+    expect(runtimeEnv.RAVI_TURN_HELD_BELOW_AGENT).toBe("1");
+    expect(runtimeEnv.RAVI_TURN_OWNER_AUTHORITY).toBeUndefined();
+
+    const ownerPrompt = promptInChat(owner.id, chat);
+    refreshRuntimeRequestContextForTurn({
+      runtimeContext: built.runtimeContext,
+      toolContext: built.toolContext,
+      runtimeEnv,
+      dbSessionKey: heldSessionKey,
+      sessionName: heldSessionName,
+      sessionCwd: agent.cwd,
+      agent,
+      prompt: ownerPrompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: ownerPrompt.source,
+    });
+    expect(runtimeEnv.RAVI_TURN_HELD_BELOW_AGENT).toBeUndefined();
+    // The owner's turn tells the provider not to apply the agent profile's sandbox.
+    expect(runtimeEnv.RAVI_TURN_OWNER_AUTHORITY).toBe("1");
+
+    // Once the chat has contact grants, a contact narrowed to them carries no
+    // break-glass deny: it is held because its grants run no executable.
+    grant(stranger.id, "chat", chat.id);
+    const governedPrompt = promptInChat(stranger.id, chat);
+    const governed = refreshRuntimeRequestContextForTurn({
+      runtimeContext: built.runtimeContext,
+      toolContext: built.toolContext,
+      runtimeEnv,
+      dbSessionKey: heldSessionKey,
+      sessionName: heldSessionName,
+      sessionCwd: agent.cwd,
+      agent,
+      prompt: governedPrompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: governedPrompt.source,
+    });
+    expect(governed.metadata?.userOverlay).toBe("active");
+    expect(governed.metadata?.actorBreakGlassWithheld).toBeUndefined();
+    expect(runtimeEnv.RAVI_TURN_HELD_BELOW_AGENT).toBe("1");
+    // The owner mark does not carry over to the next turn.
+    expect(runtimeEnv.RAVI_TURN_OWNER_AUTHORITY).toBeUndefined();
+  });
+
+  it("acts with the owner's own authority, not the agent's ceiling (owner authority)", () => {
+    // An agent with a closed list of executables, like a client agent in a group, and an unrelated deny:
+    // the agent's deny is part of its ceiling and must not drop the owner's admin (Devin on #1029).
+    dbUpdateAgent(agent.id, {
+      defaults: {
+        runtimePermissions: {
+          capabilities: ["execute:executable:git", "mutate:image:generate", "deny_use:tool:WebSearch"],
+        },
+      },
+    });
+    const chat = groupChat("120363400000000093@g.us");
+    const stranger = createContact({ phone: "5511900000093", name: "Stranger" });
+    const owner = createContact({
+      phone: "5511900000094",
+      name: "Owner",
+      tags: ["permission-owner"],
+      status: "allowed",
+    });
+
+    const ownerTurn = contextFor(owner.id, chat);
+    expect(ownerTurn.metadata?.ownerAuthority).toBe(`contact:${owner.id}`);
+    expect(canWithCapabilities(ownerTurn.capabilities, "execute", "executable", "codex")).toBe(true);
+    expect(canWithCapabilities(ownerTurn.capabilities, "use", "tool", "WebSearch")).toBe(true);
+    expect(canWithCapabilities(ownerTurn.capabilities, "execute", "executable", "curl")).toBe(true);
+    expect(ownerTurn.metadata?.actorBreakGlassWithheld).toBeUndefined();
+
+    const strangerTurn = contextFor(stranger.id, chat);
+    expect(strangerTurn.metadata?.ownerAuthority).toBeUndefined();
+    expect(canWithCapabilities(strangerTurn.capabilities, "execute", "executable", "git")).toBe(true);
+    expect(canWithCapabilities(strangerTurn.capabilities, "execute", "executable", "codex")).toBe(false);
+    expect(canWithCapabilities(strangerTurn.capabilities, "admin", "system", "*")).toBe(false);
+    expect(canWithCapabilities(strangerTurn.capabilities, "use", "tool", "WebSearch")).toBe(false);
+
+    // A relay from the owner's turn carries the owner's authority; one from the stranger's does not.
+    const ownerRelay = relayFor(ownerTurn);
+    expect(ownerRelay.metadata?.ownerAuthority).toBe(`contact:${owner.id}`);
+    expect(canWithCapabilities(ownerRelay.capabilities, "execute", "executable", "codex")).toBe(true);
+    const strangerRelay = relayFor(strangerTurn);
+    expect(strangerRelay.metadata?.ownerAuthority).toBeUndefined();
+    expect(canWithCapabilities(strangerRelay.capabilities, "execute", "executable", "codex")).toBe(false);
+
+    // A global admin (or superadmin) is not the owner: still bounded by the agent's list.
+    const admin = createContact({
+      phone: "5511900000095",
+      name: "Global admin",
+      tags: ["permission-admin"],
+      status: "allowed",
+    });
+    const adminTurn = contextFor(admin.id, chat);
+    expect(adminTurn.metadata?.ownerAuthority).toBeUndefined();
+    expect(canWithCapabilities(adminTurn.capabilities, "execute", "executable", "codex")).toBe(false);
+    expect(relayFor(adminTurn).metadata?.ownerAuthority).toBeUndefined();
+
+    // A chat grant never makes an owner: full access granted only in this chat keeps the agent ceiling.
+    dbEnsureContactChatGrant({
+      contactId: stranger.id,
+      profileSlug: "permission-full-access",
+      scopeType: "chat",
+      scopeId: chat.id,
+    });
+    expect(contextFor(stranger.id, chat).metadata?.ownerAuthority).toBeUndefined();
+
+    // A relay queued from the owner's turn loses the authority once that chat narrows the owner
+    // (a deny added after the turn ran): the producing turn's chat is re-checked when the relay runs.
+    expect(relayFor(ownerTurn).metadata?.ownerAuthority).toBe(`contact:${owner.id}`);
+    dbCreateTagDefinition({
+      slug: "permission-no-shell-owner",
+      label: "No shell",
+      kind: "system",
+      source: "permissions",
+      metadata: { permissions: { capabilities: ["deny_execute:executable:*"] } },
+    });
+    dbEnsureContactChatGrant({
+      contactId: owner.id,
+      profileSlug: "permission-no-shell-owner",
+      scopeType: "chat",
+      scopeId: chat.id,
+    });
+    const queuedAfterDeny = relayFor(ownerTurn);
+    expect(queuedAfterDeny.metadata?.ownerAuthority).toBeUndefined();
+    expect(canWithCapabilities(queuedAfterDeny.capabilities, "execute", "executable", "codex")).toBe(false);
+    dbDeleteContactChatGrant({
+      contactId: owner.id,
+      profileSlug: "permission-no-shell-owner",
+      scopeType: "chat",
+      scopeId: chat.id,
+    });
+
+    // The owner's power is read on each turn: untagged, the next turn is back under the agent ceiling.
+    removeContactTag("5511900000094", "permission-owner");
+    const afterUntag = contextFor(owner.id, chat);
+    expect(afterUntag.metadata?.ownerAuthority).toBeUndefined();
+    expect(canWithCapabilities(afterUntag.capabilities, "execute", "executable", "codex")).toBe(false);
+  });
+
   it("never lets a person's turn in an ungoverned chat inherit the agent's break-glass", () => {
     dbUpdateAgent(agent.id, {
       defaults: {
@@ -2245,6 +2445,8 @@ describe("runtime request context chat-scoped user overlay", () => {
     expect(canWithCapabilities(relayed.capabilities, "admin", "system", "*")).toBe(false);
     expect(canWithCapabilities(relayed.capabilities, "execute", "executable", "rm")).toBe(false);
     expect(relayed.metadata?.actorBreakGlassWithheld).toEqual(["admin:system:*", "execute:executable:*"]);
+    // Even an inform relay (not a work handoff) is capped at the caller's positive authority.
+    expect(relayed.metadata?.relayNarrowing).toBe(true);
 
     // Revoking the last grant of a chat must not widen the person to the agent.
     grant(stranger.id, "chat", chat.id);
@@ -2339,6 +2541,72 @@ describe("runtime request context chat-scoped user overlay", () => {
     const revoked = cronContext();
     expect(canWithCapabilities(revoked.capabilities, "mutate", "image", "generate")).toBe(false);
     expect(canWithCapabilities(revoked.capabilities, "execute", "executable", "curl")).toBe(false);
+  });
+
+  it("runs a chat-bound cron of an owner whose own power covers the agent as the agent, until that power is withdrawn", () => {
+    const chat = groupChat("120363400000000015@g.us");
+    const ana = createContact({ phone: "5511900000015", name: "Ana" });
+    grant(ana.id, "chat", chat.id);
+    const owner = createContact({
+      phone: "5511900000016",
+      name: "Owner",
+      tags: ["permission-owner"],
+      status: "allowed",
+    });
+    const job = dbCreateCronJob({
+      name: "owner-daily",
+      schedule: { type: "every", every: 60_000 },
+      message: "faz o relatorio",
+      agentId: agent.id,
+      ownerPrincipal: `contact:${owner.id}`,
+      creatorChat: chat.id,
+    });
+    const run = () => {
+      const prompt: RuntimeLaunchPrompt = {
+        ...promptInChat(owner.id, chat),
+        _cron: true,
+        _jobId: job.id,
+        _cronAuthority: {
+          jobId: job.id,
+          ownerPrincipal: `contact:${owner.id}`,
+          ownerIsOperator: false,
+          creatorChat: chat.id,
+        },
+      };
+      const runSessionKey = `agent:provider-agent:cron:${job.id}`;
+      getOrCreateSession(runSessionKey, agent.id, agent.cwd, { name: `cron-${job.id}` });
+      return buildRuntimeRequestContext({
+        dbSessionKey: runSessionKey,
+        sessionName: `cron-${job.id}`,
+        sessionCwd: agent.cwd,
+        agent,
+        prompt,
+        runtimeProviderId: "codex",
+        model: "gpt-5",
+        runtimeResolution,
+        resolvedSource: prompt.source,
+      }).runtimeContext;
+    };
+
+    const lifted = run();
+    expect(lifted.metadata?.actorPrincipal).toBe(`automation:cron:${job.id}`);
+    expect(lifted.metadata?.userOverlay).toBe("lifted");
+    expect(lifted.metadata?.userOverlayContact).toBe(`contact:${owner.id}`);
+    expect(lifted.metadata?.actorAuthorizationMode).not.toBe("user-overlay");
+    expect(canWithCapabilities(lifted.capabilities, "execute", "executable", "curl")).toBe(true);
+    expect(automationHoldCause(lifted)).toBeNull();
+
+    // `permissions deny permission-owner --to contact:<owner> --force --apply` finds the live run by
+    // its overlay's owner, though the run acts as the job (Devin on #990).
+    expect(resolveRuntimeContext(lifted.contextKey)?.contextId).toBe(lifted.contextId);
+    expect(revokeLiveRuntimeContextsForContactGrant(owner.id, "permission-owner@global")).toHaveLength(1);
+    expect(resolveRuntimeContext(lifted.contextKey)).toBeNull();
+
+    removeContactTag("5511900000016", "permission-owner");
+    const narrowed = run();
+    expect(narrowed.metadata).toMatchObject({ actorAuthorizationMode: "user-overlay", userOverlay: "active" });
+    expect(canWithCapabilities(narrowed.capabilities, "execute", "executable", "curl")).toBe(false);
+    expect(automationHoldCause(narrowed)).toBe("contact-chat-grants");
   });
 
   it("keeps chats without contact grants on the agent identity", () => {
@@ -2562,7 +2830,12 @@ describe("verified human work handoffs", () => {
     return { contact, caller, prompt };
   }
 
-  function handoff(caller: Turn, action: Action = "execute", override: Partial<RuntimeLaunchPrompt> = {}) {
+  function handoff(
+    caller: Turn,
+    action: Action = "execute",
+    override: Partial<RuntimeLaunchPrompt> = {},
+    target = workerAgent,
+  ) {
     const origin = action.startsWith("session.")
       ? buildChannelTurnOrigin(
           action as "session.bootstrap" | "session.return",
@@ -2580,7 +2853,7 @@ describe("verified human work handoffs", () => {
       _turnOrigin: origin,
       ...override,
     };
-    return runtimeFor(prompt, workerAgent, `human-worker-${++sequence}`);
+    return runtimeFor(prompt, target, `human-worker-${++sequence}`);
   }
 
   function connectorDeps(turn: Turn) {
@@ -2617,6 +2890,287 @@ describe("verified human work handoffs", () => {
       expect(accessFor(child)).toMatchObject({ kind: "contact", contactId: contact.id });
     },
   );
+
+  it("a thread opened for the operator holds the agent's authority; one opened from a held turn stays held", () => {
+    // The requester here holds the agent's whole authority (no overlay, nothing withheld): the
+    // thread carries the caller's capabilities as a ceiling and is stamped unrestricted, so
+    // automation guards do not read it as a turn held below the agent.
+    const { caller } = humanTurn();
+    const operatorThread = handoff(caller, "session.bootstrap");
+    expect(operatorThread.metadata?.relayNarrowing).toBe(true);
+    expect(operatorThread.metadata?.relayCallerUnrestricted).toBe(true);
+    expect(isRelayHeldBelowAgent(operatorThread.metadata)).toBe(false);
+    // A chain through that thread is still the operator's.
+    const chained = handoff(operatorThread, "execute");
+    expect(isRelayHeldBelowAgent(chained.metadata)).toBe(false);
+
+    // A caller narrowed to a contact's chat grants.
+    const overlayCaller = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: originAgent.id,
+      sessionKey: caller.sessionKey,
+      sessionName: caller.sessionName,
+      capabilities: [{ permission: "read", objectType: "bases", objectId: "list", source: "test" }],
+      metadata: { actorAuthorizationMode: "user-overlay", actorPrincipal: caller.metadata?.actorPrincipal },
+    });
+    const overlayThread = handoff(overlayCaller, "session.bootstrap");
+    expect(overlayThread.metadata?.relayNarrowing).toBe(true);
+    expect(overlayThread.metadata?.relayCallerUnrestricted).toBeUndefined();
+    expect(isRelayHeldBelowAgent(overlayThread.metadata)).toBe(true);
+
+    // A caller held below the agent's break-glass (a person with no grant in a chat of a full-access agent).
+    const heldCaller = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: originAgent.id,
+      sessionKey: caller.sessionKey,
+      sessionName: caller.sessionName,
+      capabilities: [
+        { permission: "read", objectType: "bases", objectId: "list", source: "test" },
+        { permission: "deny_admin", objectType: "system", objectId: "*", source: "test" },
+      ],
+      metadata: { actorAuthorizationMode: "invoke-only", actorPrincipal: caller.metadata?.actorPrincipal },
+    });
+    const heldThread = handoff(heldCaller, "session.bootstrap");
+    expect(heldThread.metadata?.relayCallerUnrestricted).toBeUndefined();
+    expect(isActorBreakGlassLimitedContext(heldThread)).toBe(true);
+
+    // Each reason on its own, with a plain relay (the work-handoff proof check cannot mask it).
+    const overlayRelay = handoff(overlayCaller, "inform");
+    expect(overlayRelay.metadata?.relayNarrowing).toBe(true);
+    expect(overlayRelay.metadata?.relayCallerUnrestricted).toBeUndefined();
+    const stampedButWithheld = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: originAgent.id,
+      sessionKey: caller.sessionKey,
+      sessionName: caller.sessionName,
+      capabilities: [
+        { permission: "read", objectType: "bases", objectId: "list", source: "test" },
+        { permission: "deny_execute", objectType: "executable", objectId: "*", source: "test" },
+      ],
+      metadata: { actorAuthorizationMode: "invoke-only", relayNarrowing: true, relayCallerUnrestricted: true },
+    });
+    const withheldRelay = handoff(stampedButWithheld, "inform");
+    expect(withheldRelay.metadata?.relayCallerUnrestricted).toBeUndefined();
+    expect(isActorBreakGlassLimitedContext(withheldRelay)).toBe(true);
+
+    // A relay of a held relay stays held, and so does one with no stamp (an older context).
+    const unstamped = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: originAgent.id,
+      sessionKey: caller.sessionKey,
+      sessionName: caller.sessionName,
+      capabilities: [],
+      metadata: { actorAuthorizationMode: "invoke-only", relayNarrowing: true },
+    });
+    expect(isRelayHeldBelowAgent(handoff(unstamped, "execute").metadata)).toBe(true);
+    expect(isRelayHeldBelowAgent(handoff(overlayThread, "execute").metadata)).toBe(true);
+  });
+
+  it("the operator's thread returning to the agent that opened it is not held; a held one names the relay", () => {
+    // 24/11 in production: the operator (admin tag) asks a full-access agent for work in a chat with
+    // no grants, the agent opens a thread and the thread's report wakes it again (session.return).
+    // That turn writes cron jobs and triggers as the operator's own work.
+    dbUpdateAgent(originAgent.id, { defaults: { runtimePermissions: { profile: "full-access" } } });
+    const operator = createContact({
+      phone: "5511900098101",
+      name: "Operator",
+      tags: ["permission-owner"],
+      status: "allowed",
+    });
+    const operatorTurn = runtimeFor(promptForContact(operator.id, "Plan it in a thread"), originAgent, "operator-dm");
+    expect(operatorTurn.metadata?.actorBreakGlassWithheld).toBeUndefined();
+    const operatorThread = handoff(operatorTurn, "session.bootstrap", {}, originAgent);
+    const back = handoff(operatorThread, "session.return", {}, originAgent);
+    expect(back.metadata?.actorPrincipal).toBe(`agent:${originAgent.id}`);
+    expect(back.metadata?.turnOrigin).toMatchObject({ producer: "channel", action: "session.return" });
+    expect(back.metadata?.relayNarrowing).toBe(true);
+    expect(back.metadata?.relayCallerUnrestricted).toBe(true);
+    expect(canWithCapabilities(back.capabilities, "admin", "system", "*")).toBe(true);
+    expect(automationHoldCause(back)).toBeNull();
+    const asTool = (turn: Turn) => ({ contextId: turn.contextId, agentId: turn.agentId, context: turn });
+    expect(() => runWithContext(asTool(back), () => assertNoUserOverlayAutomationWrite("cron add"))).not.toThrow();
+    expect(() => runWithContext(asTool(back), () => assertAutomationStoreWrite("cron job"))).not.toThrow();
+
+    // A person with no grant in that chat: the return of their thread stays held, and the refusal
+    // names the relay instead of anyone's chat permissions.
+    const stranger = createContact({ phone: "5511900098102", name: "Stranger" });
+    const strangerTurn = runtimeFor(promptForContact(stranger.id, "Plan it in a thread"), originAgent, "stranger-dm");
+    expect(strangerTurn.metadata?.actorBreakGlassWithheld).toEqual(["admin:system:*", "execute:executable:*"]);
+    const strangerThread = handoff(strangerTurn, "session.bootstrap", {}, originAgent);
+    const heldBack = handoff(strangerThread, "session.return", {}, originAgent);
+    expect(heldBack.metadata?.relayCallerUnrestricted).toBeUndefined();
+    expect(canWithCapabilities(heldBack.capabilities, "admin", "system", "*")).toBe(false);
+    expect(automationHoldCause(heldBack)).toBe("held-relay");
+    let refusal: unknown;
+    try {
+      runWithContext(asTool(heldBack), () => assertNoUserOverlayAutomationWrite("cron add"));
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toMatchObject({ code: "PERMISSION_DENIED" });
+    expect((refusal as Error).message).toContain("relayed turn");
+    expect((refusal as Error).message).not.toContain("contact's chat permissions");
+  });
+
+  it("a thread opened from a governed chat is named a held relay, which no chat grant lifts", () => {
+    // The thread keeps the parent chat's overlay and is held as a relay of an overlay turn; the
+    // refusal names the relay (Devin on #972).
+    const { contact } = humanTurn("5511900098103");
+    dbEnsureContactChatGrant({
+      contactId: contact.id,
+      profileSlug: "permission-image",
+      scopeType: "chat",
+      scopeId: "chat_group_1",
+    });
+    const governedTurn = runtimeFor(promptForContact(contact.id, "Plan it in a thread"), originAgent, "governed");
+    expect(governedTurn.metadata?.actorAuthorizationMode).toBe("user-overlay");
+    expect(automationHoldCause(governedTurn)).toBe("contact-chat-grants");
+    const thread = handoff(governedTurn, "session.bootstrap");
+    expect(thread.metadata?.actorAuthorizationMode).toBe("user-overlay");
+    expect(thread.metadata?.relayNarrowing).toBe(true);
+    expect(isRelayHeldBelowAgent(thread.metadata)).toBe(true);
+    expect(automationHoldCause(thread)).toBe("held-relay");
+  });
+
+  it("a thread landing where its requester is narrowed is held by those grants, not by the relay", () => {
+    // The requester asked where they hold the agent's authority (no grant there yet); the thread's own
+    // turn is then narrowed by their grant in its chat. The relay reduces nothing beyond that overlay
+    // (its baseline is the overlay's authority, not the bare agent's), so it is stamped and the
+    // refusal names the chat grants.
+    const { caller, contact } = humanTurn("5511900098104");
+    expect(caller.metadata?.actorAuthorizationMode).toBe("invoke-only");
+    dbEnsureContactChatGrant({
+      contactId: contact.id,
+      profileSlug: "permission-image",
+      scopeType: "chat",
+      scopeId: "chat_group_1",
+    });
+    const thread = handoff(caller, "session.bootstrap");
+    expect(thread.metadata).toMatchObject({
+      actorAuthorizationMode: "user-overlay",
+      relayNarrowing: true,
+      relayCallerUnrestricted: true,
+    });
+    expect(automationHoldCause(thread)).toBe("contact-chat-grants");
+  });
+
+  it("a relay to an agent with more authority than the caller's ceiling is held, not stamped", () => {
+    // A plain contact in the origin agent's chat relays to a full-access agent: the turn is
+    // narrowed to the caller's ceiling, so automation written there would run later as the
+    // worker's full authority. It must not be stamped unrestricted.
+    dbUpdateAgent(workerAgent.id, { defaults: { runtimePermissions: { profile: "full-access" } } });
+    const { caller } = humanTurn();
+    for (const action of ["execute", "session.bootstrap"] as const) {
+      const toStronger = handoff(caller, action);
+      expect(toStronger.metadata?.relayNarrowing).toBe(true);
+      expect(toStronger.metadata?.relayCallerUnrestricted).toBeUndefined();
+      expect(isRelayHeldBelowAgent(toStronger.metadata)).toBe(true);
+      // And a chain through it stays held.
+      expect(isRelayHeldBelowAgent(handoff(toStronger, "execute").metadata)).toBe(true);
+    }
+  });
+
+  it.each([3, 4, 10])(
+    "a ceiling with %i specific grants inside the target's wildcards still does not stamp the relay",
+    (extra) => {
+      // Size is not coverage: the caller's specific grants land in the target's effective set as
+      // items of their own, so a count comparison would let `default + N` equal the target's count.
+      dbUpdateAgent(workerAgent.id, { defaults: { runtimePermissions: { profile: "full-access" } } });
+      const { caller } = humanTurn();
+      const specifics = ["Bash", "Read", "Write", "Edit", "Grep", "Glob", "WebFetch", "WebSearch", "Task", "Skill"]
+        .slice(0, extra)
+        .map((tool) => ({ permission: "use", objectType: "tool", objectId: tool, source: "test" }));
+      const widened = dbUpdateContextCapabilities(caller.contextId, [...(caller.capabilities ?? []), ...specifics]);
+      for (const action of ["execute", "session.bootstrap"] as const) {
+        const toStronger = handoff(widened, action);
+        expect(toStronger.metadata?.relayNarrowing).toBe(true);
+        expect(toStronger.metadata?.relayCallerUnrestricted).toBeUndefined();
+        expect(isRelayHeldBelowAgent(toStronger.metadata)).toBe(true);
+      }
+    },
+  );
+
+  it("the seed of a cloned session holds nothing, even on a full-access agent and for any asker", () => {
+    dbUpdateAgent(workerAgent.id, { defaults: { runtimePermissions: { profile: "full-access" } } });
+    const positive = (turn: Turn) =>
+      (turn.capabilities ?? []).filter((capability) => !capability.permission.startsWith("deny_"));
+    const seedFor = (requestedBy: { type: "agent" | "automation"; id: string }) => {
+      // The clone's session exists before its seed is queued (runSessionClone creates it first).
+      const cloneSession = getOrCreateSession(
+        `agent:${workerAgent.id}:clone-${++sequence}`,
+        workerAgent.id,
+        workerAgent.cwd,
+        {
+          name: `clone-${sequence}`,
+        },
+      );
+      const payload = buildSessionCloneSeedTurn({
+        agentId: workerAgent.id,
+        sessionKey: cloneSession.sessionKey,
+        sessionName: `clone-${sequence}`,
+        prompt: "[System] Inform: clone",
+        source: { channel: "testchat", accountId: "acct", chatId: "room-2" },
+        requestedBy,
+      });
+      const prompt: RuntimeLaunchPrompt = {
+        ...promptForContact("forged-destination-contact", "[System] Inform: clone"),
+        _turnOrigin: payload._turnOrigin as RuntimeLaunchPrompt["_turnOrigin"],
+      };
+      return runtimeFor(prompt, workerAgent, `clone-seed-${sequence}`);
+    };
+    // The CLI's publisher goes through the same seed turn (no raw prompt).
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const viaCli = getOrCreateSession(
+      `agent:${workerAgent.id}:clone-cli-${++sequence}`,
+      workerAgent.id,
+      workerAgent.cwd,
+      {
+        name: `clone-cli-${sequence}`,
+      },
+    );
+    void sessionCloneSeedPublisher({ type: "agent", id: originAgent.id }, async (sessionName, payload) => {
+      published.push({ sessionName, payload });
+    })({
+      sessionKey: viaCli.sessionKey,
+      agentId: workerAgent.id,
+      sessionName: `clone-cli-${sequence}`,
+      prompt: "[System] Inform: clone",
+      source: { channel: "testchat", accountId: "acct", chatId: "room-3" },
+    });
+    expect(published).toHaveLength(1);
+    const cliSeed = runtimeFor(
+      {
+        ...promptForContact("forged-destination-contact", "[System] Inform: clone"),
+        _turnOrigin: published[0]!.payload._turnOrigin as RuntimeLaunchPrompt["_turnOrigin"],
+      },
+      workerAgent,
+      `clone-seed-cli-${sequence}`,
+    );
+    expect(positive(cliSeed)).toEqual([]);
+
+    // Control: the same bootstrap with no caller context runs with the agent's whole authority.
+    const unbounded = runtimeFor(
+      {
+        ...promptForContact("forged-destination-contact", "[System] Inform: clone"),
+        _turnOrigin: buildChannelTurnOrigin("session.bootstrap", { type: "agent", id: originAgent.id }),
+      },
+      workerAgent,
+      `clone-seed-control-${++sequence}`,
+    );
+    expect(positive(unbounded).length).toBeGreaterThan(0);
+    // The operator (CLI), an agent, and a contact through the chat command: the seed holds nothing.
+    for (const requestedBy of [
+      { type: "automation" as const, id: "operator:local" },
+      { type: "agent" as const, id: originAgent.id },
+      { type: "automation" as const, id: "chat-command:contact:limited" },
+    ]) {
+      const seed = seedFor(requestedBy);
+      expect(positive(seed)).toEqual([]);
+      expect(seed.metadata?.relayNarrowing).toBe(true);
+      expect(seed.metadata?.relayCallerUnrestricted).toBeUndefined();
+      expect(isRelayHeldBelowAgent(seed.metadata)).toBe(true);
+    }
+  });
 
   it.each(["inform", "answer", "session.return"] as const)(
     "%s never turns a notification into a human request",
@@ -2893,6 +3447,630 @@ describe("verified human work handoffs", () => {
       expect(resolveOperatorTurn({ ...connectorDeps(context), action: "change connector mode" }).ok).toBe(false);
     },
   );
+
+  describe("a contact speaking in a chat governed by contact grants", () => {
+    // 25/11: the operator (admin tag) spoke in a chat where another person holds a grant. Their turn
+    // was narrowed to the chat's grants though those covered the agent: its automation was refused
+    // and every thread it opened was a held relay. The overlay is lifted only for a contact whose own
+    // power covers the agent; everyone else keeps the chat's grants.
+    const governedChat = "chat_group_1";
+    const asTool = (turn: Turn) => ({ contextId: turn.contextId, agentId: turn.agentId, context: turn });
+    let phoneSequence = 0;
+
+    beforeEach(() => {
+      phoneSequence = 0;
+      dbUpdateAgent(originAgent.id, { defaults: { runtimePermissions: { profile: "full-access" } } });
+      dbCreateTagDefinition({
+        slug: "permission-reader",
+        label: "Reader",
+        kind: "system",
+        source: "permissions",
+        metadata: { permissions: { capabilities: ["read:bases:list"] } },
+      });
+      // Another person's grant is what makes the chat governed.
+      const member = createContact({ phone: "5511900098300", name: "Member" });
+      dbEnsureContactChatGrant({
+        contactId: member.id,
+        profileSlug: "permission-reader",
+        scopeType: "chat",
+        scopeId: governedChat,
+      });
+    });
+
+    function person(name: string, extra: { tags?: string[]; status?: "allowed" } = {}) {
+      const phone = `55119000983${String(++phoneSequence).padStart(2, "0")}`;
+      return { ...createContact({ phone, name, ...extra }), phone };
+    }
+
+    function grantHere(contactId: string, profileSlug: string) {
+      dbEnsureContactChatGrant({ contactId, profileSlug, scopeType: "chat", scopeId: governedChat });
+    }
+
+    function speak(who: { id: string }, label: string) {
+      return runtimeFor(
+        promptForContact(who.id, "Schedule the weekly report and plan it in a thread"),
+        originAgent,
+        `governed-${label}`,
+      );
+    }
+
+    function refusedStoreWrite(turn: Turn): unknown {
+      try {
+        runWithContext(asTool(turn), () => assertAutomationStoreWrite("trigger"));
+      } catch (error) {
+        return error;
+      }
+      return null;
+    }
+
+    it("the operator holds the agent's authority there: its automation and the threads it opens are not held", () => {
+      const operator = person("Operator", { tags: ["permission-owner"], status: "allowed" });
+      const turn = speak(operator, "operator");
+      expect(turn.metadata).toMatchObject({
+        actorPrincipal: `contact:${operator.id}`,
+        actorAuthorizationMode: "invoke-only",
+        userOverlay: "lifted",
+        userOverlayChat: `chat:${governedChat}`,
+        userOverlayContact: `contact:${operator.id}`,
+        userOverlayGrants: ["permission-owner@global"],
+        actorCapabilityCount: 0,
+      });
+      expect(turn.metadata?.actorBreakGlassWithheld).toBeUndefined();
+      expect(canWithCapabilities(turn.capabilities, "admin", "system", "*")).toBe(true);
+      expect(automationHoldCause(turn)).toBeNull();
+      expect(refusedStoreWrite(turn)).toBeNull();
+      expect(() => runWithContext(asTool(turn), () => assertAutomationStoreWrite("cron job"))).not.toThrow();
+      expect(() =>
+        runWithContext(asTool(turn), () => assertNoUserOverlayAutomationWrite("triggers add")),
+      ).not.toThrow();
+
+      // The thread it opens and that thread's return carry its authority, as the operator's relay does.
+      const thread = handoff(turn, "session.bootstrap", {}, originAgent);
+      expect(thread.metadata).toMatchObject({
+        relayNarrowing: true,
+        relayCallerUnrestricted: true,
+        userOverlay: "lifted",
+      });
+      expect(isRelayHeldBelowAgent(thread.metadata)).toBe(false);
+      expect(automationHoldCause(thread)).toBeNull();
+      expect(canWithCapabilities(thread.capabilities, "admin", "system", "*")).toBe(true);
+      const back = handoff(thread, "session.return", {}, originAgent);
+      expect(back.metadata?.relayCallerUnrestricted).toBe(true);
+      expect(automationHoldCause(back)).toBeNull();
+    });
+
+    it("anyone whose own power does not cover the agent keeps the chat's grants, full access granted there included", () => {
+      // Each would write automation that runs later as the whole agent without holding it outside
+      // this chat: a member with a partial grant, a person with no grant, a partial global permission,
+      // and full access granted in this chat only (what an approved `permissions request` writes).
+      const member = person("Member with a grant");
+      grantHere(member.id, "permission-reader");
+      const stranger = person("No grant");
+      const partialGlobal = person("Partial global", { tags: ["permission-reader"], status: "allowed" });
+      const chatAdmin = person("Full access in this chat only");
+      grantHere(chatAdmin.id, "permission-admin");
+      // Some power of their own, and full access only from this chat: the overlay covers the agent,
+      // their own power does not.
+      const partialGlobalChatAdmin = person("Partial global, full access here", {
+        tags: ["permission-reader"],
+        status: "allowed",
+      });
+      grantHere(partialGlobalChatAdmin.id, "permission-admin");
+      const cases = [
+        ["member", member],
+        ["stranger", stranger],
+        ["partial-global", partialGlobal],
+        ["chat-admin", chatAdmin],
+        ["partial-global-chat-admin", partialGlobalChatAdmin],
+      ] as const;
+      for (const [label, who] of cases) {
+        const turn = speak(who, label);
+        expect(turn.metadata).toMatchObject({ actorAuthorizationMode: "user-overlay", userOverlay: "active" });
+        expect(automationHoldCause(turn)).toBe("contact-chat-grants");
+        expect(refusedStoreWrite(turn)).toMatchObject({
+          code: "PERMISSION_DENIED",
+          details: { automationHold: "contact-chat-grants" },
+        });
+        const thread = handoff(turn, "session.bootstrap", {}, originAgent);
+        expect(thread.metadata?.relayCallerUnrestricted).toBeUndefined();
+        expect(isRelayHeldBelowAgent(thread.metadata)).toBe(true);
+        expect(automationHoldCause(thread)).toBe("held-relay");
+      }
+      // Full access granted in this chat holds the agent's power here, and still writes no automation.
+      const chatAdminTurn = speak(chatAdmin, "chat-admin-again");
+      expect(canWithCapabilities(chatAdminTurn.capabilities, "admin", "system", "*")).toBe(true);
+      expect(automationHoldCause(chatAdminTurn)).toBe("contact-chat-grants");
+    });
+
+    it("an admin narrowed by a grant in that chat keeps the overlay", () => {
+      dbCreateTagDefinition({
+        slug: "permission-no-shell",
+        label: "No shell",
+        kind: "system",
+        source: "permissions",
+        metadata: { permissions: { capabilities: ["deny_execute:executable:*"] } },
+      });
+      const admin = person("Admin without a shell here", { tags: ["permission-owner"], status: "allowed" });
+      grantHere(admin.id, "permission-no-shell");
+      const turn = speak(admin, "narrowed-admin");
+      expect(turn.metadata).toMatchObject({ actorAuthorizationMode: "user-overlay", userOverlay: "active" });
+      expect(canWithCapabilities(turn.capabilities, "execute", "executable", "rm")).toBe(false);
+      expect(automationHoldCause(turn)).toBe("contact-chat-grants");
+      // Narrowed in this chat, the owner carries no owner authority, and neither does a relay of the turn.
+      expect(turn.metadata?.ownerAuthority).toBeUndefined();
+      const relayed = handoff(turn, "session.bootstrap", {}, originAgent);
+      expect(relayed.metadata?.ownerAuthority).toBeUndefined();
+      expect(canWithCapabilities(relayed.capabilities, "execute", "executable", "rm")).toBe(false);
+    });
+
+    it("a deny over an admin keeps the overlay even when an agent deny hides admin from the comparison", () => {
+      // CodeRabbit on #990: an agent deny_* drops admin from both effective sets, so comparing them could
+      // not see a chat deny over authority the agent reaches through admin; the Bash hook's live ceiling
+      // would then hand that authority back. Any deny_* in the contact's overlay keeps it.
+      dbUpdateAgent(originAgent.id, {
+        defaults: {
+          runtimePermissions: {
+            profile: "explicit-only",
+            capabilities: ["admin:system:*", "read:bases:list", "deny_use:tool:WebSearch"],
+          },
+        },
+      });
+      dbCreateTagDefinition({
+        slug: "permission-no-shell",
+        label: "No shell",
+        kind: "system",
+        source: "permissions",
+        metadata: { permissions: { capabilities: ["deny_execute:executable:*"] } },
+      });
+      const narrowedHere = person("Admin without a shell here", { tags: ["permission-owner"], status: "allowed" });
+      grantHere(narrowedHere.id, "permission-no-shell");
+      grantHere(narrowedHere.id, "permission-reader");
+      // The same deny in the admin's own tags keeps it too.
+      const narrowedEverywhere = person("Admin without a shell anywhere", {
+        tags: ["permission-owner", "permission-no-shell"],
+        status: "allowed",
+      });
+      const cases = [
+        ["deny-in-chat", narrowedHere],
+        ["deny-in-own-tags", narrowedEverywhere],
+      ] as const;
+      for (const [label, who] of cases) {
+        const turn = speak(who, label);
+        expect(turn.metadata).toMatchObject({ actorAuthorizationMode: "user-overlay", userOverlay: "active" });
+        expect(automationHoldCause(turn)).toBe("contact-chat-grants");
+      }
+    });
+
+    it("a contact without full access of its own is never lifted, even for an agent that holds nothing", () => {
+      dbUpdateAgent(originAgent.id, { defaults: { runtimePermissions: { profile: "chat-only" } } });
+      const member = person("Member of a chat-only agent's chat");
+      grantHere(member.id, "permission-reader");
+      // Devin on #990: any global capability covers an agent that holds nothing; it still does not lift.
+      const reader = person("Reader everywhere, chat-only agent", { tags: ["permission-reader"], status: "allowed" });
+      const cases = [
+        ["chat-only-member", member],
+        ["chat-only-reader", reader],
+      ] as const;
+      for (const [label, who] of cases) {
+        const turn = speak(who, label);
+        expect(turn.capabilities).toEqual([]);
+        expect(turn.metadata).toMatchObject({ actorAuthorizationMode: "user-overlay", userOverlay: "active" });
+        expect(automationHoldCause(turn)).toBe("contact-chat-grants");
+      }
+    });
+
+    it("global tags that cover the agent's effective set without full access keep the overlay", () => {
+      // The agent holds admin and an unrelated deny: the deny drops admin from the agent's effective
+      // set, while the Bash hook's live ceiling keeps the admin shortcut. Covering that effective set
+      // would put a contact without admin on the live ceiling, and the same contact would reach a
+      // stronger agent through an inform relay or a job (Devin on #990). Only full access lifts.
+      dbUpdateAgent(originAgent.id, {
+        defaults: {
+          runtimePermissions: {
+            profile: "explicit-only",
+            capabilities: ["admin:system:*", "read:bases:list", "deny_use:tool:WebSearch"],
+          },
+        },
+      });
+      const reader = person("Reader everywhere", { tags: ["permission-reader"], status: "allowed" });
+      const turn = speak(reader, "reader-global");
+      expect(turn.metadata).toMatchObject({ actorAuthorizationMode: "user-overlay", userOverlay: "active" });
+      expect(canWithCapabilities(turn.capabilities, "admin", "system", "*")).toBe(false);
+      expect(automationHoldCause(turn)).toBe("contact-chat-grants");
+      const thread = handoff(turn, "session.bootstrap", {}, originAgent);
+      expect(automationHoldCause(thread)).toBe("held-relay");
+    });
+
+    it("a relay from a lifted turn lends nothing once the lift is withdrawn, whatever the action", () => {
+      // Review of #990 (N2, probe V7): an inform, answer or return from a lifted admin carried the
+      // destination agent's whole authority with no hold, also when built after the admin tag was
+      // withdrawn. A relay now re-validates the caller's lift as the grants and tags stand.
+      dbUpdateAgent(workerAgent.id, { defaults: { runtimePermissions: { profile: "full-access" } } });
+      dbCreateTagDefinition({
+        slug: "permission-no-shell",
+        label: "No shell",
+        kind: "system",
+        source: "permissions",
+        metadata: { permissions: { capabilities: ["deny_execute:executable:*"] } },
+      });
+      const untagged = person("Admin later untagged", { tags: ["permission-owner"], status: "allowed" });
+      const narrowed = person("Admin later denied a shell here", { tags: ["permission-owner"], status: "allowed" });
+      const kept = person("Admin who keeps full access", { tags: ["permission-owner"], status: "allowed" });
+      const untaggedTurn = speak(untagged, "n2-untagged");
+      const narrowedTurn = speak(narrowed, "n2-narrowed");
+      const keptTurn = speak(kept, "n2-kept");
+      for (const turn of [untaggedTurn, narrowedTurn, keptTurn]) expect(turn.metadata?.userOverlay).toBe("lifted");
+
+      // Withdrawn without the revoking command (an untag), and narrowed by a deny granted in the chat later.
+      removeContactTag(untagged.phone, "permission-owner");
+      grantHere(narrowed.id, "permission-no-shell");
+      const withdrawn = [
+        ["untagged", untaggedTurn],
+        ["narrowed", narrowedTurn],
+      ] as const;
+      for (const [label, turn] of withdrawn) {
+        for (const action of ["inform", "answer", "session.return", "session.bootstrap", "execute"] as const) {
+          const child = handoff(turn, action, {}, workerAgent);
+          expect(`${label}/${action}:${child.capabilities.length}`).toBe(`${label}/${action}:0`);
+          expect(automationHoldCause(child)).toBe("held-relay");
+        }
+      }
+
+      // Still holding full access: an inform carries the destination's authority, unheld, as before.
+      const informed = handoff(keptTurn, "inform", {}, workerAgent);
+      expect(canWithCapabilities(informed.capabilities, "admin", "system", "*")).toBe(true);
+      expect(automationHoldCause(informed)).toBeNull();
+    });
+
+    it("a lifted caller whose context lacks the owner or chat of its overlay lends nothing", () => {
+      dbUpdateAgent(workerAgent.id, { defaults: { runtimePermissions: { profile: "full-access" } } });
+      const admin = person("Admin", { tags: ["permission-owner"], status: "allowed" });
+      const turn = speak(admin, "n2-malformed");
+      expect(turn.metadata?.userOverlay).toBe("lifted");
+      for (const missing of ["userOverlayContact", "userOverlayChat"] as const) {
+        const { [missing]: _dropped, ...rest } = turn.metadata ?? {};
+        const forged = createRuntimeContext({
+          kind: "turn-runtime",
+          agentId: turn.agentId,
+          sessionKey: turn.sessionKey,
+          sessionName: turn.sessionName,
+          capabilities: turn.capabilities,
+          metadata: rest,
+        });
+        const child = handoff(forged, "inform", {}, workerAgent);
+        expect(`${missing}:${child.capabilities.length}`).toBe(`${missing}:0`);
+      }
+    });
+
+    it("the lift rests on the contact's own power: withdrawing it revokes the live turn and narrows the next", () => {
+      const operator = person("Operator", { tags: ["permission-owner"], status: "allowed" });
+      const turn = speak(operator, "operator-withdrawn");
+      expect(turn.metadata?.userOverlay).toBe("lifted");
+      // `permissions deny permission-owner --to contact:<id> --force --apply` revokes by this grant.
+      revokeLiveRuntimeContextsForContactGrant(operator.id, "permission-owner@global");
+      expect(resolveRuntimeContext(turn.contextKey)).toBeNull();
+      removeContactTag(operator.phone, "permission-owner");
+      const next = speak(operator, "operator-after");
+      expect(next.metadata).toMatchObject({ actorAuthorizationMode: "user-overlay", userOverlay: "active" });
+      expect(next.capabilities).toEqual([]);
+      expect(automationHoldCause(next)).toBe("contact-chat-grants");
+    });
+
+    describe("cron jobs a turn held below the agent may touch", () => {
+      // Review of #991 (B1, probes C6 to C8): binding a lifted turn's job to the chat made the store read it as
+      // limited to the chat's grants, so a narrowed member's turn or held relay could enable or reschedule the
+      // admin's job, which runs as the whole agent. A held turn may enable, reschedule, run or delete only a job
+      // it owns, and only a principal that says who is asking proves that (review of #992, N1).
+      // `cron add|set|enable` publish `ravi.cron.refresh`: a test never reaches a NATS server (CI has none, and
+      // on the daemon's machine the default URL is the live one).
+      let emitSpy: { mock: { calls: unknown[][] }; mockRestore: () => void } | undefined;
+      beforeEach(() => {
+        emitSpy = spyOn(nats, "emit").mockResolvedValue(undefined);
+      });
+      afterEach(() => {
+        emitSpy?.mockRestore();
+        emitSpy = undefined;
+      });
+      // `cron run --execute` fires the job through `ravi.cron.trigger`.
+      const triggered = (id: string) =>
+        (emitSpy?.mock.calls ?? []).some(
+          ([subject, data]) => subject === "ravi.cron.trigger" && (data as { jobId?: string })?.jobId === id,
+        );
+      const toolCtx = (turn: Turn) => ({
+        ...asTool(turn),
+        transport: "tool" as const,
+        sessionKey: turn.sessionKey,
+        sessionName: turn.sessionName,
+      });
+      // "ok", or the code with the automation hold that refused it (the REBAC refusal shares the code).
+      async function runAs(turn: Turn, fn: () => unknown): Promise<string> {
+        const original = console.log;
+        console.log = () => {};
+        try {
+          await runWithContext(toolCtx(turn) as never, fn as never);
+          return "ok";
+        } catch (error) {
+          const failure = error as { code?: string; details?: { automationHold?: string } };
+          const hold = failure?.details?.automationHold;
+          return hold ? `${String(failure?.code)}/${hold}` : String(failure?.code);
+        } finally {
+          console.log = original;
+        }
+      }
+      const addArgs = (name: string): Parameters<CronCommands["add"]> => [
+        name,
+        undefined,
+        "30m",
+        undefined,
+        undefined,
+        "hello",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        originAgent.id,
+        undefined,
+        undefined,
+        true,
+      ];
+      const job = (name: string) => dbListCronJobs().find((candidate) => candidate.name === name);
+
+      it("a narrowed member's turn and held relay cannot enable, reschedule, run or delete a job of another owner", async () => {
+        const member = person("Member C7", { status: "allowed" });
+        grantHere(member.id, "permission-reader");
+        const admin = person("Cron admin C7", { tags: ["permission-owner"], status: "allowed" });
+        const adminTurn = speak(admin, "c7-admin");
+        for (const name of ["c7-job", "c7-legacy", "c7-operator"]) {
+          expect(await runAs(adminTurn, () => new CronCommands().add(...addArgs(name)))).toBe("ok");
+          expect(await runAs(adminTurn, () => new CronCommands().disable(job(name)!.id, true))).toBe("ok");
+        }
+        expect(job("c7-job")).toMatchObject({ ownerPrincipal: `contact:${admin.id}`, creatorChat: governedChat });
+        // A legacy row without an owner (it reports `unknown`) and an operator-owned row are not the held turn's
+        // either (review of #992, N2).
+        dbUpdateCronJob(job("c7-legacy")!.id, { ownerPrincipal: undefined });
+        dbUpdateCronJob(job("c7-operator")!.id, { ownerPrincipal: "operator" });
+        expect(job("c7-legacy")?.ownerPrincipal).toBeUndefined();
+        const before = ["c7-job", "c7-legacy", "c7-operator"].map((name) => job(name)!);
+
+        const memberTurn = speak(member, "c7-member");
+        expect(memberTurn.metadata?.actorAuthorizationMode).toBe("user-overlay");
+        const relay = handoff(memberTurn, "execute", {}, originAgent);
+        expect(isRelayHeldBelowAgent(relay.metadata)).toBe(true);
+        // Every key that keeps the job's owner (`CRON_OWNER_KEEP_KEYS`), enable, run now and delete (review of
+        // #991, N6 and N7), each with and without `--execute` where the command has a dry run (review of #992,
+        // N2): the refusal comes before the plan. `run --execute` fires the job even while it is disabled.
+        const keepKeys = [
+          ["description", "touched"],
+          ["cron", "*/5 * * * *"],
+          ["every", "1m"],
+          ["tz", "UTC"],
+          ["timezone", "UTC"],
+          ["timeout", "60"],
+          ["delete-after", "true"],
+        ] as const;
+        const held = [
+          ["member", memberTurn, "contact-chat-grants"],
+          ["relay", relay, "held-relay"],
+        ] as const;
+        for (const written of before) {
+          for (const [who, turn, hold] of held) {
+            const attempts: Array<[string, () => unknown]> = [
+              ...keepKeys.map(
+                ([key, value]) =>
+                  [`set ${key}`, () => new CronCommands().set(written.id, key, value, true)] as [string, () => unknown],
+              ),
+              ["enable", () => new CronCommands().enable(written.id, true)],
+              ["run dry", () => new CronCommands().run(written.id, true, false)],
+              ["run", () => new CronCommands().run(written.id, true, true)],
+              ["rm dry", () => new CronCommands().rm(written.id, true, false)],
+              ["rm", () => new CronCommands().rm(written.id, true, true)],
+            ];
+            for (const [label, attempt] of attempts) {
+              const attempted = `${written.name} ${who} ${label}`;
+              expect(`${attempted}:${await runAs(turn, attempt)}`).toBe(`${attempted}:PERMISSION_DENIED/${hold}`);
+            }
+          }
+          expect(triggered(written.id)).toBe(false);
+          expect(job(written.name)).toMatchObject({
+            enabled: false,
+            schedule: written.schedule,
+            deleteAfterRun: written.deleteAfterRun,
+            message: "hello",
+          });
+          expect(job(written.name)?.ownerPrincipal).toBe(written.ownerPrincipal);
+          expect(job(written.name)?.description).toBe(written.description);
+        }
+      });
+
+      it("a held turn may still disable another owner's job: it only reduces, and the owner can enable it again", async () => {
+        const member = person("Member D1", { status: "allowed" });
+        grantHere(member.id, "permission-reader");
+        const admin = person("Cron admin D1", { tags: ["permission-owner"], status: "allowed" });
+        const adminTurn = speak(admin, "d1-admin");
+        expect(await runAs(adminTurn, () => new CronCommands().add(...addArgs("d1-job")))).toBe("ok");
+        const written = job("d1-job")!;
+        expect(written.enabled).toBe(true);
+        const memberTurn = speak(member, "d1-member");
+        const relay = handoff(memberTurn, "execute", {}, originAgent);
+        expect(automationHoldCause(memberTurn)).toBe("contact-chat-grants");
+        expect(isRelayHeldBelowAgent(relay.metadata)).toBe(true);
+        for (const [who, turn] of [
+          ["member", memberTurn],
+          ["relay", relay],
+        ] as const) {
+          expect(`${who} disable:${await runAs(turn, () => new CronCommands().disable(written.id, true))}`).toBe(
+            `${who} disable:ok`,
+          );
+          expect(job("d1-job")?.enabled).toBe(false);
+          expect(await runAs(adminTurn, () => new CronCommands().enable(written.id, true))).toBe("ok");
+          expect(job("d1-job")?.enabled).toBe(true);
+        }
+      });
+
+      it("a held relay that acts as the agent owns none of the agent's jobs", async () => {
+        // Review of #992, N1 (probes Q7 and Q9). A thread's return is a relay that acts as the agent
+        // (`agent:<id>`), and so is the owner of a job an unrestricted thread return wrote. The return of a
+        // thread opened by a person without a grant is held: matching the job's owner proves nothing.
+        const ungoverned = { chatId: "120363400000000099@g.us", canonicalChatId: "chat_group_2" };
+        const speakUngoverned = (who: { id: string }, label: string) => {
+          const prompt = promptForContact(who.id, "Schedule the weekly report and plan it in a thread");
+          const source = { ...prompt.source!, ...ungoverned };
+          const context = { ...prompt.context!, ...ungoverned };
+          return runtimeFor({ ...prompt, source, context }, originAgent, `ungoverned-${label}`);
+        };
+        const admin = person("Operator Q7", { tags: ["permission-owner"], status: "allowed" });
+        const adminTurn = speakUngoverned(admin, "q7-admin");
+        const adminReturn = handoff(
+          handoff(adminTurn, "session.bootstrap", {}, originAgent),
+          "session.return",
+          {},
+          originAgent,
+        );
+        expect(automationHoldCause(adminReturn)).toBeNull();
+        expect(await runAs(adminReturn, () => new CronCommands().add(...addArgs("q7-back-job")))).toBe("ok");
+        expect(await runAs(adminTurn, () => new CronCommands().add(...addArgs("q9-agent-owned")))).toBe("ok");
+        dbUpdateCronJob(job("q9-agent-owned")!.id, { ownerPrincipal: `agent:${originAgent.id}` });
+        const jobs = ["q7-back-job", "q9-agent-owned"].map((name) => job(name)!);
+        for (const written of jobs) expect(written.ownerPrincipal).toBe(`agent:${originAgent.id}`);
+
+        const stranger = person("Stranger Q7");
+        const strangerTurn = speakUngoverned(stranger, "q7-stranger");
+        const strangerReturn = handoff(
+          handoff(strangerTurn, "session.bootstrap", {}, originAgent),
+          "session.return",
+          {},
+          originAgent,
+        );
+        expect(automationHoldCause(strangerTurn)).toBe("person-without-chat-grant");
+        expect(automationHoldCause(strangerReturn)).toBe("held-relay");
+        expect(strangerReturn.metadata?.actorPrincipal).toBe(`agent:${originAgent.id}`);
+        for (const written of jobs) {
+          for (const [who, turn, hold] of [
+            ["stranger", strangerTurn, "person-without-chat-grant"],
+            ["stranger return", strangerReturn, "held-relay"],
+          ] as const) {
+            const attempts: Array<[string, () => unknown]> = [
+              ["enable", () => new CronCommands().enable(written.id, true)],
+              ["set every", () => new CronCommands().set(written.id, "every", "1m", true)],
+              ["run", () => new CronCommands().run(written.id, true, true)],
+              ["rm", () => new CronCommands().rm(written.id, true, true)],
+            ];
+            for (const [label, attempt] of attempts) {
+              const attempted = `${written.name} ${who} ${label}`;
+              expect(`${attempted}:${await runAs(turn, attempt)}`).toBe(`${attempted}:PERMISSION_DENIED/${hold}`);
+            }
+          }
+          expect(triggered(written.id)).toBe(false);
+          expect(job(written.name)).toMatchObject({
+            schedule: written.schedule,
+            ownerPrincipal: written.ownerPrincipal,
+          });
+        }
+        // The unrestricted return that wrote the job still runs and deletes it: only held turns lose the match.
+        expect(await runAs(adminReturn, () => new CronCommands().run(jobs[0]!.id, true, true))).toBe("ok");
+        expect(triggered(jobs[0]!.id)).toBe(true);
+        expect(await runAs(adminReturn, () => new CronCommands().rm(jobs[0]!.id, true, true))).toBe("ok");
+        expect(job("q7-back-job")).toBeUndefined();
+      });
+
+      it("a held turn whose actor cannot be resolved owns no legacy job", async () => {
+        // Review of #992, N1: a turn whose context no longer resolves to an actor gets the principal `unknown`,
+        // which is also the owner a legacy row without one reports.
+        const member = person("Member U1", { status: "allowed" });
+        grantHere(member.id, "permission-reader");
+        const admin = person("Cron admin U1", { tags: ["permission-owner"], status: "allowed" });
+        const adminTurn = speak(admin, "u1-admin");
+        expect(await runAs(adminTurn, () => new CronCommands().add(...addArgs("u1-legacy")))).toBe("ok");
+        expect(await runAs(adminTurn, () => new CronCommands().disable(job("u1-legacy")!.id, true))).toBe("ok");
+        dbUpdateCronJob(job("u1-legacy")!.id, { ownerPrincipal: undefined });
+        const legacy = job("u1-legacy")!;
+        const memberTurn = speak(member, "u1-member");
+        const { actorPrincipal: _actor, ...withoutActor } = memberTurn.metadata ?? {};
+        const unresolved = createRuntimeContext({
+          kind: "turn-runtime",
+          agentId: memberTurn.agentId,
+          sessionKey: memberTurn.sessionKey,
+          sessionName: memberTurn.sessionName,
+          capabilities: memberTurn.capabilities,
+          metadata: withoutActor,
+        });
+        expect(automationHoldCause(unresolved)).toBe("contact-chat-grants");
+        const attempts: Array<[string, () => unknown]> = [
+          ["enable", () => new CronCommands().enable(legacy.id, true)],
+          ["set every", () => new CronCommands().set(legacy.id, "every", "1m", true)],
+          ["run", () => new CronCommands().run(legacy.id, true, true)],
+          ["rm", () => new CronCommands().rm(legacy.id, true, true)],
+        ];
+        for (const [label, attempt] of attempts) {
+          expect(`${label}:${await runAs(unresolved, attempt)}`).toBe(`${label}:PERMISSION_DENIED/contact-chat-grants`);
+        }
+        expect(triggered(legacy.id)).toBe(false);
+        expect(job("u1-legacy")).toMatchObject({ enabled: false, schedule: legacy.schedule });
+        expect(job("u1-legacy")?.ownerPrincipal).toBeUndefined();
+      });
+
+      it("a held relay acting for the job's own owner still may: ownership decides, not the hold", async () => {
+        const admin = person("Cron admin C6", { tags: ["permission-owner"], status: "allowed" });
+        const turn = speak(admin, "c6");
+        expect(await runAs(turn, () => new CronCommands().add(...addArgs("c6-job")))).toBe("ok");
+        const written = job("c6-job")!;
+        expect(await runAs(turn, () => new CronCommands().disable(written.id, true))).toBe("ok");
+        const held = createRuntimeContext({
+          kind: "turn-runtime",
+          agentId: turn.agentId,
+          sessionKey: turn.sessionKey,
+          sessionName: turn.sessionName,
+          capabilities: turn.capabilities,
+          metadata: { ...turn.metadata, relayNarrowing: true },
+        });
+        expect(isRelayHeldBelowAgent(held.metadata)).toBe(true);
+        expect(await runAs(held, () => new CronCommands().enable(written.id, true))).toBe("ok");
+        expect(await runAs(held, () => new CronCommands().set(written.id, "every", "1m", true))).toBe("ok");
+        expect(await runAs(held, () => new CronCommands().run(written.id, true, true))).toBe("ok");
+        expect(triggered(written.id)).toBe(true);
+        expect(await runAs(held, () => new CronCommands().rm(written.id, true, true))).toBe("ok");
+        expect(job("c6-job")).toBeUndefined();
+      });
+
+      it("a member's own bound job and an admin's own lifted job stay editable by their owners", async () => {
+        const member = person("Member C8", { status: "allowed" });
+        grantHere(member.id, "permission-reader");
+        const memberTurn = speak(member, "c8-member");
+        expect(await runAs(memberTurn, () => new CronCommands().add(...addArgs("c8-job")))).toBe("ok");
+        const own = job("c8-job")!;
+        expect(own).toMatchObject({ ownerPrincipal: `contact:${member.id}`, creatorChat: governedChat });
+        const relay = handoff(memberTurn, "execute", {}, originAgent);
+        const admin = person("Admin C8", { tags: ["permission-owner"], status: "allowed" });
+        const adminTurn = speak(admin, "c8-admin");
+        expect(await runAs(adminTurn, () => new CronCommands().add(...addArgs("c8-admin-job")))).toBe("ok");
+        const adminJob = job("c8-admin-job")!;
+        const thread = handoff(adminTurn, "session.bootstrap", {}, originAgent);
+        const attempts = {
+          "member every": await runAs(memberTurn, () => new CronCommands().set(own.id, "every", "10m", true)),
+          "member disable": await runAs(memberTurn, () => new CronCommands().disable(own.id, true)),
+          "member enable": await runAs(memberTurn, () => new CronCommands().enable(own.id, true)),
+          "member relay every": await runAs(relay, () => new CronCommands().set(own.id, "every", "20m", true)),
+          "member relay enable": await runAs(relay, () => new CronCommands().enable(own.id, true)),
+          "admin disable": await runAs(adminTurn, () => new CronCommands().disable(adminJob.id, true)),
+          "admin enable": await runAs(adminTurn, () => new CronCommands().enable(adminJob.id, true)),
+          "admin every": await runAs(adminTurn, () => new CronCommands().set(adminJob.id, "every", "5m", true)),
+          "admin thread enable": await runAs(thread, () => new CronCommands().enable(adminJob.id, true)),
+          "admin thread every": await runAs(thread, () => new CronCommands().set(adminJob.id, "every", "6m", true)),
+          "admin run": await runAs(adminTurn, () => new CronCommands().run(adminJob.id, true, true)),
+          "member relay run": await runAs(relay, () => new CronCommands().run(own.id, true, true)),
+          "member rm": await runAs(memberTurn, () => new CronCommands().rm(own.id, true, true)),
+          "admin thread rm": await runAs(thread, () => new CronCommands().rm(adminJob.id, true, true)),
+        };
+        for (const [label, result] of Object.entries(attempts)) expect(`${label}:${result}`).toBe(`${label}:ok`);
+        expect(triggered(adminJob.id) && triggered(own.id)).toBe(true);
+        expect(job("c8-job")).toBeUndefined();
+        expect(job("c8-admin-job")).toBeUndefined();
+      });
+    });
+  });
 });
 
 function promptForContact(contactId: string, text: string): RuntimeLaunchPrompt {

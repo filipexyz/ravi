@@ -90,8 +90,30 @@ Tests SHOULD cover:
 
 - Disabled connection denies before backend read.
 - Expired connection denies before backend read.
-- Successful broker execution updates `lastUsedAt`.
-- Rotation updates `rotatedAt` and keeps output redacted.
+- Successful broker execution is visible as `lastUsedAt` in the inventory
+  (derived from the latest `secret_resolved` audit row; a failed attempt does
+  not count): `src/credentials/inventory.test.ts`.
+- Rotation (`connections add --secret-stdin` over an existing connection)
+  sets `rotatedAt`; creation and `--secret-ref` do not:
+  `src/cli/commands/credentials.test.ts`.
+- `disabledAt` is set on disable, kept on re-disable and cleared on enable;
+  lifecycle fields survive updates that do not mention them; a database from
+  before the lifecycle columns gains them and keeps its rows:
+  `src/credentials/inventory.test.ts`.
+
+## Inventory Checks
+
+`src/credentials/inventory.test.ts` MUST prove, each with a mutant that fails it:
+
+- `describeSecret` calls only `GET .../metadata/...` (mutant: data endpoint);
+- 403, 503, network failure and missing config degrade with fixed reasons
+  (mutant: 403 accepted);
+- the snapshot carries no secret value, Vault path, key or Vault token even when
+  the backend would return the value from the data endpoint (mutant: raw ref as
+  alias);
+- `unsupported` (file/keychain) is not a degradation (mutant: every
+  unavailable reason degrades);
+- `lastUsedAt` counts only `secret_resolved` (mutant: any audit row).
 - Removing a connection can optionally delete backend secret material.
 
 ## Secret Redaction Checks
@@ -204,3 +226,23 @@ built.
   appHash MUST NOT enter source, manifests, argv, fixture artifacts or reports.
 - Connection authentication and real provider results require separately
   authorized operational evidence; the fake HTTP suite does not certify them.
+
+## Console Publication Checks
+
+`src/credentials/inventory-sync.test.ts` and `src/sync/runner.test.ts` MUST prove, each with a mutant that fails it:
+
+- nothing is enqueued without `RAVI_SYNC_CREDENTIALS_INVENTORY=1` (mutants: opt-in removed in the enqueue; env read ignored);
+- `storage` survives the sync redactor and no `[REDACTED`, secret value, Vault path, key or actor id appears in the outbox row (mutants: key back to `secret`; raw ref added);
+- the payload is a fixed point of `sanitizeSyncPayload`;
+- an unchanged inventory waits for the 6 h heartbeat and a change waits 15 min (mutants: heartbeat and throttle removed);
+- a linked runner tick enqueues only with the flag (mutant: runner call removed).
+- the Vault is asked at most once per 15 min, even when the inventory has not changed (mutant: throttle after the build);
+- with the flag off the describer is never called (mutant: opt-in checked after the build);
+- a runner tick never waits on the snapshot and starts at most one at a time (mutants: tick awaits; single-flight removed);
+- a snapshot that throws synchronously or rejects never stops push and is retried on the next tick (mutant: sync throw escapes);
+- person-typed text is capped and token-shaped values are replaced (mutants: purpose or scopes unscrubbed; cap removed).
+- a 400-connection snapshot is split into pages under 48 KiB (below the Console 64 KiB limit) with every item exactly once and the audit only on page 1 (mutants: no paging; audit on every page; same page number).
+- page 1 goes up with the audit alone when the first item fits by itself but not beside the audit; an oversized audit loses its oldest entries; an item that cannot fit alone throws; scopes are capped at 50 plus `+N more`; pages are measured after the sync redactor ("Bearer token" labels); a cursor hashed by the unpaged format does not hold back the first paged publication (mutants: empty-page exception kept; no audit trim; no final size check; no scope cap; no pre-sanitize; no format in the hash).
+- a 200-character cut never leaves a lone surrogate (N9; mutant: no surrogate check); a 181-character connection name goes up at 100 (mutant: identifiers uncapped).
+- the bounds come after the sync redactor: text at its limit that the redactor lengthens ("Bearer x" in `purpose` at 200 and `connection` at 100, and in every other text field), in the payload builder and end to end through the store and the outbox, still passes a copy of the Console `pageSchema`, and the payload stays a fixed point of `sanitizeSyncPayload` (B1 of the #971 review; mutants: the bounds before the redactor; no redactor in the builder).
+- every bounded string goes up cut to the Console limit and a value at the limit goes up as it is, checked against that copy of the Console `pageSchema`: item `id` 200, `provider` 100, `connection` 100, `secretRefAlias` 250, `label`, `owner` and `purpose` 200, each scope 100; audit `provider` 100, `connection` 100, `action`, `decision`, `resultStatus` and `errorCode` 200 (N1 of the #971 review; mutants: each bound removed, one at a time; each limit moved by one, both ways). The copy of the schema is refreshed whenever ravi-console `src/server/console/vault-inventory.ts` changes.

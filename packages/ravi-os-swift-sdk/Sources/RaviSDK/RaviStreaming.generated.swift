@@ -34,6 +34,16 @@ public struct SessionViewStreamOptions: Sendable {
   }
 }
 
+public struct VoiceCallStreamOptions: Sendable {
+  /// Replay stored events with seq greater than this.
+  public var after: Double?
+  public init(
+    after: Double? = nil
+  ) {
+    self.after = after
+  }
+}
+
 public struct EventsStreamOptions: Sendable {
   public var subject: String?
   public var filter: String?
@@ -96,6 +106,29 @@ public struct SessionViewStreamPayload: Decodable, Sendable {
   ) {
     self.events = events
     self.cursor = cursor
+  }
+}
+
+public struct VoiceCallStreamPayload: Decodable, Sendable {
+  public let callId: String
+  /// Per-call sequence number; resume with ?after=<seq>.
+  public let seq: Double
+  public let type: RaviJSON
+  public let data: RaviJSON
+  public let createdAt: Double?
+
+  public init(
+    callId: String,
+    seq: Double,
+    type: RaviJSON,
+    data: RaviJSON,
+    createdAt: Double? = nil
+  ) {
+    self.callId = callId
+    self.seq = seq
+    self.type = type
+    self.data = data
+    self.createdAt = createdAt
   }
 }
 
@@ -413,6 +446,13 @@ public final class RaviStreamClient: @unchecked Sendable {
     appendString(&queryItems, "conversationId", options.conversationId)
     appendString(&queryItems, "cursor", options.cursor)
     return stream(pathSegments: ["session-view"], queryItems: queryItems, as: SessionViewStreamPayload.self)
+  }
+
+  /// Follow one voice call: call.snapshot first, then stored events after `after`, then live events (transcripts, agent state, work state, approvals, usage). Resume with the last `seq` seen.
+  public func voiceCall(_ call: String, options: VoiceCallStreamOptions = .init()) -> AsyncThrowingStream<RaviSseEvent<VoiceCallStreamPayload>, Error> {
+    var queryItems: [URLQueryItem] = []
+    appendDouble(&queryItems, "after", options.after)
+    return stream(pathSegments: ["voice", call], queryItems: queryItems, as: VoiceCallStreamPayload.self)
   }
 
   /// Subscribe to the full NATS event bus. Mirrors `ravi events stream` and suppresses the same noisy topics (message.*, reaction.*, instance.*, presence.typing, chat.unread-updated, .stream, claude stream chunks).

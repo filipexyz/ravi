@@ -1484,7 +1484,7 @@ describe("OmniConsumer channel context", () => {
       expect(commitMatchedRouteCalls).toHaveLength(0);
     }, 20_000);
 
-    it("admits a non-owner whose literal route forces a session on purpose", async () => {
+    it("holds a non-owner even when a literal route names them and forces the shared session", async () => {
       seedOwner();
       actualRouterSessionsModule.updateSessionName("agent:main:main", "main");
       configuredRoutes = [{ pattern: "5511988887777", accountId: "main", agent: "main", session: "main" }];
@@ -1494,8 +1494,44 @@ describe("OmniConsumer channel context", () => {
         dmEvent("evt-dm-literal-forced", "5511988887777") as never,
       );
 
+      expect(promptCalls).toHaveLength(0);
+      expect(commitMatchedRouteCalls).toHaveLength(0);
+    }, 20_000);
+
+    it("holds a non-owner whose chat a person or an agent attached to the shared session", async () => {
+      const omni = consumer();
+      // Before the owner is tagged, the colleague's DM lands and its chat is attached.
+      await omni["handleMessageEvent"](
+        "message.received.whatsapp-baileys.instance-1",
+        dmEvent("evt-dm-before-attach", "5511988887777") as never,
+      );
       expect(commitMatchedRouteCalls).toHaveLength(1);
-      expect(commitMatchedRouteCalls[0]?.matched.route?.pattern).toBe("5511988887777");
+      const chatId = actualRouterSessionsModule
+        .listSessionSubscriptions("agent:main:main")
+        .find((subscription) => subscription.attachedByType === "system")?.chatId;
+      expect(chatId).toBeDefined();
+      actualRouterSessionsModule.detachChatFromSession("agent:main:main", chatId!);
+      actualRouterSessionsModule.attachChatToSession({
+        sessionKey: "agent:main:main",
+        chatId: chatId!,
+        role: "input",
+        attachedByType: "agent",
+        attachedReason: "test-explicit-attach",
+      });
+      expect(
+        actualRouterSessionsModule
+          .listSessionSubscriptions("agent:main:main")
+          .find((subscription) => subscription.chatId === chatId)?.attachedByType,
+      ).toBe("agent");
+
+      seedOwner();
+      await omni["handleMessageEvent"](
+        "message.received.whatsapp-baileys.instance-1",
+        dmEvent("evt-dm-after-attach", "5511988887777") as never,
+      );
+
+      expect(commitMatchedRouteCalls).toHaveLength(1);
+      expect(promptCalls).toHaveLength(1);
     }, 20_000);
 
     it("does not let a literal route vouch for a DM that routing's earlier attach sends to the shared session", async () => {

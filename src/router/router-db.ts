@@ -2038,9 +2038,22 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
       UNIQUE(request_id, turn_id)
     );
 
-    -- One row per thread: the last return it sent its parent, and the single follow-up
-    -- (nudge, then Inform) owed for the last turn that ended without one. Written only by
-    -- this release (thread-parent-return.ts); no legacy writer, so it is outside the fence.
+    -- Open asks: 'ravi sessions ask' records that one session asked another, so the asked
+    -- session may send 'ravi sessions answer' back to the asker without general access to it.
+    -- Channel-free: keyed by session keys. Written only by this release (src/sessions/ask-grants.ts).
+    CREATE TABLE IF NOT EXISTS session_asks (
+      id TEXT PRIMARY KEY,
+      origin_session_key TEXT NOT NULL,
+      target_session_key TEXT NOT NULL,
+      sender TEXT,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      -- The incarnation of each session: a session recreated under the same key does not inherit the grant.
+      origin_session_created_at INTEGER NOT NULL,
+      target_session_created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_session_asks_pair ON session_asks(target_session_key, origin_session_key, expires_at);
+
     -- Handoffs: a child session (a thread) declares it waits for its parent session to act
     -- (review, decision, merge, dispatch, instruction). Channel-free: keyed by session keys.
     -- Written only by this release (src/handoffs); no legacy writer, so it is outside the fence.
@@ -2063,6 +2076,9 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
     CREATE INDEX IF NOT EXISTS idx_session_handoffs_open ON session_handoffs(status, parent_session_key);
     CREATE INDEX IF NOT EXISTS idx_session_handoffs_child ON session_handoffs(child_session_key, status);
 
+    -- One row per thread: the last return it sent its parent, and the single follow-up
+    -- (nudge, then Inform) owed for the last turn that ended without one. Written only by
+    -- this release (thread-parent-return.ts); no legacy writer, so it is outside the fence.
     CREATE TABLE IF NOT EXISTS slack_thread_return_watch (
       request_id TEXT PRIMARY KEY REFERENCES slack_thread_lifecycle(request_id) ON DELETE CASCADE,
       last_return_at INTEGER,
@@ -3426,26 +3442,7 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
     CREATE INDEX IF NOT EXISTS idx_cron_runs_job ON cron_runs(job_id);
 
     -- One automation run in a child session of its own ("thread mode"), parented to the session it reports to.
-    CREATE TABLE IF NOT EXISTS automation_child_runs (
-      id TEXT PRIMARY KEY,
-      origin_kind TEXT NOT NULL CHECK(origin_kind IN ('cron', 'trigger')),
-      origin_id TEXT NOT NULL,
-      origin_name TEXT NOT NULL,
-      agent_id TEXT NOT NULL,
-      parent_session_key TEXT NOT NULL,
-      parent_session_name TEXT NOT NULL,
-      child_session_key TEXT NOT NULL UNIQUE,
-      child_session_name TEXT NOT NULL,
-      surface TEXT NOT NULL CHECK(surface IN ('headless')),
-      status TEXT NOT NULL CHECK(status IN ('open', 'closed')),
-      return_state TEXT NOT NULL CHECK(return_state IN ('none', 'pending', 'returned', 'silent', 'error')),
-      return_kind TEXT CHECK(return_kind IS NULL OR return_kind IN ('result', 'auto', 'error')),
-      return_text TEXT,
-      closed_at INTEGER,
-      parent_notified_at INTEGER,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
+    ${automationChildRunsTableSql("automation_child_runs", true)}
     CREATE INDEX IF NOT EXISTS idx_automation_child_runs_origin ON automation_child_runs(origin_kind, origin_id);
     CREATE INDEX IF NOT EXISTS idx_automation_child_runs_open ON automation_child_runs(status) WHERE status = 'open';
 
@@ -3555,6 +3552,9 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
   ensureColumn(db, "triggers", "last_filter_reject_at", "INTEGER");
   migrateTriggerSessionCheck(db);
   migrateTriggerOwner(db);
+  ensureColumn(db, "triggers", "thread_visible", "INTEGER NOT NULL DEFAULT 0");
+  // Additive and nullable: a decision wait points at the decision that holds its question and answer.
+  ensureColumn(db, "session_handoffs", "decision_id", "TEXT");
 
   // Migration: add account_id column to cron_jobs
   const cronColumns = db.prepare("PRAGMA table_info(cron_jobs)").all() as Array<{ name: string }>;
@@ -3595,6 +3595,8 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
     log.info("Added owner_principal column to cron_jobs table");
   }
   ensureColumn(db, "cron_jobs", "creator_chat", "TEXT");
+  // A `--thread` job's runs show where the session they report to answers only when asked (`--visible`).
+  ensureColumn(db, "cron_jobs", "thread_visible", "INTEGER NOT NULL DEFAULT 0");
 
   // Migration: add heartbeat_account_id column to agents
   if (addAgentColumnIfMissing("heartbeat_account_id", "ALTER TABLE agents ADD COLUMN heartbeat_account_id TEXT")) {
@@ -3795,6 +3797,7 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
   dropRedundantSessionEventIndexes(db);
   ensureAgentVisibilityMigration(db);
   ensureLibraryAgentListedMigration(db);
+  ensureAutomationChildRunSurfaceMigration(db);
   ensureCliCommandAccessKindGrantMigration(db);
   backfillChatModelOnce(db);
   ensureSessionGoalBlockedMigration(db);
@@ -4086,6 +4089,73 @@ function ensureLibraryAgentListedMigration(database: Database): void {
       log.info("Added schema column", { table: "library_agents", column: "listed" });
     })
     .immediate();
+}
+
+/**
+ * The automation run table. `surface` is where a run shows (`headless`: no chat; `slack-thread`: a
+ * Slack thread under its parent's chat), `surface_ref` the surface's own id for it (the Slack
+ * thread request), and `launch_json` the run's prompt with its authority envelope, published once
+ * the surface has made the run's session.
+ */
+function automationChildRunsTableSql(table: string, ifNotExists: boolean): string {
+  return `CREATE TABLE ${ifNotExists ? "IF NOT EXISTS " : ""}${table} (
+      id TEXT PRIMARY KEY,
+      origin_kind TEXT NOT NULL CHECK(origin_kind IN ('cron', 'trigger')),
+      origin_id TEXT NOT NULL,
+      origin_name TEXT NOT NULL,
+      agent_id TEXT NOT NULL,
+      parent_session_key TEXT NOT NULL,
+      parent_session_name TEXT NOT NULL,
+      child_session_key TEXT NOT NULL UNIQUE,
+      child_session_name TEXT NOT NULL,
+      surface TEXT NOT NULL CHECK(surface IN ('headless', 'slack-thread')),
+      surface_ref TEXT,
+      launch_json TEXT,
+      status TEXT NOT NULL CHECK(status IN ('open', 'closed')),
+      return_state TEXT NOT NULL CHECK(return_state IN ('none', 'pending', 'returned', 'silent', 'error')),
+      return_kind TEXT CHECK(return_kind IS NULL OR return_kind IN ('result', 'auto', 'error')),
+      return_text TEXT,
+      closed_at INTEGER,
+      parent_notified_at INTEGER,
+      surface_closed_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );`;
+}
+
+/**
+ * The first automation run table (#951) knew one surface only, in a CHECK that SQLite cannot
+ * alter: rebuild it once, rows kept, so a run can show as a Slack thread.
+ */
+function ensureAutomationChildRunSurfaceMigration(database: Database): void {
+  if (!tableHasColumn(database, "automation_child_runs", "surface_ref")) {
+    database
+      .transaction(() => {
+        if (tableHasColumn(database, "automation_child_runs", "surface_ref")) return;
+        const columns =
+          "id, origin_kind, origin_id, origin_name, agent_id, parent_session_key, parent_session_name, child_session_key, child_session_name, surface, status, return_state, return_kind, return_text, closed_at, parent_notified_at, created_at, updated_at";
+        database.exec("DROP TABLE IF EXISTS automation_child_runs_next");
+        database.exec(automationChildRunsTableSql("automation_child_runs_next", false));
+        const rows = database
+          .prepare(`INSERT INTO automation_child_runs_next (${columns}) SELECT ${columns} FROM automation_child_runs`)
+          .run().changes;
+        database.exec("DROP TABLE automation_child_runs");
+        database.exec("ALTER TABLE automation_child_runs_next RENAME TO automation_child_runs");
+        database.exec(
+          "CREATE INDEX IF NOT EXISTS idx_automation_child_runs_origin ON automation_child_runs(origin_kind, origin_id)",
+        );
+        database.exec(
+          "CREATE INDEX IF NOT EXISTS idx_automation_child_runs_open ON automation_child_runs(status) WHERE status = 'open'",
+        );
+        log.info("Migrated automation child run schema", { rows });
+      })
+      .immediate();
+  }
+  // When a closed run's surface closed too: a refused close (a decision still open in the thread) is retried.
+  ensureColumn(database, "automation_child_runs", "surface_closed_at", "INTEGER");
+  database.exec(
+    "CREATE INDEX IF NOT EXISTS idx_automation_child_runs_surface_ref ON automation_child_runs(surface_ref) WHERE surface_ref IS NOT NULL",
+  );
 }
 
 function ensureColumn(database: Database, table: string, column: string, definition: string): void {
@@ -8345,6 +8415,35 @@ export function dbReleaseChannelBackendIngressPublication(input: {
 export function dbGetChatMessage(id: string): ChatMessageRecord | null {
   const row = getDb().prepare("SELECT * FROM chat_messages WHERE id = ?").get(id) as ChatMessageRow | undefined;
   return row ? rowToChatMessage(row) : null;
+}
+
+/** Every stored message with this provider message id (a provider id is unique only within its chat). */
+/**
+ * Messages carrying a provider id. With `writtenBy`, only that contact's messages at or after `since` (provider
+ * time, read as seconds when below 10^12, else ingestion) in `chatId` or a direct chat: the filter runs before the limit, so an id repeated in other
+ * chats never hides the eligible one.
+ */
+export function dbListChatMessagesByProviderId(
+  providerMessageId: string,
+  writtenBy?: { contactId: string; since: number; chatId: string | null },
+): ChatMessageRecord[] {
+  if (!writtenBy) {
+    const rows = getDb()
+      .prepare("SELECT * FROM chat_messages WHERE provider_message_id = ? LIMIT 20")
+      .all(providerMessageId) as ChatMessageRow[];
+    return rows.map(rowToChatMessage);
+  }
+  const rows = getDb()
+    .prepare(
+      `SELECT m.* FROM chat_messages m JOIN chats c ON c.id = m.chat_id
+       WHERE m.provider_message_id = ? AND m.actor_type = 'contact' AND m.contact_id = ?
+         AND COALESCE(CASE WHEN m.provider_timestamp < 1000000000000 THEN m.provider_timestamp * 1000
+                           ELSE m.provider_timestamp END, m.created_at) >= ?
+         AND (m.chat_id = ? OR c.chat_type = 'dm')
+       LIMIT 20`,
+    )
+    .all(providerMessageId, writtenBy.contactId, writtenBy.since, writtenBy.chatId) as ChatMessageRow[];
+  return rows.map(rowToChatMessage);
 }
 
 export function dbGetChatMessageWithSortKey(id: string): ChatMessageWithSortKey | null {

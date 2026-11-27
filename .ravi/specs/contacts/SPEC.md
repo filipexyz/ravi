@@ -86,6 +86,8 @@ Inbound resolution MUST follow this shape:
 
 Ravi MUST NOT infer identity from display name alone.
 
+Resolving a contact ref typed by a person or agent (`ravi contacts`, `ravi crm`, `getContact`) MUST phone-normalize the ref only when it is phone-shaped: a phone number (digits with `+`, spaces, `-`, `.`, `/` or parentheses), a WhatsApp JID, or a `lid:`/`group:` ref. Any other ref MUST match a contact id, platform identity or email exactly; when nothing matches, resolution MUST return not found instead of stripping the ref to its digits and matching an unrelated contact.
+
 Ravi MAY infer identity automatically from high-confidence channel mappings such as WhatsApp phone JID to LID mappings.
 
 Ambiguous matches SHOULD create duplicate candidates, not automatic merges.

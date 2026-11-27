@@ -937,14 +937,21 @@ describe("soft gate solucoes footer", () => {
     expect(list).not.toContain("references/");
   });
 
-  it("adds only the solucoes line for triggers and cron, which ship no references", () => {
-    for (const [skill, sessionName] of [
-      ["ravi-system-trigger-manager", "footer-triggers"],
-      ["ravi-system-cron-manager", "footer-cron"],
-    ] as const) {
-      const reason = deliver(skill, gateContext(sessionName));
-      expect(reason.endsWith(`\n\n${SOLUTIONS_LINE}`)).toBe(true);
-      expect(reason).not.toContain("References (open only what you need)");
+  it("adds only the solucoes line for cron, which ships no references", () => {
+    const reason = deliver("ravi-system-cron-manager", gateContext("footer-cron"));
+    expect(reason.endsWith(`\n\n${SOLUTIONS_LINE}`)).toBe(true);
+    expect(reason).not.toContain("References (open only what you need)");
+  });
+
+  it("lists the triggers references after the solucoes line", () => {
+    const reason = deliver("ravi-system-trigger-manager", gateContext("footer-triggers"));
+    const [solutions, references, list] = reason.split("\n").slice(-3);
+    expect(solutions).toBe(SOLUTIONS_LINE);
+    expect(references).toBe(
+      "References (open only what you need): ravi skills show trigger-manager --file references/<file>",
+    );
+    for (const file of ["cli.md", "bases-e-dono.md", "topicos.md", "filtros-e-templates.md"]) {
+      expect(list).toContain(file);
     }
   });
 

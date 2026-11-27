@@ -1,4 +1,6 @@
 import { getRecentHistory } from "../db.js";
+import { captureRestartTurnAuthority, RESTART_TURN_AUTHORITY_METADATA_KEY } from "./daemon-restart-resume.js";
+import { RESTART_RESUME_ATTEMPT_METADATA_KEY } from "./restart-turn-recovery.js";
 import { reopenThreadsForDeliveredInstructions } from "../channels/slack/thread-instruction-delivery.js";
 import { DEFAULT_DELIVERY_BARRIER } from "../delivery-barriers.js";
 import { getSessionByName, type AgentConfig, type SessionEntry } from "../router/index.js";
@@ -27,10 +29,23 @@ import {
   createRuntimeMessageGenerator,
   pickRuntimeTurnAuthorityEnvelope,
   type RuntimeMessageGeneratorOptions,
+  type RuntimeTurnPromptTransform,
   withoutSharedTriggerAuthority,
   withoutTriggerAuthority,
 } from "./delivery-queue.js";
 import { commitRenderedSignals, releaseRenderedSignals, renderSignalsForTurn } from "../signals/render.js";
+import {
+  INBOX_DRAIN_ON_HEARTBEAT_SETTING,
+  type InboxTurnBlock,
+  type InboxTurnMessage,
+  prepareInboxTurnBlock,
+} from "../session-inbox/turn.js";
+import {
+  type InboxOwnerDeps,
+  type InboxOwnerPrompt,
+  isInboxOwnerSession,
+  isInboxOwnerTurn,
+} from "../session-inbox/owner.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./task-runtime-context.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
@@ -72,6 +87,7 @@ import { resolvePersistedUserText } from "./session-surface-hint.js";
 import { validateRuntimeSessionState } from "./session-state.js";
 import type { RuntimeResumeDecision } from "./session-resolver.js";
 import { buildRuntimeSystemPrompt } from "./runtime-system-prompt.js";
+import { DECISIONS_SECTION_ID, refreshDecisionsForTurn } from "../decisions/prompt.js";
 import {
   MODEL_BROKER_REQUIRED_SETTING,
   MODEL_BROKER_MIN_LEASE_REMAINING_MS,
@@ -117,6 +133,71 @@ const runtimeRequestLog = logger.child("runtime-request");
 let signalRenderFailures = 0;
 export function getSignalRenderFailureCount(): number {
   return signalRenderFailures;
+}
+
+/** Session inbox render failures since start; each one also logs a warning (runtime/session-inbox). */
+let inboxRenderFailures = 0;
+export function getInboxRenderFailureCount(): number {
+  return inboxRenderFailures;
+}
+
+/**
+ * Reserves and renders the deferred notices for a draining turn. A failure keeps the turn going
+ * without the block, and the items stay `pending`.
+ */
+export function prepareInboxForTurn(
+  sessionName: string,
+  deliverableMessages: readonly InboxTurnMessage[],
+  sessionKey: string | null = null,
+  ownerDeps: InboxOwnerDeps = {},
+): InboxTurnBlock | null {
+  try {
+    return prepareInboxTurnBlock({
+      sessionName,
+      messages: deliverableMessages,
+      drainOnHeartbeat: dbGetSetting(INBOX_DRAIN_ON_HEARTBEAT_SETTING) === "true",
+      isOwnerTurn: (prompt) => isInboxOwnerTurn(prompt as InboxOwnerPrompt | undefined, ownerDeps),
+      isOwnerSession: () => isInboxOwnerSession(sessionKey, ownerDeps),
+    });
+  } catch (error) {
+    inboxRenderFailures += 1;
+    runtimeRequestLog.warn("Session inbox render failed; turn continues without the block", {
+      sessionName,
+      failures: inboxRenderFailures,
+      error,
+    });
+    return null;
+  }
+}
+
+/**
+ * Settles the inbox reservation together with the rest of the turn prompt: committed when the
+ * prompt reaches the provider, released when the turn never starts.
+ */
+export function composeInboxWithTurnPrompt(
+  inbox: Pick<InboxTurnBlock, "commit" | "release"> | null,
+  rest: string | RuntimeTurnPromptTransform,
+): string | RuntimeTurnPromptTransform {
+  if (!inbox) return rest;
+  if (typeof rest === "string") return { prompt: rest, commit: inbox.commit, release: inbox.release };
+  return {
+    prompt: rest.prompt,
+    // The inbox settles even when the other settlement throws: its error still propagates.
+    commit: () => {
+      try {
+        rest.commit?.();
+      } finally {
+        inbox.commit();
+      }
+    },
+    release: (reason: string) => {
+      try {
+        rest.release?.(reason);
+      } finally {
+        inbox.release(reason);
+      }
+    },
+  };
 }
 
 class RuntimeCrashRecoveryApprovalOwnershipChangedError extends Error {
@@ -635,9 +716,12 @@ async function buildRuntimeStartRequestInternal(
   const canResumeCredentialSession = canResumeStoredSession && canResumeSkillSession && credentialCompatible;
   // The launcher already persisted this input. Exclude that row from the
   // recovery snapshot; the generator delivers the current input unchanged.
-  const history = canResumeCredentialSession
-    ? []
-    : getRecentHistory(sessionName, 48).filter((message) => message.id > (session.historyResetAfterId ?? 0));
+  // A stateless observer delivery starts with no earlier deliveries: no recovered history either.
+  const statelessObservation = prompt._observation?.memory === "none";
+  const history =
+    canResumeCredentialSession || statelessObservation
+      ? []
+      : getRecentHistory(sessionName, 48).filter((message) => message.id > (session.historyResetAfterId ?? 0));
   const lastMessage = history.at(-1);
   if (lastMessage?.role === "user" && lastMessage.content === resolvePersistedUserText(prompt)) history.pop();
   const { forkFromProviderSessionId, resumeProviderSessionId } = resolveRuntimeSessionContinuity({
@@ -705,7 +789,7 @@ async function buildRuntimeStartRequestInternal(
       historyTruncated: recovery?.truncated ?? false,
     },
   });
-  const { specServer, hooks, remoteSpawn } = buildRuntimeHostAttachments({
+  const { mcpServers, hooks, remoteSpawn } = buildRuntimeHostAttachments({
     runtimeCapabilities,
     agent,
     sessionName,
@@ -725,8 +809,12 @@ async function buildRuntimeStartRequestInternal(
     allowedSkills,
   });
   const systemPromptSectionMetadata = buildRuntimeTracePromptSectionMetadata(systemPromptSections);
+  // What this runtime last carried of the decisions in force; live turns refresh it when it changes.
+  let decisionsCarried: string | null =
+    systemPromptSections.find((section) => section.id === DECISIONS_SECTION_ID)?.content ?? null;
+  const decisionsInput = { agentId: agent.id, sessionKey: runtimeContext.sessionKey ?? dbSessionKey };
   const pluginNames = runtimePlugins.map((plugin) => plugin.path);
-  const mcpServerNames = specServer ? ["spec"] : [];
+  const mcpServerNames = Object.keys(mcpServers ?? {});
   const toolAccessMode = getRuntimeToolAccessMode(runtimeCapabilities, agent.id, runtimeContext);
   let initialModelBrokerAttemptAvailable = Boolean(modelBroker);
   let pendingModelBrokerTurnId = initialModelBrokerTurnId;
@@ -958,6 +1046,15 @@ async function buildRuntimeStartRequestInternal(
             deliveryBarrierSource: firstMessage?.deliveryBarrierSource ?? null,
             queuedMessageCount: input.deliverableMessages.length,
             toolEffectFence,
+            // Durable loop guard for restart recovery: a resume that carries a
+            // task id is classified as a task turn, so the origin alone cannot
+            // tell that this turn was itself a restart resume.
+            ...(input.deliverableMessages.some((message) => message.launchPrompt?._daemonRestartResume)
+              ? { [RESTART_RESUME_ATTEMPT_METADATA_KEY]: true }
+              : {}),
+            // The authority this turn acts with beyond its source (relay narrowing,
+            // message context): a restart resume restores it and never more.
+            [RESTART_TURN_AUTHORITY_METADATA_KEY]: captureRestartTurnAuthority(streamingSession.currentTurnAuthority),
           },
         },
         {
@@ -1190,61 +1287,82 @@ async function buildRuntimeStartRequestInternal(
       stopActiveContextLease = undefined;
     },
     transformTurnPrompt: ({ combinedPrompt, deliverableMessages }) => {
-      const retriesRecoveredCapacityRequest =
-        deliverableMessages.length > 0 &&
-        deliverableMessages.every(
-          (message) =>
-            message.providerCapacityRetry !== undefined &&
-            message.pendingId !== undefined &&
-            recoveryPendingIds?.has(message.pendingId),
-        );
-      // Capacity rejection did not consume the recovered context. Keep it on
-      // retries of that logical input, without adding it to a successor.
-      if (recovery && (recoveryPending || retriesRecoveredCapacityRequest)) {
-        if (recoveryPending) {
-          recoveryPendingIds = new Set(
-            deliverableMessages.flatMap((message) => (message.pendingId ? [message.pendingId] : [])),
-          );
+      // Deferred notices open the turn that may drain them (runtime/session-inbox). They become
+      // part of the current request, so a recovered context still wraps them.
+      if (agent.mode !== "sentinel") {
+        try {
+          const refreshed = refreshDecisionsForTurn(decisionsInput, decisionsCarried);
+          decisionsCarried = refreshed.current;
+          if (refreshed.block) combinedPrompt = `${refreshed.block}\n\n${combinedPrompt}`;
+        } catch (error) {
+          // The launch snapshot stays in force; a failed refresh must not fail the turn.
+          runtimeRequestLog.warn("decisions refresh failed for turn", { sessionName, error: String(error) });
         }
-        combinedPrompt = `${recovery.prompt}\n\n# Current Request\n${combinedPrompt}`;
-        recoveryPending = false;
       }
-      turnSignals = null;
-      try {
-        const rendered = renderSignalsForTurn({ sessionName, sessionKey: dbSessionKey });
-        if (!rendered.suffix) {
-          if (rendered.skipped.length > 0) {
-            turnSignals = { surfaced: [], skipped: rendered.skipped, budget: rendered.budget };
-          }
-          return combinedPrompt;
-        }
-        const signals = { surfaced: rendered.surfacedIds, skipped: rendered.skipped, budget: rendered.budget };
-        turnSignals = signals;
-        return {
-          prompt: `${combinedPrompt}${rendered.suffix}`,
-          // The block reached the provider: the reservations are consumed.
-          commit: () => {
-            commitRenderedSignals(rendered.reservations);
-          },
-          // The turn never started: return the units, no cooldown starts.
-          release: (reason: string) => {
-            signals.budget.released = releaseRenderedSignals(rendered.reservations, reason);
-          },
-        };
-      } catch (error) {
-        // A render failure keeps the original prompt, warns and is counted.
-        signalRenderFailures += 1;
-        runtimeRequestLog.warn("Signals render failed; turn continues without the block", {
-          sessionName,
-          failures: signalRenderFailures,
-          error,
-        });
-        turnSignals = { surfaced: [], skipped: [], budget: null, renderError: String(error) };
-        return combinedPrompt;
-      }
+      const inbox = prepareInboxForTurn(sessionName, deliverableMessages, dbSessionKey ?? null);
+      if (inbox) combinedPrompt = `${inbox.block}\n\n${combinedPrompt}`;
+      return composeInboxWithTurnPrompt(inbox, applySignalsToTurnPrompt(combinedPrompt, deliverableMessages));
     },
     traceTurnStart,
   });
+
+  function applySignalsToTurnPrompt(
+    combinedPrompt: string,
+    deliverableMessages: RuntimeUserMessage[],
+  ): string | RuntimeTurnPromptTransform {
+    const retriesRecoveredCapacityRequest =
+      deliverableMessages.length > 0 &&
+      deliverableMessages.every(
+        (message) =>
+          message.providerCapacityRetry !== undefined &&
+          message.pendingId !== undefined &&
+          recoveryPendingIds?.has(message.pendingId),
+      );
+    // Capacity rejection did not consume the recovered context. Keep it on
+    // retries of that logical input, without adding it to a successor.
+    if (recovery && (recoveryPending || retriesRecoveredCapacityRequest)) {
+      if (recoveryPending) {
+        recoveryPendingIds = new Set(
+          deliverableMessages.flatMap((message) => (message.pendingId ? [message.pendingId] : [])),
+        );
+      }
+      combinedPrompt = `${recovery.prompt}\n\n# Current Request\n${combinedPrompt}`;
+      recoveryPending = false;
+    }
+    turnSignals = null;
+    try {
+      const rendered = renderSignalsForTurn({ sessionName, sessionKey: dbSessionKey });
+      if (!rendered.suffix) {
+        if (rendered.skipped.length > 0) {
+          turnSignals = { surfaced: [], skipped: rendered.skipped, budget: rendered.budget };
+        }
+        return combinedPrompt;
+      }
+      const signals = { surfaced: rendered.surfacedIds, skipped: rendered.skipped, budget: rendered.budget };
+      turnSignals = signals;
+      return {
+        prompt: `${combinedPrompt}${rendered.suffix}`,
+        // The block reached the provider: the reservations are consumed.
+        commit: () => {
+          commitRenderedSignals(rendered.reservations);
+        },
+        // The turn never started: return the units, no cooldown starts.
+        release: (reason: string) => {
+          signals.budget.released = releaseRenderedSignals(rendered.reservations, reason);
+        },
+      };
+    } catch (error) {
+      // A render failure keeps the original prompt, warns and is counted.
+      signalRenderFailures += 1;
+      runtimeRequestLog.warn("Signals render failed; turn continues without the block", {
+        sessionName,
+        failures: signalRenderFailures,
+        error,
+      });
+      turnSignals = { surfaced: [], skipped: [], budget: null, renderError: String(error) };
+      return combinedPrompt;
+    }
+  }
 
   const result = {
     runtimeRequest: {
@@ -1276,7 +1394,8 @@ async function buildRuntimeStartRequestInternal(
       canUseTool,
       ...(providerBootstrap?.startRequest ?? {}),
       env: runtimeEnv,
-      ...(specServer ? { mcpServers: { spec: specServer } } : {}),
+      // Registered as built: the tool gate exempts exactly these keys.
+      ...(mcpServers ? { mcpServers } : {}),
       systemPromptAppend,
       settingSources: agent.settingSources ?? ["project"],
       ...(hooks ? { hooks } : {}),

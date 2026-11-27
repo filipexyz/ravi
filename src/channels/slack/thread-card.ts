@@ -26,6 +26,19 @@ export type SlackThreadCardStatus = "open" | "closed" | "reopened" | "waiting";
 /** Action ids of the buttons on a Ravi thread card; the click consumer (thread-controls.ts) answers them. */
 export const SLACK_THREAD_CLOSE_ACTION_ID = "ravi_thread_close";
 export const SLACK_THREAD_STOP_ACTION_ID = "ravi_thread_stop";
+/** Responder on a card waiting for a decision: opens the answer form (decision-answer.ts). */
+export const SLACK_DECISION_ANSWER_ACTION_ID = "ravi_decision_answer";
+
+/** An open decision with a human owner, as the card offers it. */
+export interface SlackThreadCardDecision {
+  readonly id: string;
+  readonly revision: number;
+  /** Short label for the button when the card offers more than one. */
+  readonly key?: string;
+}
+
+/** At most this many Responder buttons on one card; Slack allows 25 elements per actions block. */
+export const SLACK_DECISION_ANSWER_MAX_BUTTONS = 5;
 
 export interface SlackThreadCardState {
   readonly status: SlackThreadCardStatus;
@@ -43,6 +56,12 @@ export interface SlackThreadCardState {
   readonly requestedBy?: string;
   /** Requested runtime shape, e.g. `codex · gpt-5.4 · high`; shown only when the caller pinned one. */
   readonly runtime?: string;
+  /**
+   * The open decisions the card waits on that have a human owner: the card offers Responder for each (up to
+   * SLACK_DECISION_ANSWER_MAX_BUTTONS). A button carries the id and the revision only; who may answer, and to which
+   * audience, is checked when the form opens and again when it comes back.
+   */
+  readonly decisions?: readonly SlackThreadCardDecision[];
 }
 
 export interface SlackThreadCardMessage {
@@ -122,7 +141,10 @@ export function buildSlackThreadCard(rawBrief: string, state: SlackThreadCardSta
   ];
 
   // A closed thread has nothing left to close or stop.
-  const controls = state.controls === true && state.status !== "closed" ? [threadControlsBlock()] : [];
+  const controls = [
+    ...(state.status === "waiting" && state.decisions?.length ? [decisionAnswerBlock(state.decisions)] : []),
+    ...(state.controls === true && state.status !== "closed" ? [threadControlsBlock()] : []),
+  ];
 
   return {
     text:
@@ -132,6 +154,63 @@ export function buildSlackThreadCard(rawBrief: string, state: SlackThreadCardSta
     blocks: [card, ...controls],
     fallbackBlocks: [...fallbackBlocks, ...controls],
     ...(truncated ? { fullBrief: `**Instruções completas**\n\n${brief.trim()}` } : {}),
+  };
+}
+
+/** `<decision id>:<revision>`, the only thing the Responder button carries. */
+export function encodeSlackDecisionAnswerValue(decision: { readonly id: string; readonly revision: number }): string {
+  return `${decision.id}:${decision.revision}`;
+}
+
+export function parseSlackDecisionAnswerValue(value: unknown): { id: string; revision: number } | null {
+  if (typeof value !== "string") return null;
+  const match = /^(dec_[A-Za-z0-9_-]{1,64}):([1-9][0-9]{0,8})$/.exec(value.trim());
+  return match ? { id: match[1]!, revision: Number(match[2]) } : null;
+}
+
+/**
+ * The card's Responder buttons for the pending decisions of a thread: one per decision a person owns, in order. When
+ * the thread waits on more than one decision (any owner), each button names its decision's key, so a lone person-owned
+ * question behind an agent's is never answered from an unnamed button.
+ */
+export function slackThreadCardDecisions(
+  pending: readonly { id: string; revision: number; key: string; ownerType: string }[],
+): SlackThreadCardDecision[] {
+  const named = pending.length > 1;
+  return pending
+    .filter((decision) => decision.ownerType === "human")
+    .map((decision) => ({ id: decision.id, revision: decision.revision, ...(named ? { key: decision.key } : {}) }));
+}
+
+/** Each Responder's action id: the first is the base id, the next ones add `_2`, `_3`… (unique within the block). */
+export function slackDecisionAnswerActionId(index: number): string {
+  return index === 0 ? SLACK_DECISION_ANSWER_ACTION_ID : `${SLACK_DECISION_ANSWER_ACTION_ID}_${index + 1}`;
+}
+
+export function isSlackDecisionAnswerActionId(value: unknown): boolean {
+  return typeof value === "string" && /^ravi_decision_answer(?:_[2-9])?$/.test(value);
+}
+
+/**
+ * Responder for each pending decision a person owns; nothing to type but the answer itself. A button names its
+ * decision's key when one is given (the thread waits on more than one decision), else says Responder.
+ */
+function decisionAnswerBlock(decisions: readonly SlackThreadCardDecision[]): SlackBlockKitBlock {
+  const shown = decisions.slice(0, SLACK_DECISION_ANSWER_MAX_BUTTONS);
+  return {
+    type: "actions",
+    block_id: "ravi_decision_actions",
+    elements: shown.map((decision, index) => ({
+      type: "button",
+      action_id: slackDecisionAnswerActionId(index),
+      text: {
+        type: "plain_text",
+        text: decision.key ? `Responder: ${decision.key.slice(0, 40)}` : "Responder",
+        emoji: true,
+      },
+      ...(index === 0 ? { style: "primary" } : {}),
+      value: encodeSlackDecisionAnswerValue(decision),
+    })),
   };
 }
 

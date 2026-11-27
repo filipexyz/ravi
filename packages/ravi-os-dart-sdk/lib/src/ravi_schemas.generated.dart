@@ -9597,7 +9597,8 @@ class RaviSchemas {
                         "interface": {
                           "enum": [
                             "builtin",
-                            "cli"
+                            "cli",
+                            "script"
                           ],
                           "type": "string"
                         },
@@ -10449,7 +10450,8 @@ class RaviSchemas {
                       "interface": {
                         "enum": [
                           "builtin",
-                          "cli"
+                          "cli",
+                          "script"
                         ],
                         "type": "string"
                       },
@@ -10739,7 +10741,8 @@ class RaviSchemas {
                       "interface": {
                         "enum": [
                           "builtin",
-                          "cli"
+                          "cli",
+                          "script"
                         ],
                         "type": "string"
                       },
@@ -11119,7 +11122,8 @@ class RaviSchemas {
                         "interface": {
                           "enum": [
                             "builtin",
-                            "cli"
+                            "cli",
+                            "script"
                           ],
                           "type": "string"
                         },
@@ -11394,6 +11398,60 @@ class RaviSchemas {
 }
 ''';
 
+  static const appsRefreshInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+}
+''';
+
+  static const appsRefreshReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "apps": {
+      "type": "number"
+    },
+    "blockSerial": {
+      "type": "number"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "indexSerial": {
+      "type": "number"
+    },
+    "keysSerial": {
+      "type": "number"
+    },
+    "refreshedAt": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "source",
+    "changed",
+    "keysSerial",
+    "indexSerial",
+    "blockSerial",
+    "apps",
+    "refreshedAt"
+  ],
+  "type": "object"
+}
+''';
+
   static const appsRunInputSchema = r'''
 {
   "additionalProperties": false,
@@ -11482,7 +11540,8 @@ class RaviSchemas {
         {
           "enum": [
             "builtin",
-            "cli"
+            "cli",
+            "script"
           ],
           "type": "string"
         },
@@ -11622,7 +11681,8 @@ class RaviSchemas {
         "interface": {
           "enum": [
             "builtin",
-            "cli"
+            "cli",
+            "script"
           ],
           "type": "string"
         },
@@ -11680,7 +11740,8 @@ class RaviSchemas {
         "interface": {
           "enum": [
             "builtin",
-            "cli"
+            "cli",
+            "script"
           ],
           "type": "string"
         },
@@ -11976,6 +12037,123 @@ class RaviSchemas {
 }
 ''';
 
+  static const appsSearchInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "query": {
+      "description": "Text to match in id, name or description",
+      "type": "string"
+    },
+    "refresh": {
+      "description": "Fetch the signed index before searching",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const appsSearchReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "apps": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "blocked": {
+            "type": "boolean"
+          },
+          "class": {
+            "anyOf": [
+              {
+                "enum": [
+                  "compose",
+                  "connector",
+                  "code"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "installed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "publisher": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "publisher",
+          "latest",
+          "class",
+          "installed",
+          "blocked"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "indexSerial": {
+      "type": "number"
+    },
+    "refreshedAt": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "source",
+    "indexSerial",
+    "refreshedAt",
+    "apps"
+  ],
+  "type": "object"
+}
+''';
+
   static const appsShowInputSchema = r'''
 {
   "additionalProperties": false,
@@ -12128,7 +12306,8 @@ class RaviSchemas {
                     "interface": {
                       "enum": [
                         "builtin",
-                        "cli"
+                        "cli",
+                        "script"
                       ],
                       "type": "string"
                     },
@@ -12295,6 +12474,88 @@ class RaviSchemas {
   },
   "required": [
     "app"
+  ],
+  "type": "object"
+}
+''';
+
+  static const appsVerifyInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Installed app id. Omit to verify every store app.",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const appsVerifyReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "apps": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "exposedTo": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "problems": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "source": {
+            "enum": [
+              "official",
+              "local"
+            ],
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "active",
+              "quarantined"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "source",
+          "state",
+          "ok",
+          "problems",
+          "exposedTo"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "ok",
+    "apps"
   ],
   "type": "object"
 }
@@ -63659,6 +63920,348 @@ class RaviSchemas {
 }
 ''';
 
+  static const credentialsConnectionsInventoryInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "auditLimit": {
+      "default": "20",
+      "description": "Recent audit rows to include (0-200)",
+      "type": "string"
+    },
+    "skipDescribe": {
+      "description": "Skip backend metadata (versions, times); local data only",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const credentialsConnectionsInventoryReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "audit": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "at": {
+            "type": "number"
+          },
+          "connection": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string"
+          },
+          "errorCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider": {
+            "type": "string"
+          },
+          "resultStatus": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "at",
+          "provider",
+          "connection",
+          "action",
+          "decision",
+          "resultStatus",
+          "errorCode"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "degraded": {
+      "type": "boolean"
+    },
+    "degradedReasons": {
+      "items": {
+        "enum": [
+          "unsupported",
+          "not_configured",
+          "forbidden",
+          "sealed",
+          "unreachable",
+          "invalid_ref",
+          "redirected",
+          "error"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "generatedAt": {
+      "type": "number"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "backend": {
+            "enum": [
+              "file",
+              "keychain",
+              "vault"
+            ],
+            "type": "string"
+          },
+          "connection": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "disabledAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastUsedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider": {
+            "type": "string"
+          },
+          "purpose": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rotatedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "secret": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "available": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "createdAt": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "deleted": {
+                        "type": "boolean"
+                      },
+                      "exists": {
+                        "type": "boolean"
+                      },
+                      "updatedAt": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "version": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "available",
+                      "exists",
+                      "version",
+                      "createdAt",
+                      "updatedAt",
+                      "deleted"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "available": {
+                        "const": false,
+                        "type": "boolean"
+                      },
+                      "reason": {
+                        "enum": [
+                          "unsupported",
+                          "not_configured",
+                          "forbidden",
+                          "sealed",
+                          "unreachable",
+                          "invalid_ref",
+                          "redirected",
+                          "error"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "available",
+                      "reason"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "secretRefAlias": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "disabled"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "connection",
+          "label",
+          "backend",
+          "secretRefAlias",
+          "status",
+          "scopes",
+          "owner",
+          "purpose",
+          "createdAt",
+          "updatedAt",
+          "rotatedAt",
+          "expiresAt",
+          "disabledAt",
+          "lastUsedAt",
+          "secret"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "generatedAt",
+    "degraded",
+    "degradedReasons",
+    "total",
+    "items",
+    "audit"
+  ],
+  "type": "object"
+}
+''';
+
   static const credentialsConnectionsListInputSchema = r'''
 {
   "additionalProperties": false,
@@ -67234,6 +67837,10 @@ class RaviSchemas {
     "tz": {
       "description": "Timezone (e.g., America/Sao_Paulo)",
       "type": "string"
+    },
+    "visible": {
+      "description": "With --thread: show each run where the report-to session answers (a thread in its Slack chat), seen by everyone in that chat; elsewhere runs stay unseen. Off by default",
+      "type": "boolean"
     }
   },
   "required": [
@@ -67696,7 +68303,7 @@ class RaviSchemas {
       "type": "string"
     },
     "key": {
-      "description": "Property: name, message, shell, exec, timeout, env-file, on-error, cron, every, tz, agent, account, description, session, reply-session, delete-after",
+      "description": "Property: name, message, shell, exec, timeout, env-file, on-error, cron, every, tz, agent, account, description, session, reply-session, visible, delete-after",
       "type": "string"
     },
     "value": {
@@ -68454,6 +69061,22 @@ class RaviSchemas {
       "description": "Decision id from ask/list",
       "type": "string"
     },
+    "scope": {
+      "description": "Where the answer applies: thread (default), agent:<id>, project:<id> or org; wider than the thread needs --source-message or the local operator",
+      "type": "string"
+    },
+    "sourceMessage": {
+      "description": "The owner's message that holds this answer (internal or provider message id), written after the question in its chat or a direct chat. Recorded as provenance; required to widen the scope",
+      "type": "string"
+    },
+    "sourceQuote": {
+      "description": "A passage of the source message that holds the answer; needed unless the message names the decision id",
+      "type": "string"
+    },
+    "supersedes": {
+      "description": "An answered decision this answer replaces",
+      "type": "string"
+    },
     "text": {
       "description": "Explicit outcome",
       "type": "string"
@@ -68594,8 +69217,60 @@ class RaviSchemas {
           ],
           "type": "string"
         },
+        "revisedAt": {
+          "type": "number"
+        },
         "revision": {
           "type": "number"
+        },
+        "scope": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "origin",
+                "agent",
+                "project",
+                "org"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ],
+          "type": "object"
+        },
+        "sourceExcerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceMessageId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "status": {
           "enum": [
@@ -68605,6 +69280,16 @@ class RaviSchemas {
           ],
           "type": "string"
         },
+        "supersededBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "updatedAt": {
           "type": "number"
         }
@@ -68613,16 +69298,21 @@ class RaviSchemas {
         "id",
         "origin",
         "key",
+        "scope",
         "status",
         "ownerType",
         "ownerId",
         "ask",
         "askedBy",
         "askedAt",
+        "revisedAt",
         "answer",
         "answeredBy",
         "answeredAt",
         "blocks",
+        "sourceMessageId",
+        "sourceExcerpt",
+        "supersededBy",
         "revision",
         "createdAt",
         "updatedAt"
@@ -68735,6 +69425,10 @@ class RaviSchemas {
     },
     "owner": {
       "description": "human:<contact>|agent:<id>|unassigned; ownership is not approval authority",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Proposed scope once answered: thread (default), agent:<id>, project:<id> or org; the answer settles it",
       "type": "string"
     },
     "task": {
@@ -68878,8 +69572,60 @@ class RaviSchemas {
           ],
           "type": "string"
         },
+        "revisedAt": {
+          "type": "number"
+        },
         "revision": {
           "type": "number"
+        },
+        "scope": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "origin",
+                "agent",
+                "project",
+                "org"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ],
+          "type": "object"
+        },
+        "sourceExcerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceMessageId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "status": {
           "enum": [
@@ -68889,6 +69635,16 @@ class RaviSchemas {
           ],
           "type": "string"
         },
+        "supersededBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "updatedAt": {
           "type": "number"
         }
@@ -68897,16 +69653,21 @@ class RaviSchemas {
         "id",
         "origin",
         "key",
+        "scope",
         "status",
         "ownerType",
         "ownerId",
         "ask",
         "askedBy",
         "askedAt",
+        "revisedAt",
         "answer",
         "answeredBy",
         "answeredAt",
         "blocks",
+        "sourceMessageId",
+        "sourceExcerpt",
+        "supersededBy",
         "revision",
         "createdAt",
         "updatedAt"
@@ -69005,12 +69766,20 @@ class RaviSchemas {
       "description": "Include answered history",
       "type": "boolean"
     },
+    "answeredSince": {
+      "description": "Only decisions answered at or after this ISO time or epoch ms (implies --all)",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default 50, maximum 500)",
       "type": "string"
     },
     "offset": {
       "description": "Page offset",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Only decisions with this scope: thread, task, agent:<id>, project:<id> or org",
       "type": "string"
     },
     "task": {
@@ -69152,8 +69921,60 @@ class RaviSchemas {
             ],
             "type": "string"
           },
+          "revisedAt": {
+            "type": "number"
+          },
           "revision": {
             "type": "number"
+          },
+          "scope": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": {
+                "enum": [
+                  "origin",
+                  "agent",
+                  "project",
+                  "org"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ],
+            "type": "object"
+          },
+          "sourceExcerpt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sourceMessageId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "status": {
             "enum": [
@@ -69163,6 +69984,16 @@ class RaviSchemas {
             ],
             "type": "string"
           },
+          "supersededBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "updatedAt": {
             "type": "number"
           }
@@ -69171,16 +70002,21 @@ class RaviSchemas {
           "id",
           "origin",
           "key",
+          "scope",
           "status",
           "ownerType",
           "ownerId",
           "ask",
           "askedBy",
           "askedAt",
+          "revisedAt",
           "answer",
           "answeredBy",
           "answeredAt",
           "blocks",
+          "sourceMessageId",
+          "sourceExcerpt",
+          "supersededBy",
           "revision",
           "createdAt",
           "updatedAt"
@@ -69401,8 +70237,60 @@ class RaviSchemas {
           ],
           "type": "string"
         },
+        "revisedAt": {
+          "type": "number"
+        },
         "revision": {
           "type": "number"
+        },
+        "scope": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "origin",
+                "agent",
+                "project",
+                "org"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ],
+          "type": "object"
+        },
+        "sourceExcerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceMessageId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "status": {
           "enum": [
@@ -69412,6 +70300,16 @@ class RaviSchemas {
           ],
           "type": "string"
         },
+        "supersededBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "updatedAt": {
           "type": "number"
         }
@@ -69420,16 +70318,21 @@ class RaviSchemas {
         "id",
         "origin",
         "key",
+        "scope",
         "status",
         "ownerType",
         "ownerId",
         "ask",
         "askedBy",
         "askedAt",
+        "revisedAt",
         "answer",
         "answeredBy",
         "answeredAt",
         "blocks",
+        "sourceMessageId",
+        "sourceExcerpt",
+        "supersededBy",
         "revision",
         "createdAt",
         "updatedAt"
@@ -69668,8 +70571,60 @@ class RaviSchemas {
           ],
           "type": "string"
         },
+        "revisedAt": {
+          "type": "number"
+        },
         "revision": {
           "type": "number"
+        },
+        "scope": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "origin",
+                "agent",
+                "project",
+                "org"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ],
+          "type": "object"
+        },
+        "sourceExcerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceMessageId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "status": {
           "enum": [
@@ -69679,6 +70634,16 @@ class RaviSchemas {
           ],
           "type": "string"
         },
+        "supersededBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "updatedAt": {
           "type": "number"
         }
@@ -69687,16 +70652,21 @@ class RaviSchemas {
         "id",
         "origin",
         "key",
+        "scope",
         "status",
         "ownerType",
         "ownerId",
         "ask",
         "askedBy",
         "askedAt",
+        "revisedAt",
         "answer",
         "answeredBy",
         "answeredAt",
         "blocks",
+        "sourceMessageId",
+        "sourceExcerpt",
+        "supersededBy",
         "revision",
         "createdAt",
         "updatedAt"
@@ -69931,8 +70901,60 @@ class RaviSchemas {
           ],
           "type": "string"
         },
+        "revisedAt": {
+          "type": "number"
+        },
         "revision": {
           "type": "number"
+        },
+        "scope": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "origin",
+                "agent",
+                "project",
+                "org"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ],
+          "type": "object"
+        },
+        "sourceExcerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceMessageId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "status": {
           "enum": [
@@ -69942,6 +70964,16 @@ class RaviSchemas {
           ],
           "type": "string"
         },
+        "supersededBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "updatedAt": {
           "type": "number"
         }
@@ -69950,16 +70982,21 @@ class RaviSchemas {
         "id",
         "origin",
         "key",
+        "scope",
         "status",
         "ownerType",
         "ownerId",
         "ask",
         "askedBy",
         "askedAt",
+        "revisedAt",
         "answer",
         "answeredBy",
         "answeredAt",
         "blocks",
+        "sourceMessageId",
+        "sourceExcerpt",
+        "supersededBy",
         "revision",
         "createdAt",
         "updatedAt"
@@ -70084,6 +71121,287 @@ class RaviSchemas {
     "decision",
     "deliveries",
     "history"
+  ],
+  "type": "object"
+}
+''';
+
+  static const decisionsSupersedeInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "by": {
+      "description": "Answered decision that replaces it",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Record the replacement",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Answered decision to replace",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+}
+''';
+
+  static const decisionsSupersedeReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "replaced": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "const": "superseded",
+          "type": "string"
+        },
+        "supersededBy": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "supersededBy"
+      ],
+      "type": "object"
+    },
+    "replacement": {
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ask": {
+          "type": "string"
+        },
+        "askedAt": {
+          "type": "number"
+        },
+        "askedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blocks": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "origin": {
+          "additionalProperties": false,
+          "properties": {
+            "chatId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "sessionKey": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "task",
+                "thread"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "chatId",
+            "sessionKey"
+          ],
+          "type": "object"
+        },
+        "ownerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ownerType": {
+          "enum": [
+            "human",
+            "agent",
+            "unassigned"
+          ],
+          "type": "string"
+        },
+        "revisedAt": {
+          "type": "number"
+        },
+        "revision": {
+          "type": "number"
+        },
+        "scope": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "origin",
+                "agent",
+                "project",
+                "org"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ],
+          "type": "object"
+        },
+        "sourceExcerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceMessageId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "open",
+            "answered",
+            "superseded"
+          ],
+          "type": "string"
+        },
+        "supersededBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "origin",
+        "key",
+        "scope",
+        "status",
+        "ownerType",
+        "ownerId",
+        "ask",
+        "askedBy",
+        "askedAt",
+        "revisedAt",
+        "answer",
+        "answeredBy",
+        "answeredAt",
+        "blocks",
+        "sourceMessageId",
+        "sourceExcerpt",
+        "supersededBy",
+        "revision",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "replaced",
+    "replacement"
   ],
   "type": "object"
 }
@@ -104040,6 +105358,143 @@ class RaviSchemas {
 }
 ''';
 
+  static const sessionsCloneInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "execute": {
+      "description": "Create the chat and the session; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
+    "invite": {
+      "description": "Comma-separated platform user ids to invite to the new chat (operator terminal only; the channel decides which it accepts)",
+      "type": "string"
+    },
+    "messages": {
+      "description": "Recent messages copied as context (default: 20, max: 40)",
+      "type": "string"
+    },
+    "name": {
+      "description": "Name of the new chat and session (lowercase, digits, - or _)",
+      "type": "string"
+    },
+    "session": {
+      "description": "Session to clone (defaults to current session)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+}
+''';
+
+  static const sessionsCloneReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "type": "string"
+    },
+    "clone": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "chatId": {
+              "type": "string"
+            },
+            "inviteFailed": {
+              "type": "boolean"
+            },
+            "invited": {
+              "type": "number"
+            },
+            "sessionKey": {
+              "type": "string"
+            },
+            "sessionName": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "chatId",
+            "sessionKey",
+            "sessionName",
+            "invited",
+            "inviteFailed"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "name": {
+      "type": "string"
+    },
+    "origin": {
+      "additionalProperties": false,
+      "properties": {
+        "channel": {
+          "type": "string"
+        },
+        "sessionKey": {
+          "type": "string"
+        },
+        "sessionName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionKey",
+        "sessionName",
+        "channel"
+      ],
+      "type": "object"
+    },
+    "seed": {
+      "additionalProperties": false,
+      "properties": {
+        "messages": {
+          "type": "number"
+        },
+        "redacted": {
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "messages",
+        "redacted",
+        "truncated"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "enum": [
+        "planned",
+        "cloned"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "name",
+    "origin",
+    "agentId",
+    "seed",
+    "clone"
+  ],
+  "type": "object"
+}
+''';
+
   static const sessionsCloseThreadInputSchema = r'''
 {
   "additionalProperties": false,
@@ -107621,6 +109076,155 @@ class RaviSchemas {
 }
 ''';
 
+  static const sessionsObserveInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "follow": {
+      "description": "Get a compact summary of every finished turn instead of only when a condition holds",
+      "type": "boolean"
+    },
+    "source": {
+      "description": "Session to observe",
+      "type": "string"
+    },
+    "to": {
+      "description": "Session that receives the notices (default: the current session)",
+      "type": "string"
+    },
+    "when": {
+      "description": "Comma-separated conditions (default: turn.no_final_reply,chat.narration,turn.failed,tool.idle); one of turn.no_final_reply, chat.narration, turn.failed, turn.interrupt, tool.idle",
+      "type": "string"
+    }
+  },
+  "required": [
+    "source"
+  ],
+  "type": "object"
+}
+''';
+
+  static const sessionsObserveReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "observing": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "alerts",
+            "follow"
+          ],
+          "type": "string"
+        },
+        "ruleId": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "when": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "ruleId",
+        "source",
+        "to",
+        "mode",
+        "when"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "observing"
+  ],
+  "type": "object"
+}
+''';
+
+  static const sessionsObservingInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+}
+''';
+
+  static const sessionsObservingReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "observing": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "alerts",
+              "follow"
+            ],
+            "type": "string"
+          },
+          "ruleId": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "when": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "ruleId",
+          "source",
+          "to",
+          "mode",
+          "when"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "total": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "success",
+    "observing",
+    "total"
+  ],
+  "type": "object"
+}
+''';
+
   static const sessionsPruneInputSchema = r'''
 {
   "additionalProperties": false,
@@ -108242,9 +109846,15 @@ class RaviSchemas {
           "const": "thread.report",
           "type": "string"
         },
+        "decisionError": {
+          "type": "string"
+        },
         "handoff": {
           "additionalProperties": false,
           "properties": {
+            "decisionId": {
+              "type": "string"
+            },
             "id": {
               "type": "string"
             },
@@ -111803,6 +113413,25 @@ class RaviSchemas {
     "messageId": {
       "type": "string"
     },
+    "openDecisionWaits": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "decisionId": {
+            "type": "string"
+          },
+          "handoffId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "handoffId",
+          "decisionId"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
     "reopened": {
       "type": "boolean"
     },
@@ -112619,6 +114248,58 @@ class RaviSchemas {
 {
   "additionalProperties": {},
   "properties": {},
+  "type": "object"
+}
+''';
+
+  static const sessionsUnobserveInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "source": {
+      "description": "Observed session",
+      "type": "string"
+    },
+    "to": {
+      "description": "Session that was receiving the notices (default: the current session)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "source"
+  ],
+  "type": "object"
+}
+''';
+
+  static const sessionsUnobserveReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "removed": {
+      "type": "boolean"
+    },
+    "ruleId": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "to": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "success",
+    "removed",
+    "ruleId",
+    "source",
+    "to"
+  ],
   "type": "object"
 }
 ''';
@@ -120122,7 +121803,7 @@ class RaviSchemas {
       "type": "boolean"
     },
     "limit": {
-      "description": "Page size (default: 50, max: 500)",
+      "description": "Page size (default and max: 500; past that, follow the next page)",
       "type": "string"
     },
     "offset": {
@@ -137651,11 +139332,11 @@ class RaviSchemas {
       "type": "string"
     },
     "cooldown": {
-      "description": "Minimum gap between fires; events inside it are dropped (e.g., 30s, 1m; off to disable). Default: 5s",
+      "description": "Minimum gap between fires; events inside it are dropped (e.g., 30s, 1m; off to disable). Default: off for agent triggers (prefer --debounce, which batches them instead); 5s for --shell triggers without --debounce",
       "type": "string"
     },
     "debounce": {
-      "description": "Batch a burst of events into one fire, this long after the last event, carrying every event (e.g., 2s, 1m). Default: off",
+      "description": "Batch a burst of events into one fire, this long after the last event, carrying the burst (up to its last 200 events; a burst pending when the daemon stops is lost) (e.g., 2s, 1m; off to disable). Default for agent triggers: 30s on ravi.watch.* topics, 5s elsewhere; off with --cooldown or --shell",
       "type": "string"
     },
     "envFile": {
@@ -137709,6 +139390,10 @@ class RaviSchemas {
     "topic": {
       "description": "Notif topic pattern to subscribe to",
       "type": "string"
+    },
+    "visible": {
+      "description": "With --thread: show each fire's run where the report-to session answers (a thread in its Slack chat), seen by everyone in that chat; elsewhere runs stay unseen. Off by default",
+      "type": "boolean"
     }
   },
   "required": [
@@ -138068,7 +139753,7 @@ class RaviSchemas {
       "type": "string"
     },
     "key": {
-      "description": "Property: name, message, shell, exec, timeout, env-file, on-error, topic, agent, account, session, cooldown, debounce, filter, replySession",
+      "description": "Property: name, message, shell, exec, timeout, env-file, on-error, topic, agent, account, session, cooldown, debounce, filter, replySession, visible",
       "type": "string"
     },
     "value": {
@@ -138377,6 +140062,2727 @@ class RaviSchemas {
     "artifact",
     "video",
     "options"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsApproveInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "approval": {
+      "description": "Approval id (from turn.approval_requested)",
+      "type": "string"
+    },
+    "call": {
+      "description": "Call id",
+      "type": "string"
+    },
+    "digest": {
+      "description": "Approval digest shown in the call",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Actually approve; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
+    "version": {
+      "description": "Approval version shown in the call",
+      "type": "string"
+    }
+  },
+  "required": [
+    "approval",
+    "call"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsApproveReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "approvalId": {
+      "type": "string"
+    },
+    "callId": {
+      "type": "string"
+    },
+    "decision": {
+      "enum": [
+        "approved",
+        "rejected",
+        "pending"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "callId",
+    "approvalId",
+    "decision"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsAudioInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "call": {
+      "description": "Call id",
+      "type": "string"
+    },
+    "item": {
+      "description": "Audio item id (from agent.transcript)",
+      "type": "string"
+    },
+    "out": {
+      "description": "Write the clip to this file instead of returning base64",
+      "type": "string"
+    }
+  },
+  "required": [
+    "call",
+    "item"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsAudioReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "audioBase64": {
+      "type": "string"
+    },
+    "bytes": {
+      "type": "number"
+    },
+    "callId": {
+      "type": "string"
+    },
+    "item": {
+      "type": "string"
+    },
+    "mime": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "callId",
+    "item",
+    "mime",
+    "bytes"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsCancelTurnInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "call": {
+      "description": "Call id",
+      "type": "string"
+    },
+    "turn": {
+      "description": "Turn id (from turn.accepted)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "call"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsCancelTurnReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "callId": {
+      "type": "string"
+    },
+    "cancelRequested": {
+      "const": true,
+      "type": "boolean"
+    },
+    "turnId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "callId",
+    "turnId",
+    "cancelRequested"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsConnectInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "call": {
+      "description": "Call id",
+      "type": "string"
+    },
+    "offer": {
+      "description": "WebRTC SDP offer (live mode)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "call"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsConnectReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "callId": {
+      "type": "string"
+    },
+    "connectionKind": {
+      "enum": [
+        "none",
+        "webrtc",
+        "room"
+      ],
+      "type": "string"
+    },
+    "lastSeq": {
+      "type": "number"
+    },
+    "roomToken": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "roomUrl": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sdpAnswer": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "callId",
+    "connectionKind",
+    "sdpAnswer",
+    "roomUrl",
+    "roomToken",
+    "lastSeq"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsDenyInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "approval": {
+      "description": "Approval id (from turn.approval_requested)",
+      "type": "string"
+    },
+    "call": {
+      "description": "Call id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "approval",
+    "call"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsDenyReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "approvalId": {
+      "type": "string"
+    },
+    "callId": {
+      "type": "string"
+    },
+    "decision": {
+      "enum": [
+        "approved",
+        "rejected",
+        "pending"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "callId",
+    "approvalId",
+    "decision"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsEndInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "call": {
+      "description": "Call id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "call"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsEndReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "callId": {
+      "type": "string"
+    },
+    "ended": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "callId",
+    "ended"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsEventsInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "after": {
+      "description": "Only events after this sequence number",
+      "type": "string"
+    },
+    "call": {
+      "description": "Call id",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Maximum events (default 500)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "call"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsEventsReturnSchema = r'''
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "callId": {
+      "type": "string"
+    },
+    "events": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "callId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "data": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "seq": {
+            "type": "number"
+          },
+          "type": {
+            "enum": [
+              "call.snapshot",
+              "call.state",
+              "call.ended",
+              "agent.state",
+              "work.state",
+              "work.tool",
+              "user.transcript",
+              "agent.transcript",
+              "turn.accepted",
+              "turn.completed",
+              "turn.approval_requested",
+              "turn.approval_resolved",
+              "usage",
+              "error"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "callId",
+          "seq",
+          "type",
+          "data",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "lastSeq": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "callId",
+    "events",
+    "lastSeq"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsListInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "active": {
+      "description": "Only calls that have not ended",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Items to skip (default: 0)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const voiceCallsListReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "calls": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentState": {
+            "enum": [
+              "listening",
+              "thinking",
+              "speaking",
+              "idle"
+            ],
+            "type": "string"
+          },
+          "connectionKind": {
+            "enum": [
+              "none",
+              "webrtc",
+              "room"
+            ],
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "endedAt": {
+            "type": "string"
+          },
+          "endedReason": {
+            "type": "string"
+          },
+          "engine": {
+            "enum": [
+              "push",
+              "live",
+              "handsfree",
+              "mock"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "push",
+              "live",
+              "handsfree",
+              "mock"
+            ],
+            "type": "string"
+          },
+          "profileId": {
+            "type": "string"
+          },
+          "sessionName": {
+            "type": "string"
+          },
+          "speaker": {
+            "additionalProperties": false,
+            "properties": {
+              "contactId": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "operator",
+                  "device",
+                  "guest"
+                ],
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "type": "object"
+          },
+          "state": {
+            "enum": [
+              "starting",
+              "active",
+              "ending",
+              "ended"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "usage": {
+            "additionalProperties": false,
+            "properties": {
+              "audioInSeconds": {
+                "type": "number"
+              },
+              "audioOutSeconds": {
+                "type": "number"
+              },
+              "charactersSpoken": {
+                "type": "number"
+              },
+              "engineSeconds": {
+                "type": "number"
+              },
+              "estimatedCostUsd": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "audioInSeconds",
+              "audioOutSeconds",
+              "charactersSpoken",
+              "engineSeconds",
+              "estimatedCostUsd"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "sessionName",
+          "mode",
+          "engine",
+          "profileId",
+          "state",
+          "agentState",
+          "speaker",
+          "connectionKind",
+          "usage",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "calls",
+    "total",
+    "pagination"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsPushInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "audio": {
+      "description": "Audio clip file",
+      "type": "string"
+    },
+    "audioData": {
+      "description": "Audio clip as base64 (SDK and apps)",
+      "type": "string"
+    },
+    "call": {
+      "description": "Call id",
+      "type": "string"
+    },
+    "mime": {
+      "description": "Audio type, e.g. audio/webm",
+      "type": "string"
+    }
+  },
+  "required": [
+    "call"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsPushReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "callId": {
+      "type": "string"
+    },
+    "text": {
+      "type": "string"
+    },
+    "turnId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "callId",
+    "turnId",
+    "text"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsSendInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "call": {
+      "description": "Call id",
+      "type": "string"
+    },
+    "guest": {
+      "description": "Mark the speaker as a guest (third party)",
+      "type": "string"
+    },
+    "text": {
+      "description": "What to say",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "call",
+    "text"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsSendReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "callId": {
+      "type": "string"
+    },
+    "text": {
+      "type": "string"
+    },
+    "turnId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "callId",
+    "turnId",
+    "text"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsShowInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "call": {
+      "description": "Call id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "call"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsShowReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "call": {
+      "additionalProperties": false,
+      "properties": {
+        "agentState": {
+          "enum": [
+            "listening",
+            "thinking",
+            "speaking",
+            "idle"
+          ],
+          "type": "string"
+        },
+        "connectionKind": {
+          "enum": [
+            "none",
+            "webrtc",
+            "room"
+          ],
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "endedAt": {
+          "type": "string"
+        },
+        "endedReason": {
+          "type": "string"
+        },
+        "engine": {
+          "enum": [
+            "push",
+            "live",
+            "handsfree",
+            "mock"
+          ],
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "push",
+            "live",
+            "handsfree",
+            "mock"
+          ],
+          "type": "string"
+        },
+        "profileId": {
+          "type": "string"
+        },
+        "sessionName": {
+          "type": "string"
+        },
+        "speaker": {
+          "additionalProperties": false,
+          "properties": {
+            "contactId": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "operator",
+                "device",
+                "guest"
+              ],
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        "state": {
+          "enum": [
+            "starting",
+            "active",
+            "ending",
+            "ended"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "usage": {
+          "additionalProperties": false,
+          "properties": {
+            "audioInSeconds": {
+              "type": "number"
+            },
+            "audioOutSeconds": {
+              "type": "number"
+            },
+            "charactersSpoken": {
+              "type": "number"
+            },
+            "engineSeconds": {
+              "type": "number"
+            },
+            "estimatedCostUsd": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "audioInSeconds",
+            "audioOutSeconds",
+            "charactersSpoken",
+            "engineSeconds",
+            "estimatedCostUsd"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "sessionName",
+        "mode",
+        "engine",
+        "profileId",
+        "state",
+        "agentState",
+        "speaker",
+        "connectionKind",
+        "usage",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "engine": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "additionalProperties": false,
+          "properties": {
+            "bargeIn": {
+              "type": "boolean"
+            },
+            "exactSpeech": {
+              "type": "boolean"
+            },
+            "needs": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "serverAudio": {
+              "type": "boolean"
+            },
+            "streamingAudio": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "bargeIn",
+            "streamingAudio",
+            "exactSpeech",
+            "serverAudio",
+            "needs"
+          ],
+          "type": "object"
+        },
+        "id": {
+          "enum": [
+            "push",
+            "live",
+            "handsfree",
+            "mock"
+          ],
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "capabilities"
+      ],
+      "type": "object"
+    },
+    "lastSeq": {
+      "type": "number"
+    },
+    "openApprovals": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "approvalId": {
+            "type": "string"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "approvalId",
+          "version",
+          "digest",
+          "text"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "turns": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "speaker": {
+            "additionalProperties": false,
+            "properties": {
+              "contactId": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "operator",
+                  "device",
+                  "guest"
+                ],
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "type": "object"
+          },
+          "state": {
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "failed",
+              "cancelled"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "state",
+          "speaker",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "call",
+    "engine",
+    "turns",
+    "openApprovals",
+    "lastSeq"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsSilenceInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "call": {
+      "description": "Call id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "call"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsSilenceReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "callId": {
+      "type": "string"
+    },
+    "silenced": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "callId",
+    "silenced"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsStartInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "mode": {
+      "description": "push|live|handsfree|mock (default: the profile's)",
+      "type": "string"
+    },
+    "offer": {
+      "description": "WebRTC SDP offer (live mode)",
+      "type": "string"
+    },
+    "profile": {
+      "description": "Voice profile (default: default)",
+      "type": "string"
+    },
+    "session": {
+      "description": "Session name or key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "session"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsStartReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "callId": {
+      "type": "string"
+    },
+    "capabilities": {
+      "additionalProperties": false,
+      "properties": {
+        "bargeIn": {
+          "type": "boolean"
+        },
+        "exactSpeech": {
+          "type": "boolean"
+        },
+        "needs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "serverAudio": {
+          "type": "boolean"
+        },
+        "streamingAudio": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "bargeIn",
+        "streamingAudio",
+        "exactSpeech",
+        "serverAudio",
+        "needs"
+      ],
+      "type": "object"
+    },
+    "connectionKind": {
+      "enum": [
+        "none",
+        "webrtc",
+        "room"
+      ],
+      "type": "string"
+    },
+    "lastSeq": {
+      "type": "number"
+    },
+    "mode": {
+      "enum": [
+        "push",
+        "live",
+        "handsfree",
+        "mock"
+      ],
+      "type": "string"
+    },
+    "profileId": {
+      "type": "string"
+    },
+    "roomToken": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "roomUrl": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sdpAnswer": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sessionName": {
+      "type": "string"
+    },
+    "state": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "callId",
+    "connectionKind",
+    "sdpAnswer",
+    "roomUrl",
+    "roomToken",
+    "lastSeq",
+    "sessionName",
+    "mode",
+    "profileId",
+    "state",
+    "capabilities"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsTranscriptInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "call": {
+      "description": "Call id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "call"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceCallsTranscriptReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "callId": {
+      "type": "string"
+    },
+    "lines": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "type": "string"
+          },
+          "seq": {
+            "type": "number"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "text",
+          "seq"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "callId",
+    "lines"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceDevicesListInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "all": {
+      "description": "Include revoked devices",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Items to skip (default: 0)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const voiceDevicesListReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "devices": {
+      "items": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "contactId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "lastSeenAt": {
+                "type": "string"
+              },
+              "revoked": {
+                "type": "boolean"
+              },
+              "sessions": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "id",
+              "label",
+              "contactId",
+              "sessions",
+              "createdAt",
+              "expiresAt",
+              "revoked"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "devices",
+    "total",
+    "pagination"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceDevicesPairInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "description": "The person this device speaks for",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Actually pair and print the key once; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
+    "label": {
+      "description": "Device name, e.g. 'iPhone'",
+      "type": "string"
+    },
+    "session": {
+      "description": "Sessions it may call (comma-separated; '*' only for the owner)",
+      "type": "string"
+    },
+    "worker": {
+      "description": "Issue a hands-free worker key instead of a person's device key",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const voiceDevicesPairReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "contextKey": {
+      "type": "string"
+    },
+    "device": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "contactId": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "string"
+            },
+            "expiresAt": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "lastSeenAt": {
+              "type": "string"
+            },
+            "revoked": {
+              "type": "boolean"
+            },
+            "sessions": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "label",
+            "contactId",
+            "sessions",
+            "createdAt",
+            "expiresAt",
+            "revoked"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "shownOnce": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "device",
+    "contextKey",
+    "shownOnce"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceDevicesRevokeInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "device": {
+      "description": "Device id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "device"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceDevicesRevokeReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "device": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "contactId": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "string"
+            },
+            "expiresAt": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "lastSeenAt": {
+              "type": "string"
+            },
+            "revoked": {
+              "type": "boolean"
+            },
+            "sessions": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "label",
+            "contactId",
+            "sessions",
+            "createdAt",
+            "expiresAt",
+            "revoked"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "endDeferred": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "endRequested": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "device",
+    "endRequested",
+    "endDeferred"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceEnginesCheckInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+}
+''';
+
+  static const voiceEnginesCheckReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "checks": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "engine": {
+            "enum": [
+              "push",
+              "live",
+              "handsfree",
+              "mock"
+            ],
+            "type": "string"
+          },
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "ready": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "engine",
+          "ready",
+          "missing",
+          "notes"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "checks"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceEnginesListInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Items to skip (default: 0)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const voiceEnginesListReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "engines": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "capabilities": {
+            "additionalProperties": false,
+            "properties": {
+              "bargeIn": {
+                "type": "boolean"
+              },
+              "exactSpeech": {
+                "type": "boolean"
+              },
+              "needs": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "serverAudio": {
+                "type": "boolean"
+              },
+              "streamingAudio": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "bargeIn",
+              "streamingAudio",
+              "exactSpeech",
+              "serverAudio",
+              "needs"
+            ],
+            "type": "object"
+          },
+          "connectionKind": {
+            "enum": [
+              "none",
+              "webrtc",
+              "room"
+            ],
+            "type": "string"
+          },
+          "costPerMinuteUsd": {
+            "type": "number"
+          },
+          "id": {
+            "enum": [
+              "push",
+              "live",
+              "handsfree",
+              "mock"
+            ],
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "connectionKind",
+          "capabilities",
+          "costPerMinuteUsd"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "engines",
+    "total",
+    "pagination"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceProfilesCreateInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "allowGuests": {
+      "description": "Accept third-party speakers (speech only, never control)",
+      "type": "boolean"
+    },
+    "delivery": {
+      "description": "speak|when_idle|silent",
+      "type": "string"
+    },
+    "id": {
+      "description": "Profile id (letters, digits, - and _)",
+      "type": "string"
+    },
+    "label": {
+      "description": "Display name",
+      "type": "string"
+    },
+    "language": {
+      "description": "Language, e.g. pt or en",
+      "type": "string"
+    },
+    "liveModel": {
+      "description": "GPT-Live model",
+      "type": "string"
+    },
+    "liveVoice": {
+      "description": "GPT-Live voice",
+      "type": "string"
+    },
+    "maxCallCost": {
+      "description": "End a call at this estimated cost",
+      "type": "string"
+    },
+    "maxCallMinutes": {
+      "description": "End calls after this many minutes",
+      "type": "string"
+    },
+    "maxDailyCost": {
+      "description": "Refuse and end calls past this daily cost",
+      "type": "string"
+    },
+    "mode": {
+      "description": "push|live|handsfree|mock",
+      "type": "string"
+    },
+    "ttsModel": {
+      "description": "ElevenLabs model id",
+      "type": "string"
+    },
+    "voice": {
+      "description": "ElevenLabs voice id (push and hands-free)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceProfilesCreateReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "profile": {
+      "additionalProperties": false,
+      "properties": {
+        "allowGuests": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "delivery": {
+          "enum": [
+            "speak",
+            "when_idle",
+            "silent"
+          ],
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "language": {
+          "type": "string"
+        },
+        "liveModel": {
+          "type": "string"
+        },
+        "liveVoice": {
+          "type": "string"
+        },
+        "maxCallCostUsd": {
+          "type": "number"
+        },
+        "maxCallMinutes": {
+          "type": "number"
+        },
+        "maxDailyCostUsd": {
+          "type": "number"
+        },
+        "mode": {
+          "enum": [
+            "push",
+            "live",
+            "handsfree",
+            "mock"
+          ],
+          "type": "string"
+        },
+        "ttsModel": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "voice": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "mode",
+        "language",
+        "delivery",
+        "allowGuests",
+        "maxCallMinutes",
+        "maxCallCostUsd",
+        "maxDailyCostUsd",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "profile"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceProfilesDeleteInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Profile id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceProfilesDeleteReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "deleted": {
+      "const": true,
+      "type": "boolean"
+    },
+    "id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "deleted"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceProfilesListInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Items to skip (default: 0)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const voiceProfilesListReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "profiles": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "allowGuests": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "delivery": {
+            "enum": [
+              "speak",
+              "when_idle",
+              "silent"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "language": {
+            "type": "string"
+          },
+          "liveModel": {
+            "type": "string"
+          },
+          "liveVoice": {
+            "type": "string"
+          },
+          "maxCallCostUsd": {
+            "type": "number"
+          },
+          "maxCallMinutes": {
+            "type": "number"
+          },
+          "maxDailyCostUsd": {
+            "type": "number"
+          },
+          "mode": {
+            "enum": [
+              "push",
+              "live",
+              "handsfree",
+              "mock"
+            ],
+            "type": "string"
+          },
+          "ttsModel": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "voice": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "mode",
+          "language",
+          "delivery",
+          "allowGuests",
+          "maxCallMinutes",
+          "maxCallCostUsd",
+          "maxDailyCostUsd",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "profiles",
+    "total",
+    "pagination"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceProfilesShowInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Profile id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceProfilesShowReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "profile": {
+      "additionalProperties": false,
+      "properties": {
+        "allowGuests": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "delivery": {
+          "enum": [
+            "speak",
+            "when_idle",
+            "silent"
+          ],
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "language": {
+          "type": "string"
+        },
+        "liveModel": {
+          "type": "string"
+        },
+        "liveVoice": {
+          "type": "string"
+        },
+        "maxCallCostUsd": {
+          "type": "number"
+        },
+        "maxCallMinutes": {
+          "type": "number"
+        },
+        "maxDailyCostUsd": {
+          "type": "number"
+        },
+        "mode": {
+          "enum": [
+            "push",
+            "live",
+            "handsfree",
+            "mock"
+          ],
+          "type": "string"
+        },
+        "ttsModel": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "voice": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "mode",
+        "language",
+        "delivery",
+        "allowGuests",
+        "maxCallMinutes",
+        "maxCallCostUsd",
+        "maxDailyCostUsd",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "profile"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceProfilesUpdateInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "allowGuests": {
+      "description": "Accept third-party speakers",
+      "type": "boolean"
+    },
+    "delivery": {
+      "description": "speak|when_idle|silent",
+      "type": "string"
+    },
+    "id": {
+      "description": "Profile id",
+      "type": "string"
+    },
+    "label": {
+      "description": "Display name",
+      "type": "string"
+    },
+    "language": {
+      "description": "Language, e.g. pt or en",
+      "type": "string"
+    },
+    "liveModel": {
+      "description": "GPT-Live model",
+      "type": "string"
+    },
+    "liveVoice": {
+      "description": "GPT-Live voice",
+      "type": "string"
+    },
+    "maxCallCost": {
+      "description": "End a call at this estimated cost",
+      "type": "string"
+    },
+    "maxCallMinutes": {
+      "description": "End calls after this many minutes",
+      "type": "string"
+    },
+    "maxDailyCost": {
+      "description": "Refuse and end calls past this daily cost",
+      "type": "string"
+    },
+    "mode": {
+      "description": "push|live|handsfree|mock",
+      "type": "string"
+    },
+    "noGuests": {
+      "default": false,
+      "description": "Stop accepting third-party speakers",
+      "type": "boolean"
+    },
+    "ttsModel": {
+      "description": "ElevenLabs model id",
+      "type": "string"
+    },
+    "voice": {
+      "description": "ElevenLabs voice id (push and hands-free)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceProfilesUpdateReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "profile": {
+      "additionalProperties": false,
+      "properties": {
+        "allowGuests": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "delivery": {
+          "enum": [
+            "speak",
+            "when_idle",
+            "silent"
+          ],
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "language": {
+          "type": "string"
+        },
+        "liveModel": {
+          "type": "string"
+        },
+        "liveVoice": {
+          "type": "string"
+        },
+        "maxCallCostUsd": {
+          "type": "number"
+        },
+        "maxCallMinutes": {
+          "type": "number"
+        },
+        "maxDailyCostUsd": {
+          "type": "number"
+        },
+        "mode": {
+          "enum": [
+            "push",
+            "live",
+            "handsfree",
+            "mock"
+          ],
+          "type": "string"
+        },
+        "ttsModel": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "voice": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "mode",
+        "language",
+        "delivery",
+        "allowGuests",
+        "maxCallMinutes",
+        "maxCallCostUsd",
+        "maxDailyCostUsd",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "profile"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceTargetsListInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Items to skip (default: 0)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const voiceTargetsListReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "targets": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "activeCalls": {
+            "type": "number"
+          },
+          "agentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionName",
+          "agentId",
+          "activeCalls"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "targets",
+    "total",
+    "pagination"
+  ],
+  "type": "object"
+}
+''';
+
+  static const voiceVoicesListInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Items to skip (default: 0)",
+      "type": "string"
+    },
+    "search": {
+      "description": "Filter by name or description",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const voiceVoicesListReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    },
+    "voices": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "name": {
+            "type": "string"
+          },
+          "voiceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "voiceId",
+          "name"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "voices",
+    "total",
+    "pagination"
   ],
   "type": "object"
 }

@@ -244,6 +244,22 @@ export const RUNTIME_BUILTIN_TOOL_HOOK_NAMES = [
   ]),
 ];
 
+/**
+ * Names one built-in tool goes by. Claude Code renamed its subagent tool from `Task` to `Agent`. The registry, its tool
+ * groups and the grants stored before the rename say `Task`; the current Claude Code reports `Agent`, and an older one
+ * (a remote-spawn host) still reports `Task`. A grant, or a deny, under either name is one for the tool under both.
+ *
+ * Only a rename belongs here. `TaskOutput`, `TaskStop` and the task-list tools (`TaskCreate`, `TaskUpdate`, ...) are
+ * tools of their own: a grant of `Task` does not cover them.
+ */
+export const TOOL_NAME_EQUIVALENTS: ReadonlyArray<readonly string[]> = [["Task", "Agent"]];
+
+/** Every name `toolName` goes by, itself first. A name that has no other name is returned alone. */
+export function getToolNameEquivalents(toolName: string): readonly string[] {
+  const names = TOOL_NAME_EQUIVALENTS.find((group) => group.includes(toolName));
+  return names ? [toolName, ...names.filter((name) => name !== toolName)] : [toolName];
+}
+
 /** Named groups of built-in tools for bulk permission grants */
 export const TOOL_GROUPS: Record<string, string[]> = Object.fromEntries(
   Array.from(new Set(RUNTIME_BUILTIN_TOOLS.flatMap((tool) => tool.groups))).map((group) => [

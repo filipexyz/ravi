@@ -88,6 +88,7 @@
             "group": "Conversations",
             "pages": [
               "guides/sessions",
+              "guides/voice",
               "guides/contacts",
               "guides/routing",
               "guides/knowledge"
@@ -98,7 +99,8 @@
             "pages": [
               "guides/cron-jobs",
               "guides/triggers",
-              "guides/heartbeat"
+              "guides/heartbeat",
+              "guides/apps"
             ]
           },
           {

@@ -14,6 +14,11 @@ import { logger } from "../utils/logger.js";
 import { errorDiagnostic, redactDiagnosticText } from "../utils/error-diagnostic.js";
 import { ensureCodexBashHookConfig } from "./codex-hooks.js";
 import {
+  CODEX_BASH_GATE_UNVERIFIED_MESSAGE,
+  CodexBashGateUnverifiedError,
+  ensureCodexHookGuard,
+} from "./codex-hook-guard.js";
+import {
   CodexAppServerRequestError,
   isCodexCapacityError,
   normalizeCodexProviderError,
@@ -74,6 +79,7 @@ import type {
   SessionRuntimeProvider,
 } from "./types.js";
 import { toCodexRuntimeEffort } from "./effort.js";
+import { RAVI_TURN_HELD_BELOW_AGENT_ENV, RAVI_TURN_OWNER_AUTHORITY_ENV } from "../permissions/actor-limit.js";
 import { createRuntimeTerminalEventTracker, type RuntimeFailedTerminalInput } from "./terminality.js";
 import { materializeRuntimeModelBroker } from "./model-broker-materializer.js";
 
@@ -135,6 +141,8 @@ interface CodexCliTurnRequest {
   cwd: string;
   /** Sandbox and native tool switches for this agent's thread (contract §13.10). */
   security?: CodexThreadSecurity;
+  /** The turn's person is held below the agent: this turn runs in the read-only sandbox. */
+  heldBelowAgent?: boolean;
   env: NodeJS.ProcessEnv;
   model?: string;
   effort?: string;
@@ -231,6 +239,42 @@ export function isCodexRestrictedRuntimeProfile(config: AgentRuntimePermissionsC
     const key = runtimeCapabilityKey(capability);
     return key === null || CODEX_EXEC_CAPABILITY_PREFIXES.some((prefix) => key.startsWith(prefix));
   });
+}
+
+/**
+ * The sandbox one turn runs in. A turn of a person held below the agent (no
+ * grant in the chat, or a held relay) never gets `danger-full-access`: the
+ * Ravi Bash hook gates `shell`, but `apply_patch` and the sandbox are Codex's,
+ * so the sandbox is what keeps that person from writing. Pure.
+ */
+export function resolveCodexTurnSandbox(
+  security: CodexThreadSecurity | undefined,
+  heldBelowAgent: boolean | undefined,
+): CodexSandboxMode {
+  if (heldBelowAgent) return "read-only";
+  return (security ?? UNRESTRICTED_CODEX_THREAD_SECURITY).sandbox;
+}
+
+/**
+ * The thread security one turn opens with. A bridge turn is always restricted. A turn carrying owner
+ * authority (`permissions/owner-authority`, set per turn by the daemon and never for a held turn) is
+ * not bounded by the agent profile. Anything else follows the agent profile.
+ */
+export function resolveCodexTurnSecurity(
+  env: Record<string, string | undefined> | undefined,
+  agentId: string | null | undefined,
+  resolveAgentSecurity: (agentId: string | null | undefined) => CodexThreadSecurity = resolveCodexThreadSecurity,
+): CodexThreadSecurity {
+  if (env?.RAVI_BRIDGE_TURN === "1") return RESTRICTED_CODEX_THREAD_SECURITY;
+  const ownerTurn = env?.[RAVI_TURN_OWNER_AUTHORITY_ENV] === "1";
+  const heldTurn = env?.[RAVI_TURN_HELD_BELOW_AGENT_ENV] === "1";
+  if (ownerTurn && !heldTurn) return UNRESTRICTED_CODEX_THREAD_SECURITY;
+  return resolveAgentSecurity(agentId);
+}
+
+/** The app-server `SandboxPolicy` for a sandbox mode. Sent on every turn: an override sticks to later turns. */
+export function toCodexSandboxPolicy(sandbox: CodexSandboxMode): { type: "readOnly" | "dangerFullAccess" } {
+  return sandbox === "read-only" ? { type: "readOnly" } : { type: "dangerFullAccess" };
 }
 
 /** The thread security for a runtime permissions config. Pure. */
@@ -778,10 +822,8 @@ async function* normalizeCodexEvents(
 
       const turn = transport.startTurn({
         cwd: input.cwd,
-        security:
-          input.env?.RAVI_BRIDGE_TURN === "1"
-            ? RESTRICTED_CODEX_THREAD_SECURITY
-            : resolveCodexThreadSecurity(input.agentId),
+        security: resolveCodexTurnSecurity(input.env, input.agentId),
+        heldBelowAgent: input.env?.[RAVI_TURN_HELD_BELOW_AGENT_ENV] === "1",
         env: input.env ?? process.env,
         model: resolveCodexModelArg(
           promptMessage.runtimeOptions?.model && !input.modelBroker ? promptMessage.runtimeOptions.model : input.model,
@@ -1138,6 +1180,20 @@ async function* normalizeCodexEvents(
           const terminal = terminalTracker.fail(
             buildCodexTransportFailure(error, { result, stderrTail, lastErrorMessage, lastErrorEvent, metadata }),
           );
+          if (terminal) {
+            yield terminal;
+          }
+          continue;
+        }
+
+        if (error instanceof CodexBashGateUnverifiedError && !state.interrupted) {
+          // A refused session, not a dropped transport: one terminal failure the
+          // host delivers like any other, and no automatic retry.
+          const metadata = buildCodexEventMetadata(
+            { type: "turn.failed", thread_id: turnSessionId, turn_id: activeTurnId },
+            { threadId: turnSessionId, turnId: activeTurnId },
+          );
+          const terminal = terminalTracker.fail(buildCodexGateRefusalFailure(error, metadata));
           if (terminal) {
             yield terminal;
           }
@@ -2308,11 +2364,33 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       const { ensureBridgeCodexGuard } = await import("../bridge/codex-trust.js");
       if (!input.env.CODEX_HOME) throw new Error("Missing private bridge profile");
       await ensureBridgeCodexGuard(sendRequest, input.cwd, input.env.CODEX_HOME);
+    } else if (shouldMaterializeCodexHookForCommand(command)) {
+      // Writing hooks.json is not enough: an untrusted hash, a feature key the
+      // installed Codex ignores or a changed matcher would skip the gate with no
+      // denial and no audit. Ask the app-server, and refuse when it can't confirm.
+      try {
+        await ensureCodexHookGuard(sendRequest, input.cwd, input.env?.CODEX_HOME);
+      } catch (error) {
+        log.warn("codex bash permission gate unverified; refusing the session", {
+          cwd: input.cwd,
+          reason: error instanceof CodexBashGateUnverifiedError ? error.reason : String(error),
+        });
+        throw error;
+      }
     }
     const effort = toCodexRuntimeEffort(input.effort);
     const security = input.security ?? UNRESTRICTED_CODEX_THREAD_SECURITY;
     currentSecurity = security;
-    const config: Record<string, unknown> = { model_reasoning_effort: effort, ...security.config };
+    // A thread opened by a held turn never starts in full access, not even before turn/start.
+    const threadSandbox = resolveCodexTurnSandbox(security, input.heldBelowAgent);
+    // Codex's native web_search and view_image run outside its sandbox: a held turn gets the
+    // restricted switches too. A change of the held mark respawns the app-server
+    // (`RAVI_*` is in the env signature), so the thread reopens here with the turn's config.
+    const config: Record<string, unknown> = {
+      model_reasoning_effort: effort,
+      ...security.config,
+      ...(input.heldBelowAgent ? RESTRICTED_CODEX_THREAD_SECURITY.config : {}),
+    };
     if (input.allowedSkills?.length || input.hiddenSkills?.length) {
       const inventory = await sendRequest("skills/list", { cwds: [input.cwd], forceReload: true });
       config["skills.config"] = buildCodexDisabledSkillConfig(
@@ -2338,7 +2416,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           cwd: input.cwd,
           approvalPolicy: "never",
           approvalsReviewer: null,
-          sandbox: security.sandbox,
+          sandbox: threadSandbox,
           config,
           baseInstructions: null,
           developerInstructions: null,
@@ -2352,7 +2430,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             modelProvider: null,
             cwd: input.cwd,
             approvalPolicy: "never",
-            sandbox: security.sandbox,
+            sandbox: threadSandbox,
             config,
             baseInstructions: null,
             developerInstructions: input.systemPromptAppend || null,
@@ -2365,7 +2443,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             modelProvider: null,
             cwd: input.cwd,
             approvalPolicy: "never",
-            sandbox: security.sandbox,
+            sandbox: threadSandbox,
             config,
             serviceName: null,
             baseInstructions: null,
@@ -2657,7 +2735,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
                 ],
                 cwd: null,
                 approvalPolicy: null,
-                sandboxPolicy: null,
+                sandboxPolicy: toCodexSandboxPolicy(resolveCodexTurnSandbox(input.security, input.heldBelowAgent)),
                 model: switchesModel ? turnModel : null,
                 effort: input.effort ?? null,
                 summary: null,
@@ -2764,10 +2842,26 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   };
 }
 
+/** The turn failure for a session refused because its Bash gate is unverified: not retried. */
+function buildCodexGateRefusalFailure(
+  error: CodexBashGateUnverifiedError,
+  metadata: ReturnType<typeof buildCodexEventMetadata>,
+) {
+  return {
+    error: CODEX_BASH_GATE_UNVERIFIED_MESSAGE,
+    recoverable: false,
+    rawEvent: { type: "codex.bash_gate_unverified", reason: error.reason },
+    metadata,
+  };
+}
+
 function buildCodexAppServerBaseArgs(humanBridge = false): string[] {
   return [
     "-c",
-    humanBridge ? "features.hooks=true" : "features.codex_hooks=true",
+    // The bridge profile already runs on `features.hooks`; ordinary sessions send it
+    // too and keep the legacy `features.codex_hooks` key. Neither is trusted on its
+    // own: bootstrap confirms the gate through hooks/list (codex-hook-guard.ts).
+    ...(humanBridge ? ["features.hooks=true"] : ["features.hooks=true", "-c", "features.codex_hooks=true"]),
     "-c",
     "shell_environment_policy.inherit=all",
     "-c",
@@ -2782,7 +2876,12 @@ function _createCodexCliTransport(options: { command?: string } = {}): CodexCliT
 
   return {
     startTurn(input) {
-      const args = buildExecArgs(input.resume, input.model, toCodexRuntimeEffort(input.effort), input.security);
+      const args = buildExecArgs(
+        input.resume,
+        input.model,
+        toCodexRuntimeEffort(input.effort),
+        input.heldBelowAgent ? RESTRICTED_CODEX_THREAD_SECURITY : input.security,
+      );
       const child = spawn(command, args, {
         cwd: input.cwd,
         detached: true,

@@ -12,3 +12,6 @@
 - With no CORS env set, `http://127.0.0.1:8088` MUST stay closed; this check fails if production-default requests receive ACAO.
 - OPTIONS preflight MUST include `Authorization`, `Content-Type`, `x-ravi-sdk-version`, and `x-ravi-registry-hash` in `Access-Control-Allow-Headers`; this check fails if any of the four is missing.
 - SSE `GET /api/v1/_stream/*` MUST receive the same CORS headers via `withCorsHeaders`; this check fails if streams use a separate CORS path.
+- `preflightHeaders` MUST add `Access-Control-Allow-Private-Network: true` for an allowed origin whose preflight sent `Access-Control-Request-Private-Network: true`; this check fails if the header is missing.
+- `preflightHeaders` MUST return no CORS header, Private Network included, for an origin outside the allowlist or a missing origin; this check fails if an unlisted origin receives `Access-Control-Allow-Private-Network`.
+- The gateway OPTIONS handler MUST pass the request's `Access-Control-Request-Private-Network` value to `preflightHeaders`; this check fails if an allowed origin's preflight through the server gets no `Access-Control-Allow-Private-Network`.

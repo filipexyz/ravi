@@ -444,6 +444,29 @@ describe("TriggersCommands topic guidance", () => {
     });
   });
 
+  it("gives a shell trigger no default debounce and keeps its 5s cooldown, so a burst is capped", async () => {
+    const commands = new TriggersCommands();
+    mockToolContext = { transport: "gateway" };
+    await captureJson(() =>
+      commands.add(
+        "shell default",
+        "ravi.inbound.interaction",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        "printf ok",
+      ),
+    );
+    expect(createdTriggers).toContainEqual(
+      expect.objectContaining({ name: "shell default", executionType: "shell", cooldownMs: 5000, debounceMs: 0 }),
+    );
+  });
+
   it("refuses a shell trigger from a turn that does not act as the operator", async () => {
     const commands = new TriggersCommands();
     mockToolContext = { transport: "gateway" };
@@ -764,7 +787,7 @@ describe("TriggersCommands topic guidance", () => {
         id: "trg_1",
         name: "json trigger",
         effectiveAgentId: "main",
-        cooldownDescription: "5s",
+        cooldownDescription: "off",
         // Created from the terminal: the operator owns it, with no runs-as warning.
         ownerPrincipal: "operator",
         runsAsOperator: true,
@@ -1387,8 +1410,18 @@ describe("triggers cooldown and debounce flags", () => {
       debounce,
     );
 
-  it("keeps the 5s cooldown default and no debounce", async () => {
+  it("defaults to no cooldown and a 5s debounce, which batches instead of dropping", async () => {
     await addWith();
+    expect(createdTriggers).toContainEqual(expect.objectContaining({ cooldownMs: 0, debounceMs: 5000 }));
+  });
+
+  it("defaults a watch topic to a 30s debounce", async () => {
+    await new TriggersCommands().add("watch", "ravi.watch.github.>", "hello");
+    expect(createdTriggers).toContainEqual(expect.objectContaining({ cooldownMs: 0, debounceMs: 30_000 }));
+  });
+
+  it("adds no debounce behind an explicit cooldown", async () => {
+    await addWith("1m");
     expect(createdTriggers).toContainEqual(expect.objectContaining({ cooldownMs: 5000, debounceMs: 0 }));
   });
 
@@ -1763,7 +1796,7 @@ describe("TriggersCommands owner", () => {
 });
 
 describe("TriggersCommands --thread", () => {
-  const add = (opts: { session?: string; thread?: boolean; reportTo?: string }) =>
+  const add = (opts: { session?: string; thread?: boolean; reportTo?: string; visible?: boolean }) =>
     new TriggersCommands().add(
       "watch",
       "ravi.test.thread",
@@ -1783,6 +1816,7 @@ describe("TriggersCommands --thread", () => {
       undefined,
       opts.thread,
       opts.reportTo,
+      opts.visible,
     );
 
   beforeEach(() => {
@@ -1931,5 +1965,40 @@ describe("TriggersCommands --thread", () => {
     );
 
     await expect(add({ thread: true, reportTo: "other-parent" })).rejects.toThrow(/belongs to other/);
+  });
+
+  it("shows fires only when asked: --visible goes with --thread and is absent otherwise", async () => {
+    const { getOrCreateSession } = await import("../../router/sessions.js");
+    getOrCreateSession("agent:main:slack:dm:visible-parent", "main", "/tmp/main", { name: "visible-parent" });
+
+    await expect(add({ visible: true })).rejects.toThrow("--visible only applies with --thread");
+    await add({ thread: true, reportTo: "visible-parent" });
+    expect(createdTriggers.at(-1)).not.toHaveProperty("threadVisible");
+    await add({ thread: true, reportTo: "visible-parent", visible: true });
+    expect(createdTriggers.at(-1)).toMatchObject({ session: "thread", threadVisible: true });
+  });
+
+  it("sets visible on a thread trigger only, and turns it off when the trigger leaves thread mode", async () => {
+    const quiet = console.log;
+    console.log = () => {};
+    try {
+      updatedTriggers.length = 0;
+      triggerRecord = { ...buildTriggerRecord(), session: "thread", ownerPrincipal: "operator" };
+      const commands = new TriggersCommands();
+
+      await expect(commands.set("trg_1", "visible", "maybe", true)).rejects.toThrow(/Invalid boolean/);
+      await commands.set("trg_1", "visible", "on", true);
+      expect(updatedTriggers.at(-1)?.patch).toEqual({ threadVisible: true });
+
+      triggerRecord = { ...triggerRecord, threadVisible: true };
+      await commands.set("trg_1", "session", "main", true);
+      expect(updatedTriggers.at(-1)?.patch).toMatchObject({ session: "main", threadVisible: false });
+
+      triggerRecord = { ...triggerRecord, session: "main", threadVisible: false };
+      await expect(commands.set("trg_1", "visible", "yes", true)).rejects.toThrow(/thread triggers only/);
+    } finally {
+      console.log = quiet;
+      triggerRecord = buildTriggerRecord();
+    }
   });
 });

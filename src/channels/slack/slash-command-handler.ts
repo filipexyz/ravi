@@ -22,6 +22,8 @@ import {
   CHAT_COMMAND_MAX_AGE_MS,
   type ChatCommandAudit,
   type ChatCommandChannel,
+  type ChatCommandCloneInput,
+  type ChatCommandCloneOutcome,
   type ChatCommandDecision,
   type ChatCommandDeps,
   type ChatCommandOutcome,
@@ -33,6 +35,7 @@ import {
   type InheritedCommandAccess,
   runChatCommand,
 } from "../../chat-commands/engine.js";
+import { closeChildRun, findChildRunByChildSession, isChildRunSurfaceRef } from "../../automation/child-runs.js";
 import { getCommandAccessMetadata } from "../../cli/decorators.js";
 import { slackUserContactId } from "../../cloud-agents/chat-people.js";
 import { nats as runtimeNats } from "../../nats.js";
@@ -46,6 +49,7 @@ import {
 import { dbFindChat } from "../../router/router-db.js";
 import type { RouterConfig, SessionEntry } from "../../router/types.js";
 import { logger } from "../../utils/logger.js";
+import { SESSION_CLONE_DEFAULT_MESSAGES, SessionCloneError } from "../../sessions/clone.js";
 import { resolveSubscriptionPrecedence } from "../subscription-precedence.js";
 import { resolveSlackInstanceAliases } from "./instance-alias.js";
 import { respondToSlackInteraction } from "./interactions.js";
@@ -56,6 +60,7 @@ import {
   closeSlackThreadRecord,
   findSlackThreadForParent,
   findSlackThreadForParentInChat,
+  type SlackThreadLifecycleDependencies,
   slackThreadParentSessionKey,
   summarizeSlackThread,
 } from "./thread-lifecycle.js";
@@ -100,6 +105,7 @@ export interface SlackCommandDeps extends ChatCommandDeps {
    */
   findThread?: (parentSessionKey: string, threadRef: string, chatId?: string) => ChatThreadSummary | null;
   closeThread?: (parentSessionKey: string, threadRef: string, chatId?: string) => Promise<SlackCommandCloseResult>;
+  cloneFromCommand?: (input: ChatCommandCloneInput) => Promise<ChatCommandCloneOutcome>;
 }
 
 /**
@@ -199,20 +205,42 @@ function defaultFindThread(parentSessionKey: string, threadRef: string, chatId?:
   return record ? summarizeSlackThread(record) : null;
 }
 
-async function defaultCloseThread(
+/**
+ * A person closes a thread (the card's Close button, `/ravi close`). A run's thread closes its run
+ * too, without a return, as `sessions close-thread` with none would; the thread's own guards (a
+ * decision still open) refuse first, and then the run stays open.
+ */
+export async function closeSlackThreadFromCommand(
   parentSessionKey: string,
   threadRef: string,
   chatId?: string,
+  dependencies?: SlackThreadLifecycleDependencies,
 ): Promise<SlackCommandCloseResult> {
   const record = lookupThread(parentSessionKey, threadRef, chatId);
   if (!record) return { kind: "not_found" };
   const name = record.childSessionName ?? record.requestId;
+  let result: Awaited<ReturnType<typeof closeSlackThreadRecord>>;
   try {
-    const result = await closeSlackThreadRecord(record);
-    return { kind: "closed", name, changed: result.changed };
+    result = await (dependencies
+      ? closeSlackThreadRecord(record, undefined, dependencies)
+      : closeSlackThreadRecord(record));
   } catch (error) {
     return refusedClose(name, error);
   }
+  // A run's thread: the run closes with it, without a return (as `close-thread` with none).
+  const run =
+    isChildRunSurfaceRef(record.requestId) && record.childSessionKey
+      ? findChildRunByChildSession(record.childSessionKey)
+      : null;
+  if (run?.status === "open") {
+    await closeChildRun(run, null).catch((error) =>
+      log.warn("A run's thread closed but the run did not; its turn's end or the stale rule closes it", {
+        runId: run.id,
+        error: errorText(error),
+      }),
+    );
+  }
+  return { kind: "closed", name, changed: result.changed };
 }
 
 /**
@@ -224,6 +252,43 @@ async function defaultCloseAccess(): Promise<InheritedCommandAccess | undefined>
   const { SessionCommands } = await import("../../cli/commands/sessions.js");
   const access = getCommandAccessMetadata(SessionCommands).get("closeThread");
   return access ? { group: "sessions", command: "close-thread", access } : undefined;
+}
+
+async function defaultCloneAccess(): Promise<InheritedCommandAccess | undefined> {
+  const { SessionCommands } = await import("../../cli/commands/sessions.js");
+  const access = getCommandAccessMetadata(SessionCommands).get("clone");
+  return access ? { group: "sessions", command: "clone", access } : undefined;
+}
+
+/** A refusal of the core, said as facts: its code and its own message. */
+function refusedClone(cause: SessionCloneError): ChatCommandCloneOutcome {
+  return { kind: "refused", code: cause.code, message: cause.message };
+}
+
+/** `/ravi clone <name>`: the same runner as `ravi sessions clone --execute`, inviting the person who asked. */
+async function defaultCloneFromCommand(input: ChatCommandCloneInput): Promise<ChatCommandCloneOutcome> {
+  const { runSessionCloneFromCli } = await import("../../cli/commands/sessions.js");
+  try {
+    const plan = await runSessionCloneFromCli(input.session, {
+      name: input.name,
+      messages: SESSION_CLONE_DEFAULT_MESSAGES,
+      inviteActorIds: [input.actorId],
+      execute: true,
+      principal: { type: "automation", id: `chat-command:contact:${input.contactId}` },
+    });
+    if (!plan.clone) return { kind: "refused", code: "CLONE_PROVISION_FAILED", message: "The clone was not created." };
+    return {
+      kind: "cloned",
+      sessionName: plan.clone.sessionName,
+      chatId: plan.clone.chatId,
+      messages: plan.seed.messages,
+      redacted: plan.seed.redacted,
+      inviteFailed: plan.clone.inviteFailed,
+    };
+  } catch (error) {
+    if (error instanceof SessionCloneError) return refusedClone(error);
+    throw error;
+  }
 }
 
 function refusedClose(name: string, cause: unknown): SlackCommandCloseResult {
@@ -292,8 +357,14 @@ export function slackCommandChannel(source: SlackCommandSource, deps: SlackComma
     findThread: (session, threadRef) =>
       (deps.findThread ?? defaultFindThread)(slackThreadParentSessionKey(session.sessionKey), threadRef, scopeChat),
     closeThread: (session, threadRef) =>
-      (deps.closeThread ?? defaultCloseThread)(slackThreadParentSessionKey(session.sessionKey), threadRef, scopeChat),
+      (deps.closeThread ?? closeSlackThreadFromCommand)(
+        slackThreadParentSessionKey(session.sessionKey),
+        threadRef,
+        scopeChat,
+      ),
     closeAccess: defaultCloseAccess,
+    clone: (input) => (deps.cloneFromCommand ?? defaultCloneFromCommand)(input),
+    cloneAccess: defaultCloneAccess,
     reply: async (result) => {
       // The runner answers static text inside the ack when Slack takes it there; only when Slack
       // would not does the daemon say it, so nobody gets it twice.

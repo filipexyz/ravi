@@ -24,6 +24,58 @@
   capabilities.
 - A thread turn MUST resolve grants from its container chat and record
   `userOverlayThreadChat`.
+- In a governed chat, a contact whose global permission tags hold full access
+  MUST get `userOverlay=lifted`, `actorAuthorizationMode` other than
+  `user-overlay`, no automation hold, `userOverlayGrants` and
+  `userOverlayContact` recorded, and threads (and their return) stamped
+  `relayCallerUnrestricted` (`runtime-request-context.test.ts`, "a contact
+  speaking in a chat governed by contact grants").
+- In a governed chat the overlay MUST stay (`userOverlay=active`, automation
+  held, threads held) for: a partial chat grant, no grant, a partial global
+  tag, full access granted only in that chat, a partial global tag plus full
+  access in that chat, an admin with a `deny_*` grant in that chat (also when
+  the agent holds admin plus a `deny_*` of its own, which hides admin from an
+  effective-set comparison), an admin with a `deny_*` among their own tags, a
+  global tag that covers the effective set of an agent holding admin plus a
+  `deny_*`, and a member or a global-tag holder of a `chat-only` agent (same
+  test block).
+- `deny` of the global grant a lifted turn rests on MUST revoke that live turn,
+  and the next turn without it MUST be narrowed again (same test block); it
+  MUST also revoke a live lifted cron run of that owner, found by
+  `userOverlayContact` ("runs a chat-bound cron of an owner…").
+- The active-turn lease MUST keep an overlay turn whose contact gains full
+  access mid-turn (issued snapshot and mode unchanged, lifted on the next
+  turn), MUST revoke a lifted turn whose contact loses it, and MUST revoke an
+  overlay turn whose chat stops being governed mid-turn
+  (`runtime-request-context-lifetime.test.ts`, "a contact in a chat governed by
+  contact grants").
+- A relay from a lifted turn MUST lend nothing (zero capabilities,
+  `held-relay`) for every action once the contact is untagged or narrowed by a
+  `deny_*` granted in the chat, and MUST still carry the destination's
+  authority while the full access holds; a lifted context missing
+  `userOverlayContact` or `userOverlayChat` MUST lend nothing
+  (`runtime-request-context.test.ts`, "a relay from a lifted turn lends
+  nothing…", "a lifted caller whose context lacks…").
+- `cron add` in a lifted turn MUST bind the job to the chat; in a held relay
+  whose own overlay is lifted it MUST refuse; in an ungoverned chat
+  (`userOverlay=inactive`) it MUST NOT bind (`cron-commands.test.ts`, "binds a
+  job from an overlay turn or a lifted overlay to its chat…").
+- A narrowed member's turn and held relay MUST NOT, on an admin's lifted-turn
+  job, a legacy job without an owner or an operator-owned job, set any of the
+  7 keys that keep the owner, enable it, run it now (no `ravi.cron.trigger`
+  published) or delete it, with or without `--execute`; each refusal MUST
+  carry its `automationHold` cause. A held relay acting for the job's own
+  owner, a member on their own bound job and an admin on their own job MUST
+  still succeed, `cron run` and `cron rm` included. Disabling another owner's
+  job MUST stay open to a held turn (`runtime-request-context.test.ts`, "cron
+  jobs a turn held below the agent may touch").
+- A held relay that acts as the agent (a thread's return, `agent:<id>`) MUST
+  NOT enable, reschedule, run or delete a job owned by `agent:<id>`, while
+  the unrestricted return that wrote it still may. A held turn whose actor
+  cannot be resolved (`unknown`) MUST NOT enable, reschedule, run or delete a
+  legacy job without an owner; disabling stays open to it as to any turn
+  (same block, "a held relay that acts as the agent…", "a held turn whose
+  actor cannot be resolved…").
 - A global (`--force`) grant MUST apply only inside governed chats and MUST NOT
   govern a chat by itself.
 - Blocked contacts MUST receive zero overlay capabilities.

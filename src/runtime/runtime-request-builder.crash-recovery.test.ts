@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { RESTART_TURN_AUTHORITY_METADATA_KEY } from "./daemon-restart-resume.js";
+import { RESTART_RESUME_ATTEMPT_METADATA_KEY } from "./restart-turn-recovery.js";
 import { getOrCreateSession, type AgentConfig, type SessionEntry } from "../router/index.js";
 import { getSessionTurn } from "../session-trace/session-trace-db.js";
+import { saveMessage } from "../db.js";
 import { listSessionEventsForTest } from "../test/session-trace-events.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
@@ -713,6 +716,83 @@ describe("runtime request durable attempt preparation", () => {
     expect(streamingSession.durableTurnPreparationFailed).toBe(true);
   });
 
+  it.each([
+    { label: "a restart resume", restartResume: true },
+    { label: "an ordinary prompt", restartResume: false },
+  ])("marks the durable attempt of $label so restart recovery cannot loop on it", async ({ restartResume }) => {
+    const sessionCwd = stateDir!;
+    const streamingSession = traceStreamingSession();
+    streamingSession.pendingMessages = [
+      createQueuedRuntimeUserMessage({
+        prompt: "persist me",
+        source: traceSource,
+        ...(restartResume ? { _daemonRestartResume: { restartEpoch: "epoch-1", sessionKey: TRACE_SESSION_KEY } } : {}),
+        _turnOrigin: {
+          protocol: "ravi.runtime.turn-origin",
+          schemaVersion: 1,
+          producer: "session-relay",
+          action: "execute",
+          principal: { type: "agent", id: "main" },
+          callerContextId: "ctx_caller",
+        },
+      }),
+    ];
+    let attemptInput: { metadata?: Record<string, unknown> } | undefined;
+    const crashRecovery = {
+      startTurnAttempt: (input: { metadata?: Record<string, unknown> }) => {
+        attemptInput = input;
+        return { attemptId: "attempt-restart-marker" };
+      },
+      markTurnAttemptSafety: () => undefined,
+    } as unknown as RuntimeCrashRecoveryCoordinator;
+    const runtimeProvider: SessionRuntimeProvider = {
+      id: TRACE_PROVIDER_ID,
+      getCapabilities: () => traceCapabilities,
+      startSession: () => emptyRuntimeSession(),
+    };
+    const { runtimeRequest } = await buildRuntimeStartRequest({
+      runId: "run-builder-restart-marker",
+      sessionName: TRACE_SESSION_NAME,
+      prompt: { prompt: "persist me", source: traceSource },
+      session: traceSession(sessionCwd),
+      agent: traceAgent(sessionCwd),
+      runtimeProviderId: TRACE_PROVIDER_ID,
+      runtimeProvider,
+      runtimeCapabilities: traceCapabilities,
+      sessionCwd,
+      dbSessionKey: TRACE_SESSION_KEY,
+      model: TRACE_MODEL,
+      runtimeResolution: {
+        options: { model: TRACE_MODEL },
+        sources: { model: "agent_default", effort: null, thinking: null },
+        hasTaskRuntimeContext: false,
+      },
+      storedRuntimeSessionParams: undefined,
+      canResumeStoredSession: false,
+      resolvedSource: traceSource,
+      streamingSession,
+      stashedMessages: new Map(),
+      defaultRuntimeProviderId: "claude",
+      crashRecovery,
+    });
+
+    await expect(runtimeRequest.prompt.next()).resolves.toMatchObject({ done: false });
+
+    // The turn's authority envelope (here a relay origin) is recorded for a later restart resume.
+    expect(attemptInput?.metadata?.[RESTART_TURN_AUTHORITY_METADATA_KEY]).toMatchObject({
+      v: 1,
+      _turnOrigin: { producer: "session-relay", callerContextId: "ctx_caller" },
+    });
+    if (restartResume) {
+      expect(attemptInput?.metadata?.[RESTART_RESUME_ATTEMPT_METADATA_KEY]).toBe(true);
+    } else {
+      expect(attemptInput?.metadata).not.toHaveProperty(RESTART_RESUME_ATTEMPT_METADATA_KEY);
+    }
+    streamingSession.done = true;
+    streamingSession.onTurnComplete?.();
+    await runtimeRequest.prompt.return(undefined);
+  });
+
   it("persists an unfenced replay policy before handing a provider-native turn to the adapter", async () => {
     const sessionCwd = stateDir!;
     const streamingSession = traceStreamingSession();
@@ -769,4 +849,73 @@ describe("runtime request durable attempt preparation", () => {
     streamingSession.onTurnComplete?.();
     await runtimeRequest.prompt.return(undefined);
   });
+
+  it.each([
+    { label: "rolling", memory: undefined, recovers: true },
+    { label: "none", memory: "none" as const, recovers: false },
+  ])(
+    "a cold start of an observer delivery with memory $label recovers earlier deliveries: $recovers",
+    async ({ memory, recovers }) => {
+      const sessionCwd = stateDir!;
+      // An earlier delivery and the observer's answer, persisted like any prompt.
+      saveMessage(TRACE_SESSION_NAME, "user", "[observation] OBS-EARLIER-DELIVERY-MARKER");
+      saveMessage(TRACE_SESSION_NAME, "assistant", "noted the earlier delivery");
+      const streamingSession = traceStreamingSession();
+      const runtimeProvider: SessionRuntimeProvider = {
+        id: TRACE_PROVIDER_ID,
+        getCapabilities: () => traceCapabilities,
+        startSession: () => emptyRuntimeSession(),
+      };
+      const crashRecovery = {
+        startTurnAttempt: () => ({ attemptId: `attempt-memory-${memory ?? "rolling"}` }),
+        markTurnAttemptSafety: () => {},
+      } as unknown as RuntimeCrashRecoveryCoordinator;
+      const { runtimeRequest } = await buildRuntimeStartRequest({
+        runId: `run-memory-${memory ?? "rolling"}`,
+        sessionName: TRACE_SESSION_NAME,
+        prompt: {
+          prompt: "[observation] second delivery",
+          _observation: {
+            sourceSessionKey: "agent:worker:main",
+            sourceSessionName: "worker",
+            bindingId: "ob_mem",
+            ruleId: "mem",
+            role: "mem",
+            mode: "observe",
+            eventIds: [],
+            ...(memory ? { memory } : {}),
+          },
+        },
+        session: traceSession(sessionCwd),
+        agent: traceAgent(sessionCwd),
+        runtimeProviderId: TRACE_PROVIDER_ID,
+        runtimeProvider,
+        runtimeCapabilities: traceCapabilities,
+        sessionCwd,
+        dbSessionKey: TRACE_SESSION_KEY,
+        model: TRACE_MODEL,
+        runtimeResolution: {
+          options: { model: TRACE_MODEL },
+          sources: { model: "agent_default", effort: null, thinking: null },
+          hasTaskRuntimeContext: false,
+        },
+        storedRuntimeSessionParams: undefined,
+        canResumeStoredSession: false,
+        resolvedSource: traceSource,
+        streamingSession,
+        stashedMessages: new Map(),
+        defaultRuntimeProviderId: "claude",
+        crashRecovery,
+      });
+
+      // What the provider receives as the first input of the new conversation.
+      const first = await runtimeRequest.prompt.next();
+      const input = JSON.stringify(first.value);
+      expect(input).toContain("persist me"); // the pending input of this delivery (harness)
+      expect(input.includes("OBS-EARLIER-DELIVERY-MARKER")).toBe(recovers);
+      streamingSession.done = true;
+      streamingSession.onTurnComplete?.();
+      await runtimeRequest.prompt.return(undefined);
+    },
+  );
 });

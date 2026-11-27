@@ -238,6 +238,87 @@ interface CredentialSecretBackend {
 The `read` method is internal only. It MUST NOT be exported as a public CLI
 command or SDK endpoint.
 
+Backends MAY also describe a secret without reading it
+(`describeSecret(ref)` in `src/credentials/backends.ts`):
+
+- Vault uses only the KV v2 metadata endpoint (`GET <mount>/metadata/<path>`)
+  and returns version, created/updated times and whether the current version
+  is deleted or destroyed. It MUST NOT call the data endpoint, and a refusal
+  (403 `forbidden`, 503 `sealed`, network `unreachable`, missing
+  `VAULT_ADDR`/`VAULT_TOKEN` `not_configured`, other `error`) MUST degrade to
+  `{ available: false, reason }` with a fixed reason. It never throws and never
+  falls back to a data read.
+- Backends without metadata (`file`, `keychain`) return
+  `{ available: false, reason: "unsupported" }`, which is not a degradation.
+
+## Inventory
+
+`ravi credentials connections inventory --json` (and
+`buildCredentialInventory()`) is the metadata-only snapshot that the Console
+shows. It MUST:
+
+- list every connection, active and disabled, up to 500;
+- carry lifecycle metadata (`owner`, `purpose`, `rotatedAt`, `expiresAt`,
+  `disabledAt`), `lastUsedAt` and the backend description;
+- name each secret by `secretRefAlias` = `<backend>:<provider>:<connection>`,
+  never by the backend coordinate (no Vault path, no key, no keychain account);
+- derive `lastUsedAt` from the audit trail (latest `secret_resolved`), so the
+  broker hot path writes nothing extra and cannot race the `updated_at` that
+  its host guard compares;
+- include at most 200 recent audit rows without `actorContextId` or `agentId`;
+- set `degraded: true` with sorted `degradedReasons` when a backend refuses
+  metadata, and still return every item.
+
+`expiresAt` is recorded and shown; the broker does not yet deny an expired
+connection (the SHOULD in the invariants above stays open).
+
+### Console publication
+
+The daemon publishes the inventory through the Console sync bridge
+(`src/credentials/inventory-sync.ts`, called from the sync runner tick):
+
+- It is opt-in: only with `RAVI_SYNC_CREDENTIALS_INVENTORY=1` (in addition to
+  `RAVI_SYNC_RUNNER_ENABLED=1` and a Console login). Without the flag nothing
+  is built or enqueued. Existing installations keep their egress unchanged.
+- Event: domain `credentials`, type `credentials.inventory`, entity
+  `credential_inventory/installation`, payload schema `credentials.inventory/v1`.
+  A snapshot is split into pages of at most 48 KiB of UTF-8 JSON (the Console
+  rejects a sync payload over 64 KiB): every page carries `snapshotId` (the
+  content hash), `page`, `pages` and the header; page 1 carries the audit. The
+  Console shows a snapshot only when it holds all `pages` of one `snapshotId`.
+  Pages are sized after the sync redactor, as the outbox stores them. Page 1
+  MAY carry the audit with no item, when the first item does not fit beside
+  it; an audit too large for a page alone loses its oldest entries. A
+  connection sends at most 50 scopes (the rest become one `+N more` entry) and
+  every audit string is capped like free text, so one item always fits. A page
+  over the limit is never emitted: the build fails instead. The content hash
+  includes the wire format, so the first check after an upgrade from the
+  unpaged format publishes instead of waiting for the heartbeat.
+  Every string is bounded to what the Console schema accepts (identifiers
+  100, `id` and other text 200, alias 250), since the Console drops a whole
+  page over any bound; a cut never splits a surrogate pair. The bounds MUST be
+  the last thing that touches a string: the payload is built as the wire
+  shape, then the sync redactor (which lengthens text, "Bearer x" becoming
+  "Bearer [REDACTED]"), then the bounds, so the redactor the outbox runs again
+  on every page finds nothing left to change.
+- The payload is the inventory with each item's `secret` renamed `storage`:
+  the sync redactor blanks every key ending in "secret". The payload MUST be a
+  fixed point of `sanitizeSyncPayload` (nothing for the redactor to remove) and
+  MUST NOT contain a secret value, Vault path, key or actor id.
+- The inventory is built (and the Vault asked) at most every 15 minutes: the
+  throttle runs before the build, on a check cursor written before it, so a
+  failing build also waits. A change goes up at the next check; an unchanged
+  inventory goes up every 6 hours as a heartbeat. The hash ignores
+  `generatedAt`.
+- The runner starts the snapshot in the background, one at a time: push and
+  pull of every domain never wait on the Vault, and a throw or rejection is
+  logged with `sanitizeSyncError` and retried on a later tick.
+- Person-typed text (`label`, `owner`, `purpose`, `scopes`) is capped (200 and
+  100 characters) and token-shaped values (Vault/OpenBao, Slack, GitHub,
+  `sk-`, AWS key ids, JWTs, any unbroken run of 40+ key characters) are
+  replaced with `[redacted]` before the payload is built. These fields are
+  visible to the Console; the Console MUST render them as plain text.
+
 The default `file` backend MUST keep secret bytes in broker-owned private files
 (0700 directory, 0600 files) with atomic writes and strict opaque references.
 It is plaintext protected by the host account and works on headless Linux;
@@ -270,6 +351,7 @@ metadata, status, ids and redacted errors.
 ```text
 ravi credentials connections list
 ravi credentials connections show
+ravi credentials connections inventory
 ravi credentials connections add
 ravi credentials connections remove
 ravi credentials connections rotate
@@ -283,7 +365,7 @@ CLI commands MUST use:
 - `@Command`
 - `@CommandAccess`
 - `@Returns`
-- standard pagination with `nextCommand`
+- standard pagination with `nextCommand` (except `inventory`, a bounded snapshot of at most 500 items)
 
 `broker exec` MAY exist for testing and first integrations. It MUST behave as a
 brokered action entrypoint, not as a generic secret-read command.

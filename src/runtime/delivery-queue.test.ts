@@ -4,6 +4,7 @@ import {
   createQueuedRuntimeUserMessage,
   createRuntimeMessageGenerator,
   getDeliverableRuntimeMessages,
+  getRuntimePromptDeliveryBarrier,
   getRuntimeMessagesAfterTurn,
   hasIsolatedRuntimeTurnEnvelope,
   pickRuntimeTurnAuthorityEnvelope,
@@ -806,6 +807,12 @@ describe("runtime delivery queue", () => {
           typeof hasIsolatedRuntimeTurnEnvelope
         >[0]);
       expect(isolated(authority("operator", true))).toBe(true);
+      // An observation notice is always its own turn (N2 on #943).
+      expect(
+        hasIsolatedRuntimeTurnEnvelope({
+          _observationNotice: { bindingId: "ob_1", sourceSessionKey: "agent:a:main" },
+        }),
+      ).toBe(true);
       expect(isolated(authority("contact:c_ana"))).toBe(true);
       // Nobody to act for.
       expect(isolated(authority("unknown"))).toBe(false);
@@ -1184,6 +1191,61 @@ describe("runtime delivery queue", () => {
       interrupt: false,
       reason: "response",
     });
+  });
+
+  it("never lets a default system notice interrupt a running turn", () => {
+    // 24/11: o retorno `thread.closed` saía com after_tool e cortava a ferramenta
+    // do main; o modelo lia "the user doesn't want to proceed" sem ninguém ter recusado.
+    const systemSource = {
+      channel: "slack",
+      accountId: "ravi-slack",
+      chatId: "D0C8BEV8QUR",
+      actorType: "system",
+    } as const;
+    const closedNotice = createQueuedRuntimeUserMessage({
+      prompt: "[System] Inform: thread concluída",
+      source: systemSource,
+      deliveryBarrier: "after_tool",
+      deliveryBarrierSource: "default",
+    });
+    expect(closedNotice.deliveryBarrier).toBe("after_response");
+    for (const barrier of ["after_tool", "immediate_interrupt"] as const) {
+      expect(getRuntimePromptDeliveryBarrier({ prompt: "x", source: systemSource, deliveryBarrier: barrier })).toBe(
+        "after_response",
+      );
+    }
+    expect(getRuntimePromptDeliveryBarrier({ prompt: "x", source: systemSource })).toBe("after_response");
+
+    const longTool = makeStreamingSession({
+      turnActive: true,
+      toolRunning: true,
+      currentToolName: "bash",
+      toolStartTime: Date.now() - 30_000,
+    });
+    expect(shouldInterruptRuntimeForIncoming("main", longTool, closedNotice.deliveryBarrier!)).toEqual({
+      interrupt: false,
+      reason: "tool",
+    });
+    const betweenTools = makeStreamingSession({ turnActive: true, pushMessage: null });
+    expect(shouldInterruptRuntimeForIncoming("main", betweenTools, closedNotice.deliveryBarrier!)).toEqual({
+      interrupt: false,
+      reason: "response",
+    });
+  });
+
+  it("keeps explicit system interrupts and human steering untouched", () => {
+    const systemSource = { channel: "slack", accountId: "a", chatId: "c", actorType: "system" } as const;
+    expect(
+      getRuntimePromptDeliveryBarrier({
+        prompt: "x",
+        source: systemSource,
+        deliveryBarrier: "immediate_interrupt",
+        deliveryBarrierSource: "explicit",
+      }),
+    ).toBe("immediate_interrupt");
+    const humanSource = { channel: "slack", accountId: "a", chatId: "c", actorType: "contact" } as const;
+    expect(getRuntimePromptDeliveryBarrier({ prompt: "x", source: humanSource })).toBe("after_tool");
+    expect(getRuntimePromptDeliveryBarrier({ prompt: "x" })).toBe("after_tool");
   });
 
   it("lets an explicit interrupt win over a running tool", () => {

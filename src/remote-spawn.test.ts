@@ -72,7 +72,8 @@ describe("createRemoteSpawn SDK arguments", () => {
 
       expect(calls).toHaveLength(1);
       expect(calls[0]?.args.at(-1)).toBe(
-        "cd '/srv/work' && claude '--model=claude-fable-5-2' '--output-format=stream-json' '--verbose'",
+        "cd '/srv/work' && export CLAUDE_CODE_DISABLE_FILE_MENTIONS=1 && " +
+          "claude '--model=claude-fable-5-2' '--output-format=stream-json' '--verbose'",
       );
     },
   );
@@ -100,6 +101,7 @@ describe("createRemoteSpawn credentials", () => {
     const remoteCmd = call.args[call.args.length - 1]!;
     expect(remoteCmd).toBe(
       "cd '/srv/work' && " +
+        "export CLAUDE_CODE_DISABLE_FILE_MENTIONS=1 && " +
         "IFS= read -r CLAUDE_CODE_OAUTH_TOKEN && export CLAUDE_CODE_OAUTH_TOKEN && " +
         "IFS= read -r ANTHROPIC_API_KEY && export ANTHROPIC_API_KEY && " +
         "claude '--model' 'sonnet'",
@@ -137,8 +139,19 @@ describe("createRemoteSpawn credentials", () => {
 
     const remoteCmd = calls[0]!.args[calls[0]!.args.length - 1]!;
     expect(remoteCmd).not.toContain("read -r");
-    expect(remoteCmd).toBe("cd '/srv/work' && claude '--model' 'sonnet'");
+    expect(remoteCmd).toBe("cd '/srv/work' && export CLAUDE_CODE_DISABLE_FILE_MENTIONS=1 && claude '--model' 'sonnet'");
     expect(stdinChunks).toEqual([]);
+  });
+
+  it("keeps @path mentions off on the remote claude, whatever the caller's env says", () => {
+    for (const env of [{}, { CLAUDE_CODE_DISABLE_FILE_MENTIONS: "0" }, { CLAUDE_CODE_DISABLE_FILE_MENTIONS: "" }]) {
+      const { spawnImpl, calls } = createFakeSpawn();
+      createRemoteSpawn("201", "root", spawnImpl, {})(spawnOptions(env));
+
+      const remoteCmd = calls[0]!.args[calls[0]!.args.length - 1]!;
+      expect(remoteCmd).toContain("export CLAUDE_CODE_DISABLE_FILE_MENTIONS=1 && claude ");
+      expect(remoteCmd).not.toContain("CLAUDE_CODE_DISABLE_FILE_MENTIONS=0");
+    }
   });
 
   it("sends scoped context and the gateway URL over stdin too, never argv", async () => {
@@ -151,6 +164,7 @@ describe("createRemoteSpawn credentials", () => {
     const remoteCmd = calls[0]!.args[calls[0]!.args.length - 1]!;
     expect(remoteCmd).toBe(
       "cd '/srv/work' && " +
+        "export CLAUDE_CODE_DISABLE_FILE_MENTIONS=1 && " +
         "IFS= read -r CLAUDE_CODE_OAUTH_TOKEN && export CLAUDE_CODE_OAUTH_TOKEN && " +
         "IFS= read -r RAVI_CONTEXT_KEY && export RAVI_CONTEXT_KEY && " +
         "IFS= read -r RAVI_GATEWAY_URL && export RAVI_GATEWAY_URL && " +

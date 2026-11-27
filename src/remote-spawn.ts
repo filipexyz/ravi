@@ -20,9 +20,19 @@ import { spawn, type ChildProcess, type SpawnOptions as ChildSpawnOptions } from
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { SpawnOptions, SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
+import { CLAUDE_REQUIRED_PROMPT_ENV } from "./runtime/claude-prompt-env.js";
 import { logger } from "./utils/logger.js";
 
 const log = logger.child("remote-spawn");
+
+/**
+ * The remote claude gets none of the local environment, so the values every
+ * Claude Code process must carry are exported on the command line. Names and
+ * values are constants, never read from the caller's env.
+ */
+const REQUIRED_ENV_PREFIX = Object.entries(CLAUDE_REQUIRED_PROMPT_ENV)
+  .map(([key, value]) => `export ${key}=${value} && `)
+  .join("");
 
 /** Runtime credential/context env vars handed to the remote claude via stdin (never via argv). */
 const FORWARDED_ENV_KEYS = [
@@ -169,7 +179,7 @@ export function createRemoteSpawn(
 
     // Build remote command: claude <args>
     const quotedArgs = claudeArgs.map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(" ");
-    const remoteCmd = `${cdPrefix}${envSetup.prefix}claude ${quotedArgs}`;
+    const remoteCmd = `${cdPrefix}${REQUIRED_ENV_PREFIX}${envSetup.prefix}claude ${quotedArgs}`;
 
     log.info("Spawning remote Claude process", {
       host,

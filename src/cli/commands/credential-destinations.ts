@@ -1,4 +1,5 @@
 import "reflect-metadata";
+import { assertCallerFileAccess, resolveCallerPath } from "../caller-cwd.js";
 import { createHash } from "node:crypto";
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -155,6 +156,7 @@ export function readDestinationSshConfig(path: string): string {
 }
 
 function exportHelperFile(path: string): void {
+  assertCallerFileAccess(resolveCallerPath(path, "write"), "write");
   checkLocalPath(path, false);
   writeFileSync(path, REMOTE_CREDENTIAL_WRITER_PYTHON, { flag: "wx", mode: 0o700 });
 }

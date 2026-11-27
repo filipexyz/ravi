@@ -24,6 +24,7 @@
 - `ravi context codex-tool-hook` is a registered alias of `codex-bash-hook`.
 - Doctor fails on a stale `codex-tool-hook` command and on a matcher other than `^(Bash|shell)$`.
 - Rematerialize replaces a legacy wide-matcher `codex-tool-hook` group instead of leaving it in place.
+- A Codex session whose `hooks/list` lacks the Ravi gate, or shows it changed, disabled, async or untrusted after the trust write, fails before `thread/start`; a confirmed gate is checked before `thread/start` and the turn runs.
 - Dynamic tool handler throws.
 - Dynamic tool handler returns no content.
 - Dynamic tool handler returns image content.
@@ -48,3 +49,9 @@
 - For live validation, compare native rollout physical turn ids with Ravi provider raw/item/tool events across a goal continuation. Do not publish production rollout contents or identifiers.
 
 Protocol reference: https://learn.chatgpt.com/docs/app-server (thread goals and turn events). Validate generated bindings with the installed Codex version via `codex app-server generate-ts --experimental --out <temporary-directory>`.
+
+## Held turns
+
+- `bun test src/runtime/codex-provider.test.ts -t "held|sandbox"`
+- Assert a held turn sends `sandboxPolicy: {type: "readOnly"}` and an operator turn after it `dangerFullAccess`.
+- Assert the thread a held turn opens or resumes has `sandbox: "read-only"` and the restricted native switches, and the operator's next thread has the agent's own config.

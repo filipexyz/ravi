@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [],
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@ravi-os/sdk": [
+        "../ravi-os-sdk/src/index.ts"
+      ],
+      "@ravi-os/sdk/streaming": [
+        "../ravi-os-sdk/src/streaming.ts"
+      ],
+      "@ravi-os/sdk/types": [
+        "../ravi-os-sdk/src/types.ts"
+      ]
+    },
+    "allowImportingTsExtensions": true
+  },
+  "include": [
+    "src/**/*"
+  ]
+}

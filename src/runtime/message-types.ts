@@ -102,6 +102,11 @@ export interface ObservationPromptMetadata {
   deliveryId?: string;
   /** Why the delivery was sent: a batch at turn end, or a pulse while the source turn still runs. */
   trigger?: "end_of_turn" | "pulse" | "realtime" | "debounce";
+  /**
+   * `"none"`: this delivery starts a fresh observer conversation. The dispatcher retires a live
+   * observer runtime first (after its current turn), and a cold start recovers no history.
+   */
+  memory?: "none";
 }
 
 /** Marks a prompt the task runtime itself published, so the trace shows its origin. */
@@ -235,6 +240,12 @@ export interface PromptMessage {
   _modelBrokerTurnId?: string;
   /** Observation Plane metadata for observer-session prompts. */
   _observation?: ObservationPromptMetadata;
+  /**
+   * Marks an observation notice delivered to a live session (`ravi sessions observe`). It reuses the
+   * receiving runtime like any prompt, but its turn is observer-originated, so it never produces
+   * observation events of its own (two sessions watching each other cannot loop).
+   */
+  _observationNotice?: { bindingId: string; sourceSessionKey: string };
   /** Task runtime metadata for reports, stall notices and observer nudges. */
   _taskRuntime?: TaskRuntimePromptMetadata;
   /** Heartbeat runner prompt marker. */
@@ -251,6 +262,8 @@ export interface PromptMessage {
   _trigger?: boolean;
   /** Trigger id when `_trigger` is true. */
   _triggerId?: string;
+  /** Topic of the event that fired the trigger, kept in the turn's provenance (never read as authority). */
+  _triggerTopic?: string;
   /** Ownership fixed by the runner when the trigger fired, never rebuilt from the live trigger. */
   _triggerAuthority?: TriggerRunAuthority;
   /** Session followup runner prompt marker. */
@@ -295,6 +308,12 @@ export interface PromptMessage {
    * the reply destination via this turn's assistant transcript.
    */
   _cliDestination?: boolean;
+  /**
+   * Opaque id of the producer waiting on this prompt. The host stamps every
+   * runtime event of the physical turn that consumed it with `_correlationIds`,
+   * so a waiter knows which turn is its own.
+   */
+  _correlationId?: string;
   /** Provider-neutral identity for prompts accepted through a channel backend. */
   _channelBackend?: ChannelBackendPromptMetadata;
   /** Validated provenance asserted by a trusted internal producer; not a credential. */

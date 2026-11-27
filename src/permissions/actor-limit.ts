@@ -22,3 +22,41 @@ export function isActorBreakGlassLimitedContext(context: ActorLimitContextLike |
         capability.objectId === "*"),
   );
 }
+
+/**
+ * Whether a relayed turn (a session relay, a Slack thread bootstrap, a report)
+ * is held below the agent. `relayNarrowing` only says the turn carries its
+ * caller's capabilities as a ceiling (the lineage a revocation follows); it is
+ * set for every verified human work handoff, and a relay whose caller holds the
+ * target agent's whole authority loses nothing. The relay is held when its
+ * caller was: narrowed to a contact's chat grants, held below the agent's
+ * break-glass, revoked, or itself a held relay, or when the caller's ceiling
+ * does not cover the target agent's own authority (a plain contact relaying to
+ * a full-access agent). Otherwise it is stamped `relayCallerUnrestricted` when
+ * it is built; a relay without the stamp (an older context, a chain through a
+ * held one) stays held.
+ */
+export function isRelayHeldBelowAgent(metadata: Record<string, unknown> | null | undefined): boolean {
+  return metadata?.relayNarrowing === true && metadata.relayCallerUnrestricted !== true;
+}
+
+/**
+ * Set by the daemon on the runtime env of a turn held below the agent
+ * (`isTurnHeldBelowAgent`). The provider reads it in the daemon to drop the
+ * execution power it would otherwise grant (Codex: the read-only sandbox).
+ */
+export const RAVI_TURN_HELD_BELOW_AGENT_ENV = "RAVI_TURN_HELD_BELOW_AGENT";
+
+/**
+ * Set by the daemon on the runtime env of a turn carrying owner authority
+ * (`permissions/owner-authority`) that is not held. The provider reads it in the
+ * daemon so the agent profile's sandbox does not bound the owner (Codex: the
+ * read-only sandbox of a `chat-only` or exec-less `explicit-only` agent).
+ */
+export const RAVI_TURN_OWNER_AUTHORITY_ENV = "RAVI_TURN_OWNER_AUTHORITY";
+
+/** A person held below the agent's break-glass, or a relay held below the agent. */
+export function isTurnHeldBelowAgent(context: ActorLimitContextLike | null | undefined): boolean {
+  if (!context) return false;
+  return isActorBreakGlassLimitedContext(context) || isRelayHeldBelowAgent(context.metadata);
+}

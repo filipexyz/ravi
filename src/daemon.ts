@@ -51,6 +51,7 @@ import { repairOrphanContactChatGrants } from "./permissions/contact-merge-grant
 import { startJobsRunner, stopJobsRunner } from "./jobs/index.js";
 import { startSessionFollowupRunner, stopSessionFollowupRunner } from "./session-followups/index.js";
 import { startTriggerRunner, stopTriggerRunner } from "./triggers/index.js";
+import { registerSlackAutomationSurface } from "./channels/slack/automation-surface.js";
 import { startEphemeralRunner, stopEphemeralRunner } from "./ephemeral/index.js";
 import { startInboxRunner, stopInboxRunner } from "./inbox/index.js";
 import { startLinkRequestWatcher, stopLinkRequestWatcher } from "./identity-link/link-watcher.js";
@@ -74,13 +75,16 @@ import { startSignalsRunner, stopSignalsRunner } from "./signals/index.js";
 import { startKnowledgeLeaderRunners, stopKnowledgeLeaderRunners } from "./knowledge/runners.js";
 import { startSyncRunner, stopSyncRunner } from "./sync/index.js";
 import { startLibraryPinRunner, stopLibraryPinRunner } from "./library/pin-runner.js";
+import { startAppStoreRunner, stopAppStoreRunner } from "./apps/store/runner.js";
 import { startLibraryRequestRunner, stopLibraryRequestRunner } from "./library/request-runner.js";
 import { startCloudTaskWatcher, stopCloudTaskWatcher } from "./cloud-agents/task-watcher.js";
 import { startCloudWorkerRunner, stopCloudWorkerRunner } from "./cloud-agents/worker-runner.js";
 import { startCloudApprovalClicks, stopCloudApprovalClicks } from "./cloud-agents/chat-routing.js";
 import { startSlackCommandConsumer, stopSlackCommandConsumer } from "./channels/slack/slash-command-handler.js";
 import { startSlackThreadControls, stopSlackThreadControls } from "./channels/slack/thread-controls.js";
+import { startSlackDecisionAnswers, stopSlackDecisionAnswers } from "./channels/slack/decision-answer.js";
 import { startSlackThreadShortcuts, stopSlackThreadShortcuts } from "./channels/slack/thread-shortcuts.js";
+import { startVoiceDoor, stopVoiceDoor } from "./voice/door.js";
 import { startCloudDeliveryRunner, stopCloudDeliveryRunner } from "./cloud-agents/delivery-runner.js";
 import { startCalendarAssistantRunner, stopCalendarAssistantRunner } from "./calendar/assistant-runner.js";
 import { createSessionAdapterBus } from "./adapters/index.js";
@@ -90,7 +94,18 @@ import { ensureRaviEventsStream } from "./events/audit-stream.js";
 import { startWebhookHttpServerFromEnv, type WebhookHttpServerHandle } from "./webhooks/http-server.js";
 import { startHostCliGateway, type HostCliGatewayHandle } from "./cli/host-cli-gateway.js";
 import type { MessageTarget } from "./runtime/message-types.js";
-import { deliverDaemonRestartSessionEvent } from "./runtime/daemon-restart-resume.js";
+import { deliverDaemonRestartSessionEvent, normalizeRestartResumeSource } from "./runtime/daemon-restart-resume.js";
+import { getRuntimeTurnAttempt, hasLaterRuntimeTurnAttempt } from "./runtime/crash-recovery-store.js";
+import {
+  buildOrphanedRestartTurnInput,
+  createLedgerOrphanedRestartTurnDeps,
+  hasOrphanedRestartTurns,
+  resolveOrphanedTurnSessionNameFromStore,
+  judgeRestartInterruptedAttempt,
+  type OrphanedRestartTurnDeps,
+  type OrphanedRestartTurnOutcome,
+  recoverOrphanedRestartTurns,
+} from "./runtime/restart-turn-recovery.js";
 import { dbHasActiveAssignedTaskForSession } from "./tasks/task-db.js";
 import { startWorkObjectNatsService, type WorkObjectNatsServiceHandle } from "./work-objects/index.js";
 import { createChannelBackendEgressRequester } from "./channels/backend-egress.js";
@@ -326,6 +341,7 @@ async function shutdown(signal: string, exitCode = 0) {
       { name: "whatsapp-grant-request", stop: stopWhatsAppGrantRequestRunner },
       { name: "sync", stop: stopSyncRunner },
       { name: "library-pin", stop: stopLibraryPinRunner },
+      { name: "app-store", stop: stopAppStoreRunner },
       { name: "library-request", stop: stopLibraryRequestRunner },
       { name: "cloud-task", stop: stopCloudTaskWatcher },
       { name: "cloud-worker", stop: stopCloudWorkerRunner },
@@ -333,7 +349,9 @@ async function shutdown(signal: string, exitCode = 0) {
       { name: "cloud-approval", stop: stopCloudApprovalClicks },
       { name: "slack-commands", stop: stopSlackCommandConsumer },
       { name: "slack-thread-controls", stop: stopSlackThreadControls },
+      { name: "slack-decision-answers", stop: stopSlackDecisionAnswers },
       { name: "slack-thread-shortcuts", stop: stopSlackThreadShortcuts },
+      { name: "voice-door", stop: stopVoiceDoor },
       { name: "calendar-assistant", stop: stopCalendarAssistantRunner },
       { name: "ephemeral", stop: stopEphemeralRunner },
       { name: "hook", stop: stopHookRunner },
@@ -582,6 +600,9 @@ export async function startDaemon() {
     onError: (error) => log.warn("Channel runner liveness check failed", { error }),
   });
 
+  // Automation runs whose parent answers in Slack show as Slack threads (the core knows no channel).
+  registerSlackAutomationSurface();
+
   // Step 7: Start runners — leader election ensures only one daemon runs heartbeat/cron
   // Trigger, ephemeral, and inbox are per-daemon (each daemon handles its own).
   const isLeader = await tryAcquireLeadership("runners");
@@ -669,6 +690,9 @@ export async function startDaemon() {
   await startLibraryPinRunner();
   log.info("Library pin runner started");
 
+  await startAppStoreRunner();
+  log.info("App store runner started");
+
   await startLibraryRequestRunner();
   log.info("Library request runner started");
 
@@ -684,9 +708,17 @@ export async function startDaemon() {
   await startSlackCommandConsumer();
   log.info("Slack command consumer started");
   await startSlackThreadControls();
+  await startSlackDecisionAnswers();
   log.info("Slack thread controls started");
   await startSlackThreadShortcuts();
   log.info("Slack thread shortcuts started");
+  // Voice is optional: a failure here must never keep the daemon from serving chats.
+  try {
+    await startVoiceDoor();
+    log.info("Voice door started");
+  } catch (error) {
+    log.error("Voice door failed to start; voice calls are unavailable", { error });
+  }
 
   sessionAdapterBus = createSessionAdapterBus();
   await sessionAdapterBus.start();
@@ -773,7 +805,7 @@ function createStubSender(): OmniSender {
  * no session to tell) nothing was restarted, so the boot returns quietly.
  */
 async function notifyRestartReason() {
-  const restartInfo = resolveBootRestartReason<RestartReasonInfo>({
+  let restartInfo = resolveBootRestartReason<RestartReasonInfo>({
     fromFile: readRestartReasonInfo({ consume: true }),
     fallbackSessionExists: Boolean(getMainSession(dbGetSetting("defaultAgent") || "main")),
     synthesize: () => ({
@@ -782,9 +814,15 @@ async function notifyRestartReason() {
       createdAt: Date.now(),
     }),
   });
+  // Without a reason file and a main session there is nobody to notify, but a
+  // hard stop may still have left turns running in the crash-recovery ledger.
+  const recoverOnly = !restartInfo;
   if (!restartInfo) {
-    log.info("First boot: no restart reason and no main session; skipping the restart notice");
-    return;
+    if (!hasOrphanedRestartTurns(orphanedTurnScope(), orphanedTurnDeps(undefined))) {
+      log.info("First boot: no restart reason, no main session and no interrupted turns; skipping the restart notice");
+      return;
+    }
+    restartInfo = { reason: "supervised_restart", restartEpoch: newRestartEpoch(), createdAt: Date.now() };
   }
 
   dbUpsertDaemonRestartEpoch({
@@ -794,6 +832,15 @@ async function notifyRestartReason() {
     createdAt: restartInfo.createdAt,
     updatedAt: Date.now(),
   });
+
+  // Turns cut off without a graceful snapshot (SIGKILL, exit, crash) are only
+  // in the crash-recovery ledger. Resume them first, so the caller notice below
+  // can say which sessions resume on their own and skip a session it resumed.
+  const orphaned = await recoverOrphanedRestartTurnsNow(restartInfo);
+  if (recoverOnly) {
+    scheduleDeferredOrphanedTurnRecovery(restartInfo, orphaned, undefined);
+    return;
+  }
 
   const snapshots = dbListEligibleDaemonRestartSessionSnapshots({
     restartEpoch: restartInfo.restartEpoch,
@@ -816,11 +863,23 @@ async function notifyRestartReason() {
     eligibleCallerSnapshot ??
     (callerSessionKey ? dbGetDaemonRestartSessionSnapshot(restartInfo.restartEpoch, callerSessionKey) : null) ??
     undefined;
-  if (callerSessionName) {
-    await publishRestartResumeEvent(callerSessionName, restartInfo, {
+  const callerEvent = callerSessionName
+    ? {
+        sessionName: callerSessionName,
+        snapshot: callerSnapshot,
+        snapshotEligible: !callerSnapshot || Boolean(eligibleCallerSnapshot),
+      }
+    : undefined;
+  // A caller whose own interrupted turn waits for the previous boot's lease is
+  // resumed by the deferred pass; a notice now would record a delivery for it
+  // and tell it to stop, so its notice waits for that pass instead.
+  const callerAwaitsRecovery = Boolean(callerSessionKey && orphaned.pendingSessionKeys.includes(callerSessionKey));
+  if (callerEvent && !callerAwaitsRecovery) {
+    await publishRestartResumeEvent(callerEvent.sessionName, restartInfo, {
       kind: "caller",
-      snapshot: callerSnapshot,
-      snapshotEligible: !callerSnapshot || Boolean(eligibleCallerSnapshot),
+      snapshot: callerEvent.snapshot,
+      snapshotEligible: callerEvent.snapshotEligible,
+      resumedSessionNames: [...orphaned.resumed, ...orphaned.pending],
     });
   }
 
@@ -830,6 +889,144 @@ async function notifyRestartReason() {
     }
     await publishRestartResumeEvent(snapshot.sessionName, restartInfo, { kind: "active", snapshot });
   }
+
+  scheduleDeferredOrphanedTurnRecovery(restartInfo, orphaned, callerAwaitsRecovery ? callerEvent : undefined);
+}
+
+const ORPHANED_TURN_RETRY_MARGIN_MS = 2_000;
+
+/**
+ * A previous boot still inside its lease cannot be fenced yet. Look again once
+ * the lease runs out (once: a boot that keeps renewing is alive), then send any
+ * caller notice that was held back for it, unless that pass already delivered
+ * a restart event to the caller.
+ */
+function scheduleDeferredOrphanedTurnRecovery(
+  restartInfo: RestartReasonInfo,
+  orphaned: OrphanedRestartTurnOutcome,
+  deferredCaller:
+    | { sessionName: string; snapshot?: DaemonRestartSessionSnapshotRecord; snapshotEligible: boolean }
+    | undefined,
+): void {
+  if (orphaned.retryAt === null) return;
+  const delayMs = Math.max(0, orphaned.retryAt - Date.now()) + ORPHANED_TURN_RETRY_MARGIN_MS;
+  log.info("Deferring orphaned turn recovery until the previous boot lease expires", {
+    delayMs,
+    pending: orphaned.pending,
+    callerDeferred: deferredCaller?.sessionName ?? null,
+  });
+  setTimeout(() => {
+    void (async () => {
+      const later = await recoverOrphanedRestartTurnsNow(restartInfo);
+      if (deferredCaller) {
+        await publishRestartResumeEvent(deferredCaller.sessionName, restartInfo, {
+          kind: "caller",
+          snapshot: deferredCaller.snapshot,
+          snapshotEligible: deferredCaller.snapshotEligible,
+          resumedSessionNames: later.resumed,
+        });
+      }
+    })().catch((error) => log.error("Deferred orphaned turn recovery failed", { error }));
+  }, delayMs).unref?.();
+}
+
+function orphanedTurnScope() {
+  return { currentBootEpoch: bot?.crashRecoveryBootEpoch ?? null, windowMs: RESTART_RESUME_WINDOW_MS };
+}
+
+function orphanedTurnDeps(restartInfo: RestartReasonInfo | undefined): OrphanedRestartTurnDeps {
+  return {
+    ...createLedgerOrphanedRestartTurnDeps(bot?.crashRecoveryBootEpoch ?? "", {
+      runMetadata: { restartEpoch: restartInfo?.restartEpoch ?? null },
+    }),
+    hasDelivery: dbHasDaemonRestartResumeDelivery,
+    resolveSessionName: resolveOrphanedTurnSessionNameFromStore,
+    isTerminalTaskSession: (sessionName, taskId) =>
+      shouldSkipRestartResumeForTerminalTaskSession(
+        sessionName,
+        taskId
+          ? ({ metadata: { currentTaskBarrierTaskId: taskId } } as unknown as DaemonRestartSessionSnapshotRecord)
+          : undefined,
+      ),
+    deliver: (input) => (restartInfo ? deliverOrphanedRestartTurn(restartInfo, input) : Promise.resolve(false)),
+  };
+}
+
+async function recoverOrphanedRestartTurnsNow(restartInfo: RestartReasonInfo): Promise<OrphanedRestartTurnOutcome> {
+  try {
+    const outcome = await recoverOrphanedRestartTurns(
+      { restartEpoch: restartInfo.restartEpoch, ...orphanedTurnScope() },
+      orphanedTurnDeps(restartInfo),
+    );
+    log.info("Orphaned turn recovery finished", {
+      restartEpoch: restartInfo.restartEpoch,
+      recoveryRunId: outcome.recoveryRunId,
+      resumed: outcome.resumed,
+      noticed: outcome.noticed,
+      skipped: outcome.skipped,
+      pending: outcome.pending,
+      retryAt: outcome.retryAt,
+    });
+    return outcome;
+  } catch (error) {
+    log.error("Orphaned turn recovery failed", { restartEpoch: restartInfo.restartEpoch, error });
+    return {
+      recoveryRunId: null,
+      resumed: [],
+      noticed: [],
+      skipped: [],
+      retryAt: null,
+      pending: [],
+      pendingSessionKeys: [],
+    };
+  }
+}
+
+async function deliverOrphanedRestartTurn(
+  restartInfo: RestartReasonInfo,
+  input: Parameters<OrphanedRestartTurnDeps["deliver"]>[0],
+): Promise<boolean> {
+  const { verdict, sessionName } = input;
+  const attempt = verdict.attempt;
+  const payload = buildOrphanedRestartTurnInput({
+    restartEpoch: restartInfo.restartEpoch,
+    reason: restartInfo.reason,
+    verdict,
+  });
+  const deliveryKind = verdict.kind === "resume" ? "resume" : "notice";
+  const decisionReason = verdict.kind === "resume" ? "verify_continue" : verdict.fenceReason;
+  const context = {
+    restartEpoch: restartInfo.restartEpoch,
+    sessionName,
+    sessionKey: attempt.sessionKey,
+    attemptId: attempt.attemptId,
+    deliveryKind,
+    decisionReason,
+  };
+  // Record the delivery before publishing: the attempt is already claimed, so
+  // this event is at most once; marking first also keeps the snapshot path from
+  // publishing a second event for the session when the record could not be
+  // written after a publish.
+  try {
+    dbMarkDaemonRestartResumeDelivered({
+      restartEpoch: restartInfo.restartEpoch,
+      sessionKey: attempt.sessionKey,
+      sessionName,
+      deliveryKind,
+      decisionReason,
+    });
+  } catch (error) {
+    log.error("Could not record the orphaned turn restart event; not publishing it", { ...context, error });
+    return false;
+  }
+  try {
+    log.info("Publishing orphaned turn restart event", context);
+    await publishSessionPrompt(sessionName, payload);
+  } catch (error) {
+    log.error("Failed to publish orphaned turn restart event", { ...context, error });
+    return false;
+  }
+  return true;
 }
 
 function resolveFallbackRestartSessionName(): string | undefined {
@@ -858,6 +1055,7 @@ async function publishRestartResumeEvent(
     kind: "caller" | "active";
     snapshot?: DaemonRestartSessionSnapshotRecord;
     snapshotEligible?: boolean;
+    resumedSessionNames?: string[];
   } = { kind: "active" },
 ): Promise<boolean> {
   const outcome = await deliverDaemonRestartSessionEvent(
@@ -869,6 +1067,7 @@ async function publishRestartResumeEvent(
       kind: options.kind,
       snapshot: options.snapshot,
       snapshotEligible: options.snapshotEligible,
+      resumedSessionNames: options.resumedSessionNames,
     },
     {
       hasDelivery: dbHasDaemonRestartResumeDelivery,
@@ -876,6 +1075,10 @@ async function publishRestartResumeEvent(
       publish: publishSessionPrompt,
       isTerminalTaskSession: shouldSkipRestartResumeForTerminalTaskSession,
       resolveSource: resolveRestartResumeSource,
+      judgeInterruptedAttempt: ({ attemptId }) =>
+        judgeRestartInterruptedAttempt(getRuntimeTurnAttempt(attemptId), {
+          hasLaterAttempt: hasLaterRuntimeTurnAttempt,
+        }),
     },
   );
   return outcome.status === "delivered";
@@ -887,47 +1090,6 @@ function resolveRestartResumeSource(snapshot?: DaemonRestartSessionSnapshotRecor
     return undefined;
   }
   return normalizeRestartResumeSource(currentSource);
-}
-
-function normalizeRestartResumeSource(source: Record<string, unknown>): MessageTarget | undefined {
-  const channel = cleanString(source.channel);
-  const accountId = cleanString(source.accountId);
-  const chatId = cleanString(source.chatId);
-  if (!channel || !accountId || !chatId) {
-    return undefined;
-  }
-
-  const target: MessageTarget = { channel, accountId, chatId };
-  copyStringField(target, "instanceId", source.instanceId);
-  copyStringField(target, "threadId", source.threadId);
-  copyStringField(target, "sourceMessageId", source.sourceMessageId);
-  copyStringField(target, "canonicalChatId", source.canonicalChatId);
-  copyStringField(target, "actorType", source.actorType);
-  copyStringField(target, "contactId", source.contactId);
-  copyStringField(target, "actorAgentId", source.actorAgentId);
-  copyStringField(target, "automationId", source.automationId);
-  copyStringField(target, "platformIdentityId", source.platformIdentityId);
-  copyStringField(target, "rawSenderId", source.rawSenderId);
-  copyStringField(target, "normalizedSenderId", source.normalizedSenderId);
-  if (typeof source.identityConfidence === "number") {
-    target.identityConfidence = source.identityConfidence;
-  }
-  const identityProvenance = asRecord(source.identityProvenance);
-  if (identityProvenance) {
-    target.identityProvenance = identityProvenance;
-  }
-  return target;
-}
-
-function copyStringField(target: object, key: string, value: unknown): void {
-  const normalized = cleanString(value);
-  if (normalized) {
-    (target as Record<string, unknown>)[key] = normalized;
-  }
-}
-
-function cleanString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
