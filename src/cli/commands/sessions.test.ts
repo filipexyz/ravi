@@ -34,6 +34,8 @@ let providerRequestResponse: Record<string, unknown> = { success: true };
 let listedSessions: Array<Record<string, unknown>> = [];
 let orphanThread: Record<string, unknown> | null = null;
 let resolvedSession: Record<string, unknown> | null = null;
+// When set, `resolveSession` answers per reference (the caller and the thread resolve to different sessions).
+let resolvedSessionsByRef: Record<string, Record<string, unknown>> | null = null;
 const resolvedSessionRefs: string[] = [];
 let sessionDerivedSource: { channel: string; accountId: string; chatId: string; threadId?: string } | undefined;
 let listedContexts: Array<Record<string, unknown>> = [];
@@ -145,6 +147,8 @@ let toolContext: Record<string, unknown> | undefined;
 let threadIdentityAssessment: Record<string, unknown> = { kind: "none" };
 let scopeEnforced = false;
 let sessionModifyAllowed = true;
+// When set, `canModifySession` allows only these references instead of answering one value for all.
+let modifyAllowedRefs: Set<string> | null = null;
 let canAccess = true;
 let sessionGoal: Record<string, unknown> | null = null;
 
@@ -420,7 +424,7 @@ mock.module("../../router/sessions.js", () => ({
   },
   resolveSession: (ref: string) => {
     resolvedSessionRefs.push(ref);
-    return resolvedSession;
+    return resolvedSessionsByRef?.[ref] ?? resolvedSession;
   },
   getSessionTurnUsageSummary: (sessionKey: string) =>
     sessionTurnUsageSummaries.get(sessionKey) ?? defaultTurnUsageSummary(),
@@ -623,7 +627,7 @@ mock.module("../../permissions/scope.js", () => ({
   canAccessSession: () => canAccess,
   canModifySession: (_scope: unknown, ref: string) => {
     modifiedSessionRefs.push(ref);
-    return sessionModifyAllowed;
+    return modifyAllowedRefs ? modifyAllowedRefs.has(ref) : sessionModifyAllowed;
   },
   canAccessResource: () => true,
   canAccessContact: () => true,
@@ -762,6 +766,8 @@ beforeEach(() => {
   toolContext = undefined;
   scopeEnforced = false;
   sessionModifyAllowed = true;
+  modifyAllowedRefs = null;
+  resolvedSessionsByRef = null;
   canAccess = true;
   sessionGoal = null;
   chatHistory = [];
@@ -2267,6 +2273,49 @@ describe("SessionCommands attach hints", () => {
     await expect(new SessionCommands().closeThread(undefined, "missing", true)).rejects.toMatchObject({
       code: "SESSION_NOT_FOUND",
     });
+  });
+
+  it("lets the session that opened a thread close it without a grant on the child, and refuses any other", async () => {
+    const parentKey = "agent:main:main";
+    const childKey = "agent:main:main:thread:1795731344.857709";
+    const parent = { sessionKey: parentKey, name: "main", agentId: "main", agentCwd: "/tmp/main" };
+    const child = { sessionKey: childKey, name: "main-t-1795731344857709", agentId: "main", agentCwd: "/tmp/main" };
+    const other = { sessionKey: "agent:other:main", name: "other", agentId: "other", agentCwd: "/tmp/other" };
+    resolvedSessionsByRef = { main: parent, [child.name]: child, [childKey]: child, other };
+    orphanThread = {
+      requestId: "slack-thread:owned",
+      parentSessionKey: parentKey,
+      parentSessionName: "main",
+      childSessionKey: childKey,
+      childSessionName: child.name,
+      platformChatId: "C123",
+      providerThreadId: "1795731344.857709",
+    };
+    scopeEnforced = true;
+
+    // The parent may modify itself, not the child: that is the case that answered 422 before.
+    modifyAllowedRefs = new Set(["main"]);
+    toolContext = { sessionKey: parentKey, sessionName: "main" };
+    const result = await new SessionCommands().closeThread("done", child.name, true);
+    expect(result).toMatchObject({ closed: true, childSession: { sessionKey: childKey } });
+    expect(closedSlackThreads).toHaveLength(1);
+    expect(closedSlackThreads[0]?.session).toMatchObject({ sessionKey: childKey });
+
+    // Another session is not the owner: with no grant on the child it is still refused.
+    closedSlackThreads.length = 0;
+    modifyAllowedRefs = new Set(["other"]);
+    toolContext = { sessionKey: other.sessionKey, sessionName: "other" };
+    await expect(new SessionCommands().closeThread("done", child.name, true)).rejects.toMatchObject({
+      code: "SESSION_NOT_FOUND",
+    });
+
+    // The owner without the right to modify itself is not enough either.
+    modifyAllowedRefs = new Set();
+    toolContext = { sessionKey: parentKey, sessionName: "main" };
+    await expect(new SessionCommands().closeThread("done", child.name, true)).rejects.toMatchObject({
+      code: "SESSION_NOT_FOUND",
+    });
+    expect(closedSlackThreads).toHaveLength(0);
   });
 
   it("queues Slack thread creation with the selected child model", async () => {

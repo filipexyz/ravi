@@ -1189,6 +1189,21 @@ function resolveCurrentSessionRef(): string | undefined {
   return ctx?.sessionName?.trim() || ctx?.sessionKey?.trim() || undefined;
 }
 
+/**
+ * True when the calling session is the one that opened this thread (its recorded parent) and may modify
+ * itself. A thread, a sibling or any other session is not the owner: its own grants decide, as before.
+ */
+function callerIsThreadParent(
+  scopeCtx: ReturnType<typeof getScopeContext>,
+  lifecycle: { parentSessionKey: string } | null | undefined,
+): boolean {
+  if (!lifecycle) return false;
+  const callerRef = resolveCurrentSessionRef();
+  const caller = callerRef ? resolveSession(callerRef) : null;
+  if (!caller || caller.sessionKey !== lifecycle.parentSessionKey) return false;
+  return !isScopeEnforced(scopeCtx) || canModifySession(scopeCtx, sessionActionRef(caller));
+}
+
 function extractActionMessageText(message: ChatMessageWithSortKey | ChatMessageRecord): string | undefined {
   const content = message.content ?? {};
   const text = content.text;
@@ -8229,10 +8244,15 @@ export class SessionCommands {
     const session = resolveSession(target);
     const orphan = session ? null : findSlackThreadLifecycleByChildRef(target);
     const scopeCtx = getScopeContext();
+    // The session that opened the thread owns it: it closes it the way it sends to it (`thread-send`
+    // authorizes on the parent), without a grant on the child session itself.
+    const lifecycle = session ? findSlackThreadLifecycleByChildRef(session.sessionKey) : orphan;
+    const callerOwnsThread = callerIsThreadParent(scopeCtx, lifecycle);
     const authorized = session
-      ? !isScopeEnforced(scopeCtx) || canModifySession(scopeCtx, sessionActionRef(session))
+      ? !isScopeEnforced(scopeCtx) || callerOwnsThread || canModifySession(scopeCtx, sessionActionRef(session))
       : orphan &&
         (!isScopeEnforced(scopeCtx) ||
+          callerOwnsThread ||
           canModifySession(scopeCtx, orphan.childSessionName ?? orphan.childSessionKey ?? target) ||
           canModifySession(scopeCtx, orphan.parentSessionName));
     if ((!session && !orphan) || !authorized) {
