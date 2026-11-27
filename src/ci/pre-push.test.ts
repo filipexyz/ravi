@@ -14,6 +14,7 @@ for (const [workflow, jobName, command, stateName] of [
   ["ci.yml", "tests", "bun run test:shard", "ravi-ci-state"],
   ["version.yml", "version-and-publish", "git push origin", "ravi-version-state"],
   ["sdk-release.yml", "release", "git push origin", "ravi-sdk-release-state"],
+  ["voice-release.yml", "release", "git push origin", "ravi-voice-release-state"],
 ] as const) {
   it(`${workflow} supplies temporary state to the suite and Git hooks`, () => {
     const document = YAML.parse(

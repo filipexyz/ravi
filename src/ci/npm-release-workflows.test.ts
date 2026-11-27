@@ -216,53 +216,54 @@ const packageReleaseWorkflows = [
   },
 ] as const;
 
-for (const release of packageReleaseWorkflows) describe(`${release.file}: the push of the version bump and the major prefix`, () => {
-  const jqDir =
-    ["/usr/bin", "/bin", "/opt/homebrew/bin", "/usr/local/bin"].find((dir) => existsSync(join(dir, "jq"))) ??
-    "/usr/bin";
-  // A GitHub Actions expression, written so the source does not hold a template-looking string.
-  const expression = (body: string) => `$${"{{"} ${body} }}`;
+for (const release of packageReleaseWorkflows)
+  describe(`${release.file}: the push of the version bump and the major prefix`, () => {
+    const jqDir =
+      ["/usr/bin", "/bin", "/opt/homebrew/bin", "/usr/local/bin"].find((dir) => existsSync(join(dir, "jq"))) ??
+      "/usr/bin";
+    // A GitHub Actions expression, written so the source does not hold a template-looking string.
+    const expression = (body: string) => `$${"{{"} ${body} }}`;
 
-  function findStep(name: string): string {
-    const step = loadWorkflow(release.file).jobs.release!.steps.find((candidate) => candidate.name === name);
-    expect(step?.run, name).toBeDefined();
-    return step!.run!;
-  }
-
-  function execute(run: string, options: { env: Record<string, string>; fakes: Record<string, string> }) {
-    const dir = mkdtempSync(join(tmpdir(), "ravi-sdk-release-step with space-"));
-    const bin = join(dir, "bin");
-    mkdirSync(bin);
-    try {
-      for (const [name, body] of Object.entries(options.fakes)) {
-        writeFileSync(join(bin, name), `#!${process.execPath}\n${body}`, { mode: 0o755 });
-      }
-      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: release.packageName, version: "0.261009.1" }));
-      writeFileSync(join(dir, "github-output"), "");
-      // Deliberately not inheriting process.env: no operator credential, runtime identity or real git/npm client.
-      const result = spawnSync("bash", ["-e", "-c", run], {
-        encoding: "utf8",
-        timeout: 20_000,
-        env: {
-          PATH: `${bin}:${jqDir}:/usr/bin:/bin`,
-          HOME: dir,
-          TMPDIR: dir,
-          [release.packagePathEnv]: join(dir, "package.json"),
-          GITHUB_OUTPUT: join(dir, "github-output"),
-          ...options.env,
-        },
-      });
-      return {
-        status: result.status,
-        output: `${result.stdout}${result.stderr}`,
-        githubOutput: readFileSync(join(dir, "github-output"), "utf8"),
-      };
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
+    function findStep(name: string): string {
+      const step = loadWorkflow(release.file).jobs.release!.steps.find((candidate) => candidate.name === name);
+      expect(step?.run, name).toBeDefined();
+      return step!.run!;
     }
-  }
 
-  const fakeGit = `
+    function execute(run: string, options: { env: Record<string, string>; fakes: Record<string, string> }) {
+      const dir = mkdtempSync(join(tmpdir(), "ravi-sdk-release-step with space-"));
+      const bin = join(dir, "bin");
+      mkdirSync(bin);
+      try {
+        for (const [name, body] of Object.entries(options.fakes)) {
+          writeFileSync(join(bin, name), `#!${process.execPath}\n${body}`, { mode: 0o755 });
+        }
+        writeFileSync(join(dir, "package.json"), JSON.stringify({ name: release.packageName, version: "0.261009.1" }));
+        writeFileSync(join(dir, "github-output"), "");
+        // Deliberately not inheriting process.env: no operator credential, runtime identity or real git/npm client.
+        const result = spawnSync("bash", ["-e", "-c", run], {
+          encoding: "utf8",
+          timeout: 20_000,
+          env: {
+            PATH: `${bin}:${jqDir}:/usr/bin:/bin`,
+            HOME: dir,
+            TMPDIR: dir,
+            [release.packagePathEnv]: join(dir, "package.json"),
+            GITHUB_OUTPUT: join(dir, "github-output"),
+            ...options.env,
+          },
+        });
+        return {
+          status: result.status,
+          output: `${result.stdout}${result.stderr}`,
+          githubOutput: readFileSync(join(dir, "github-output"), "utf8"),
+        };
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+
+    const fakeGit = `
 const args = process.argv.slice(2);
 if (args[0] === "diff") process.exit(1);
 if (args[0] === "push") {
@@ -272,95 +273,96 @@ if (args[0] === "push") {
 process.exit(0);
 `;
 
-  function bumpStep(push: { status: number; output: string }) {
-    const run = findStep(release.bumpStep)
-      .replaceAll(expression("steps.version.outputs.version"), "0.261125.1")
-      .replaceAll(expression("github.event.inputs.branch"), "dev");
-    return execute(run, {
-      env: {
-        FAKE_PUSH_STATUS: String(push.status),
-        FAKE_PUSH_OUTPUT: push.output,
-      },
-      fakes: { git: fakeGit },
+    function bumpStep(push: { status: number; output: string }) {
+      const run = findStep(release.bumpStep)
+        .replaceAll(expression("steps.version.outputs.version"), "0.261125.1")
+        .replaceAll(expression("github.event.inputs.branch"), "dev");
+      return execute(run, {
+        env: {
+          FAKE_PUSH_STATUS: String(push.status),
+          FAKE_PUSH_OUTPUT: push.output,
+        },
+        fakes: { git: fakeGit },
+      });
+    }
+
+    const ruleRejection = [
+      "remote: error: GH013: Repository rule violations found for refs/heads/dev.",
+      'remote: - Required status check "Quality Gate" is expected.',
+      " ! [remote rejected] HEAD -> dev (push declined due to repository rule violations)",
+      "error: failed to push some refs to 'https://github.com/filipexyz/ravi'",
+    ].join("\n");
+
+    it("turns a rejection by the repository rules into a warning and lets the release go on", () => {
+      const result = bumpStep({ status: 1, output: ruleRejection });
+      expect(result.status).toBe(0);
+      expect(result.output).toContain("::warning::");
+      expect(result.output).not.toContain("::error::");
     });
-  }
 
-  const ruleRejection = [
-    "remote: error: GH013: Repository rule violations found for refs/heads/dev.",
-    'remote: - Required status check "Quality Gate" is expected.',
-    " ! [remote rejected] HEAD -> dev (push declined due to repository rule violations)",
-    "error: failed to push some refs to 'https://github.com/filipexyz/ravi'",
-  ].join("\n");
-
-  it("turns a rejection by the repository rules into a warning and lets the release go on", () => {
-    const result = bumpStep({ status: 1, output: ruleRejection });
-    expect(result.status).toBe(0);
-    expect(result.output).toContain("::warning::");
-    expect(result.output).not.toContain("::error::");
-  });
-
-  it("fails the job when the pre-push suite fails", () => {
-    const result = bumpStep({
-      status: 1,
-      output: "Pre-push checks failed.\n(fail) some test [3.00ms]\nerror: failed to push some refs",
+    it("fails the job when the pre-push suite fails", () => {
+      const result = bumpStep({
+        status: 1,
+        output: "Pre-push checks failed.\n(fail) some test [3.00ms]\nerror: failed to push some refs",
+      });
+      expect(result.status).toBe(1);
+      expect(result.output).toContain("::error::");
+      expect(result.output).not.toContain("::warning::");
     });
-    expect(result.status).toBe(1);
-    expect(result.output).toContain("::error::");
-    expect(result.output).not.toContain("::warning::");
-  });
 
-  it("does not take the words of a test log for a rejection by the repository rules", () => {
-    const result = bumpStep({
-      status: 1,
-      output: [
-        "(fail) GH013 Repository rule violations are reported > protected branch is explained [2.00ms]",
-        "error: failed to push some refs",
-      ].join("\n"),
+    it("does not take the words of a test log for a rejection by the repository rules", () => {
+      const result = bumpStep({
+        status: 1,
+        output: [
+          "(fail) GH013 Repository rule violations are reported > protected branch is explained [2.00ms]",
+          "error: failed to push some refs",
+        ].join("\n"),
+      });
+      expect(result.status).toBe(1);
+      expect(result.output).toContain("::error::");
     });
-    expect(result.status).toBe(1);
-    expect(result.output).toContain("::error::");
-  });
 
-  it("accepts the older protected-branch rejection of the server as a rule rejection", () => {
-    const result = bumpStep({
-      status: 1,
-      output: "remote: error: GH006: Protected branch update failed for refs/heads/dev.",
+    it("accepts the older protected-branch rejection of the server as a rule rejection", () => {
+      const result = bumpStep({
+        status: 1,
+        output: "remote: error: GH006: Protected branch update failed for refs/heads/dev.",
+      });
+      expect(result.status).toBe(0);
+      expect(result.output).toContain("::warning::");
     });
-    expect(result.status).toBe(0);
-    expect(result.output).toContain("::warning::");
-  });
 
-  it("passes a clean push without a warning", () => {
-    const result = bumpStep({ status: 0, output: "" });
-    expect(result.status).toBe(0);
-    expect(result.output).not.toContain("::warning::");
-    expect(result.output).not.toContain("::error::");
-  });
+    it("passes a clean push without a warning", () => {
+      const result = bumpStep({ status: 0, output: "" });
+      expect(result.status).toBe(0);
+      expect(result.output).not.toContain("::warning::");
+      expect(result.output).not.toContain("::error::");
+    });
 
-  function resolvePrefix(input: string, registry: string) {
-    const run = findStep("Resolve prefix").replaceAll(expression("github.event.inputs.prefix"), input);
-    const result = execute(run, {
-      env: { FAKE_REGISTRY: registry },
-      fakes: {
-        npm: `
+    function resolvePrefix(input: string, registry: string) {
+      const run = findStep("Resolve prefix");
+      expect(run).not.toContain(expression("github.event.inputs.prefix"));
+      const result = execute(run, {
+        env: { FAKE_REGISTRY: registry, PREFIX_INPUT: input },
+        fakes: {
+          npm: `
 if (!process.argv.includes("view") || !process.env.FAKE_REGISTRY) process.exit(1);
 console.log(process.env.FAKE_REGISTRY);
 `,
-      },
+        },
+      });
+      return { status: result.status, prefix: /^prefix=(.*)$/m.exec(result.githubOutput)?.[1] };
+    }
+
+    it("follows the registry's major when it is ahead of the manifest's and no prefix was given", () => {
+      expect(resolvePrefix("", "1.261125.1")).toEqual({ status: 0, prefix: "1" });
     });
-    return { status: result.status, prefix: /^prefix=(.*)$/m.exec(result.githubOutput)?.[1] };
-  }
 
-  it("follows the registry's major when it is ahead of the manifest's and no prefix was given", () => {
-    expect(resolvePrefix("", "1.261125.1")).toEqual({ status: 0, prefix: "1" });
-  });
+    it("keeps the manifest's major when the registry has the same one or cannot be reached", () => {
+      expect(resolvePrefix("", "0.261125.1")).toEqual({ status: 0, prefix: "0" });
+      expect(resolvePrefix("", "")).toEqual({ status: 0, prefix: "0" });
+    });
 
-  it("keeps the manifest's major when the registry has the same one or cannot be reached", () => {
-    expect(resolvePrefix("", "0.261125.1")).toEqual({ status: 0, prefix: "0" });
-    expect(resolvePrefix("", "")).toEqual({ status: 0, prefix: "0" });
+    it("keeps an explicit prefix even when the registry is ahead", () => {
+      expect(resolvePrefix("2", "1.261125.1")).toEqual({ status: 0, prefix: "2" });
+    });
   });
-
-  it("keeps an explicit prefix even when the registry is ahead", () => {
-    expect(resolvePrefix("2", "1.261125.1")).toEqual({ status: 0, prefix: "2" });
-  });
-});

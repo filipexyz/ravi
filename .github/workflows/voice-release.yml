@@ -8,7 +8,9 @@ on:
         required: true
         type: choice
         options: [main, dev]
-        default: main
+        # Unlike the SDK, the kit is not on `main` yet: a default of `main` would check out a tree without
+        # packages/ravi-os-voice and stop before publishing.
+        default: dev
       prefix:
         description: "Version major prefix (defaults to current package.json major)"
         required: false
@@ -75,8 +77,12 @@ jobs:
 
       - name: Resolve prefix
         id: prefix
+        env:
+          # The dispatch input reaches the script as data, never as source: a template expansion inside `run` would
+          # let a dispatcher inject shell into a job that holds contents:write and id-token:write.
+          PREFIX_INPUT: ${{ github.event.inputs.prefix }}
         run: |
-          PREFIX="${{ github.event.inputs.prefix }}"
+          PREFIX="${PREFIX_INPUT:-}"
           if [ -z "$PREFIX" ]; then
             PREFIX=$(jq -r '.version | split(".") | .[0]' "$VOICE_PACKAGE_PATH")
             # The push of a bump can be declined, so the manifest of the branch may be behind the registry. An omitted
