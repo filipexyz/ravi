@@ -907,6 +907,16 @@ describe("channel runner release drift", () => {
     };
   }
 
+  it("connects to NATS as the channels role, so a locked bus lets it publish channel input", async () => {
+    const { restore } = await startStubbedRunner({});
+    try {
+      const connect = natsConnection.connectNats as unknown as { mock: { calls: unknown[][] } };
+      expect(connect.mock.calls.at(-1)?.[1]).toMatchObject({ explicit: true, role: "channels" });
+    } finally {
+      restore();
+    }
+  });
+
   it("feeds the outbound reconcile loop's refusals to the release guard and reports the drift once", async () => {
     const drifts: unknown[] = [];
     const { reconciler, restore } = await startStubbedRunner({
