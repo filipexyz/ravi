@@ -58,10 +58,11 @@ An agent is not a human user, contact, chat, route, or permission profile.
   redacted), never the whole previous object. The audit write fails open: a
   failure is logged as a warning and the agent write still lands, because the
   audit exists to say who wrote, not to gate writes.
-- A client that edits part of an agent's defaults MUST read that agent by id
-  (`agents show`), never from a paginated list, and MUST NOT write when the
-  agent cannot be read (27/11: the WhatsApp overlay missed `main` in a paginated
-  list and erased its defaults).
+- A client that edits part of an agent's defaults MUST send only the keys it
+  edits (a patch), never a copy of the rest of the object: a copied value would
+  replay over a concurrent edit. It MUST NOT locate the agent through a
+  paginated list (27/11: the WhatsApp overlay missed `main` in a paginated list
+  and erased its defaults) and MUST NOT write when the agent cannot be read by id.
 - Agent grants are a ceiling for what the executor can possibly do.
 - Agent grants MUST NOT become ambient authority for every contact or chat that
   can speak to the agent.
