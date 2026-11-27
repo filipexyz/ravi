@@ -160,6 +160,20 @@ mock.module("../../router/config.js", () => ({
       currentAgent = { ...currentAgent, defaults: merged };
     }
   },
+  rebaseAgentDefaults: (
+    id: string,
+    base: Record<string, unknown> | null | undefined,
+    next: Record<string, unknown> | null | undefined,
+  ) => {
+    const stored = currentAgent?.id === id ? { ...(currentAgent.defaults ?? {}) } : {};
+    const b = base ?? {};
+    const n = next ?? {};
+    for (const key of Object.keys(n)) if (JSON.stringify(b[key]) !== JSON.stringify(n[key])) stored[key] = n[key];
+    for (const key of Object.keys(b)) if (!(key in n)) delete stored[key];
+    const merged = Object.keys(stored).length > 0 ? stored : null;
+    updateAgentCalls.push({ id, partial: { defaults: merged } });
+    if (currentAgent?.id === id) currentAgent = { ...currentAgent, defaults: merged };
+  },
   deleteAgent: (id: string) => {
     deleteAgentCalls.push(id);
     return deleteAgentResult;

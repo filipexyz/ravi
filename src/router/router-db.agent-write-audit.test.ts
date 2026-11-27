@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { dbCreateAgent, dbGetAgent, dbListAuditLog, dbPatchAgentDefaults, dbUpdateAgent } from "./router-db.js";
+import {
+  dbCreateAgent,
+  dbGetAgent,
+  dbListAuditLog,
+  dbPatchAgentDefaults,
+  dbRebaseAgentDefaults,
+  dbUpdateAgent,
+} from "./router-db.js";
 import { buildAgentRuntimePermissionsDefaults } from "../permissions/agent-default-capabilities-provider.js";
 import { runWithContext } from "../cli/context.js";
 import { withConsoleInvocation, type ConsoleInvocation } from "../sdk/gateway/console-context.js";
@@ -129,5 +136,42 @@ describe("dbPatchAgentDefaults", () => {
 
   it("fails for an unknown agent", () => {
     expect(() => dbPatchAgentDefaults("patch-missing", { tts_voice: "y" })).toThrow(/Agent not found/);
+  });
+});
+
+describe("dbRebaseAgentDefaults (writers that build a whole object from an earlier read)", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-agent-defaults-rebase-test-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("keeps a patch committed between the permissions writer's read and its write", () => {
+    dbCreateAgent({ id: "rebase-a", cwd: "/tmp/rebase-a" });
+    dbUpdateAgent("rebase-a", { defaults: { tts_voice: "x" } });
+
+    // The permissions command reads the agent...
+    const staleBase = dbGetAgent("rebase-a")!.defaults ?? {};
+    const built = buildAgentRuntimePermissionsDefaults(staleBase, { profile: "bootstrap" });
+    // ...another writer lands a patch before the permissions write...
+    dbPatchAgentDefaults("rebase-a", { tts_voice: "y", stickers: { enabled: true } });
+    // ...and the permissions write must not undo it.
+    dbRebaseAgentDefaults("rebase-a", staleBase, built);
+
+    const after = dbGetAgent("rebase-a")!.defaults!;
+    expect(after.tts_voice).toBe("y");
+    expect(after.stickers).toEqual({ enabled: true });
+    expect((after.runtimePermissions as { profile?: string })?.profile).toBe("bootstrap");
+  });
+
+  it("removes a key the writer removed and clears to null when nothing is left", () => {
+    dbCreateAgent({ id: "rebase-b", cwd: "/tmp/rebase-b" });
+    dbUpdateAgent("rebase-b", { defaults: { modelBroker: { brokerId: "b" } } });
+    const base = dbGetAgent("rebase-b")!.defaults ?? {};
+    dbRebaseAgentDefaults("rebase-b", base, null);
+    expect(dbGetAgent("rebase-b")!.defaults ?? null).toBeNull();
   });
 });

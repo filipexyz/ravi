@@ -10057,6 +10057,34 @@ export function dbPatchAgentDefaults(id: string, patch: Record<string, unknown>)
 }
 
 /**
+ * Writers that derive a whole defaults object from a copy they read earlier
+ * (agents permissions, model-broker, Library profile, capability provider)
+ * land only what they changed: inside one IMMEDIATE transaction, the top-level
+ * keys that differ between `base` (what the caller read) and `next` (what it
+ * built) are applied over the row as stored now. A key another writer added
+ * or changed in between survives.
+ */
+export function dbRebaseAgentDefaults(
+  id: string,
+  base: Record<string, unknown> | null | undefined,
+  next: Record<string, unknown> | null | undefined,
+): AgentConfig {
+  const database = getDb();
+  return database
+    .transaction(() => {
+      const row = getStatements().getAgent.get(id) as AgentRow | undefined;
+      if (!row) throw new Error(`Agent not found: ${id}`);
+      const intended = next ?? {};
+      const diff = diffAgentDefaults(base ?? {}, intended);
+      const merged: Record<string, unknown> = { ...parseAgentDefaultsRecord(row.defaults ?? null) };
+      for (const key of [...diff.added, ...diff.changed]) merged[key] = intended[key];
+      for (const key of diff.removed) delete merged[key];
+      return dbUpdateAgent(id, { defaults: Object.keys(merged).length > 0 ? merged : null });
+    })
+    .immediate();
+}
+
+/**
  * One audit_log row per agent write: who wrote and which fields/defaults keys
  * changed. A write that drops runtimePermissions is logged as a warning, since
  * it silently narrows (or widens) every future turn of the agent.

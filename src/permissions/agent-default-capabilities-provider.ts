@@ -1,5 +1,5 @@
 import type { ContextCapability } from "../router/router-db.js";
-import { dbGetAgent, dbUpdateAgent } from "../router/router-db.js";
+import { dbGetAgent, dbRebaseAgentDefaults } from "../router/router-db.js";
 import type { AgentConfig } from "../router/types.js";
 import { canWithCapabilities } from "./capability-snapshot.js";
 import type { PermissionProvider, PermissionProviderDecision, PermissionProviderRequest } from "./provider-types.js";
@@ -182,7 +182,7 @@ export function ensureAgentRuntimeCapability(
     capabilities: [...existingCapabilities, normalizedCapability],
   };
   const nextDefaults = buildAgentRuntimePermissionsDefaults(agent.defaults, nextConfig);
-  const updated = dbUpdateAgent(agentId, { defaults: nextDefaults });
+  const updated = dbRebaseAgentDefaults(agentId, agent.defaults, nextDefaults);
   return { changed: true, agent: updated, runtimePermissions: nextConfig };
 }
 

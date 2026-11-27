@@ -46,7 +46,11 @@ An agent is not a human user, contact, chat, route, or permission profile.
   absent from it are kept and a key set to `null` is removed. The read of the
   current row, the merge and the write MUST happen in one IMMEDIATE write
   transaction, so a concurrent writer in another process cannot lose an
-  update. It MUST refuse any change to `runtimePermissions`; only
+  update. Writers that build a whole defaults object from an earlier read
+  (`agents permissions`, `agents model-broker`, a Library profile, the
+  capability provider) MUST land only the keys they changed, applied over the
+  stored row in one transaction (`dbRebaseAgentDefaults`).
+  `agents set defaults` MUST refuse any change to `runtimePermissions`; only
   `ravi agents permissions <id>` writes it, for agents and the operator alike.
 - Every write to `agents` that changes something MUST leave one `audit_log` row
   (`agent.updated`) with the caller and the changed fields/defaults keys, and

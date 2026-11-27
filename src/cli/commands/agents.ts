@@ -36,6 +36,7 @@ import {
   createAgent,
   updateAgent,
   patchAgentDefaults,
+  rebaseAgentDefaults,
   deleteAgent,
   setAgentDebounce,
   ensureAgentDirs,
@@ -1777,7 +1778,7 @@ SOURCES
     // Sweep again after the write to catch a context issued concurrently from
     // the old configuration while the mutation was in progress.
     revokeLiveRuntimeContextsForAgent(id);
-    updateAgent(id, { defaults: nextDefaults });
+    rebaseAgentDefaults(id, agent.defaults, nextDefaults);
     revokeLiveRuntimeContextsForAgent(id);
     const updated = getAgent(id) ?? { ...agent, defaults: nextDefaults };
     const payload = {
@@ -1960,7 +1961,7 @@ SOURCES
         );
       }
     }
-    updateAgent(id, { defaults: nextDefaults });
+    rebaseAgentDefaults(id, agent.defaults, nextDefaults);
     const updated = getAgent(id) ?? { ...agent, defaults: nextDefaults };
     const next = readRuntimeModelBrokerSelection(updated);
     const payload = {

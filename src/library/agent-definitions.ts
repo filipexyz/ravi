@@ -33,7 +33,7 @@ import {
   type CloudAgentBlock,
 } from "../cloud-agents/definition.js";
 import { assertAgentBreakGlassRaiseAllowed } from "../permissions/break-glass.js";
-import { createAgent, ensureAgentDirs, getAgent, loadRouterConfig, updateAgent } from "../router/config.js";
+import { createAgent, ensureAgentDirs, getAgent, loadRouterConfig, rebaseAgentDefaults } from "../router/config.js";
 import { dbListSkillGrantsForAgent, dbUpsertSkillGrant } from "../router/router-db.js";
 import type { AgentConfig } from "../router/types.js";
 import { ensureAgentInstructionFiles } from "../runtime/agent-instructions.js";
@@ -399,7 +399,7 @@ function applyProfile(agentId: string, profile: AgentRuntimePermissionProfile): 
   const next = profile === "chat-only" ? { profile } : { ...(before ?? {}), profile };
   // A Library profile is a writer of agent runtime permissions too (spec permissions/break-glass).
   assertAgentBreakGlassRaiseAllowed("agents library", agentId, before, next, { warnOperator: false });
-  updateAgent(agentId, { defaults: buildAgentRuntimePermissionsDefaults(agent?.defaults, next) });
+  rebaseAgentDefaults(agentId, agent?.defaults, buildAgentRuntimePermissionsDefaults(agent?.defaults, next));
 }
 
 function applyGrants(agentId: string, skills: readonly PlannedSkill[], origin: string): string[] {

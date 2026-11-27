@@ -17,6 +17,7 @@ import {
   dbGetAgent,
   dbUpdateAgent,
   dbPatchAgentDefaults,
+  dbRebaseAgentDefaults,
   dbDeleteAgent,
   dbCreateAgent,
   dbSetAgentDebounce,
@@ -129,6 +130,18 @@ export function updateAgent(id: string, partial: AgentUpdateInput): void {
  */
 export function patchAgentDefaults(id: string, patch: Record<string, unknown>): void {
   dbPatchAgentDefaults(id, patch);
+}
+
+/**
+ * Land a defaults object derived from an earlier read: only the keys that
+ * differ from `base` are applied over the stored row, in one transaction.
+ */
+export function rebaseAgentDefaults(
+  id: string,
+  base: Record<string, unknown> | null | undefined,
+  next: Record<string, unknown> | null | undefined,
+): void {
+  dbRebaseAgentDefaults(id, base, next);
 }
 
 /**
