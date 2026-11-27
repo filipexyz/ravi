@@ -36552,24 +36552,28 @@ public struct TagsDoctorOptions: Codable, Sendable {
 
 public struct TagsDoctorReturn: Codable, Sendable {
   public var bindingsByAssetType: [RaviJSON]
+  public var chatGrantPower: [RaviJSON]
   public var consumers: [RaviJSON]
   public var generatedAt: Double
   public var legacyMirrors: [RaviJSON]
   public var limit: Double
   public var orphanBindings: RaviJSON
+  public var power: String
   public var powerTags: [RaviJSON]
   public var summary: RaviJSON
   public var tagRuleErrors: [RaviJSON]
   public var tagsWithoutConsumer: [RaviJSON]
   public var unboundDefinitions: [RaviJSON]
 
-  public init(bindingsByAssetType: [RaviJSON], consumers: [RaviJSON], generatedAt: Double, legacyMirrors: [RaviJSON], limit: Double, orphanBindings: RaviJSON, powerTags: [RaviJSON], summary: RaviJSON, tagRuleErrors: [RaviJSON], tagsWithoutConsumer: [RaviJSON], unboundDefinitions: [RaviJSON]) {
+  public init(bindingsByAssetType: [RaviJSON], chatGrantPower: [RaviJSON], consumers: [RaviJSON], generatedAt: Double, legacyMirrors: [RaviJSON], limit: Double, orphanBindings: RaviJSON, power: String, powerTags: [RaviJSON], summary: RaviJSON, tagRuleErrors: [RaviJSON], tagsWithoutConsumer: [RaviJSON], unboundDefinitions: [RaviJSON]) {
     self.bindingsByAssetType = bindingsByAssetType
+    self.chatGrantPower = chatGrantPower
     self.consumers = consumers
     self.generatedAt = generatedAt
     self.legacyMirrors = legacyMirrors
     self.limit = limit
     self.orphanBindings = orphanBindings
+    self.power = power
     self.powerTags = powerTags
     self.summary = summary
     self.tagRuleErrors = tagRuleErrors
@@ -36579,11 +36583,13 @@ public struct TagsDoctorReturn: Codable, Sendable {
 
   enum CodingKeys: String, CodingKey {
     case bindingsByAssetType = "bindingsByAssetType"
+    case chatGrantPower = "chatGrantPower"
     case consumers = "consumers"
     case generatedAt = "generatedAt"
     case legacyMirrors = "legacyMirrors"
     case limit = "limit"
     case orphanBindings = "orphanBindings"
+    case power = "power"
     case powerTags = "powerTags"
     case summary = "summary"
     case tagRuleErrors = "tagRuleErrors"

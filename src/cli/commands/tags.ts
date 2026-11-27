@@ -30,7 +30,12 @@ import {
 } from "../../tags/index.js";
 import { attachTagToSelector, detachTagFromSelector, resolveTagTarget } from "../../tags/service.js";
 import { buildTagDoctorReport, type TagDoctorReport } from "../../tags/doctor.js";
-import { materializeContactPolicyCapabilities } from "../../permissions/contact-policy-permissions-provider.js";
+import {
+  formatContactGrantScope,
+  listContactScopedProfileGrants,
+  materializeContactPolicyCapabilities,
+} from "../../permissions/contact-policy-permissions-provider.js";
+import { getScopeContext, scopeHasCapability } from "../../permissions/scope.js";
 import { listContactIdsWithPolicyTags } from "../../contacts.js";
 import { assertOrgInternalTagWriteAllowed } from "../../decisions/org-tag.js";
 import {
@@ -374,6 +379,25 @@ function isPermissionDefinition(kind: string | null | undefined, source: string 
   return isPermissionProfileDefinition({ kind, source });
 }
 
+/** The power sections of `tags doctor` need the same admin capability that grants that power. */
+export function callerCanSeeTagPower(): boolean {
+  return scopeHasCapability(getScopeContext(), "admin", "system", "*");
+}
+
+function listChatGrantsForDoctor(): Array<{
+  contactId: string;
+  profile: string;
+  scope: string;
+  capabilities: string[];
+}> {
+  return listContactScopedProfileGrants().map((grant) => ({
+    contactId: grant.contactId,
+    profile: grant.profile,
+    scope: formatContactGrantScope(grant.scope),
+    capabilities: grant.capabilities,
+  }));
+}
+
 function parseDoctorLimit(value: string | undefined, asJson?: boolean): number {
   if (value === undefined) return 50;
   const parsed = Number(value);
@@ -397,9 +421,16 @@ function printTagDoctorReport(report: TagDoctorReport): void {
   console.log(`Definitions: ${s.definitions} (${s.unboundDefinitions} with no current binding)`);
   console.log(`Bindings:    ${s.bindings} (${s.orphanBindings} orphan in checked types)`);
   console.log(`Bound tags without a behavior consumer: ${s.boundTagsWithoutConsumer}`);
-  console.log(
-    `Contacts with capabilities from tags: ${s.contactsWithCapabilities} (${s.contactsWithBreakGlass} break-glass)`,
-  );
+  if (report.power === "included") {
+    console.log(
+      `Contacts with capabilities from tags: ${s.contactsWithCapabilities} (${s.contactsWithBreakGlass} break-glass)`,
+    );
+    console.log(
+      `Chat-scoped grants with capabilities: ${s.chatGrantsWithCapabilities} (${s.chatGrantsWithBreakGlass} break-glass)`,
+    );
+  } else {
+    console.log("Power sections withheld: they need admin:system:*");
+  }
   console.log(`Bindings from legacy mirrors: ${s.legacyMirrorBindings}`);
 
   console.log("\nBindings by asset type:");
@@ -414,11 +445,21 @@ function printTagDoctorReport(report: TagDoctorReport): void {
   if (report.orphanBindings.uncheckedAssetTypes.length > 0) {
     console.log(`  (not checked: ${report.orphanBindings.uncheckedAssetTypes.join(", ")})`);
   }
-  console.log(`\nContacts with capabilities from tags (top ${report.limit}, break-glass first):`);
-  if (report.powerTags.length === 0) console.log("  - none");
-  for (const row of report.powerTags) {
-    const flag = row.breakGlass.length > 0 ? ` BREAK-GLASS ${row.breakGlass.join(",")}` : "";
-    console.log(`  - contact:${row.contactId} -> ${row.capabilities.join(", ")}${flag}`);
+  if (report.power === "included") {
+    console.log(`\nContacts with capabilities from tags (top ${report.limit}, break-glass first):`);
+    if (report.powerTags.length === 0) console.log("  - none");
+    for (const row of report.powerTags) {
+      const flag = row.breakGlass.length > 0 ? ` BREAK-GLASS ${row.breakGlass.join(",")}` : "";
+      console.log(`  - contact:${row.contactId} -> ${row.capabilities.join(", ")}${flag}`);
+    }
+    console.log(`\nChat-scoped grants with capabilities (top ${report.limit}, break-glass first):`);
+    if (report.chatGrantPower.length === 0) console.log("  - none");
+    for (const row of report.chatGrantPower) {
+      const flag = row.breakGlass.length > 0 ? ` BREAK-GLASS ${row.breakGlass.join(",")}` : "";
+      console.log(
+        `  - contact:${row.contactId} ${row.profile} @ ${row.scope} -> ${row.capabilities.join(", ")}${flag}`,
+      );
+    }
   }
   console.log(`\nBound tags without consumer (top ${report.limit}):`);
   for (const row of report.tagsWithoutConsumer) {
@@ -1038,6 +1079,9 @@ export class TagCommands {
       limit: parsedLimit,
       materializeContact: materializeContactPolicyCapabilities,
       listPolicyContactIds: listContactIdsWithPolicyTags,
+      listChatGrants: listChatGrantsForDoctor,
+      // Who holds which power is admin information: read:tags alone does not show it.
+      includePower: callerCanSeeTagPower(),
     });
     if (asJson) {
       printJson(report);

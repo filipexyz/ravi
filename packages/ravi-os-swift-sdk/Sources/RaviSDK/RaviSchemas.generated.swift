@@ -132004,6 +132004,43 @@ public enum RaviSchemas {
         },
         "type": "array"
       },
+      "chatGrantPower": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "breakGlass": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "capabilities": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "contactId": {
+              "type": "string"
+            },
+            "profile": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "contactId",
+            "profile",
+            "scope",
+            "capabilities",
+            "breakGlass"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
       "consumers": {
         "items": {
           "additionalProperties": false,
@@ -132110,6 +132147,13 @@ public enum RaviSchemas {
         ],
         "type": "object"
       },
+      "power": {
+        "enum": [
+          "included",
+          "withheld"
+        ],
+        "type": "string"
+      },
       "powerTags": {
         "items": {
           "additionalProperties": false,
@@ -132155,11 +132199,45 @@ public enum RaviSchemas {
           "boundTagsWithoutConsumer": {
             "type": "number"
           },
+          "chatGrantsWithBreakGlass": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "chatGrantsWithCapabilities": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "contactsWithBreakGlass": {
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "contactsWithCapabilities": {
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "definitions": {
             "type": "number"
@@ -132182,6 +132260,8 @@ public enum RaviSchemas {
           "boundTagsWithoutConsumer",
           "contactsWithCapabilities",
           "contactsWithBreakGlass",
+          "chatGrantsWithCapabilities",
+          "chatGrantsWithBreakGlass",
           "legacyMirrorBindings"
         ],
         "type": "object"
@@ -132262,12 +132342,14 @@ public enum RaviSchemas {
     "required": [
       "generatedAt",
       "summary",
+      "power",
       "bindingsByAssetType",
       "unboundDefinitions",
       "orphanBindings",
       "consumers",
       "tagsWithoutConsumer",
       "powerTags",
+      "chatGrantPower",
       "legacyMirrors",
       "tagRuleErrors",
       "limit"

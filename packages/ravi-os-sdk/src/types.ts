@@ -25287,6 +25287,13 @@ export type TagsDoctorReturn = {
     bindings: number;
     tags: number;
   }>;
+  chatGrantPower: Array<{
+    breakGlass: string[];
+    capabilities: string[];
+    contactId: string;
+    profile: string;
+    scope: string;
+  }>;
   consumers: Array<{
     enabled: boolean;
     kinds: Array<"observer_rule" | "tag_rule" | "permission_provider">;
@@ -25308,6 +25315,7 @@ export type TagsDoctorReturn = {
     }>;
     uncheckedAssetTypes: string[];
   };
+  power: "included" | "withheld";
   powerTags: Array<{
     breakGlass: string[];
     capabilities: string[];
@@ -25317,8 +25325,10 @@ export type TagsDoctorReturn = {
   summary: {
     bindings: number;
     boundTagsWithoutConsumer: number;
-    contactsWithBreakGlass: number;
-    contactsWithCapabilities: number;
+    chatGrantsWithBreakGlass: number | null;
+    chatGrantsWithCapabilities: number | null;
+    contactsWithBreakGlass: number | null;
+    contactsWithCapabilities: number | null;
     definitions: number;
     legacyMirrorBindings: number;
     orphanBindings: number;

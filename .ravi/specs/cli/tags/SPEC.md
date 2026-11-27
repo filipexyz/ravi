@@ -67,9 +67,17 @@ ZERO braked ops — that absence is a decision of this spec, not an omission.
    contact grant; list filters do not count), contacts whose tags
    materialize capabilities from registry bindings or the contact policy,
    break-glass first, and bindings from legacy mirrors with their rewrite
-   churn. `--limit` (1..500, default 50; anything else is a usage error,
-   exit 2) truncates every list section; `summary` counts are never
-   truncated.
+   churn. It also lists chat-scoped grants (one chat or a chat tag) whose
+   profile carries capabilities, break-glass first; the grants are listed as
+   stored, before the contact eligibility check the runtime applies.
+   `--limit` (1..500, default 50; anything else is a usage error, exit 2)
+   truncates every list section; `summary` counts are never truncated.
+10. The two power sections of `tags doctor` (contacts with capabilities from
+   tags, chat-scoped grants) name contact ids and the power each holds. They
+   MUST be computed only for a caller that holds `admin:system:*`; `read:tags`
+   alone is not enough. For any other caller the report says
+   `power: "withheld"`, both sections are empty and their four `summary`
+   counts are `null` (not `0`, which would read as "nobody has power").
 
 ## Write classification (brake decision per op)
 

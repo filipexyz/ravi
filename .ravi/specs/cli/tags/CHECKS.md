@@ -30,5 +30,14 @@
   `--limit` to every list section. Each rule is pinned by a mutation that
   makes `src/tags/doctor.test.ts` fail.
 - `tags doctor --limit 0` MUST exit 2 with `USAGE_ERROR`.
+- `tags doctor` called with only `read:tags` MUST return `power: "withheld"`,
+  empty `powerTags` and `chatGrantPower`, `null` power counts and no contact
+  id from those sections; with `admin:system:*` it MUST return them
+  (`src/cli/commands/tags.test.ts`, "shows who holds power only to a caller
+  with admin:system:*"). Withheld sections MUST NOT be computed
+  (`src/tags/doctor.test.ts`, "withholds both power sections").
+- `tags doctor` MUST list a chat-scoped grant whose profile carries
+  capabilities, skip one that carries none, and count an admin profile name
+  as break-glass (`src/tags/doctor.test.ts`, "lists chat-scoped grants").
 - `bun test src/cli/commands/tags.test.ts` SHOULD pass after any change to the
   tags contract surface.

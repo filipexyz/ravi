@@ -130468,6 +130468,43 @@ export const TagsDoctorReturnSchema = {
       },
       "type": "array"
     },
+    "chatGrantPower": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "breakGlass": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "contactId": {
+            "type": "string"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "contactId",
+          "profile",
+          "scope",
+          "capabilities",
+          "breakGlass"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
     "consumers": {
       "items": {
         "additionalProperties": false,
@@ -130574,6 +130611,13 @@ export const TagsDoctorReturnSchema = {
       ],
       "type": "object"
     },
+    "power": {
+      "enum": [
+        "included",
+        "withheld"
+      ],
+      "type": "string"
+    },
     "powerTags": {
       "items": {
         "additionalProperties": false,
@@ -130619,11 +130663,45 @@ export const TagsDoctorReturnSchema = {
         "boundTagsWithoutConsumer": {
           "type": "number"
         },
+        "chatGrantsWithBreakGlass": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "chatGrantsWithCapabilities": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "contactsWithBreakGlass": {
-          "type": "number"
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "contactsWithCapabilities": {
-          "type": "number"
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "definitions": {
           "type": "number"
@@ -130646,6 +130724,8 @@ export const TagsDoctorReturnSchema = {
         "boundTagsWithoutConsumer",
         "contactsWithCapabilities",
         "contactsWithBreakGlass",
+        "chatGrantsWithCapabilities",
+        "chatGrantsWithBreakGlass",
         "legacyMirrorBindings"
       ],
       "type": "object"
@@ -130726,12 +130806,14 @@ export const TagsDoctorReturnSchema = {
   "required": [
     "generatedAt",
     "summary",
+    "power",
     "bindingsByAssetType",
     "unboundDefinitions",
     "orphanBindings",
     "consumers",
     "tagsWithoutConsumer",
     "powerTags",
+    "chatGrantPower",
     "legacyMirrors",
     "tagRuleErrors",
     "limit"

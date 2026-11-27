@@ -2997,11 +2997,14 @@ export const tagsDoctorReturnSchema = z
         unboundDefinitions: z.number(),
         orphanBindings: z.number(),
         boundTagsWithoutConsumer: z.number(),
-        contactsWithCapabilities: z.number(),
-        contactsWithBreakGlass: z.number(),
+        contactsWithCapabilities: z.number().nullable(),
+        contactsWithBreakGlass: z.number().nullable(),
+        chatGrantsWithCapabilities: z.number().nullable(),
+        chatGrantsWithBreakGlass: z.number().nullable(),
         legacyMirrorBindings: z.number(),
       })
       .strict(),
+    power: z.enum(["included", "withheld"]),
     bindingsByAssetType: z.array(
       z.object({ assetType: z.string(), bindings: z.number(), assets: z.number(), tags: z.number() }).strict(),
     ),
@@ -3042,6 +3045,17 @@ export const tagsDoctorReturnSchema = z
           capabilities: z.array(z.string()),
           breakGlass: z.array(z.string()),
           sources: z.array(z.string()),
+        })
+        .strict(),
+    ),
+    chatGrantPower: z.array(
+      z
+        .object({
+          contactId: z.string(),
+          profile: z.string(),
+          scope: z.string(),
+          capabilities: z.array(z.string()),
+          breakGlass: z.array(z.string()),
         })
         .strict(),
     ),
