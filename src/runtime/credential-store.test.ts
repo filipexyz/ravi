@@ -181,7 +181,9 @@ describe("runtime credential store and pool", () => {
     });
     const transition = recordRuntimeCredentialFailure("rcred_weekly", signal, 1_000);
     expect(transition.credential.status).toBe("exhausted");
-    expect(getRuntimeCredentialHealth("rcred_weekly")?.cooldownUntil).toBe(1_000 + 24 * 60 * 60 * 1000);
+    // The notice carries its reset, so the cooldown ends at that reset, not at a fixed 24 h.
+    expect(signal.resetAt).toBeDefined();
+    expect(getRuntimeCredentialHealth("rcred_weekly")?.cooldownUntil).toBe(signal.resetAt);
     for (const now of [2_000, 61_001, 3_601_000]) {
       const selected = selectRuntimeCredential({ runtimeProvider: "claude", upstreamProvider: "anthropic", now });
       expect(selected.credential).toBeNull();

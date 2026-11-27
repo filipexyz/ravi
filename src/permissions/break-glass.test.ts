@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
+import { runWithContext } from "../cli/context.js";
 import { ADMIN_PERMISSION_PROFILES } from "./apply-grant.js";
 import {
   ADMIN_PROFILE_SLUGS,
@@ -8,6 +9,7 @@ import {
   grantProfileBreakGlassReasons,
   assertAgentBreakGlassRaiseAllowed,
   runApprovedBreakGlassGrant,
+  setInteractiveTerminalProbeForTests,
   isAdminProfileSlug,
   isBreakGlassCapability,
   profileBreakGlassReasons,
@@ -119,6 +121,53 @@ describe("break-glass power", () => {
     const output = stderr.join("");
     expect(output).toContain("waking dormant break-glass on agent dormant-agent");
     expect(output).not.toContain("deliberate-agent");
+  });
+
+  it("lets the operator terminal on its default credential raise an agent; agents and the gateway stay refused", () => {
+    const bootstrapKey = { contextId: "ctx_op", kind: "admin-bootstrap", agentId: "bootstrap" } as never;
+    const quiet = <T>(fn: () => T): T => {
+      const original = process.stderr.write.bind(process.stderr);
+      process.stderr.write = (() => true) as typeof process.stderr.write;
+      try {
+        return fn();
+      } finally {
+        process.stderr.write = original;
+      }
+    };
+    const raise = () => assertAgentBreakGlassRaiseAllowed("test", "main", null, { profile: "full-access" });
+    const terminal = {
+      contextOrigin: "default-credential" as const,
+      contextId: "ctx_op",
+      context: bootstrapKey,
+      agentId: "bootstrap",
+    };
+
+    // The interactive terminal with no RAVI_* env: the CLI resolved ~/.ravi/credentials.json locally.
+    let restore = setInteractiveTerminalProbeForTests(() => true);
+    try {
+      expect(() => quiet(() => runWithContext(terminal, raise))).not.toThrow();
+    } finally {
+      restore();
+    }
+
+    // The same default credential from a shell with no TTY (a full-access agent that dropped
+    // its RAVI_* env) is not the operator.
+    restore = setInteractiveTerminalProbeForTests(() => false);
+    try {
+      expect(() => runWithContext(terminal, raise)).toThrow(/an agent never raises another agent/);
+    } finally {
+      restore();
+    }
+
+    // The same key presented through the gateway is a remote caller, not the terminal.
+    expect(() =>
+      runWithContext({ transport: "gateway", contextId: "ctx_op", context: bootstrapKey, agentId: "bootstrap" }, raise),
+    ).toThrow(/an agent never raises another agent/);
+
+    // An agent turn raising another agent.
+    expect(() => runWithContext({ transport: "tool", agentId: "worker" }, raise)).toThrow(
+      /an agent never raises another agent/,
+    );
   });
 
   it("keeps a narrow executable pattern narrow, whatever follows the wildcard", () => {

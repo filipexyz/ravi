@@ -15,6 +15,7 @@ import type {
   RuntimeExecutionMetadata,
   RuntimePrepareSessionRequest,
   RuntimePrepareSessionResult,
+  RuntimeProviderLimitRejection,
   RuntimeSessionState,
   RuntimeSessionHandle,
   RuntimeSkillVisibilitySnapshot,
@@ -32,6 +33,7 @@ import { logger } from "../utils/logger.js";
 import { coalesceAssistantTextBlocks } from "./assistant-transcript.js";
 import { applyClaudeRequiredPromptEnv } from "./claude-prompt-env.js";
 import { isRuntimeProviderLoginStub } from "./provider-login-stub.js";
+import { normalizeProviderResetEpochMs } from "./credential-reset-time.js";
 import {
   CLAUDE_INHERITED_AUTH_ENV_KEYS,
   RAVI_CLAUDE_MANAGED_AUTH_ENV,
@@ -787,6 +789,10 @@ export async function* normalizeClaudeEvents(
   now: () => number = Date.now,
 ): AsyncGenerator<RuntimeEvent> {
   let lastYieldAt = Number.NEGATIVE_INFINITY;
+  // The SDK reports subscription limits as `rate_limit_event` before the
+  // failing frame. Keep the latest rejection so the failure carries the real
+  // reset instead of a guessed cooldown.
+  let providerLimit: RuntimeProviderLimitRejection | undefined;
   for await (const message of queryResult as AsyncIterable<any>) {
     if (message.type === "stream_event") {
       const evt = message.event;
@@ -808,6 +814,11 @@ export async function* normalizeClaudeEvents(
 
     const rawEvent = message as Record<string, unknown>;
     yield { type: "provider.raw", rawEvent };
+
+    if (message.type === "rate_limit_event") {
+      providerLimit = readClaudeRateLimitRejection(message.rate_limit_info) ?? undefined;
+      continue;
+    }
 
     if (message.type === "system" && message.subtype === "status") {
       yield {
@@ -833,6 +844,7 @@ export async function* normalizeClaudeEvents(
             details: extractClaudeAssistantText(message),
           }),
           recoverable: isRecoverableClaudeAssistantError(assistantError),
+          ...(providerLimit ? { providerLimit } : {}),
           rawEvent,
         };
         return;
@@ -898,6 +910,7 @@ export async function* normalizeClaudeEvents(
               ? message.errors.join("; ")
               : "Claude turn failed",
           recoverable: true,
+          ...(providerLimit ? { providerLimit } : {}),
           rawEvent,
         };
         continue;
@@ -922,6 +935,7 @@ export async function* normalizeClaudeEvents(
           }),
           recoverable: apiErrorStatus !== undefined ? isRecoverableClaudeApiStatus(apiErrorStatus) : true,
           usage,
+          ...(providerLimit ? { providerLimit } : {}),
           rawEvent,
         };
         continue;
@@ -942,6 +956,24 @@ export async function* normalizeClaudeEvents(
       };
     }
   }
+}
+
+/**
+ * Reads a Claude `rate_limit_info`. Only `status: "rejected"` is a limit that
+ * failed the request; `allowed` and `allowed_warning` clear the previous
+ * rejection (returns `null`). `resetsAt` is epoch seconds in the Claude CLI
+ * (it renders the reset with `resetsAt * 1000`); it is normalized to ms.
+ */
+export function readClaudeRateLimitRejection(info: unknown): RuntimeProviderLimitRejection | null {
+  if (!info || typeof info !== "object") return null;
+  const record = info as Record<string, unknown>;
+  if (record.status !== "rejected") return null;
+  const resetAt = normalizeProviderResetEpochMs(record.resetsAt);
+  const limitType = typeof record.rateLimitType === "string" ? record.rateLimitType : undefined;
+  return {
+    ...(resetAt !== undefined ? { resetAt } : {}),
+    ...(limitType ? { limitType } : {}),
+  };
 }
 
 function buildClaudeSessionState(sessionId: string | undefined): RuntimeSessionState | undefined {

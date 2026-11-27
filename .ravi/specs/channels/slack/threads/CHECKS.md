@@ -111,6 +111,12 @@
 - [ ] The channel-root variant MUST route follow-ups on an existing thread's
       subject to that thread and relay between threads; the thread variant MUST
       ask for relays through `thread.report`.
+- [ ] `close-thread --session <child>` MUST accept the session that opened the
+      thread (the lifecycle's recorded parent session key, matched against the
+      running turn's session key, never a name) without a grant on the child,
+      provided it may modify itself; any other session still needs its own
+      grant on the child (test: `sessions.test.ts`, "lets the session that
+      opened a thread close it").
 - [ ] `report`, `close-thread` and `thread-send` refusals MUST carry a typed
       `THREAD_*` code (`THREAD_IDENTITY_MISMATCH` for a session holding an open
       thread's name under another key), and the remote relay MUST show local
