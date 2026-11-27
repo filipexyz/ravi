@@ -40,8 +40,36 @@ export const BREAK_GLASS_CAPABILITIES: readonly string[] = ["admin:system:*", "e
 // this module, so it must not import them back at load time: scope.js reaches
 // the provider registry and router-db. It is required lazily, on first call.
 function scopeAgentId(): string | undefined {
+  // The operator's terminal resolves the local default credential
+  // (`~/.ravi/credentials.json`, an admin-bootstrap key bound to the
+  // `bootstrap` identity) when no runtime context is set. That identity is the
+  // operator's own key, not an agent turn: the same rule as
+  // credentials/authorization.ts and voice/authority.ts. The same key presented
+  // through the gateway carries no `contextOrigin` and stays an agent/remote caller.
+  //
+  // Only an interactive terminal counts. A full-access agent's shell may drop
+  // its RAVI_* env (the Bash hook lets a superadmin do it) and resolve the same
+  // file; its tool shell has no TTY, so it stays an agent here (Devin on #1051).
+  const { getContext } = require("../cli/context.js") as typeof import("../cli/context.js");
+  if (getContext()?.contextOrigin === "default-credential" && operatorTerminalIsInteractive()) return undefined;
   const { getScopeContext } = require("./scope.js") as typeof import("./scope.js");
   return getScopeContext()?.agentId ?? undefined;
+}
+
+/** The operator at a keyboard: stdin and stdout are both a terminal. Overridable for tests. */
+let interactiveProbe: () => boolean = () => Boolean(process.stdin?.isTTY && process.stdout?.isTTY);
+
+function operatorTerminalIsInteractive(): boolean {
+  return interactiveProbe();
+}
+
+/** Test seam: replace the TTY probe; returns a function that restores the real one. */
+export function setInteractiveTerminalProbeForTests(probe: () => boolean): () => void {
+  const previous = interactiveProbe;
+  interactiveProbe = probe;
+  return () => {
+    interactiveProbe = previous;
+  };
 }
 
 /** Capabilities a permission profile definition carries (same shapes as readPermissionTagCapabilities). */
