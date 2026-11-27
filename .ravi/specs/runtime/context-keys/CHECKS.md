@@ -38,8 +38,20 @@
 - The synthetic context-list benchmark MUST materialize and compare every
   returned record, alternate current and legacy query runs, report failures and
   query plans, and use an isolated state directory without production data.
-
 - Launch a relay with an approval origin, then refresh a warm runtime with a different or absent `_approvalSource`; never reuse the launch chat.
 - An exact source-less producer must not inherit the session's last chat, even if a stale delegated hint exists.
 - Persist approval routing without exposing it as a command source: CLI/gateway implicit media delivery and durable grants must remain scoped to the direct invocation.
 - Derived contexts must preserve the approval-only marker even when child metadata tries to remove it.
+- `src/runtime/context-key-hash.test.ts` checks the issuer gets the clear key
+  and the row holds only its hash, no `rctx_` remains in `contexts`, the
+  presented key resolves, the stored hash (with or without its prefix) does
+  not, a record read by id has no key, `resolveRuntimeContextById` applies the
+  live/expired/revoked rules, and the migration hashes clear rows while their
+  holders keep resolving.
+  It also checks that a clear key left in a WAL frame is gone from the database
+  file and its WAL after the migration (the WAL is truncated).
+- `src/runtime/context-key-hash.test.ts` also issues, uses and revokes keys and
+  then scans the whole database file and its WAL for those keys.
+- `src/adapters/adapter-store.test.ts` checks a session adapter debug snapshot
+  never stores the bound key, and that the migration removes a key an older
+  release stored there (row and files scanned).

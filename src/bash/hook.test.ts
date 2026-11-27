@@ -1147,6 +1147,28 @@ describe("turn-runtime executor ceiling", () => {
     expect(isDenied(result)).toBe(true);
   });
 
+  it("bounds an owner-authority turn by its issued snapshot, not the agent's closed ceiling", () => {
+    // The agent holds a closed list; the owner's turn was issued with the owner's own power.
+    dbUpdateAgent(agentId, {
+      defaults: { runtimePermissions: { capabilities: ["execute:executable:git"] } },
+    });
+    const ownerTurn = whatsappTurn([{ permission: "admin", objectType: "system", objectId: "*" }], {
+      ownerAuthority: "contact:owner-1",
+    });
+    expect(evaluateBashPermission("codex exec 'ls'", ownerTurn).allowed).toBe(true);
+    expect(evaluateBashPermission("cd /tmp && ls", ownerTurn).allowed).toBe(true);
+
+    // The same snapshot without the owner mark is a person's turn: the live ceiling still bounds it.
+    const personTurn = whatsappTurn([{ permission: "admin", objectType: "system", objectId: "*" }]);
+    expect(evaluateBashPermission("codex exec 'ls'", personTurn).allowed).toBe(false);
+
+    // The mark never lends power the snapshot lacks.
+    const markedNarrow = whatsappTurn([{ permission: "execute", objectType: "executable", objectId: "git" }], {
+      ownerAuthority: "contact:owner-1",
+    });
+    expect(evaluateBashPermission("codex exec 'ls'", markedNarrow).allowed).toBe(false);
+  });
+
   it("still applies a live executor reduction to user-overlay turns", () => {
     dbUpdateAgent(agentId, {
       defaults: { runtimePermissions: { capabilities: ["execute:executable:*"] } },

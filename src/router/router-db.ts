@@ -2038,9 +2038,22 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
       UNIQUE(request_id, turn_id)
     );
 
-    -- One row per thread: the last return it sent its parent, and the single follow-up
-    -- (nudge, then Inform) owed for the last turn that ended without one. Written only by
-    -- this release (thread-parent-return.ts); no legacy writer, so it is outside the fence.
+    -- Open asks: 'ravi sessions ask' records that one session asked another, so the asked
+    -- session may send 'ravi sessions answer' back to the asker without general access to it.
+    -- Channel-free: keyed by session keys. Written only by this release (src/sessions/ask-grants.ts).
+    CREATE TABLE IF NOT EXISTS session_asks (
+      id TEXT PRIMARY KEY,
+      origin_session_key TEXT NOT NULL,
+      target_session_key TEXT NOT NULL,
+      sender TEXT,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      -- The incarnation of each session: a session recreated under the same key does not inherit the grant.
+      origin_session_created_at INTEGER NOT NULL,
+      target_session_created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_session_asks_pair ON session_asks(target_session_key, origin_session_key, expires_at);
+
     -- Handoffs: a child session (a thread) declares it waits for its parent session to act
     -- (review, decision, merge, dispatch, instruction). Channel-free: keyed by session keys.
     -- Written only by this release (src/handoffs); no legacy writer, so it is outside the fence.
@@ -2063,6 +2076,9 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
     CREATE INDEX IF NOT EXISTS idx_session_handoffs_open ON session_handoffs(status, parent_session_key);
     CREATE INDEX IF NOT EXISTS idx_session_handoffs_child ON session_handoffs(child_session_key, status);
 
+    -- One row per thread: the last return it sent its parent, and the single follow-up
+    -- (nudge, then Inform) owed for the last turn that ended without one. Written only by
+    -- this release (thread-parent-return.ts); no legacy writer, so it is outside the fence.
     CREATE TABLE IF NOT EXISTS slack_thread_return_watch (
       request_id TEXT PRIMARY KEY REFERENCES slack_thread_lifecycle(request_id) ON DELETE CASCADE,
       last_return_at INTEGER,
@@ -3734,6 +3750,7 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
     db.exec("ALTER TABLE contexts ADD COLUMN revoked_at INTEGER");
   }
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_contexts_key ON contexts(context_key)");
+  hashStoredContextKeys(db);
   db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_agent ON contexts(agent_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_session ON contexts(session_key)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_agent_kind ON contexts(agent_id, kind, created_at DESC)");
@@ -7137,7 +7154,8 @@ function rowToChannel(row: ChannelRow): ChannelConfig {
 function rowToContext(row: ContextRow): ContextRecord {
   const result: ContextRecord = {
     contextId: row.context_id,
-    contextKey: row.context_key,
+    // Rows hold only the hash; a record read by id carries no usable key.
+    contextKey: row.context_key.startsWith(CONTEXT_KEY_HASH_PREFIX) ? "" : row.context_key,
     kind: row.kind,
     capabilities: [],
     createdAt: row.created_at,
@@ -8402,10 +8420,31 @@ export function dbGetChatMessage(id: string): ChatMessageRecord | null {
 }
 
 /** Every stored message with this provider message id (a provider id is unique only within its chat). */
-export function dbListChatMessagesByProviderId(providerMessageId: string): ChatMessageRecord[] {
+/**
+ * Messages carrying a provider id. With `writtenBy`, only that contact's messages at or after `since` (provider
+ * time, read as seconds when below 10^12, else ingestion) in `chatId` or a direct chat: the filter runs before the limit, so an id repeated in other
+ * chats never hides the eligible one.
+ */
+export function dbListChatMessagesByProviderId(
+  providerMessageId: string,
+  writtenBy?: { contactId: string; since: number; chatId: string | null },
+): ChatMessageRecord[] {
+  if (!writtenBy) {
+    const rows = getDb()
+      .prepare("SELECT * FROM chat_messages WHERE provider_message_id = ? LIMIT 20")
+      .all(providerMessageId) as ChatMessageRow[];
+    return rows.map(rowToChatMessage);
+  }
   const rows = getDb()
-    .prepare("SELECT * FROM chat_messages WHERE provider_message_id = ? LIMIT 3")
-    .all(providerMessageId) as ChatMessageRow[];
+    .prepare(
+      `SELECT m.* FROM chat_messages m JOIN chats c ON c.id = m.chat_id
+       WHERE m.provider_message_id = ? AND m.actor_type = 'contact' AND m.contact_id = ?
+         AND COALESCE(CASE WHEN m.provider_timestamp < 1000000000000 THEN m.provider_timestamp * 1000
+                           ELSE m.provider_timestamp END, m.created_at) >= ?
+         AND (m.chat_id = ? OR c.chat_type = 'dm')
+       LIMIT 20`,
+    )
+    .all(providerMessageId, writtenBy.contactId, writtenBy.since, writtenBy.chatId) as ChatMessageRow[];
   return rows.map(rowToChatMessage);
 }
 
@@ -10725,9 +10764,105 @@ export function dbListDeletedInstances(): InstanceConfig[] {
   return (s.listDeletedInstances.all() as InstanceRow[]).map(rowToInstance);
 }
 
+/**
+ * Replace every clear key still stored in `contexts` with its hash. Live holders
+ * keep working: they present the clear key, which hashes to the stored value.
+ */
+/**
+ * Older releases also copied the bound key into session adapter debug
+ * snapshots. Remove it there (the snapshot keeps the context id).
+ */
+function scrubStoredContextKeyCopies(db: Database): void {
+  const table = db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session_adapter_debug'")
+    .get();
+  if (!table) return;
+  db.exec(`UPDATE session_adapter_debug
+    SET snapshot_json = json_remove(snapshot_json, '$.bind.contextKey')
+    WHERE json_valid(snapshot_json) AND json_extract(snapshot_json, '$.bind.contextKey') IS NOT NULL`);
+}
+
+/** A busy truncate (another reader) leaves old frames in the WAL: try again shortly, a few times. */
+function scheduleWalTruncateRetry(db: Database, attempt = 1): void {
+  if (attempt > 5) {
+    log.warn("WAL still busy after retries; migrated context keys may remain in the WAL until the next checkpoint");
+    return;
+  }
+  const timer = setTimeout(() => {
+    try {
+      const result = db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get() as { busy: number } | undefined;
+      if (result?.busy) scheduleWalTruncateRetry(db, attempt + 1);
+    } catch (error) {
+      log.warn("WAL truncate retry failed", { error: error instanceof Error ? error.message : String(error) });
+    }
+  }, 30_000 * attempt);
+  timer.unref?.();
+}
+
+export function hashStoredContextKeys(db: Database): number {
+  const rows = db
+    .prepare(`SELECT context_id, context_key FROM contexts WHERE context_key NOT LIKE '${"sha256:"}%'`)
+    .all() as Array<{ context_id: string; context_key: string }>;
+  scrubStoredContextKeyCopies(db);
+  if (rows.length === 0) return 0;
+  const update = db.prepare("UPDATE contexts SET context_key = ? WHERE context_id = ?");
+  // Zero the bytes the clear keys occupied, then fold the WAL into the main file
+  // and truncate it, so the keys do not survive in free pages or old WAL frames.
+  const previousSecureDelete = (db.prepare("PRAGMA secure_delete").get() as { secure_delete: number }).secure_delete;
+  db.exec("PRAGMA secure_delete = ON");
+  try {
+    db.transaction(() => {
+      for (const row of rows) update.run(hashContextKey(row.context_key), row.context_id);
+    })();
+  } finally {
+    db.exec(`PRAGMA secure_delete = ${previousSecureDelete ? "ON" : "OFF"}`);
+  }
+  const checkpoint = db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get() as { busy: number } | undefined;
+  if (checkpoint?.busy) scheduleWalTruncateRetry(db);
+  const now = Date.now();
+  const stillLive = rows.length
+    ? (
+        db
+          .prepare(
+            `SELECT COUNT(*) AS n FROM contexts WHERE context_id IN (${rows.map(() => "?").join(",")})
+               AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?)`,
+          )
+          .get(...rows.map((row) => row.context_id), now) as { n: number }
+      ).n
+    : 0;
+  // Copies made before this migration (update rollback snapshots, backups) still
+  // hold these keys in the clear. They stay valid so paired devices and the
+  // operator's credentials keep working; rotate them once those copies are gone.
+  log.warn("Hashed stored context keys; earlier copies of the state database still hold them in the clear", {
+    count: rows.length,
+    stillLive,
+    walCheckpointBusy: Boolean(checkpoint?.busy),
+    rotate: "ravi context revoke <contextId>, then issue a new key (see spec runtime/context-keys RUNBOOK)",
+  });
+  return rows.length;
+}
 // ============================================================================
 // Context Registry
 // ============================================================================
+
+/**
+ * Context keys are bearer secrets. The database keeps only a SHA-256 of each key
+ * (`sha256:<hex>` in `context_key`), so reading `ravi.db` never yields a usable
+ * key. The clear key exists only where it was issued (returned once by
+ * `dbCreateContext`) and where a caller presents it.
+ */
+export const CONTEXT_KEY_HASH_PREFIX = "sha256:";
+
+export function hashContextKey(contextKey: string): string {
+  if (contextKey.startsWith(CONTEXT_KEY_HASH_PREFIX)) return contextKey;
+  return `${CONTEXT_KEY_HASH_PREFIX}${createHash("sha256").update(contextKey, "utf8").digest("hex")}`;
+}
+
+/** Presented values that are already stored hashes are not keys: never resolve them. */
+function storedFormForLookup(contextKey: string): string | null {
+  if (!contextKey || contextKey.startsWith(CONTEXT_KEY_HASH_PREFIX)) return null;
+  return hashContextKey(contextKey);
+}
 
 export function dbCreateContext(input: z.input<typeof ContextInputSchema>): ContextRecord {
   const validated = ContextInputSchema.parse(input);
@@ -10741,7 +10876,7 @@ export function dbCreateContext(input: z.input<typeof ContextInputSchema>): Cont
   try {
     s.insertContext.run(
       validated.contextId,
-      validated.contextKey,
+      hashContextKey(validated.contextKey),
       validated.kind,
       validated.agentId ?? null,
       validated.sessionKey ?? null,
@@ -10761,7 +10896,9 @@ export function dbCreateContext(input: z.input<typeof ContextInputSchema>): Cont
     throw err;
   }
 
-  return dbGetContext(validated.contextId)!;
+  const created = dbGetContext(validated.contextId)!;
+  // The only place the clear key leaves the registry: the issuer gets it once.
+  return { ...created, contextKey: validated.contextKey };
 }
 
 export function dbGetContext(contextId: string): ContextRecord | null {
@@ -10772,8 +10909,10 @@ export function dbGetContext(contextId: string): ContextRecord | null {
 
 export function dbGetContextByKey(contextKey: string): ContextRecord | null {
   const s = getStatements();
-  const row = s.getContextByKey.get(contextKey) as ContextRow | undefined;
-  return row ? rowToContext(row) : null;
+  const stored = storedFormForLookup(contextKey);
+  if (!stored) return null;
+  const row = s.getContextByKey.get(stored) as ContextRow | undefined;
+  return row ? { ...rowToContext(row), contextKey } : null;
 }
 
 export function dbGetContextByKeyReadOnly(contextKey: string): ContextRecord | null {
@@ -10783,8 +10922,10 @@ export function dbGetContextByKeyReadOnly(contextKey: string): ContextRecord | n
   const db = new Database(dbPath, { readonly: true, create: false });
   try {
     db.exec("PRAGMA busy_timeout = 1000");
-    const row = db.prepare("SELECT * FROM contexts WHERE context_key = ?").get(contextKey) as ContextRow | undefined;
-    return row ? rowToContext(row) : null;
+    const stored = storedFormForLookup(contextKey);
+    if (!stored) return null;
+    const row = db.prepare("SELECT * FROM contexts WHERE context_key = ?").get(stored) as ContextRow | undefined;
+    return row ? { ...rowToContext(row), contextKey } : null;
   } catch (error) {
     if (error instanceof Error && /no such table: contexts/i.test(error.message)) {
       return null;

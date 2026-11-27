@@ -299,6 +299,20 @@ export function resolveRuntimeContext(
   return record;
 }
 
+/**
+ * Same liveness rules as `resolveRuntimeContext`, for a record the caller
+ * already holds by id. The registry keeps only key hashes, so a record read by
+ * id can no longer be re-resolved through its key.
+ */
+export function resolveRuntimeContextById(contextId: string): ContextRecord | null {
+  const record = dbGetContext(contextId);
+  if (!record) return null;
+  if (!bridgeContextLive(record.metadata)) return null;
+  if (record.revokedAt && record.revokedAt <= Date.now()) return null;
+  if (record.expiresAt && record.expiresAt <= Date.now()) return null;
+  return record;
+}
+
 export function resolveRuntimeContextOrThrow(
   contextKey: string,
   options?: { touch?: boolean; readOnly?: boolean },

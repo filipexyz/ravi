@@ -19,5 +19,29 @@
   MUST ship with the dry-run + `--execute` brake.
 - A `ContractError` thrown with `RAVI_*` envs present MUST preserve its exit
   code through the registry dispatcher.
+- `tags doctor` MUST leave `tag_definitions`, `tag_bindings` and `tag_events`
+  row counts unchanged (`src/tags/doctor.test.ts`, "never writes").
+- `tags doctor` MUST list a definition with no current binding, count a
+  binding to a missing agent as orphan (and a session bound by key as not
+  orphan), keep tags read by a tag rule (apply or condition, any spelling),
+  by the permission provider (any `permission.*` spelling) or by a chat-tag
+  grant scope out of "without consumer", flag a contact whose tags (registry
+  or policy only) materialize `admin:system:*` as break-glass, and apply
+  `--limit` to every list section. Each rule is pinned by a mutation that
+  makes `src/tags/doctor.test.ts` fail.
+- `tags doctor --limit 0` MUST exit 2 with `USAGE_ERROR`.
+- `tags doctor` called with only `read:tags` MUST return `power: "withheld"`,
+  empty `powerTags` and `chatGrantPower`, `null` power counts and no contact
+  id from those sections; with `admin:system:*` it MUST return them
+  (`src/cli/commands/tags.test.ts`, "shows who holds power only to a caller
+  with admin:system:*"). Withheld sections MUST NOT be computed
+  (`src/tags/doctor.test.ts`, "withholds both power sections").
+- `tags doctor` MUST list a chat-scoped grant whose profile carries
+  capabilities, skip one that carries none, and count an admin profile name
+  as break-glass (`src/tags/doctor.test.ts`, "lists chat-scoped grants").
+- `tags doctor` MUST leave `permission_contact_chat_grants` absent when it was
+  absent (`src/cli/commands/tags.test.ts`, "does not create the chat grant
+  table"), and its return contract MUST accept a report without the power
+  fields ("still accepts a report from a gateway older").
 - `bun test src/cli/commands/tags.test.ts` SHOULD pass after any change to the
   tags contract surface.

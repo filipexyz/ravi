@@ -68400,8 +68400,20 @@ export const DecisionsAnswerInputSchema = {
       "description": "Decision id from ask/list",
       "type": "string"
     },
+    "scope": {
+      "description": "Where the answer applies: thread (default), agent:<id>, project:<id> or org; wider than the thread needs --source-message or the local operator",
+      "type": "string"
+    },
     "sourceMessage": {
-      "description": "The person's message that holds this answer (internal or provider message id). Recorded as provenance; it must be a message written by a person, and by the decision's owner when it names one",
+      "description": "The owner's message that holds this answer (internal or provider message id), written after the question in its chat or a direct chat. Recorded as provenance; required to widen the scope",
+      "type": "string"
+    },
+    "sourceQuote": {
+      "description": "A passage of the source message that holds the answer; needed unless the message names the decision id",
+      "type": "string"
+    },
+    "supersedes": {
+      "description": "An answered decision this answer replaces",
       "type": "string"
     },
     "text": {
@@ -68543,8 +68555,60 @@ export const DecisionsAnswerReturnSchema = {
           ],
           "type": "string"
         },
+        "revisedAt": {
+          "type": "number"
+        },
         "revision": {
           "type": "number"
+        },
+        "scope": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "origin",
+                "agent",
+                "project",
+                "org"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ],
+          "type": "object"
+        },
+        "sourceExcerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceMessageId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "status": {
           "enum": [
@@ -68554,6 +68618,16 @@ export const DecisionsAnswerReturnSchema = {
           ],
           "type": "string"
         },
+        "supersededBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "updatedAt": {
           "type": "number"
         }
@@ -68562,16 +68636,21 @@ export const DecisionsAnswerReturnSchema = {
         "id",
         "origin",
         "key",
+        "scope",
         "status",
         "ownerType",
         "ownerId",
         "ask",
         "askedBy",
         "askedAt",
+        "revisedAt",
         "answer",
         "answeredBy",
         "answeredAt",
         "blocks",
+        "sourceMessageId",
+        "sourceExcerpt",
+        "supersededBy",
         "revision",
         "createdAt",
         "updatedAt"
@@ -68683,6 +68762,10 @@ export const DecisionsAskInputSchema = {
     },
     "owner": {
       "description": "human:<contact>|agent:<id>|unassigned; ownership is not approval authority",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Proposed scope once answered: thread (default), agent:<id>, project:<id> or org; the answer settles it",
       "type": "string"
     },
     "task": {
@@ -68825,8 +68908,60 @@ export const DecisionsAskReturnSchema = {
           ],
           "type": "string"
         },
+        "revisedAt": {
+          "type": "number"
+        },
         "revision": {
           "type": "number"
+        },
+        "scope": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "origin",
+                "agent",
+                "project",
+                "org"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ],
+          "type": "object"
+        },
+        "sourceExcerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceMessageId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "status": {
           "enum": [
@@ -68836,6 +68971,16 @@ export const DecisionsAskReturnSchema = {
           ],
           "type": "string"
         },
+        "supersededBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "updatedAt": {
           "type": "number"
         }
@@ -68844,16 +68989,21 @@ export const DecisionsAskReturnSchema = {
         "id",
         "origin",
         "key",
+        "scope",
         "status",
         "ownerType",
         "ownerId",
         "ask",
         "askedBy",
         "askedAt",
+        "revisedAt",
         "answer",
         "answeredBy",
         "answeredAt",
         "blocks",
+        "sourceMessageId",
+        "sourceExcerpt",
+        "supersededBy",
         "revision",
         "createdAt",
         "updatedAt"
@@ -68951,12 +69101,20 @@ export const DecisionsListInputSchema = {
       "description": "Include answered history",
       "type": "boolean"
     },
+    "answeredSince": {
+      "description": "Only decisions answered at or after this ISO time or epoch ms (implies --all)",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default 50, maximum 500)",
       "type": "string"
     },
     "offset": {
       "description": "Page offset",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Only decisions with this scope: thread, task, agent:<id>, project:<id> or org",
       "type": "string"
     },
     "task": {
@@ -69097,8 +69255,60 @@ export const DecisionsListReturnSchema = {
             ],
             "type": "string"
           },
+          "revisedAt": {
+            "type": "number"
+          },
           "revision": {
             "type": "number"
+          },
+          "scope": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": {
+                "enum": [
+                  "origin",
+                  "agent",
+                  "project",
+                  "org"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ],
+            "type": "object"
+          },
+          "sourceExcerpt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sourceMessageId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "status": {
             "enum": [
@@ -69108,6 +69318,16 @@ export const DecisionsListReturnSchema = {
             ],
             "type": "string"
           },
+          "supersededBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "updatedAt": {
             "type": "number"
           }
@@ -69116,16 +69336,21 @@ export const DecisionsListReturnSchema = {
           "id",
           "origin",
           "key",
+          "scope",
           "status",
           "ownerType",
           "ownerId",
           "ask",
           "askedBy",
           "askedAt",
+          "revisedAt",
           "answer",
           "answeredBy",
           "answeredAt",
           "blocks",
+          "sourceMessageId",
+          "sourceExcerpt",
+          "supersededBy",
           "revision",
           "createdAt",
           "updatedAt"
@@ -69344,8 +69569,60 @@ export const DecisionsResolveDeliveryReturnSchema = {
           ],
           "type": "string"
         },
+        "revisedAt": {
+          "type": "number"
+        },
         "revision": {
           "type": "number"
+        },
+        "scope": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "origin",
+                "agent",
+                "project",
+                "org"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ],
+          "type": "object"
+        },
+        "sourceExcerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceMessageId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "status": {
           "enum": [
@@ -69355,6 +69632,16 @@ export const DecisionsResolveDeliveryReturnSchema = {
           ],
           "type": "string"
         },
+        "supersededBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "updatedAt": {
           "type": "number"
         }
@@ -69363,16 +69650,21 @@ export const DecisionsResolveDeliveryReturnSchema = {
         "id",
         "origin",
         "key",
+        "scope",
         "status",
         "ownerType",
         "ownerId",
         "ask",
         "askedBy",
         "askedAt",
+        "revisedAt",
         "answer",
         "answeredBy",
         "answeredAt",
         "blocks",
+        "sourceMessageId",
+        "sourceExcerpt",
+        "supersededBy",
         "revision",
         "createdAt",
         "updatedAt"
@@ -69609,8 +69901,60 @@ export const DecisionsRetryReturnSchema = {
           ],
           "type": "string"
         },
+        "revisedAt": {
+          "type": "number"
+        },
         "revision": {
           "type": "number"
+        },
+        "scope": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "origin",
+                "agent",
+                "project",
+                "org"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ],
+          "type": "object"
+        },
+        "sourceExcerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceMessageId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "status": {
           "enum": [
@@ -69620,6 +69964,16 @@ export const DecisionsRetryReturnSchema = {
           ],
           "type": "string"
         },
+        "supersededBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "updatedAt": {
           "type": "number"
         }
@@ -69628,16 +69982,21 @@ export const DecisionsRetryReturnSchema = {
         "id",
         "origin",
         "key",
+        "scope",
         "status",
         "ownerType",
         "ownerId",
         "ask",
         "askedBy",
         "askedAt",
+        "revisedAt",
         "answer",
         "answeredBy",
         "answeredAt",
         "blocks",
+        "sourceMessageId",
+        "sourceExcerpt",
+        "supersededBy",
         "revision",
         "createdAt",
         "updatedAt"
@@ -69870,8 +70229,60 @@ export const DecisionsShowReturnSchema = {
           ],
           "type": "string"
         },
+        "revisedAt": {
+          "type": "number"
+        },
         "revision": {
           "type": "number"
+        },
+        "scope": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "origin",
+                "agent",
+                "project",
+                "org"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ],
+          "type": "object"
+        },
+        "sourceExcerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceMessageId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "status": {
           "enum": [
@@ -69881,6 +70292,16 @@ export const DecisionsShowReturnSchema = {
           ],
           "type": "string"
         },
+        "supersededBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "updatedAt": {
           "type": "number"
         }
@@ -69889,16 +70310,21 @@ export const DecisionsShowReturnSchema = {
         "id",
         "origin",
         "key",
+        "scope",
         "status",
         "ownerType",
         "ownerId",
         "ask",
         "askedBy",
         "askedAt",
+        "revisedAt",
         "answer",
         "answeredBy",
         "answeredAt",
         "blocks",
+        "sourceMessageId",
+        "sourceExcerpt",
+        "supersededBy",
         "revision",
         "createdAt",
         "updatedAt"
@@ -70023,6 +70449,285 @@ export const DecisionsShowReturnSchema = {
     "decision",
     "deliveries",
     "history"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `decisions.supersede`. */
+export const DecisionsSupersedeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "by": {
+      "description": "Answered decision that replaces it",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Record the replacement",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Answered decision to replace",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `decisions.supersede`. */
+export const DecisionsSupersedeReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "replaced": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "const": "superseded",
+          "type": "string"
+        },
+        "supersededBy": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "supersededBy"
+      ],
+      "type": "object"
+    },
+    "replacement": {
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ask": {
+          "type": "string"
+        },
+        "askedAt": {
+          "type": "number"
+        },
+        "askedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blocks": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "origin": {
+          "additionalProperties": false,
+          "properties": {
+            "chatId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "sessionKey": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "task",
+                "thread"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "chatId",
+            "sessionKey"
+          ],
+          "type": "object"
+        },
+        "ownerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ownerType": {
+          "enum": [
+            "human",
+            "agent",
+            "unassigned"
+          ],
+          "type": "string"
+        },
+        "revisedAt": {
+          "type": "number"
+        },
+        "revision": {
+          "type": "number"
+        },
+        "scope": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "origin",
+                "agent",
+                "project",
+                "org"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ],
+          "type": "object"
+        },
+        "sourceExcerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceMessageId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "open",
+            "answered",
+            "superseded"
+          ],
+          "type": "string"
+        },
+        "supersededBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "origin",
+        "key",
+        "scope",
+        "status",
+        "ownerType",
+        "ownerId",
+        "ask",
+        "askedBy",
+        "askedAt",
+        "revisedAt",
+        "answer",
+        "answeredBy",
+        "answeredAt",
+        "blocks",
+        "sourceMessageId",
+        "sourceExcerpt",
+        "supersededBy",
+        "revision",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "replaced",
+    "replacement"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -111386,6 +112091,25 @@ export const SessionsThreadSendReturnSchema = {
     "messageId": {
       "type": "string"
     },
+    "openDecisionWaits": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "decisionId": {
+            "type": "string"
+          },
+          "handoffId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "handoffId",
+          "decisionId"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
     "reopened": {
       "type": "boolean"
     },
@@ -129697,6 +130421,398 @@ export const TagsDetachReturnSchema = {
     "status",
     "target",
     "changedCount"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `tags.doctor`. */
+export const TagsDoctorInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Max items per list section (default: 50, max: 500)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tags.doctor`. */
+export const TagsDoctorReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "bindingsByAssetType": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "assetType": {
+            "type": "string"
+          },
+          "assets": {
+            "type": "number"
+          },
+          "bindings": {
+            "type": "number"
+          },
+          "tags": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "assetType",
+          "bindings",
+          "assets",
+          "tags"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "chatGrantPower": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "breakGlass": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "contactId": {
+            "type": "string"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "contactId",
+          "profile",
+          "scope",
+          "capabilities",
+          "breakGlass"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "consumers": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "kinds": {
+            "items": {
+              "enum": [
+                "observer_rule",
+                "tag_rule",
+                "permission_provider"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "kinds",
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "generatedAt": {
+      "type": "number"
+    },
+    "legacyMirrors": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "bindings": {
+            "type": "number"
+          },
+          "rewrites": {
+            "type": "number"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "bindings",
+          "rewrites"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "limit": {
+      "type": "number"
+    },
+    "orphanBindings": {
+      "additionalProperties": false,
+      "properties": {
+        "checked": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "assetType": {
+                "type": "string"
+              },
+              "bindings": {
+                "type": "number"
+              },
+              "orphans": {
+                "type": "number"
+              },
+              "sampleAssetIds": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "assetType",
+              "bindings",
+              "orphans",
+              "sampleAssetIds"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "uncheckedAssetTypes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "checked",
+        "uncheckedAssetTypes"
+      ],
+      "type": "object"
+    },
+    "power": {
+      "enum": [
+        "included",
+        "withheld"
+      ],
+      "type": "string"
+    },
+    "powerTags": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "breakGlass": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "contactId": {
+            "type": "string"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "contactId",
+          "capabilities",
+          "breakGlass",
+          "sources"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "summary": {
+      "additionalProperties": false,
+      "properties": {
+        "bindings": {
+          "type": "number"
+        },
+        "boundTagsWithoutConsumer": {
+          "type": "number"
+        },
+        "chatGrantsWithBreakGlass": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "chatGrantsWithCapabilities": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "contactsWithBreakGlass": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "contactsWithCapabilities": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "definitions": {
+          "type": "number"
+        },
+        "legacyMirrorBindings": {
+          "type": "number"
+        },
+        "orphanBindings": {
+          "type": "number"
+        },
+        "unboundDefinitions": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "definitions",
+        "bindings",
+        "unboundDefinitions",
+        "orphanBindings",
+        "boundTagsWithoutConsumer",
+        "contactsWithCapabilities",
+        "contactsWithBreakGlass",
+        "legacyMirrorBindings"
+      ],
+      "type": "object"
+    },
+    "tagRuleErrors": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "error"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "tagsWithoutConsumer": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "assetTypes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "bindings": {
+            "type": "number"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "bindings",
+          "assetTypes"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "unboundDefinitions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "number"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "kind",
+          "source",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "generatedAt",
+    "summary",
+    "bindingsByAssetType",
+    "unboundDefinitions",
+    "orphanBindings",
+    "consumers",
+    "tagsWithoutConsumer",
+    "powerTags",
+    "legacyMirrors",
+    "tagRuleErrors",
+    "limit"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

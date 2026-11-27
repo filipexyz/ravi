@@ -15,12 +15,15 @@ import { getHandoff } from "../handoffs/store.js";
 import { describeHandoff } from "../handoffs/reconcile.js";
 import {
   answerDecision,
+  askDecision,
   askDecisionForWait,
   decisionKeyForWait,
   resolveDecisionAnswerSource,
   resolveDecisionOrigin,
 } from "./service.js";
-import { getDecision } from "./store.js";
+import { getDecision, retireDecisionIfWaitFails } from "./store.js";
+import { decisionQuestionNotice } from "./delivery.js";
+import { listHandoffs } from "../handoffs/store.js";
 import type { DecisionOrigin } from "./types.js";
 
 let state: string | null = null;
@@ -102,18 +105,27 @@ function ownerChat() {
   return dbUpsertChat({ channel: "slack", instanceId: "fixture-slack", platformChatId: "D-owner", chatType: "dm" });
 }
 
-function message(input: { providerMessageId: string; actorType: string; contactId?: string; agentId?: string }) {
-  const chat = ownerChat();
+function message(input: {
+  providerMessageId: string;
+  actorType: string;
+  contactId?: string;
+  agentId?: string;
+  chatId?: string;
+  providerTimestamp?: number;
+  text?: string;
+}) {
+  const chat = input.chatId ? { id: input.chatId } : ownerChat();
   return dbUpsertChatMessage({
     chatId: chat.id,
     channel: "slack",
     instanceId: "fixture-slack",
     providerMessageId: input.providerMessageId,
+    providerTimestamp: input.providerTimestamp ?? null,
     rawChatId: "D-owner",
     actorType: input.actorType,
     contactId: input.contactId ?? null,
     agentId: input.agentId ?? null,
-    content: { text: "ok" },
+    content: { text: input.text ?? "ok" },
   }).message;
 }
 
@@ -193,9 +205,11 @@ describe("answer provenance comes from a person's stored message", () => {
   it("records the owner's message, by internal or provider id", async () => {
     const origin = await thread();
     const { decision } = await waitOnDecision(origin, null, "Pergunta?");
-    const msg = message({ providerMessageId: "1795720122.922989", actorType: "contact", contactId: OWNER });
-    expect(resolveDecisionAnswerSource(decision, msg.id)).toEqual({ contactId: OWNER, messageId: msg.id });
-    expect(resolveDecisionAnswerSource(decision, "1795720122.922989")).toEqual({ contactId: OWNER, messageId: msg.id });
+    const text = `${decision.id}: sim, pode seguir`;
+    const msg = message({ providerMessageId: "1795720122.922989", actorType: "contact", contactId: OWNER, text });
+    const expected = { contactId: OWNER, messageId: msg.id, excerpt: text };
+    expect(resolveDecisionAnswerSource(decision, msg.id)).toMatchObject(expected);
+    expect(resolveDecisionAnswerSource(decision, "1795720122.922989")).toMatchObject(expected);
     const answered = await runWithContext(caller(PARENT), () =>
       answerDecision(decision.id, "Sim", "luis", "1795720122.922989"),
     );
@@ -203,7 +217,8 @@ describe("answer provenance comes from a person's stored message", () => {
     const sourceRow = getDb()
       .query("SELECT snapshot_json AS s FROM decision_history WHERE decision_id=? AND type='answer-source'")
       .get(decision.id) as { s: string };
-    expect(JSON.parse(sourceRow.s)).toEqual({ decisionId: decision.id, contactId: OWNER, messageId: msg.id });
+    expect(JSON.parse(sourceRow.s)).toEqual({ decisionId: decision.id, ...expected });
+    expect(getDecision(decision.id)).toMatchObject({ sourceMessageId: msg.id, sourceExcerpt: text });
   });
 
   it("refuses an agent's message, another person's message and an unknown id, and records nothing", async () => {
@@ -214,7 +229,7 @@ describe("answer provenance comes from a person's stored message", () => {
     // One code and one text for every refusal: a caller cannot tell a missing message from someone else's.
     const refusals = [agentMsg.id, strangerMsg.id, "nope", "   "].map((ref) => {
       try {
-        resolveDecisionAnswerSource(decision, ref);
+        resolveDecisionAnswerSource(decision, ref, "ok");
         return null;
       } catch (error) {
         return { code: (error as { code?: string }).code, message: (error as Error).message };
@@ -295,6 +310,107 @@ describe("a retired wait retires its question", () => {
         .query("SELECT count(*) AS n FROM decision_history WHERE decision_id=? AND type='answer-source'")
         .get(decision.id),
     ).toEqual({ n: 0 });
+  });
+});
+
+describe("the source is tied to the question's time and chat", () => {
+  it("refuses an owner message written before the question, or in a group that is not the decision's chat", async () => {
+    const origin = await thread();
+    const { decision } = await waitOnDecision(origin, null, "Pergunta?");
+    const old = message({
+      providerMessageId: "m-old",
+      actorType: "contact",
+      contactId: OWNER,
+      providerTimestamp: decision.askedAt - 60_000,
+    });
+    const group = dbUpsertChat({
+      channel: "slack",
+      instanceId: "fixture-slack",
+      platformChatId: "C-group",
+      chatType: "group",
+    });
+    const inGroup = message({ providerMessageId: "m-group", actorType: "contact", contactId: OWNER, chatId: group.id });
+    for (const ref of [old.id, inGroup.id])
+      expect(() => resolveDecisionAnswerSource(decision, ref, "ok")).toThrow(
+        expect.objectContaining({ code: "DECISION_SOURCE_NOT_OWNER" }),
+      );
+  });
+
+  it("accepts an owner message in the decision's own chat, and a provider id repeated in an ineligible chat", async () => {
+    const origin = await thread();
+    const { decision } = await waitOnDecision(origin, null, "Pergunta?");
+    const inThread = message({
+      providerMessageId: "m-thread",
+      actorType: "contact",
+      contactId: OWNER,
+      chatId: origin.chatId!,
+    });
+    expect(resolveDecisionAnswerSource(decision, inThread.id, "ok").messageId).toBe(inThread.id);
+    const owners = message({ providerMessageId: "shared-ts", actorType: "contact", contactId: OWNER });
+    const group = dbUpsertChat({
+      channel: "slack",
+      instanceId: "fixture-slack",
+      platformChatId: "C-other",
+      chatType: "group",
+    });
+    message({ providerMessageId: "shared-ts", actorType: "contact", contactId: "someone", chatId: group.id });
+    expect(resolveDecisionAnswerSource(decision, "shared-ts", "ok").messageId).toBe(owners.id);
+  });
+});
+
+describe("follow-ups of decision waits", () => {
+  it("a wait that fails to record retires the decision it would point at", async () => {
+    const origin = await thread();
+    const decision = await runWithContext(caller(origin.sessionKey!), () =>
+      askDecisionForWait(origin.sessionKey!, "x", "Pergunta?", { ownerContactIds: () => [OWNER] }),
+    );
+    await expect(
+      retireDecisionIfWaitFails(decision.id, async () => {
+        throw new Error("disk full");
+      }),
+    ).rejects.toThrow("disk full");
+    expect(getDecision(decision.id)?.status).toBe("superseded");
+    expect(await retireDecisionIfWaitFails(decision.id, async () => "ok")).toBe("ok");
+  });
+
+  it("a failed same-ref replacement keeps the decision its original wait still points at", async () => {
+    const origin = await thread();
+    const { decision, handoff } = await waitOnDecision(origin, "deploy", "Faço o deploy?");
+    await expect(
+      retireDecisionIfWaitFails(decision.id, async () => {
+        throw new Error("replacement failed");
+      }),
+    ).rejects.toThrow("replacement failed");
+    expect(getHandoff(handoff.id)?.status).toBe("open");
+    expect(getDecision(decision.id)?.status).toBe("open");
+  });
+
+  it("open decision waits of a child are listed so a message can say they stay open", async () => {
+    const origin = await thread();
+    const { handoff } = await waitOnDecision(origin, null, "Pergunta?");
+    const other = await thread("2");
+    await waitOnDecision(other, null, "Outra?");
+    expect(listHandoffs({ childSessionKey: origin.sessionKey! }).map((h) => h.id)).toEqual([handoff.id]);
+  });
+
+  it("the thread notice of a wait's question does not repeat the report nor show the contact id", async () => {
+    const origin = await thread();
+    const { decision } = await waitOnDecision(
+      origin,
+      null,
+      "Faço o deploy hoje?\nContexto longo do relatório que não deve se repetir na thread.",
+    );
+    const notice = decisionQuestionNotice(decision);
+    expect(notice).toContain(`Decisão pendente: ${decision.key}`);
+    expect(notice).toContain("Faço o deploy hoje?");
+    expect(notice).not.toContain("Contexto longo do relatório");
+    expect(notice).not.toContain(OWNER);
+    const plain = await runWithContext(caller(origin.sessionKey!), () =>
+      askDecision(origin, { key: "plain", ask: "Pergunta direta?", ownerType: "human", ownerId: OWNER }),
+    );
+    const plainNotice = decisionQuestionNotice(plain.decision);
+    expect(plainNotice).toContain("Pergunta direta?");
+    expect(plainNotice).not.toContain(OWNER);
   });
 });
 

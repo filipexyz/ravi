@@ -13,6 +13,7 @@ import {
   resolveSession,
   findSessionByChatId,
 } from "../session-targets.js";
+import { findOpenAskGrant, recordAskGrant, revokeAskGrant } from "../../sessions/ask-grants.js";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { Group, Command, CommandAccess, CliOnly, Arg, Option } from "../decorators.js";
@@ -124,6 +125,7 @@ import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
 import { enforceCliCommandAccess, listCliCommandAccessCandidates } from "../command-access.js";
 import { canWithCapabilities } from "../../permissions/capability-snapshot.js";
 import { askDecisionForWait } from "../../decisions/service.js";
+import { retireDecisionIfWaitFails } from "../../decisions/store.js";
 import { redactText } from "../../session-trace/session-trace-db.js";
 import { CliExpectedError } from "../expected-error.js";
 import { resolveEffectiveSessionRuntime } from "../../runtime/runtime-selection.js";
@@ -803,6 +805,8 @@ export const sessionThreadSendReturnSchema = z
       })
       .strict()
       .optional(),
+    // Recorded decision waits this message did not close: only `decisions answer` closes them.
+    openDecisionWaits: z.array(z.object({ handoffId: z.string(), decisionId: z.string() }).strict()).optional(),
   })
   .strict();
 const threadRuntimeOverridesSchema = z
@@ -5955,19 +5959,34 @@ export class SessionCommands {
     const deliveryBarrier = delivery.barrier;
     const { source, context } = this.resolveSource(session, channel, to);
 
-    await this.emitToSession(
-      "ask",
-      session.name ?? target,
-      prompt,
-      session,
-      channel,
-      to,
-      deliveryBarrier,
-      delivery.source,
-      undefined,
-      false,
-      asJson,
-    );
+    // The Ask is what lets the asked session answer back, and only that: record it before
+    // the prompt exists, so an answer can never arrive before its authorization. A trigger's
+    // own session takes no prompts, so it cannot be answered and gets no grant.
+    this.assertSessionTakesPrompts(session);
+    const grant =
+      origin !== "unknown" && origin !== session.sessionKey && !isTriggerOwnSessionKey(origin)
+        ? recordAskGrant({ originSessionKey: origin, targetSessionKey: session.sessionKey, sender: sender ?? null })
+        : null;
+
+    try {
+      await this.emitToSession(
+        "ask",
+        session.name ?? target,
+        prompt,
+        session,
+        channel,
+        to,
+        deliveryBarrier,
+        delivery.source,
+        undefined,
+        false,
+        asJson,
+      );
+    } catch (error) {
+      // An Ask that was never delivered authorizes no answer.
+      if (grant) revokeAskGrant(grant.id);
+      throw error;
+    }
     if (shouldReturnStructuredResult(asJson)) {
       const payload = {
         action: "ask",
@@ -6026,8 +6045,9 @@ export class SessionCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
   ) {
-    const session = this.resolveTarget(target);
-    if (!session) return;
+    const resolved = this.resolveAnswerTarget(target, { channel, to, barrier, steer, immediate });
+    if (!resolved) return;
+    const { session, throughAsk } = resolved;
 
     const origin = getContext()?.sessionKey ?? "unknown";
     const senderTag = sender ? `, sender: ${sender}` : "";
@@ -6053,15 +6073,22 @@ export class SessionCommands {
       undefined,
       false,
       asJson,
+      // The answerer's chat is not where the asker's turn asks for approval or input: through an
+      // Ask the answer carries no approval source, so the asker's own source (or none) applies.
+      { withoutApprovalSource: throughAsk },
     );
     if (shouldReturnStructuredResult(asJson)) {
+      // An answer sent through an Ask grants no view of the asker: the receipt names only the
+      // key the Ask already gave, never its record, workspace or chat.
       const payload = {
         action: "answer",
         published: true,
-        session: buildSessionJson(session),
+        session: throughAsk ? { sessionKey: session.sessionKey } : buildSessionJson(session),
         messageLength: message.length,
         sender: sender ?? null,
-        delivery: buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context),
+        delivery: throughAsk
+          ? { barrier: deliveryBarrier, barrierSource: delivery.source }
+          : buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context),
       };
       return returnStructuredResult(payload, asJson);
     }
@@ -7106,6 +7133,61 @@ export class SessionCommands {
     return { session };
   }
 
+  /**
+   * The target of `sessions answer`. Access to the session answers as before. Without it, an
+   * open Ask from that session to the caller authorizes this delivery and nothing more: the
+   * caller still cannot read, recap or prompt the asker, and cannot redirect the delivery.
+   */
+  private resolveAnswerTarget(
+    nameOrKey: string,
+    overrides: { channel?: string; to?: string; barrier?: string; steer?: boolean; immediate?: boolean } = {},
+  ): { session: SessionEntry; throughAsk: boolean } | null {
+    const { channel, to } = overrides;
+    const direct = (): { session: SessionEntry; throughAsk: boolean } | null => {
+      const session = this.resolveTarget(nameOrKey);
+      return session ? { session, throughAsk: false } : null;
+    };
+    const scopeCtx = getScopeContext();
+    if (!isScopeEnforced(scopeCtx)) return direct();
+    if (isBridgeSessionTarget(nameOrKey)) {
+      fail(`Session not found: ${nameOrKey}`);
+      return null;
+    }
+    const known = resolveSession(nameOrKey) ?? findSessionByChatId(nameOrKey);
+    if (known && canAccessSession(scopeCtx, known.name ?? known.sessionKey)) return direct();
+
+    // Through an Ask the target is named the way the Ask names it, by key or name; the hook
+    // resolves it the same way, so both layers agree on which session is answered.
+    const session = resolveSession(nameOrKey);
+    const grant = session ? findOpenAskGrant(session.sessionKey, getContext()?.sessionKey) : null;
+    if (!session || !grant) {
+      // Same answer as an unknown session: an Ask grant does not reveal which sessions exist.
+      fail(`Session not found: ${nameOrKey}`);
+      return null;
+    }
+    // The caller was asked, so the session is no secret here: these refusals are permission
+    // denials with their own code, unlike the "not found" given to a caller never asked.
+    if (channel || to) {
+      throw new CliExpectedError(
+        "An answer sent through an open Ask goes back where the Ask came from: --channel and --to are refused.",
+        "PERMISSION_DENIED",
+        1,
+        "Run the answer without --channel and --to.",
+      );
+    }
+    // Delivering an answer is not choosing when to cut into the asker's turn: it waits for the
+    // asker's response like any answer.
+    if (overrides.barrier || overrides.steer || overrides.immediate) {
+      throw new CliExpectedError(
+        "An answer sent through an open Ask waits for the asker's current response: --barrier, --steer and --immediate are refused.",
+        "PERMISSION_DENIED",
+        1,
+        "Run the answer without --barrier, --steer and --immediate.",
+      );
+    }
+    return { session, throughAsk: true };
+  }
+
   private resolveTarget(
     nameOrKey: string,
     createWithAgent?: string,
@@ -7291,19 +7373,20 @@ export class SessionCommands {
     promptPayload?: Record<string, unknown>,
     cliDestination = false,
     asJson?: boolean,
+    options: { withoutApprovalSource?: boolean } = {},
   ): Promise<void> {
     this.assertSessionTakesPrompts(session);
     const { source, context } = this.resolveSource(session, channelOverride, toOverride);
 
     // Resolve caller's source for approval delegation (cascading approvals)
-    const _approvalSource = this.resolveCallerApprovalSource();
+    const _approvalSource = options.withoutApprovalSource ? undefined : this.resolveCallerApprovalSource();
 
     try {
       await publishSessionPrompt(sessionName, {
         prompt,
         source,
         context,
-        _approvalSource,
+        ...(_approvalSource ? { _approvalSource } : {}),
         deliveryBarrier,
         deliveryBarrierSource,
         ...(promptPayload ?? {}),
@@ -8496,7 +8579,7 @@ export class SessionCommands {
       reportText = `${reportText}\nRevisão não despachada pelo runtime: ${reviewDispatch.reason}.`;
     }
     try {
-      result = await reportSlackThreadProgress(session, reportText);
+      result = await reportSlackThreadProgress(session, reportText, undefined, { awaiting: Boolean(awaitingKind) });
     } catch (error) {
       rethrowSlackThreadError(error);
     }
@@ -8523,14 +8606,18 @@ export class SessionCommands {
       try {
         // A dispatched review leaves nothing for the parent: the wait is recorded already closed, so observers
         // never see a wait that did not exist.
-        handoff = await declareHandoff({
-          ...pendingHandoff,
-          ...(reviewDispatch?.status === "dispatched"
-            ? { closedReason: `review dispatched: ${reviewDispatch.requestId}` }
-            : prClosure
-              ? { closedReason: prClosure.merged ? "PR merged" : "PR closed" }
-              : {}),
-        });
+        // A decision recorded without its wait would block the thread on its own: it is retired if this fails.
+        const wait = pendingHandoff;
+        handoff = await retireDecisionIfWaitFails(wait.decisionId, () =>
+          declareHandoff({
+            ...wait,
+            ...(reviewDispatch?.status === "dispatched"
+              ? { closedReason: `review dispatched: ${reviewDispatch.requestId}` }
+              : prClosure
+                ? { closedReason: prClosure.merged ? "PR merged" : "PR closed" }
+                : {}),
+          }),
+        );
       } catch (error) {
         handoffError = error instanceof Error ? error.message : String(error);
       }
@@ -8875,6 +8962,12 @@ export class SessionCommands {
         HANDOFF_KINDS_ANSWERED_BY_MESSAGE,
       );
     }
+    // A message does not answer a recorded decision: say so, instead of letting its wait remind everyone later.
+    const openDecisionWaits = result.record.childSessionKey
+      ? listHandoffs({ childSessionKey: result.record.childSessionKey })
+          .filter((h) => h.kind === "decision" && h.decisionId)
+          .map((h) => ({ handoffId: h.id, decisionId: h.decisionId! }))
+      : [];
     const payload = {
       status: "published" as const,
       actionId: "thread.send" as const,
@@ -8883,12 +8976,17 @@ export class SessionCommands {
       reopened: result.reopened,
       thread: summarizeSlackThread(result.record),
       delivery: { barrier: delivery.barrier, barrierSource: delivery.source },
+      ...(openDecisionWaits.length ? { openDecisionWaits } : {}),
     };
     if (asJson) printJson(payload);
     else {
       const name = result.record.childSessionName ?? result.record.requestId;
       const explicitBarrier = delivery.source === "explicit" ? ` (${delivery.barrier})` : "";
       console.log(`Sent to ${name}${result.reopened ? " (reopened)" : ""}${explicitBarrier}`);
+      for (const wait of openDecisionWaits)
+        console.log(
+          `Decision ${wait.decisionId} is still open: a message does not answer it. Record the answer with ravi decisions answer ${wait.decisionId} --text "..." --execute`,
+        );
     }
     return payload;
   }

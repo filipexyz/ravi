@@ -13906,11 +13906,14 @@ class DaemonUninstallReturn {
 DaemonUninstallReturn daemonUninstallReturnFromJson(Object? json) => DaemonUninstallReturn.fromJsonValue(json);
 
 class DecisionsAnswerOptions {
-  const DecisionsAnswerOptions({this.by, this.execute, this.sourceMessage, this.text});
+  const DecisionsAnswerOptions({this.by, this.execute, this.scope, this.sourceMessage, this.sourceQuote, this.supersedes, this.text});
 
   final String? by;
   final bool? execute;
+  final String? scope;
   final String? sourceMessage;
+  final String? sourceQuote;
+  final String? supersedes;
   final String? text;
 
   void encodeBody(Map<String, RaviJson> into) {
@@ -13920,8 +13923,17 @@ class DecisionsAnswerOptions {
     if (execute != null) {
       into["execute"] = RaviJson.from(execute);
     }
+    if (scope != null) {
+      into["scope"] = RaviJson.from(scope);
+    }
     if (sourceMessage != null) {
       into["sourceMessage"] = RaviJson.from(sourceMessage);
+    }
+    if (sourceQuote != null) {
+      into["sourceQuote"] = RaviJson.from(sourceQuote);
+    }
+    if (supersedes != null) {
+      into["supersedes"] = RaviJson.from(supersedes);
     }
     if (text != null) {
       into["text"] = RaviJson.from(text);
@@ -13952,13 +13964,14 @@ class DecisionsAnswerReturn {
 DecisionsAnswerReturn decisionsAnswerReturnFromJson(Object? json) => DecisionsAnswerReturn.fromJsonValue(json);
 
 class DecisionsAskOptions {
-  const DecisionsAskOptions({this.ask, this.blocks, this.execute, this.key, this.owner, this.task, this.thread});
+  const DecisionsAskOptions({this.ask, this.blocks, this.execute, this.key, this.owner, this.scope, this.task, this.thread});
 
   final String? ask;
   final bool? blocks;
   final bool? execute;
   final String? key;
   final String? owner;
+  final String? scope;
   final String? task;
   final String? thread;
 
@@ -13977,6 +13990,9 @@ class DecisionsAskOptions {
     }
     if (owner != null) {
       into["owner"] = RaviJson.from(owner);
+    }
+    if (scope != null) {
+      into["scope"] = RaviJson.from(scope);
     }
     if (task != null) {
       into["task"] = RaviJson.from(task);
@@ -14010,11 +14026,13 @@ class DecisionsAskReturn {
 DecisionsAskReturn decisionsAskReturnFromJson(Object? json) => DecisionsAskReturn.fromJsonValue(json);
 
 class DecisionsListOptions {
-  const DecisionsListOptions({this.all, this.limit, this.offset, this.task, this.thread});
+  const DecisionsListOptions({this.all, this.answeredSince, this.limit, this.offset, this.scope, this.task, this.thread});
 
   final bool? all;
+  final String? answeredSince;
   final String? limit;
   final String? offset;
+  final String? scope;
   final String? task;
   final String? thread;
 
@@ -14022,11 +14040,17 @@ class DecisionsListOptions {
     if (all != null) {
       into["all"] = RaviJson.from(all);
     }
+    if (answeredSince != null) {
+      into["answeredSince"] = RaviJson.from(answeredSince);
+    }
     if (limit != null) {
       into["limit"] = RaviJson.from(limit);
     }
     if (offset != null) {
       into["offset"] = RaviJson.from(offset);
+    }
+    if (scope != null) {
+      into["scope"] = RaviJson.from(scope);
     }
     if (task != null) {
       into["task"] = RaviJson.from(task);
@@ -14156,6 +14180,42 @@ class DecisionsShowReturn {
 }
 
 DecisionsShowReturn decisionsShowReturnFromJson(Object? json) => DecisionsShowReturn.fromJsonValue(json);
+
+class DecisionsSupersedeOptions {
+  const DecisionsSupersedeOptions({this.by, this.execute});
+
+  final String? by;
+  final bool? execute;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (by != null) {
+      into["by"] = RaviJson.from(by);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+  }
+}
+
+class DecisionsSupersedeReturn {
+  const DecisionsSupersedeReturn({required this.replaced, required this.replacement});
+
+  final RaviJson replaced;
+  final RaviJson replacement;
+
+  factory DecisionsSupersedeReturn.fromJson(Map<String, Object?> json) {
+    return DecisionsSupersedeReturn(
+      replaced: RaviJson.from(json["replaced"]),
+      replacement: RaviJson.from(json["replacement"]),
+    );
+  }
+
+  static DecisionsSupersedeReturn fromJsonValue(Object? json) {
+    return DecisionsSupersedeReturn.fromJson(raviJsonObject(json, "DecisionsSupersedeReturn"));
+  }
+}
+
+DecisionsSupersedeReturn decisionsSupersedeReturnFromJson(Object? json) => DecisionsSupersedeReturn.fromJsonValue(json);
 
 class DevinAuthCheckReturn {
   const DevinAuthCheckReturn({required this.baseUrl, this.configuredOrgId, required this.ok, required this.self});
@@ -25936,11 +25996,12 @@ class SessionsThreadSendOptions {
 }
 
 class SessionsThreadSendReturn {
-  const SessionsThreadSendReturn({required this.actionId, this.delivery, required this.messageId, required this.reopened, required this.requestId, required this.status, required this.thread});
+  const SessionsThreadSendReturn({required this.actionId, this.delivery, required this.messageId, this.openDecisionWaits, required this.reopened, required this.requestId, required this.status, required this.thread});
 
   final String actionId;
   final RaviJson? delivery;
   final String messageId;
+  final List<RaviJson>? openDecisionWaits;
   final bool reopened;
   final String requestId;
   final String status;
@@ -25951,6 +26012,7 @@ class SessionsThreadSendReturn {
       actionId: raviJsonAsString(json["actionId"]),
       delivery: json["delivery"] == null ? null : RaviJson.from(json["delivery"]),
       messageId: raviJsonAsString(json["messageId"]),
+      openDecisionWaits: json["openDecisionWaits"] == null ? null : raviJsonAsList(json["openDecisionWaits"], RaviJson.from),
       reopened: raviJsonAsBool(json["reopened"]),
       requestId: raviJsonAsString(json["requestId"]),
       status: raviJsonAsString(json["status"]),
@@ -31018,6 +31080,60 @@ class TagsDetachReturn {
 }
 
 TagsDetachReturn tagsDetachReturnFromJson(Object? json) => TagsDetachReturn.fromJsonValue(json);
+
+class TagsDoctorOptions {
+  const TagsDoctorOptions({this.limit});
+
+  final String? limit;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+  }
+}
+
+class TagsDoctorReturn {
+  const TagsDoctorReturn({required this.bindingsByAssetType, this.chatGrantPower, required this.consumers, required this.generatedAt, required this.legacyMirrors, required this.limit, required this.orphanBindings, this.power, required this.powerTags, required this.summary, required this.tagRuleErrors, required this.tagsWithoutConsumer, required this.unboundDefinitions});
+
+  final List<RaviJson> bindingsByAssetType;
+  final List<RaviJson>? chatGrantPower;
+  final List<RaviJson> consumers;
+  final double generatedAt;
+  final List<RaviJson> legacyMirrors;
+  final double limit;
+  final RaviJson orphanBindings;
+  final String? power;
+  final List<RaviJson> powerTags;
+  final RaviJson summary;
+  final List<RaviJson> tagRuleErrors;
+  final List<RaviJson> tagsWithoutConsumer;
+  final List<RaviJson> unboundDefinitions;
+
+  factory TagsDoctorReturn.fromJson(Map<String, Object?> json) {
+    return TagsDoctorReturn(
+      bindingsByAssetType: raviJsonAsList(json["bindingsByAssetType"], RaviJson.from),
+      chatGrantPower: json["chatGrantPower"] == null ? null : raviJsonAsList(json["chatGrantPower"], RaviJson.from),
+      consumers: raviJsonAsList(json["consumers"], RaviJson.from),
+      generatedAt: raviJsonAsDouble(json["generatedAt"]),
+      legacyMirrors: raviJsonAsList(json["legacyMirrors"], RaviJson.from),
+      limit: raviJsonAsDouble(json["limit"]),
+      orphanBindings: RaviJson.from(json["orphanBindings"]),
+      power: json["power"] == null ? null : raviJsonAsString(json["power"]),
+      powerTags: raviJsonAsList(json["powerTags"], RaviJson.from),
+      summary: RaviJson.from(json["summary"]),
+      tagRuleErrors: raviJsonAsList(json["tagRuleErrors"], RaviJson.from),
+      tagsWithoutConsumer: raviJsonAsList(json["tagsWithoutConsumer"], RaviJson.from),
+      unboundDefinitions: raviJsonAsList(json["unboundDefinitions"], RaviJson.from),
+    );
+  }
+
+  static TagsDoctorReturn fromJsonValue(Object? json) {
+    return TagsDoctorReturn.fromJson(raviJsonObject(json, "TagsDoctorReturn"));
+  }
+}
+
+TagsDoctorReturn tagsDoctorReturnFromJson(Object? json) => TagsDoctorReturn.fromJsonValue(json);
 
 class TagsListOptions {
   const TagsListOptions({this.cursor, this.fields, this.kind, this.limit, this.order, this.query, this.sort, this.source});

@@ -79,7 +79,7 @@ import type {
   SessionRuntimeProvider,
 } from "./types.js";
 import { toCodexRuntimeEffort } from "./effort.js";
-import { RAVI_TURN_HELD_BELOW_AGENT_ENV } from "../permissions/actor-limit.js";
+import { RAVI_TURN_HELD_BELOW_AGENT_ENV, RAVI_TURN_OWNER_AUTHORITY_ENV } from "../permissions/actor-limit.js";
 import { createRuntimeTerminalEventTracker, type RuntimeFailedTerminalInput } from "./terminality.js";
 import { materializeRuntimeModelBroker } from "./model-broker-materializer.js";
 
@@ -253,6 +253,23 @@ export function resolveCodexTurnSandbox(
 ): CodexSandboxMode {
   if (heldBelowAgent) return "read-only";
   return (security ?? UNRESTRICTED_CODEX_THREAD_SECURITY).sandbox;
+}
+
+/**
+ * The thread security one turn opens with. A bridge turn is always restricted. A turn carrying owner
+ * authority (`permissions/owner-authority`, set per turn by the daemon and never for a held turn) is
+ * not bounded by the agent profile. Anything else follows the agent profile.
+ */
+export function resolveCodexTurnSecurity(
+  env: Record<string, string | undefined> | undefined,
+  agentId: string | null | undefined,
+  resolveAgentSecurity: (agentId: string | null | undefined) => CodexThreadSecurity = resolveCodexThreadSecurity,
+): CodexThreadSecurity {
+  if (env?.RAVI_BRIDGE_TURN === "1") return RESTRICTED_CODEX_THREAD_SECURITY;
+  const ownerTurn = env?.[RAVI_TURN_OWNER_AUTHORITY_ENV] === "1";
+  const heldTurn = env?.[RAVI_TURN_HELD_BELOW_AGENT_ENV] === "1";
+  if (ownerTurn && !heldTurn) return UNRESTRICTED_CODEX_THREAD_SECURITY;
+  return resolveAgentSecurity(agentId);
 }
 
 /** The app-server `SandboxPolicy` for a sandbox mode. Sent on every turn: an override sticks to later turns. */
@@ -805,10 +822,7 @@ async function* normalizeCodexEvents(
 
       const turn = transport.startTurn({
         cwd: input.cwd,
-        security:
-          input.env?.RAVI_BRIDGE_TURN === "1"
-            ? RESTRICTED_CODEX_THREAD_SECURITY
-            : resolveCodexThreadSecurity(input.agentId),
+        security: resolveCodexTurnSecurity(input.env, input.agentId),
         heldBelowAgent: input.env?.[RAVI_TURN_HELD_BELOW_AGENT_ENV] === "1",
         env: input.env ?? process.env,
         model: resolveCodexModelArg(

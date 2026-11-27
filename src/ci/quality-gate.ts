@@ -122,6 +122,9 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/db/runtime-state.ts": ["src/db/schema-owner.test.ts"],
   "src/db/state-boundary.ts": ["src/router/state-boundary.test.ts"],
   "src/router/": [
+    // session_asks: an open Ask lets the asked session answer the asker, and only answer.
+    "src/sessions/ask-grants.test.ts",
+    "src/cli/commands/sessions-ask-answer.test.ts",
     // Daemon/consumer initialization exercises the router's journal/schema boundary.
     "src/db/schema-owner.test.ts",
     "src/db/journal-mode-retry.test.ts",
@@ -194,6 +197,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/context-registry.test.ts",
     // Approval-only origin: never a command source; read only through approvalOrigin.
     "src/runtime/context-source.test.ts",
+    // Context keys stored only as hashes: issuance, lookup, hash-as-key refusal, migration.
+    "src/runtime/context-key-hash.test.ts",
     "src/runtime/crash-recovery-store.test.ts",
     "src/runtime/observation-plane.test.ts",
     "src/runtime/runtime-request-context.test.ts",
@@ -213,6 +218,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/session-goals.test.ts",
     "src/runtime/session-resolver.test.ts",
     "src/runtime/session-trace.test.ts",
+    // Turn provenance: the origin, the automation id and the fired event topic every trigger wake carries.
+    "src/runtime/turn-provenance.test.ts",
     "src/runtime/daemon-restart-resume.test.ts",
     "src/runtime/compaction-announcement.test.ts",
     "src/runtime/codex-transport.test.ts",

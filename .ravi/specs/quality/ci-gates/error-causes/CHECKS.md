@@ -23,3 +23,4 @@ status: active
 - Editing both JSON baseline files fails comparison with the immutable source commit.
 - Removing an allowance without fixing the source fails; fixing the source without removing a stale allowance also fails.
 - `bun scripts/error-cause-scan.ts --update` only removes fixed allowances and regenerates the inventory; a missing surface boundary in `checkSurfaceCoverage` fails the harness.
+- The generated inventory has no line numbers and is sorted by file and id, so moving code does not make it stale; `inventory_ignores_line_shifts` proves it (a mutant that puts the line back fails).

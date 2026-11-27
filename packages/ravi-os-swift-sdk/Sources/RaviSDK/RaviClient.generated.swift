@@ -3336,6 +3336,13 @@ public struct DecisionsNamespace: Sendable {
     requestBody["id"] = try RaviJSON.fromEncodable(id)
     return try await transport.call(groupSegments: ["decisions"], command: "show", body: requestBody, as: DecisionsShowReturn.self)
   }
+
+  public func supersede(_ id: String, _ options: DecisionsSupersedeOptions = .init()) async throws -> DecisionsSupersedeReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["decisions"], command: "supersede", body: requestBody, as: DecisionsSupersedeReturn.self)
+  }
 }
 
 public struct DevinNamespace: Sendable {
@@ -7125,6 +7132,12 @@ public struct TagsNamespace: Sendable {
     requestBody["slug"] = try RaviJSON.fromEncodable(slug)
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["tags"], command: "detach", body: requestBody, as: TagsDetachReturn.self)
+  }
+
+  public func doctor(_ options: TagsDoctorOptions = .init()) async throws -> TagsDoctorReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["tags"], command: "doctor", body: requestBody, as: TagsDoctorReturn.self)
   }
 
   public func list(_ options: TagsListOptions = .init()) async throws -> TagsListReturn {

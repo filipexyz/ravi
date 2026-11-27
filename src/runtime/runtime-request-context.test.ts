@@ -1040,7 +1040,7 @@ describe("runtime request context authority", () => {
     expect(resolveRuntimeContext(runtimeEnv.RAVI_CONTEXT_KEY, { touch: false })?.contextId).toBe(refreshed.contextId);
   });
 
-  it("does not require admin-tagged contact authority for agent identity group turns", () => {
+  it("keeps an admin-tagged contact (not the owner) under the agent's ceiling in group turns", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     dbUpdateAgent(agent.id, {
       defaults: {
@@ -1078,6 +1078,9 @@ describe("runtime request context authority", () => {
     });
     expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "pages")).toBe(true);
     expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "sessions_trace")).toBe(true);
+    // Admin is someone else's full access, not the installation owner: no owner authority
+    // (`permissions/owner-authority`), the agent's ceiling still holds.
+    expect(runtimeContext.metadata?.ownerAuthority).toBeUndefined();
     expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
   });
 
@@ -2333,6 +2336,7 @@ describe("runtime request context chat-scoped user overlay", () => {
     });
     const runtimeEnv: Record<string, string> = { ...built.raviEnv };
     expect(runtimeEnv.RAVI_TURN_HELD_BELOW_AGENT).toBe("1");
+    expect(runtimeEnv.RAVI_TURN_OWNER_AUTHORITY).toBeUndefined();
 
     const ownerPrompt = promptInChat(owner.id, chat);
     refreshRuntimeRequestContextForTurn({
@@ -2350,6 +2354,8 @@ describe("runtime request context chat-scoped user overlay", () => {
       resolvedSource: ownerPrompt.source,
     });
     expect(runtimeEnv.RAVI_TURN_HELD_BELOW_AGENT).toBeUndefined();
+    // The owner's turn tells the provider not to apply the agent profile's sandbox.
+    expect(runtimeEnv.RAVI_TURN_OWNER_AUTHORITY).toBe("1");
 
     // Once the chat has contact grants, a contact narrowed to them carries no
     // break-glass deny: it is held because its grants run no executable.
@@ -2372,6 +2378,103 @@ describe("runtime request context chat-scoped user overlay", () => {
     expect(governed.metadata?.userOverlay).toBe("active");
     expect(governed.metadata?.actorBreakGlassWithheld).toBeUndefined();
     expect(runtimeEnv.RAVI_TURN_HELD_BELOW_AGENT).toBe("1");
+    // The owner mark does not carry over to the next turn.
+    expect(runtimeEnv.RAVI_TURN_OWNER_AUTHORITY).toBeUndefined();
+  });
+
+  it("acts with the owner's own authority, not the agent's ceiling (owner authority)", () => {
+    // An agent with a closed list of executables, like a client agent in a group, and an unrelated deny:
+    // the agent's deny is part of its ceiling and must not drop the owner's admin (Devin on #1029).
+    dbUpdateAgent(agent.id, {
+      defaults: {
+        runtimePermissions: {
+          capabilities: ["execute:executable:git", "mutate:image:generate", "deny_use:tool:WebSearch"],
+        },
+      },
+    });
+    const chat = groupChat("120363400000000093@g.us");
+    const stranger = createContact({ phone: "5511900000093", name: "Stranger" });
+    const owner = createContact({
+      phone: "5511900000094",
+      name: "Owner",
+      tags: ["permission-owner"],
+      status: "allowed",
+    });
+
+    const ownerTurn = contextFor(owner.id, chat);
+    expect(ownerTurn.metadata?.ownerAuthority).toBe(`contact:${owner.id}`);
+    expect(canWithCapabilities(ownerTurn.capabilities, "execute", "executable", "codex")).toBe(true);
+    expect(canWithCapabilities(ownerTurn.capabilities, "use", "tool", "WebSearch")).toBe(true);
+    expect(canWithCapabilities(ownerTurn.capabilities, "execute", "executable", "curl")).toBe(true);
+    expect(ownerTurn.metadata?.actorBreakGlassWithheld).toBeUndefined();
+
+    const strangerTurn = contextFor(stranger.id, chat);
+    expect(strangerTurn.metadata?.ownerAuthority).toBeUndefined();
+    expect(canWithCapabilities(strangerTurn.capabilities, "execute", "executable", "git")).toBe(true);
+    expect(canWithCapabilities(strangerTurn.capabilities, "execute", "executable", "codex")).toBe(false);
+    expect(canWithCapabilities(strangerTurn.capabilities, "admin", "system", "*")).toBe(false);
+    expect(canWithCapabilities(strangerTurn.capabilities, "use", "tool", "WebSearch")).toBe(false);
+
+    // A relay from the owner's turn carries the owner's authority; one from the stranger's does not.
+    const ownerRelay = relayFor(ownerTurn);
+    expect(ownerRelay.metadata?.ownerAuthority).toBe(`contact:${owner.id}`);
+    expect(canWithCapabilities(ownerRelay.capabilities, "execute", "executable", "codex")).toBe(true);
+    const strangerRelay = relayFor(strangerTurn);
+    expect(strangerRelay.metadata?.ownerAuthority).toBeUndefined();
+    expect(canWithCapabilities(strangerRelay.capabilities, "execute", "executable", "codex")).toBe(false);
+
+    // A global admin (or superadmin) is not the owner: still bounded by the agent's list.
+    const admin = createContact({
+      phone: "5511900000095",
+      name: "Global admin",
+      tags: ["permission-admin"],
+      status: "allowed",
+    });
+    const adminTurn = contextFor(admin.id, chat);
+    expect(adminTurn.metadata?.ownerAuthority).toBeUndefined();
+    expect(canWithCapabilities(adminTurn.capabilities, "execute", "executable", "codex")).toBe(false);
+    expect(relayFor(adminTurn).metadata?.ownerAuthority).toBeUndefined();
+
+    // A chat grant never makes an owner: full access granted only in this chat keeps the agent ceiling.
+    dbEnsureContactChatGrant({
+      contactId: stranger.id,
+      profileSlug: "permission-full-access",
+      scopeType: "chat",
+      scopeId: chat.id,
+    });
+    expect(contextFor(stranger.id, chat).metadata?.ownerAuthority).toBeUndefined();
+
+    // A relay queued from the owner's turn loses the authority once that chat narrows the owner
+    // (a deny added after the turn ran): the producing turn's chat is re-checked when the relay runs.
+    expect(relayFor(ownerTurn).metadata?.ownerAuthority).toBe(`contact:${owner.id}`);
+    dbCreateTagDefinition({
+      slug: "permission-no-shell-owner",
+      label: "No shell",
+      kind: "system",
+      source: "permissions",
+      metadata: { permissions: { capabilities: ["deny_execute:executable:*"] } },
+    });
+    dbEnsureContactChatGrant({
+      contactId: owner.id,
+      profileSlug: "permission-no-shell-owner",
+      scopeType: "chat",
+      scopeId: chat.id,
+    });
+    const queuedAfterDeny = relayFor(ownerTurn);
+    expect(queuedAfterDeny.metadata?.ownerAuthority).toBeUndefined();
+    expect(canWithCapabilities(queuedAfterDeny.capabilities, "execute", "executable", "codex")).toBe(false);
+    dbDeleteContactChatGrant({
+      contactId: owner.id,
+      profileSlug: "permission-no-shell-owner",
+      scopeType: "chat",
+      scopeId: chat.id,
+    });
+
+    // The owner's power is read on each turn: untagged, the next turn is back under the agent ceiling.
+    removeContactTag("5511900000094", "permission-owner");
+    const afterUntag = contextFor(owner.id, chat);
+    expect(afterUntag.metadata?.ownerAuthority).toBeUndefined();
+    expect(canWithCapabilities(afterUntag.capabilities, "execute", "executable", "codex")).toBe(false);
   });
 
   it("never lets a person's turn in an ungoverned chat inherit the agent's break-glass", () => {
@@ -3560,6 +3663,11 @@ describe("verified human work handoffs", () => {
       expect(turn.metadata).toMatchObject({ actorAuthorizationMode: "user-overlay", userOverlay: "active" });
       expect(canWithCapabilities(turn.capabilities, "execute", "executable", "rm")).toBe(false);
       expect(automationHoldCause(turn)).toBe("contact-chat-grants");
+      // Narrowed in this chat, the owner carries no owner authority, and neither does a relay of the turn.
+      expect(turn.metadata?.ownerAuthority).toBeUndefined();
+      const relayed = handoff(turn, "session.bootstrap", {}, originAgent);
+      expect(relayed.metadata?.ownerAuthority).toBeUndefined();
+      expect(canWithCapabilities(relayed.capabilities, "execute", "executable", "rm")).toBe(false);
     });
 
     it("a deny over an admin keeps the overlay even when an agent deny hides admin from the comparison", () => {

@@ -210,7 +210,7 @@ export function getHandoff(id: string): Handoff | null {
 }
 
 export function listHandoffs(
-  filter: { parentSessionKey?: string; includeClosed?: boolean; limit?: number } = {},
+  filter: { parentSessionKey?: string; childSessionKey?: string; includeClosed?: boolean; limit?: number } = {},
 ): Handoff[] {
   const clauses: string[] = [];
   const args: string[] = [];
@@ -218,6 +218,10 @@ export function listHandoffs(
   if (filter.parentSessionKey) {
     clauses.push("parent_session_key = ?");
     args.push(filter.parentSessionKey);
+  }
+  if (filter.childSessionKey) {
+    clauses.push("child_session_key = ?");
+    args.push(filter.childSessionKey);
   }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
   // With a limit the newest rows are kept (closed history grows forever), still returned oldest first.

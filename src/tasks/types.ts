@@ -417,7 +417,11 @@ export interface TaskLaunchPlan {
 export type TaskDecisionStatus = DecisionStatus;
 export type TaskDecisionOwnerType = DecisionOwnerType;
 /** Task's read projection of the shared primitive; parked is computed separately. */
-export type TaskDecision = Omit<Decision, "origin" | "revision"> & { taskId: string };
+/** The task surface of a decision; scope, source and replacement stay on `ravi decisions`. */
+export type TaskDecision = Omit<
+  Decision,
+  "origin" | "revision" | "revisedAt" | "scope" | "sourceMessageId" | "sourceExcerpt" | "supersededBy"
+> & { taskId: string };
 
 export interface TaskDecisionInput {
   key: string;

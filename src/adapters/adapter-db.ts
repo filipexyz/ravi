@@ -602,7 +602,15 @@ export function saveSessionAdapterDebugSnapshot(
   const now = Date.now();
   const s = getStatements();
 
-  s.upsertDebugSnapshot.run(validated.adapterId, JSON.stringify(validated.snapshot), now);
+  // A debug snapshot never stores the bound context's key: the state database
+  // keeps only key hashes (spec runtime/context-keys).
+  const snapshot: Record<string, unknown> = { ...validated.snapshot };
+  const bind = snapshot.bind;
+  if (bind && typeof bind === "object" && !Array.isArray(bind)) {
+    const { contextKey: _key, ...rest } = bind as Record<string, unknown>;
+    snapshot.bind = rest;
+  }
+  s.upsertDebugSnapshot.run(validated.adapterId, JSON.stringify(snapshot), now);
 
   const saved = getSessionAdapterDebugSnapshot(validated.adapterId);
   if (!saved) {

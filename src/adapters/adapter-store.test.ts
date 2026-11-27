@@ -1,14 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { getDb } from "../router/router-db.js";
+import { existsSync, readFileSync } from "node:fs";
+import { getDb, getRaviDbPath, hashStoredContextKeys } from "../router/router-db.js";
 import { getOrCreateSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { RESERVED_RAVI_ENV_KEYS, SessionAdapterDefinitionSchema, type SessionAdapterDefinition } from "./types.js";
 import {
   ensureSessionAdapterStoreSchema,
   getSessionAdapter,
+  getSessionAdapterDebugSnapshot,
   listSessionAdapters,
   listSessionAdapterSubscriptions,
   saveSessionAdapter,
+  saveSessionAdapterDebugSnapshot,
   saveSessionAdapterSubscription,
   updateSessionAdapterState,
 } from "./adapter-db.js";
@@ -21,6 +24,7 @@ function cleanupAdapterState() {
   ensureSessionAdapterStoreSchema();
   const db = getDb();
   db.prepare("DELETE FROM session_adapter_subscriptions WHERE adapter_id = ?").run(TEST_ADAPTER_ID);
+  db.prepare("DELETE FROM session_adapter_debug WHERE adapter_id = ?").run(TEST_ADAPTER_ID);
   db.prepare("DELETE FROM session_adapters WHERE adapter_id = ?").run(TEST_ADAPTER_ID);
   db.prepare("DELETE FROM sessions WHERE session_key = ?").run(TEST_SESSION_KEY);
 }
@@ -157,6 +161,37 @@ describe("Session adapter store", () => {
     expect(loaded?.definition.lifecycle.start.env.allow).toEqual(["PATH", "HOME"]);
     expect(subscriptions).toHaveLength(2);
     expect(subscriptions.map((sub) => sub.direction).sort()).toEqual(["from-adapter", "to-adapter"]);
+  });
+
+  it("never stores the bound context key in a debug snapshot, and scrubs the ones older releases wrote", () => {
+    saveSessionAdapter({ adapterId: TEST_ADAPTER_ID, definition: buildDefinition() });
+    const key = "rctx_adapterDebugKeyMustNotBeStored01";
+    const snapshot = {
+      adapterId: TEST_ADAPTER_ID,
+      bind: { sessionKey: TEST_SESSION_KEY, contextId: "ctx_adapter_debug", contextKey: key, cliName: "smoke" },
+      updatedAt: Date.now(),
+    };
+    const saved = saveSessionAdapterDebugSnapshot({ adapterId: TEST_ADAPTER_ID, snapshot: snapshot as never });
+    expect(JSON.stringify(saved)).not.toContain(key);
+    expect((getSessionAdapterDebugSnapshot(TEST_ADAPTER_ID) as { bind: Record<string, unknown> }).bind.contextId).toBe(
+      "ctx_adapter_debug",
+    );
+
+    // An older release wrote the key into the row; the context-key migration removes it.
+    getDb()
+      .prepare("UPDATE session_adapter_debug SET snapshot_json = ? WHERE adapter_id = ?")
+      .run(JSON.stringify(snapshot), TEST_ADAPTER_ID);
+    hashStoredContextKeys(getDb());
+    getDb().exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    const row = getDb()
+      .prepare("SELECT snapshot_json FROM session_adapter_debug WHERE adapter_id = ?")
+      .get(TEST_ADAPTER_ID) as { snapshot_json: string };
+    expect(row.snapshot_json).not.toContain(key);
+    expect(JSON.parse(row.snapshot_json).bind.contextId).toBe("ctx_adapter_debug");
+    const dbPath = getRaviDbPath();
+    for (const path of [dbPath, `${dbPath}-wal`]) {
+      if (existsSync(path)) expect(readFileSync(path).includes(key)).toBe(false);
+    }
   });
 
   it("tracks configured, running, stopped, and broken states distinctly", () => {

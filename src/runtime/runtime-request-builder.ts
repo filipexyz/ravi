@@ -38,6 +38,7 @@ import {
   INBOX_DRAIN_ON_HEARTBEAT_SETTING,
   type InboxTurnBlock,
   type InboxTurnMessage,
+  type InboxTurnOutcome,
   prepareInboxTurnBlock,
 } from "../session-inbox/turn.js";
 import {
@@ -87,6 +88,7 @@ import { resolvePersistedUserText } from "./session-surface-hint.js";
 import { validateRuntimeSessionState } from "./session-state.js";
 import type { RuntimeResumeDecision } from "./session-resolver.js";
 import { buildRuntimeSystemPrompt } from "./runtime-system-prompt.js";
+import { DECISIONS_SECTION_ID, refreshDecisionsForTurn } from "../decisions/prompt.js";
 import {
   MODEL_BROKER_REQUIRED_SETTING,
   MODEL_BROKER_MIN_LEASE_REMAINING_MS,
@@ -195,6 +197,93 @@ export function composeInboxWithTurnPrompt(
       } finally {
         inbox.release(reason);
       }
+    },
+  };
+}
+
+export interface InboxTurnEndState {
+  interrupted: boolean;
+  aborted: boolean;
+  /** The first terminal status recorded for this physical turn, if any (crash recovery latch). */
+  terminalStatus?: string | null;
+}
+
+/**
+ * How a turn that carried an inbox block ended. Only an explicit `complete` terminal of the same
+ * turn delivers the items: a failed, timed out, interrupted or unrecorded end returns them, so a
+ * notice is repeated rather than lost.
+ */
+export function inboxTurnOutcome(state: InboxTurnEndState): InboxTurnOutcome {
+  if (state.interrupted || state.aborted) return "aborted";
+  return state.terminalStatus === "complete" ? "completed" : "aborted";
+}
+
+/** Settles an inbox block at the end of its turn. Never throws: a failure is logged and counted. */
+export function settleInboxTurn(inbox: Pick<InboxTurnBlock, "finish">, state: InboxTurnEndState): void {
+  try {
+    inbox.finish(inboxTurnOutcome(state));
+  } catch (error) {
+    inboxRenderFailures += 1;
+    runtimeRequestLog.warn("Session inbox settlement failed; a stale reservation returns the items later", {
+      failures: inboxRenderFailures,
+      error,
+    });
+  }
+}
+
+/** What the inbox wiring reads from the streaming session when a turn ends. */
+export type InboxTurnSessionState = Pick<RuntimeHostStreamingSession, "interrupted" | "abortController"> & {
+  currentCrashRecoveryTerminal?: { status: string } | null;
+};
+
+/**
+ * The inbox wiring of one runtime session (runtime/session-inbox): `beginTurn` reserves and renders
+ * the block for the turn being yielded, `endTurn` settles it from the session's terminal state. A
+ * release before the turn starts settles the block once, so `endTurn` never settles it again.
+ */
+export function createInboxTurnWiring(input: {
+  sessionName: string;
+  sessionKey: string | null;
+  session: InboxTurnSessionState;
+  ownerDeps?: InboxOwnerDeps;
+}): {
+  beginTurn: (
+    combinedPrompt: string,
+    deliverableMessages: readonly InboxTurnMessage[],
+  ) => {
+    prompt: string;
+    inbox: Pick<InboxTurnBlock, "commit" | "release"> | null;
+  };
+  endTurn: () => void;
+} {
+  let current: InboxTurnBlock | null = null;
+  return {
+    beginTurn: (combinedPrompt, deliverableMessages) => {
+      const inbox = prepareInboxForTurn(input.sessionName, deliverableMessages, input.sessionKey, input.ownerDeps);
+      if (!inbox) {
+        current = null;
+        return { prompt: combinedPrompt, inbox: null };
+      }
+      const turn: InboxTurnBlock = {
+        ...inbox,
+        release: (reason: string) => {
+          if (current === turn) current = null;
+          inbox.release(reason);
+        },
+      };
+      current = turn;
+      return { prompt: `${inbox.block}\n\n${combinedPrompt}`, inbox: turn };
+    },
+    endTurn: () => {
+      // The inbox block is confirmed only by a turn that completed (runtime/session-inbox).
+      const turn = current;
+      current = null;
+      if (!turn) return;
+      settleInboxTurn(turn, {
+        interrupted: input.session.interrupted === true,
+        aborted: input.session.abortController.signal.aborted,
+        terminalStatus: input.session.currentCrashRecoveryTerminal?.status ?? null,
+      });
     },
   };
 }
@@ -808,6 +897,10 @@ async function buildRuntimeStartRequestInternal(
     allowedSkills,
   });
   const systemPromptSectionMetadata = buildRuntimeTracePromptSectionMetadata(systemPromptSections);
+  // What this runtime last carried of the decisions in force; live turns refresh it when it changes.
+  let decisionsCarried: string | null =
+    systemPromptSections.find((section) => section.id === DECISIONS_SECTION_ID)?.content ?? null;
+  const decisionsInput = { agentId: agent.id, sessionKey: runtimeContext.sessionKey ?? dbSessionKey };
   const pluginNames = runtimePlugins.map((plugin) => plugin.path);
   const mcpServerNames = Object.keys(mcpServers ?? {});
   const toolAccessMode = getRuntimeToolAccessMode(runtimeCapabilities, agent.id, runtimeContext);
@@ -917,6 +1010,12 @@ async function buildRuntimeStartRequestInternal(
   };
   // Set by transformTurnPrompt and read by the trace of the same turn.
   let turnSignals: RuntimeTraceAdapterRequestInput["signals"] = null;
+  // The inbox block of the turn in flight, settled when the turn ends (runtime/session-inbox).
+  const inboxWiring = createInboxTurnWiring({
+    sessionName,
+    sessionKey: dbSessionKey ?? null,
+    session: streamingSession,
+  });
   const traceTurnStart = async (input: { combinedPrompt: string; deliverableMessages: RuntimeUserMessage[] }) => {
     // A restored retry can expire before its first handoff. Its startup lease
     // is then abandoned by the host; a successor must reserve its own attempt.
@@ -1280,13 +1379,23 @@ async function buildRuntimeStartRequestInternal(
     afterTurnEnd: () => {
       stopActiveContextLease?.();
       stopActiveContextLease = undefined;
+      inboxWiring.endTurn();
     },
     transformTurnPrompt: ({ combinedPrompt, deliverableMessages }) => {
       // Deferred notices open the turn that may drain them (runtime/session-inbox). They become
       // part of the current request, so a recovered context still wraps them.
-      const inbox = prepareInboxForTurn(sessionName, deliverableMessages, dbSessionKey ?? null);
-      if (inbox) combinedPrompt = `${inbox.block}\n\n${combinedPrompt}`;
-      return composeInboxWithTurnPrompt(inbox, applySignalsToTurnPrompt(combinedPrompt, deliverableMessages));
+      if (agent.mode !== "sentinel") {
+        try {
+          const refreshed = refreshDecisionsForTurn(decisionsInput, decisionsCarried);
+          decisionsCarried = refreshed.current;
+          if (refreshed.block) combinedPrompt = `${refreshed.block}\n\n${combinedPrompt}`;
+        } catch (error) {
+          // The launch snapshot stays in force; a failed refresh must not fail the turn.
+          runtimeRequestLog.warn("decisions refresh failed for turn", { sessionName, error: String(error) });
+        }
+      }
+      const { prompt, inbox } = inboxWiring.beginTurn(combinedPrompt, deliverableMessages);
+      return composeInboxWithTurnPrompt(inbox, applySignalsToTurnPrompt(prompt, deliverableMessages));
     },
     traceTurnStart,
   });

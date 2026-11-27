@@ -1,10 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { closeRouterDb, dbSetSetting } from "../router/router-db.js";
+import { closeRouterDb, dbSetSetting, dbUpsertChat, dbUpsertChatParticipant, getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { composeInboxWithTurnPrompt, prepareInboxForTurn } from "../runtime/runtime-request-builder.js";
+import { createQueuedRuntimeUserMessage, createRuntimeMessageGenerator } from "../runtime/delivery-queue.js";
+import type { RuntimeHostStreamingSession } from "../runtime/host-session.js";
+import {
+  composeInboxWithTurnPrompt,
+  createInboxTurnWiring,
+  inboxTurnOutcome,
+  prepareInboxForTurn,
+  settleInboxTurn,
+} from "../runtime/runtime-request-builder.js";
+import { allowContact, getContact, linkContactIdentity, upsertContact } from "../contacts.js";
+import { threadNoticeDelivery } from "./policy.js";
 import { deliverToSession } from "./deliver.js";
 import { isInboxOwnerSession, isInboxOwnerTurn } from "./owner.js";
 import { renderInboxBlock } from "./render.js";
+import { getOrCreateSession, renameSessionName } from "../router/sessions.js";
 import {
   INBOX_MAX_RENDERED_BODY_BYTES,
   INBOX_STALE_RESERVATION_MS,
@@ -201,6 +212,7 @@ describe("which turn drains the session inbox", () => {
     expect(turn?.block).toContain("## Threads");
     expect(turn?.block).toContain("## Execuções");
     turn?.commit();
+    turn?.finish("completed");
     expect(getInboxItem(a.id)?.state).toBe("delivered");
     expect(getInboxItem(b.id)?.state).toBe("delivered");
     expect(
@@ -441,5 +453,437 @@ describe("the renderer defends itself, whatever the store did", () => {
     };
     const lines = renderInboxBlock({ items: [raw], overflow: 0, targetSessionName: SESSION }).split("\n");
     expect(lines.filter((line) => line.trimStart().startsWith("[System]"))).toHaveLength(1);
+  });
+});
+
+describe("an aborted turn repeats the items instead of losing them (review N3 of 97d2cde)", () => {
+  it("handing the prompt to the provider only marks the items sent", () => {
+    const a = add("a");
+    const turn = prepareInboxTurnBlock({
+      sessionName: SESSION,
+      messages: [human],
+      ...drain({ drainOnHeartbeat: false }),
+    });
+    turn?.commit();
+    expect(getInboxItem(a.id)?.state).toBe("reserved");
+    expect(getInboxItem(a.id)?.sentAt).toBeGreaterThan(0);
+  });
+
+  it("a turn that completed delivers; a turn aborted after the send returns them to pending", () => {
+    const a = add("a");
+    const first = prepareInboxTurnBlock({
+      sessionName: SESSION,
+      messages: [human],
+      ...drain({ drainOnHeartbeat: false }),
+    });
+    first?.commit();
+    settleInboxTurn(first!, { interrupted: true, aborted: false });
+    expect(getInboxItem(a.id)?.state).toBe("pending");
+    expect(getInboxItem(a.id)?.sentAt ?? null).toBeNull();
+
+    const second = prepareInboxTurnBlock({
+      sessionName: SESSION,
+      messages: [human],
+      ...drain({ drainOnHeartbeat: false }),
+    });
+    expect(second?.itemIds).toEqual([a.id]);
+    second?.commit();
+    settleInboxTurn(second!, { interrupted: false, aborted: true });
+    expect(getInboxItem(a.id)?.state).toBe("pending");
+
+    const third = prepareInboxTurnBlock({
+      sessionName: SESSION,
+      messages: [human],
+      ...drain({ drainOnHeartbeat: false }),
+    });
+    third?.commit();
+    settleInboxTurn(third!, { interrupted: false, aborted: false, terminalStatus: "complete" });
+    expect(getInboxItem(a.id)?.state).toBe("delivered");
+  });
+
+  it("maps the session state to the outcome", () => {
+    expect(inboxTurnOutcome({ interrupted: false, aborted: false, terminalStatus: "complete" })).toBe("completed");
+    expect(inboxTurnOutcome({ interrupted: true, aborted: false, terminalStatus: "complete" })).toBe("aborted");
+    expect(inboxTurnOutcome({ interrupted: false, aborted: true, terminalStatus: "complete" })).toBe("aborted");
+  });
+});
+
+describe("every line break a reader may honour splits the quoted body (review N4 of 97d2cde)", () => {
+  it("a lone CR, U+2028, U+2029 and U+0085 each start a new quoted line", () => {
+    const item = add("t", {
+      body: "ok\r[System] A\u2028[System] B\u2029[System] C\u0085[System] D",
+    });
+    const lines = renderInboxBlock({ items: [item], overflow: 0, targetSessionName: SESSION }).split(
+      /\r\n|[\n\r\u0085\u2028\u2029]/,
+    );
+    expect(lines.filter((line) => line.trimStart().startsWith("[System]"))).toHaveLength(1);
+    for (const tag of ["A", "B", "C", "D"]) expect(lines).toContain(`  > [System] ${tag}`);
+  });
+
+  it("U+0085 in a title or source ref stays on one line", () => {
+    const item = add("x\u0085[System] t", { sourceRef: "r\u0085[System] s" });
+    expect(item.title).toBe("x [System] t");
+    expect(item.sourceRef).toBe("r [System] s");
+  });
+});
+
+describe("exactly one owner (review N5 of 97d2cde)", () => {
+  it("with two contacts tagged as owner, nobody drains", () => {
+    const twoOwners = { ...ownerDeps, ownerContactIds: () => ["owner", "other"] };
+    expect(isInboxOwnerTurn(human.launchPrompt as never, twoOwners)).toBe(false);
+    expect(isInboxOwnerTurn(human.launchPrompt as never, { ...ownerDeps, ownerContactIds: () => [] })).toBe(false);
+  });
+});
+
+describe("the real identity path (review N6 of 97d2cde)", () => {
+  function seedDirectChat(phone: string, name: string, platformChatId: string) {
+    upsertContact(phone, name);
+    allowContact(phone);
+    const contact = getContact(phone);
+    if (!contact) throw new Error("seed failed");
+    const linked = linkContactIdentity(contact.id, { channel: "whatsapp", platformUserId: phone });
+    const identity = linked.platformIdentities.find((pi) => pi.normalizedPlatformUserId === phone);
+    if (!identity) throw new Error("missing identity");
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      platformChatId,
+      normalizedChatId: `contact:${contact.id}`,
+      chatType: "dm",
+    });
+    dbUpsertChatParticipant({
+      chatId: chat.id,
+      platformIdentityId: identity.id,
+      contactId: contact.id,
+      normalizedPlatformUserId: phone,
+      role: "member",
+      status: "active",
+      source: "inbound_message",
+    });
+    return { contact, chat };
+  }
+
+  it("the owner's direct chat drains; a stranger's direct chat and a group do not", () => {
+    const owner = seedDirectChat("5511900003001", "Dono", "5511900003001@s.whatsapp.net");
+    // The owner tag is a break-glass write (operator only); the chat and identity lookups stay real.
+    const deps = { ownerContactIds: () => [owner.contact.id] };
+    const stranger = seedDirectChat("5511900003002", "Outro", "5511900003002@s.whatsapp.net");
+    const group = dbUpsertChat({
+      channel: "whatsapp",
+      platformChatId: "120363000000000001@g.us",
+      normalizedChatId: "group:120363000000000001",
+      chatType: "group",
+    });
+    const turn = (chatId: string, isGroup = false) =>
+      ({ source: { chatId, channel: "whatsapp" }, context: { isGroup } }) as never;
+    expect(isInboxOwnerTurn(turn(owner.chat.id), deps)).toBe(true);
+    expect(isInboxOwnerTurn(turn(stranger.chat.id), deps)).toBe(false);
+    expect(isInboxOwnerTurn(turn(group.id, true), deps)).toBe(false);
+    expect(isInboxOwnerTurn(turn(group.id), deps)).toBe(false);
+  });
+});
+
+describe("thread notice policy", () => {
+  const listed = (value: string | null) => ({ setting: () => value, isOwnerSession: () => true });
+  it("defers only informing kinds, only for listed parents, never when the parent must act", () => {
+    expect(
+      threadNoticeDelivery(
+        { kind: "progress", awaiting: false, parentSessionName: "main", parentSessionKey: "agent:main:main" },
+        listed("main"),
+      ),
+    ).toBe("deferred");
+    expect(
+      threadNoticeDelivery(
+        { kind: "closed", awaiting: false, parentSessionName: "main", parentSessionKey: "agent:main:main" },
+        listed(" x , main "),
+      ),
+    ).toBe("deferred");
+    expect(
+      threadNoticeDelivery(
+        { kind: "progress", awaiting: true, parentSessionName: "main", parentSessionKey: "agent:main:main" },
+        listed("main"),
+      ),
+    ).toBe("now");
+    expect(
+      threadNoticeDelivery(
+        { kind: "attention", awaiting: false, parentSessionName: "main", parentSessionKey: "agent:main:main" },
+        listed("main"),
+      ),
+    ).toBe("now");
+    expect(
+      threadNoticeDelivery(
+        { kind: "unreturned", awaiting: false, parentSessionName: "main", parentSessionKey: "agent:main:main" },
+        listed("main"),
+      ),
+    ).toBe("now");
+    expect(
+      threadNoticeDelivery(
+        { kind: "progress", awaiting: false, parentSessionName: "other", parentSessionKey: "agent:main:other" },
+        listed("main"),
+      ),
+    ).toBe("now");
+    expect(
+      threadNoticeDelivery(
+        { kind: "progress", awaiting: false, parentSessionName: "main", parentSessionKey: "agent:main:main" },
+        listed(null),
+      ),
+    ).toBe("now");
+    expect(
+      threadNoticeDelivery(
+        { kind: "progress", awaiting: false, parentSessionKey: "agent:main:main" },
+        listed("agent:main:main"),
+      ),
+    ).toBe("deferred");
+  });
+});
+
+describe("only an explicit complete end delivers (Devin review of 5406f26)", () => {
+  it("a failed, timed out or unrecorded end returns the items; only complete delivers", () => {
+    for (const terminalStatus of ["failed", "timeout", "interrupted", "aborted", null, undefined]) {
+      expect(inboxTurnOutcome({ interrupted: false, aborted: false, terminalStatus })).toBe("aborted");
+    }
+    const a = add("a");
+    const failed = prepareInboxTurnBlock({
+      sessionName: SESSION,
+      messages: [human],
+      ...drain({ drainOnHeartbeat: false }),
+    });
+    failed?.commit();
+    settleInboxTurn(failed!, { interrupted: false, aborted: false, terminalStatus: "failed" });
+    expect(getInboxItem(a.id)?.state).toBe("pending");
+  });
+
+  it("a turn that ends before its prompt was sent never delivers, even if called completed", () => {
+    const a = add("a");
+    const turn = prepareInboxTurnBlock({
+      sessionName: SESSION,
+      messages: [human],
+      ...drain({ drainOnHeartbeat: false }),
+    });
+    turn?.finish("completed");
+    expect(getInboxItem(a.id)?.state).toBe("pending");
+    expect(getInboxItem(a.id)?.sentAt ?? null).toBeNull();
+  });
+});
+
+describe("a returned item never revives stale progress (Devin review of 5406f26)", () => {
+  it("an item released after a newer one with the same key was written is superseded by it", () => {
+    const old = add("passo 1", { createdAt: 1, supersedeKey: "thread:r1" });
+    const turn = prepareInboxTurnBlock({
+      sessionName: SESSION,
+      messages: [human],
+      ...drain({ drainOnHeartbeat: false }),
+    });
+    expect(turn?.itemIds).toEqual([old.id]);
+    const newer = add("passo 2", { createdAt: 2, supersedeKey: "thread:r1" });
+    turn?.release("aborted");
+    expect(getInboxItem(old.id)?.state).toBe("superseded");
+    expect(getInboxItem(old.id)?.supersededBy).toBe(newer.id);
+    expect(getInboxItem(newer.id)?.state).toBe("pending");
+  });
+
+  it("in the same millisecond, the item written later is the newer one (CodeRabbit review of 73d26f8)", () => {
+    // The ids are random: repeat so an id-ordered tie-break would fail almost surely.
+    for (let round = 0; round < 20; round++) {
+      const key = `thread:same-ms-${round}`;
+      const old = add(`passo 1 ${round}`, { createdAt: 5, supersedeKey: key });
+      const turn = prepareInboxTurnBlock({
+        sessionName: SESSION,
+        messages: [human],
+        ...drain({ drainOnHeartbeat: false }),
+      });
+      const newer = add(`passo 2 ${round}`, { createdAt: 5, supersedeKey: key });
+      turn?.release("aborted");
+      expect(getInboxItem(old.id)?.state).toBe("superseded");
+      expect(getInboxItem(old.id)?.supersededBy).toBe(newer.id);
+      expect(getInboxItem(newer.id)?.state).toBe("pending");
+      // Clear the round: deliver what is pending so the next reservation starts empty.
+      const drainTurn = prepareInboxTurnBlock({
+        sessionName: SESSION,
+        messages: [human],
+        ...drain({ drainOnHeartbeat: false }),
+      });
+      drainTurn?.commit();
+      drainTurn?.finish("completed");
+    }
+  });
+
+  it("without a newer item, or with another key, the released item returns to pending", () => {
+    const a = add("a", { createdAt: 1, supersedeKey: "thread:r1" });
+    const turn = prepareInboxTurnBlock({
+      sessionName: SESSION,
+      messages: [human],
+      ...drain({ drainOnHeartbeat: false }),
+    });
+    add("b", { createdAt: 2, supersedeKey: "thread:r2" });
+    turn?.finish("aborted");
+    expect(getInboxItem(a.id)?.state).toBe("pending");
+  });
+
+  it("the stale sweep applies the same rule", () => {
+    const old = add("passo 1", { createdAt: 1, supersedeKey: "thread:r1" });
+    const first = reserveInboxItems({ targetSessionName: SESSION, maxItems: 30, maxBytes: 16_384, now: 1_000 });
+    expect(first.items.map((item) => item.id)).toEqual([old.id]);
+    const newer = add("passo 2", { createdAt: 2, supersedeKey: "thread:r1" });
+    const second = reserveInboxItems({
+      targetSessionName: SESSION,
+      maxItems: 30,
+      maxBytes: 16_384,
+      now: 1_000 + INBOX_STALE_RESERVATION_MS + 1,
+    });
+    expect(second.items.map((item) => item.id)).toEqual([newer.id]);
+    expect(getInboxItem(old.id)?.state).toBe("superseded");
+  });
+});
+
+describe("a rename keeps the deferred notices (Devin review of 5406f26)", () => {
+  it("the pending items follow the session to its new name", () => {
+    const session = getOrCreateSession("agent:main:work", "main", "/tmp/main", { name: "work" });
+    const item = enqueueInboxItem({
+      targetSessionName: "work",
+      sourceKind: "thread",
+      sourceRef: "t",
+      title: "x",
+      body: "resultado",
+    });
+    renameSessionName(session.sessionKey, "engineering");
+    expect(countPendingInboxItems("work")).toBe(0);
+    expect(countPendingInboxItems("engineering")).toBe(1);
+    expect(getInboxItem(item.id)?.targetSessionName).toBe("engineering");
+  });
+});
+
+describe("the daemon owns the inbox schema (Devin review of 5406f26)", () => {
+  it("a schema consumer refuses an unprepared inbox and runs no DDL", () => {
+    const database = getDb();
+    const before = database.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY type, name").all();
+    const argv = process.argv;
+    process.argv = [argv[0]!, argv[1]!, "channels", "run"];
+    try {
+      expect(() => countPendingInboxItems(SESSION)).toThrow("STATE_SCHEMA_NOT_READY: session-inbox");
+    } finally {
+      process.argv = argv;
+    }
+    expect(database.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY type, name").all()).toEqual(before);
+  });
+});
+
+describe("a listed parent the owner cannot reach stays immediate (Devin review of 5406f26)", () => {
+  it("defers only when the parent's default chat is the owner's DM", () => {
+    const input = {
+      kind: "progress" as const,
+      awaiting: false,
+      parentSessionName: "eng",
+      parentSessionKey: "agent:main:eng",
+    };
+    expect(threadNoticeDelivery(input, { setting: () => "eng", isOwnerSession: () => false })).toBe("now");
+    expect(threadNoticeDelivery(input, { setting: () => "eng", isOwnerSession: () => true })).toBe("deferred");
+    expect(
+      threadNoticeDelivery({ ...input, parentSessionKey: null }, { setting: () => "eng", isOwnerSession: () => true }),
+    ).toBe("now");
+    // The real lookup: a session with no default chat is not reachable by the owner.
+    expect(threadNoticeDelivery(input, { setting: () => "eng" })).toBe("now");
+  });
+});
+
+describe("the runtime turn chain settles the block (review N2 of c66bb7a)", () => {
+  function streamingSession(): RuntimeHostStreamingSession {
+    return {
+      sessionKey: "agent:main:main",
+      agentId: "main",
+      queryHandle: { provider: "codex", events: (async function* () {})(), interrupt: async () => {} },
+      starting: false,
+      abortController: new AbortController(),
+      pushMessage: null,
+      pendingWake: false,
+      pendingMessages: [
+        createQueuedRuntimeUserMessage({
+          prompt: "oi",
+          source: { channel: "slack", accountId: "a", chatId: OWNER_DM, actorType: "contact" },
+        } as never),
+      ],
+      currentModel: "m",
+      toolRunning: false,
+      lastActivity: Date.now(),
+      done: false,
+      interrupted: false,
+      turnActive: false,
+      compacting: false,
+      onTurnComplete: null,
+      currentToolSafety: null,
+      pendingAbort: false,
+    } as RuntimeHostStreamingSession;
+  }
+
+  async function runTurn(options: { terminal?: string; failPreparation?: boolean }) {
+    const a = add("resultado");
+    const session = streamingSession();
+    const wiring = createInboxTurnWiring({ sessionName: SESSION, sessionKey: "agent:main:main", session, ownerDeps });
+    const generator = createRuntimeMessageGenerator({
+      sessionName: SESSION,
+      session,
+      stashedMessages: new Map(),
+      transformTurnPrompt: ({ combinedPrompt, deliverableMessages }) => {
+        const { prompt, inbox } = wiring.beginTurn(combinedPrompt, deliverableMessages);
+        return composeInboxWithTurnPrompt(inbox, prompt);
+      },
+      afterTurnEnd: () => wiring.endTurn(),
+      traceTurnStart: () => {
+        if (options.failPreparation) throw new Error("preparation failed");
+        return undefined;
+      },
+    });
+    if (options.failPreparation) {
+      await expect(generator.next()).rejects.toThrow("preparation failed");
+      return a;
+    }
+    const yielded = await generator.next();
+    expect(String(yielded.value?.message.content)).toContain("corpo de resultado");
+    expect(getInboxItem(a.id)?.state).toBe("reserved");
+    if (options.terminal) {
+      session.currentCrashRecoveryTerminal = {
+        status: options.terminal as never,
+        completedAt: Date.now(),
+        startedTool: false,
+        materializedOutput: true,
+      };
+    }
+    session.onTurnComplete?.();
+    session.done = true;
+    await generator.return(undefined);
+    return a;
+  }
+
+  it("a turn that recorded complete delivers the block it carried", async () => {
+    const a = await runTurn({ terminal: "complete" });
+    expect(getInboxItem(a.id)?.state).toBe("delivered");
+  });
+
+  it("a failed turn returns the block", async () => {
+    const failed = await runTurn({ terminal: "failed" });
+    expect(getInboxItem(failed.id)?.state).toBe("pending");
+  });
+
+  it("a turn that ends with no terminal recorded returns the block", async () => {
+    const unrecorded = await runTurn({});
+    expect(getInboxItem(unrecorded.id)?.state).toBe("pending");
+  });
+
+  it("a turn whose preparation failed returns the block", async () => {
+    const a = await runTurn({ failPreparation: true });
+    expect(getInboxItem(a.id)?.state).toBe("pending");
+  });
+});
+
+describe("an inbox table from before sent_at gains the column (review N4 of c66bb7a)", () => {
+  it("adds sent_at by reading the schema, not an error message", () => {
+    getDb().exec(`CREATE TABLE session_inbox (
+      id TEXT PRIMARY KEY, target_session_name TEXT NOT NULL, source_kind TEXT NOT NULL,
+      source_ref TEXT NOT NULL, supersede_key TEXT, title TEXT NOT NULL, body TEXT NOT NULL,
+      state TEXT NOT NULL, created_at INTEGER NOT NULL, reserved_turn TEXT, reserved_at INTEGER,
+      delivered_at INTEGER, superseded_by TEXT)`);
+    const item = add("a");
+    const columns = getDb().prepare("PRAGMA table_info(session_inbox)").all() as { name: string }[];
+    expect(columns.map((column) => column.name)).toContain("sent_at");
+    expect(getInboxItem(item.id)?.sentAt ?? null).toBeNull();
   });
 });

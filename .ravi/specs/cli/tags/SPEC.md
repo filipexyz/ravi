@@ -56,6 +56,32 @@ ZERO braked ops — that absence is a decision of this spec, not an omission.
 7. When invoked from an agent context (`RAVI_*` envs present), a thrown
    `ContractError` MUST preserve its exit code through the registry dispatcher.
 8. Without `--json`, error output keeps the legacy text path (exit 1).
+9. `tags doctor` is read-only: it MUST NOT write tag definitions, bindings
+   or events (opening the Ravi DB runs the same schema bootstrap as any CLI
+   command). It reports definitions with no current binding (detached ones
+   included), orphan bindings (only for asset types whose table lives in the
+   Ravi DB, sessions matched by name or key; the rest are listed as
+   unchecked, never guessed), bound tags without a behavior consumer
+   (observer rule; tag rule in apply or condition, in any slug spelling;
+   permission profile, contact permission tag or chat tag that scopes a
+   contact grant; list filters do not count), contacts whose tags
+   materialize capabilities from registry bindings or the contact policy,
+   break-glass first, and bindings from legacy mirrors with their rewrite
+   churn. It also lists chat-scoped grants (one chat or a chat tag) whose
+   profile carries capabilities, break-glass first; the grants are listed as
+   stored, before the contact eligibility check the runtime applies; with no
+   grant table it lists none and MUST NOT create the table.
+   `--limit` (1..500, default 50; anything else is a usage error, exit 2)
+   truncates every list section; `summary` counts are never truncated.
+10. The two power sections of `tags doctor` (contacts with capabilities from
+   tags, chat-scoped grants) name contact ids and the power each holds. They
+   MUST be computed only for a caller that holds `admin:system:*`; `read:tags`
+   alone is not enough. For any other caller the report says
+   `power: "withheld"`, both sections are empty and their four `summary`
+   counts are `null` (not `0`, which would read as "nobody has power").
+   `power`, `chatGrantPower` and the two chat-grant counts are optional in
+   the return contract, so a newer SDK still decodes a report from an older
+   gateway.
 
 ## Write classification (brake decision per op)
 
@@ -65,6 +91,7 @@ ZERO braked ops — that absence is a decision of this spec, not an omission.
 | set | single-property update, reversible by re-setting | not braked (declared) |
 | attach | unitary binding upsert, reversed by detach | not braked (declared) |
 | detach | unitary binding removal, reversed by attach (binding metadata/provenance is lost — accepted) | not braked (declared) |
+| doctor | read-only report | n/a (no write) |
 | rm / delete | does not exist on this surface | n/a (future op MUST bring the brake) |
 
 ## Official error cases

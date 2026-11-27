@@ -102,6 +102,13 @@ import {
   isCredentialIntakeEnvelope,
   type CredentialIntakeDependencies,
 } from "./credential-intake.js";
+import {
+  isSlackDecisionAnswerOpenEnvelope,
+  isSlackDecisionAnswerSubmitEnvelope,
+  openSlackDecisionAnswerForm,
+  SLACK_DECISION_ANSWER_SUBMIT_CALLBACK_ID,
+  slackDecisionAnswerFormErrors,
+} from "./decision-answer.js";
 import { extractSlackMessageText } from "./message-content.js";
 import { slackInboundReactionFromEnvelope } from "./reactions.js";
 import {
@@ -932,6 +939,26 @@ export class SlackSocketModeService {
     }
     if (envelope.type === SLACK_COMMAND_ENVELOPE_TYPE) {
       return this.processSlashCommandEnvelope(envelope, ack);
+    }
+    // Responder on a card waiting for a decision: Slack's trigger lasts three seconds, so the form opens here.
+    if (isSlackDecisionAnswerOpenEnvelope(envelope)) {
+      await openSlackDecisionAnswerForm({
+        envelope,
+        client: this.webClient,
+        ack,
+        accountId: this.options.accountId,
+        instanceId: this.options.instanceId ?? this.options.accountId,
+      });
+      return "processed";
+    }
+    // A decision form whose answer the core would refuse for its shape stays open with the draft.
+    if (isSlackDecisionAnswerSubmitEnvelope(envelope)) {
+      const errors = slackDecisionAnswerFormErrors(envelope);
+      const formEnvelopeId = cleanSlackId(envelope.envelope_id);
+      if (errors && formEnvelopeId) {
+        await ack(formEnvelopeId, { response_action: "errors", errors });
+        return "processed";
+      }
     }
     const envelopeId = cleanSlackId(envelope.envelope_id);
     const messageEvent = envelopeEvent(envelope);
@@ -1802,6 +1829,11 @@ export class SlackSocketModeService {
       containerType: stringField(container, "type"),
       viewId: stringField(view, "id"),
       viewCallbackId: stringField(view, "callback_id"),
+      // The pointer a decision answer form keeps; the consumer rechecks everything it names. No other form's
+      // metadata leaves the runner.
+      ...(stringField(view, "callback_id") === SLACK_DECISION_ANSWER_SUBMIT_CALLBACK_ID
+        ? { viewPrivateMetadata: stringField(view, "private_metadata") }
+        : {}),
       actionId: stringField(firstAction, "action_id"),
       blockId: stringField(firstAction, "block_id"),
       actionType: stringField(firstAction, "type"),

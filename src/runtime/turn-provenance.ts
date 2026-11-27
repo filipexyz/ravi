@@ -26,6 +26,8 @@ export interface TurnProvenance {
   /** True when an automated producer, rather than a human message, caused the turn. */
   automationOriginated: boolean;
   automationId?: string;
+  /** Topic of the event that fired a `trigger` turn, when the runner recorded it. */
+  triggerTopic?: string;
   cronRunId?: string;
   /** Stable, machine-readable explanation of the strongest signal used. */
   reason: string;
@@ -149,7 +151,11 @@ export function classifyTurnProvenance(input: TurnProvenanceInput = {}): TurnPro
       ...(prompt._cronRunId ? { cronRunId: prompt._cronRunId } : {}),
     };
   if (prompt?._trigger) {
-    return result("trigger", "prompt._trigger", prompt._triggerId ? `trigger:${prompt._triggerId}` : undefined);
+    const triggerTopic = cleanString(prompt._triggerTopic);
+    return {
+      ...result("trigger", "prompt._trigger", prompt._triggerId ? `trigger:${prompt._triggerId}` : undefined),
+      ...(triggerTopic ? { triggerTopic } : {}),
+    };
   }
   if (prompt?._sessionFollowup) {
     return result(

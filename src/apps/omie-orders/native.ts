@@ -5,8 +5,7 @@ import { getContactById } from "../../contacts.js";
 import { getCredentialConnection } from "../../credentials/store.js";
 import { resolveCredentialSecret } from "../../credentials/broker.js";
 import { registerOmieProviderReads } from "./provider-reads.js";
-import { dbGetContext } from "../../router/router-db.js";
-import { resolveRuntimeContext } from "../../runtime/context-registry.js";
+import { resolveRuntimeContext, resolveRuntimeContextById } from "../../runtime/context-registry.js";
 import { canWithCapabilities, canWithCapabilityContext } from "../../permissions/provider-runtime.js";
 import { type VerifiedIdentity } from "./access.js";
 import { createOmieHostAction, type ProtectedRuntime } from "./adapter.js";
@@ -40,8 +39,7 @@ function identityStore(
     authority,
     current: () => getContext({ localOnly: true })?.context,
     live: (id) => {
-      const ctx = dbGetContext(id);
-      return ctx ? resolveRuntimeContext(ctx.contextKey, { touch: false }) : null;
+      return resolveRuntimeContextById(id);
     },
     contactActive: (id) => {
       const contact = getContactById(id);

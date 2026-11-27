@@ -10,6 +10,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { initializeStateSchema } from "../db/schema-owner.js";
 import { getDb, getRaviDbPath } from "../router/router-db.js";
 
 export const INBOX_SOURCE_KINDS = ["thread", "child_run", "cron", "observer", "handoff", "system"] as const;
@@ -49,6 +50,8 @@ export interface InboxItem {
   reservedAt: number | null;
   deliveredAt: number | null;
   supersededBy: string | null;
+  /** When the prompt carrying the item was handed to the provider; null until then. */
+  sentAt?: number | null;
 }
 
 export class InboxUsageError extends Error {
@@ -60,10 +63,24 @@ export class InboxUsageError extends Error {
 
 let schemaPath: string | null = null;
 
+/** State schema component of the inbox table in ravi.db (src/db/schema-owner.ts). */
+export const INBOX_SCHEMA_COMPONENT = "session-inbox";
+
+/**
+ * The daemon creates and migrates the table at boot (src/db/runtime-state.ts). A schema consumer
+ * (the operator CLI, the channel runner) only checks that this release prepared it and never runs
+ * the DDL.
+ */
 export function ensureInboxSchema(): void {
   const path = getRaviDbPath();
   if (schemaPath === path) return;
-  getDb().exec(`
+  const db = getDb();
+  initializeStateSchema(db, INBOX_SCHEMA_COMPONENT, () => migrateInboxSchema(db));
+  schemaPath = path;
+}
+
+function migrateInboxSchema(db: ReturnType<typeof getDb>): void {
+  db.exec(`
     CREATE TABLE IF NOT EXISTS session_inbox (
       id TEXT PRIMARY KEY,
       target_session_name TEXT NOT NULL,
@@ -77,12 +94,17 @@ export function ensureInboxSchema(): void {
       reserved_turn TEXT,
       reserved_at INTEGER,
       delivered_at INTEGER,
-      superseded_by TEXT
+      superseded_by TEXT,
+      sent_at INTEGER
     );
     CREATE INDEX IF NOT EXISTS idx_session_inbox_target_state
       ON session_inbox(target_session_name, state, created_at);
   `);
-  schemaPath = path;
+  // A table created before `sent_at` existed gains it; the check reads the schema, not an error text.
+  const columns = db.prepare("PRAGMA table_info(session_inbox)").all() as { name: string }[];
+  if (!columns.some((column) => column.name === "sent_at")) {
+    db.exec("ALTER TABLE session_inbox ADD COLUMN sent_at INTEGER");
+  }
 }
 
 function rowToItem(row: Record<string, unknown>): InboxItem {
@@ -100,6 +122,7 @@ function rowToItem(row: Record<string, unknown>): InboxItem {
     reservedAt: row.reserved_at == null ? null : Number(row.reserved_at),
     deliveredAt: row.delivered_at == null ? null : Number(row.delivered_at),
     supersededBy: (row.superseded_by as string | null) ?? null,
+    sentAt: row.sent_at == null ? null : Number(row.sent_at),
   };
 }
 
@@ -117,9 +140,9 @@ export function enqueueInboxItem(input: InboxItemInput): InboxItem {
     throw new InboxUsageError(`Unknown sourceKind: ${String(input.sourceKind)}`);
   }
   // One line, like the title: the source ref is printed inside the block line.
-  const sourceRef = requireText(input.sourceRef, "sourceRef").replace(/\s+/g, " ");
+  const sourceRef = requireText(input.sourceRef, "sourceRef").replace(/[\s\u0085]+/g, " ");
   // The title is one line in the rendered block: no line of it may pass for a line of the block.
-  const title = requireText(input.title, "title").replace(/\s+/g, " ");
+  const title = requireText(input.title, "title").replace(/[\s\u0085]+/g, " ");
   const rawBody = requireText(input.body, "body");
   const body =
     rawBody.length > INBOX_MAX_BODY_CHARS
@@ -198,10 +221,12 @@ export function reserveInboxItems(input: ReserveInboxInput): InboxReservation {
   let items: InboxItem[] = [];
   let overflow = 0;
   db.transaction(() => {
-    db.prepare(
-      `UPDATE session_inbox SET state = 'pending', reserved_turn = NULL, reserved_at = NULL
-       WHERE target_session_name = ? AND state = 'reserved' AND reserved_at < ?`,
-    ).run(input.targetSessionName, now - INBOX_STALE_RESERVATION_MS);
+    returnToPending(
+      db,
+      "target_session_name = ? AND reserved_at < ?",
+      input.targetSessionName,
+      now - INBOX_STALE_RESERVATION_MS,
+    );
     const pending = (
       db
         .prepare(
@@ -240,7 +265,19 @@ export function reserveInboxItems(input: ReserveInboxInput): InboxReservation {
   return { turnKey, items, overflow };
 }
 
-/** The block reached the provider: the reserved items are delivered. */
+/**
+ * The prompt with the block was handed to the provider. The items stay `reserved`: a turn aborted
+ * after this point may never have shown them, so delivery is only confirmed when the turn ends.
+ */
+export function markInboxReservationSent(turnKey: string, now = Date.now()): number {
+  ensureInboxSchema();
+  const result = getDb()
+    .prepare("UPDATE session_inbox SET sent_at = ? WHERE reserved_turn = ? AND state = 'reserved'")
+    .run(now, turnKey);
+  return Number(result.changes ?? 0);
+}
+
+/** The turn that carried the block completed: the reserved items are delivered. */
 export function commitInboxReservation(turnKey: string, now = Date.now()): number {
   ensureInboxSchema();
   const result = getDb()
@@ -252,16 +289,62 @@ export function commitInboxReservation(turnKey: string, now = Date.now()): numbe
   return Number(result.changes ?? 0);
 }
 
-/** The turn never started: the reserved items return to `pending`. */
+/**
+ * A row that returns to `pending` after a newer row with the same `supersede_key` was written is
+ * superseded by the newest one, so a turn that did not deliver never brings back stale progress.
+ */
+function supersedeReturnedRows(db: ReturnType<typeof getDb>, ids: string[]): void {
+  // Same millisecond: the insertion order (rowid; rows are never deleted) breaks the tie, never the
+  // random id, so a notice written later always counts as newer.
+  const newest = db.prepare(
+    `SELECT id FROM session_inbox
+     WHERE target_session_name = ? AND supersede_key = ? AND id <> ?
+       AND (created_at > ? OR (created_at = ? AND rowid > ?))
+     ORDER BY created_at DESC, rowid DESC LIMIT 1`,
+  );
+  const supersede = db.prepare(
+    "UPDATE session_inbox SET state = 'superseded', superseded_by = ? WHERE id = ? AND state = 'pending'",
+  );
+  for (const id of ids) {
+    const row = db
+      .prepare("SELECT rowid, target_session_name, supersede_key, created_at FROM session_inbox WHERE id = ?")
+      .get(id) as
+      | { rowid: number; target_session_name: string; supersede_key: string | null; created_at: number }
+      | undefined;
+    if (!row?.supersede_key) continue;
+    const newer = newest.get(
+      row.target_session_name,
+      row.supersede_key,
+      id,
+      row.created_at,
+      row.created_at,
+      row.rowid,
+    ) as { id: string } | undefined;
+    if (newer) supersede.run(newer.id, id);
+  }
+}
+
+function returnToPending(db: ReturnType<typeof getDb>, where: string, ...values: (string | number)[]): number {
+  const ids = (
+    db.prepare(`SELECT id FROM session_inbox WHERE state = 'reserved' AND ${where}`).all(...values) as {
+      id: string;
+    }[]
+  ).map((row) => row.id);
+  if (ids.length === 0) return 0;
+  const reset = db.prepare(
+    `UPDATE session_inbox SET state = 'pending', reserved_turn = NULL, reserved_at = NULL, sent_at = NULL
+     WHERE id = ? AND state = 'reserved'`,
+  );
+  for (const id of ids) reset.run(id);
+  supersedeReturnedRows(db, ids);
+  return ids.length;
+}
+
+/** The turn did not deliver: the reserved items return to `pending` (or to `superseded`). */
 export function releaseInboxReservation(turnKey: string): number {
   ensureInboxSchema();
-  const result = getDb()
-    .prepare(
-      `UPDATE session_inbox SET state = 'pending', reserved_turn = NULL, reserved_at = NULL
-       WHERE reserved_turn = ? AND state = 'reserved'`,
-    )
-    .run(turnKey);
-  return Number(result.changes ?? 0);
+  const db = getDb();
+  return db.transaction(() => returnToPending(db, "reserved_turn = ?", turnKey))();
 }
 
 /** Rendered body cap per item: one notice never takes more than this of a turn's block. */
@@ -281,7 +364,7 @@ export function renderedInboxBody(item: Pick<InboxItem, "id" | "body">): string 
 /** What one item adds to the rendered block: title, body as rendered, quote prefixes and labels. */
 export function renderedInboxItemBytes(item: Pick<InboxItem, "id" | "title" | "body" | "sourceRef">): number {
   const body = renderedInboxBody(item);
-  const lines = body.split(/\r?\n/).length;
+  const lines = body.split(/\r\n|[\n\r\u0085\u2028\u2029]/).length;
   return (
     Buffer.byteLength(item.title) +
     Buffer.byteLength(item.sourceRef) +

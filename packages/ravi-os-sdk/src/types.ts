@@ -12947,7 +12947,10 @@ export type DecisionsAnswerInput = {
   by?: string;
   execute?: boolean;
   id: string;
+  scope?: string;
   sourceMessage?: string;
+  sourceQuote?: string;
+  supersedes?: string;
   text?: string;
 };
 
@@ -12973,8 +12976,16 @@ export type DecisionsAnswerReturn = {
     };
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
+    revisedAt: number;
     revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
     status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
     updatedAt: number;
   };
   deliveries: Array<{
@@ -12997,6 +13008,7 @@ export type DecisionsAskInput = {
   execute?: boolean;
   key?: string;
   owner?: string;
+  scope?: string;
   task?: string;
   thread?: string;
 };
@@ -13023,8 +13035,16 @@ export type DecisionsAskReturn = {
     };
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
+    revisedAt: number;
     revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
     status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
     updatedAt: number;
   };
   deliveries: Array<{
@@ -13043,8 +13063,10 @@ export type DecisionsAskReturn = {
 /** Input shape for `decisions.list`. */
 export type DecisionsListInput = {
   all?: boolean;
+  answeredSince?: string;
   limit?: string;
   offset?: string;
+  scope?: string;
   task?: string;
   thread?: string;
 };
@@ -13070,8 +13092,16 @@ export type DecisionsListReturn = {
     };
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
+    revisedAt: number;
     revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
     status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
     updatedAt: number;
   }>;
   pagination: {
@@ -13115,8 +13145,16 @@ export type DecisionsResolveDeliveryReturn = {
     };
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
+    revisedAt: number;
     revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
     status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
     updatedAt: number;
   };
   deliveries: Array<{
@@ -13160,8 +13198,16 @@ export type DecisionsRetryReturn = {
     };
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
+    revisedAt: number;
     revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
     status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
     updatedAt: number;
   };
   deliveries: Array<{
@@ -13204,8 +13250,16 @@ export type DecisionsShowReturn = {
     };
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
+    revisedAt: number;
     revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
     status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
     updatedAt: number;
   };
   deliveries: Array<{
@@ -13226,6 +13280,53 @@ export type DecisionsShowReturn = {
     snapshot: string;
     type: string;
   }>;
+};
+
+/** Input shape for `decisions.supersede`. */
+export type DecisionsSupersedeInput = {
+  by?: string;
+  execute?: boolean;
+  id: string;
+};
+
+/** Return shape for `decisions.supersede`. */
+export type DecisionsSupersedeReturn = {
+  replaced: {
+    id: string;
+    status: "superseded";
+    supersededBy: string;
+  };
+  replacement: {
+    answer: string | null;
+    answeredAt: number | null;
+    answeredBy: string | null;
+    ask: string;
+    askedAt: number;
+    askedBy: string | null;
+    blocks: boolean;
+    createdAt: number;
+    id: string;
+    key: string;
+    origin: {
+      chatId: string | null;
+      id: string;
+      sessionKey: string | null;
+      type: "task" | "thread";
+    };
+    ownerId: string | null;
+    ownerType: "human" | "agent" | "unassigned";
+    revisedAt: number;
+    revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
+    status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
+    updatedAt: number;
+  };
 };
 
 /** Input shape for `devin.auth.check`. */
@@ -21633,6 +21734,10 @@ export type SessionsThreadSendReturn = {
     barrierSource: "explicit" | "default" | "inferred";
   };
   messageId: string;
+  openDecisionWaits?: Array<{
+    decisionId: string;
+    handoffId: string;
+  }>;
   reopened: boolean;
   requestId: string;
   status: "published";
@@ -25167,6 +25272,83 @@ export type TagsDetachReturn = {
   status: "detached";
   target: Record<string, unknown>;
   [k: string]: unknown;
+};
+
+/** Input shape for `tags.doctor`. */
+export type TagsDoctorInput = {
+  limit?: string;
+};
+
+/** Return shape for `tags.doctor`. */
+export type TagsDoctorReturn = {
+  bindingsByAssetType: Array<{
+    assetType: string;
+    assets: number;
+    bindings: number;
+    tags: number;
+  }>;
+  chatGrantPower?: Array<{
+    breakGlass: string[];
+    capabilities: string[];
+    contactId: string;
+    profile: string;
+    scope: string;
+  }>;
+  consumers: Array<{
+    enabled: boolean;
+    kinds: Array<"observer_rule" | "tag_rule" | "permission_provider">;
+    slug: string;
+  }>;
+  generatedAt: number;
+  legacyMirrors: Array<{
+    bindings: number;
+    rewrites: number;
+    source: string;
+  }>;
+  limit: number;
+  orphanBindings: {
+    checked: Array<{
+      assetType: string;
+      bindings: number;
+      orphans: number;
+      sampleAssetIds: string[];
+    }>;
+    uncheckedAssetTypes: string[];
+  };
+  power?: "included" | "withheld";
+  powerTags: Array<{
+    breakGlass: string[];
+    capabilities: string[];
+    contactId: string;
+    sources: string[];
+  }>;
+  summary: {
+    bindings: number;
+    boundTagsWithoutConsumer: number;
+    chatGrantsWithBreakGlass?: number | null;
+    chatGrantsWithCapabilities?: number | null;
+    contactsWithBreakGlass: number | null;
+    contactsWithCapabilities: number | null;
+    definitions: number;
+    legacyMirrorBindings: number;
+    orphanBindings: number;
+    unboundDefinitions: number;
+  };
+  tagRuleErrors: Array<{
+    error: string;
+    source: string;
+  }>;
+  tagsWithoutConsumer: Array<{
+    assetTypes: string[];
+    bindings: number;
+    slug: string;
+  }>;
+  unboundDefinitions: Array<{
+    createdAt: number;
+    kind: string;
+    slug: string;
+    source: string;
+  }>;
 };
 
 /** Input shape for `tags.list`. */

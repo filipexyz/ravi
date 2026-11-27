@@ -11,6 +11,7 @@ import {
   getContextLineage,
   issueRuntimeContext,
   resolveRuntimeContext,
+  resolveRuntimeContextById,
 } from "../runtime/context-registry.js";
 
 import { dbGetContext, type ContextCapability, type ContextRecord } from "../router/router-db.js";
@@ -2487,9 +2488,10 @@ describe("Ravi app composition", () => {
     ]);
     for (const name of capabilityNames(mdRenderChild)) expect(capabilityNames(blogChild)).toContain(name);
     for (const name of capabilityNames(blogChild)) expect(capabilityNames(turn)).toContain(name);
+    expect(turn.contextKey.startsWith("rctx_")).toBe(true);
     expect(JSON.stringify(result)).not.toContain(turn.contextKey);
-    expect(JSON.stringify(result)).not.toContain(blogChild.contextKey);
-    expect(JSON.stringify(result)).not.toContain(mdRenderChild.contextKey);
+    // The children's keys exist only in their processes (the registry keeps hashes), so no key of any kind may appear.
+    expect(JSON.stringify(result)).not.toContain("rctx_");
   }, 30_000);
 
   it("fails closed, with nothing started, when the invoker does not hold what the chain of apps needs", async () => {
@@ -2746,11 +2748,11 @@ describe("Ravi app composition", () => {
     expect(descendants).toHaveLength(2);
     for (const context of descendants) {
       expect(context.revokedAt).toBeGreaterThan(0);
-      expect(resolveRuntimeContext(context.contextKey)).toBeNull();
+      expect(resolveRuntimeContextById(context.contextId)).toBeNull();
     }
     // The turn that asked is not touched by any of it.
     expect(getContextLineage(turn.contextId)?.context.revokedAt).toBeUndefined();
-    expect(resolveRuntimeContext(turn.contextKey)).not.toBeNull();
+    expect(resolveRuntimeContextById(turn.contextId)).not.toBeNull();
 
     // An app that fails, or that is killed, loses its credential the same way.
     const crashed = await callAsContext(root, turn, "blog", "render", [consumerConfig(root, { crash: true })]);
@@ -2786,7 +2788,7 @@ describe("Ravi app composition", () => {
     expect(child.metadata).not.toHaveProperty("composition");
     // Its credential keeps living until its own expiry, as it did before composition existed.
     expect(child.revokedAt).toBeUndefined();
-    expect(resolveRuntimeContext(child.contextKey)).not.toBeNull();
+    expect(resolveRuntimeContextById(child.contextId)).not.toBeNull();
   }, 30_000);
 
   it("turns a cycle of requires into a validation error, and nothing in it runs", async () => {
