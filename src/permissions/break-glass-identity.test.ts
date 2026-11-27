@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout, spyOn } from "bun:test";
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,6 +21,7 @@ import {
 import { runApprovedBreakGlassGrant } from "./break-glass.js";
 import type { ContextCapability } from "../router/router-db.js";
 import { dbCreateAgent, dbGetAgent, dbUpdateAgent, dbUpsertChat, dbUpsertInstance } from "../router/router-db.js";
+import * as routerConfigModule from "../router/config.js";
 import { dbCreateTagDefinition } from "../tags/index.js";
 import { dbEnsureContactChatGrant } from "./contact-chat-grants.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
@@ -223,6 +224,41 @@ describe("an agent never raises another agent to break-glass", () => {
 });
 
 describe("every writer of agent runtime permissions keeps the rule", () => {
+  it("re-judges break-glass inside the write transaction: a concurrent dormant plant refuses the agent's bootstrap", () => {
+    dbCreateAgent({ id: "race-victim", cwd: "/tmp" });
+    dbUpdateAgent("race-victim", { defaults: { runtimePermissions: { profile: "chat-only" } } });
+    const realRebase = routerConfigModule.rebaseAgentDefaults;
+    const spy = spyOn(routerConfigModule, "rebaseAgentDefaults").mockImplementation((id, base, next) => {
+      // An operator-approved write lands after the command's early check and
+      // before its write (the approval keeps the plant itself from being refused).
+      runApprovedBreakGlassGrant("race-test", () =>
+        dbUpdateAgent("race-victim", {
+          defaults: { runtimePermissions: { profile: "chat-only", capabilities: ["admin:system:*"] } },
+        }),
+      );
+      return realRebase(id, base, next);
+    });
+    let refusal: unknown;
+    try {
+      runWithContext(ADMIN_AGENT, () => {
+        try {
+          new AgentsCommands().permissions("race-victim", "bootstrap", undefined, true, undefined, true);
+        } catch (err) {
+          refusal = err;
+        }
+      });
+    } finally {
+      spy.mockRestore();
+    }
+    // The early check passed (chat-only without capabilities); the refusal
+    // comes from the break-glass sink guard judging the row inside the write
+    // transaction, where the concurrent dormant plant is visible.
+    expect(refusal).toMatchObject({ code: "FULL_ACCESS_APPROVAL_REQUIRED" });
+    expect(String((refusal as Error).message)).toContain("agent defaults of race-victim");
+    // The refused transaction wrote nothing over the concurrent row.
+    expect(JSON.stringify(dbGetAgent("race-victim")?.defaults ?? {})).toContain("chat-only");
+  });
+
   it("refuses agents set defaults that carries full-access or break-glass capabilities for another agent", async () => {
     dbCreateAgent({ id: "victim", cwd: "/tmp" });
     const commands = new AgentsCommands();

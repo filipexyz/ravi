@@ -27,7 +27,7 @@ import {
   diffAgentDefaults,
   previousAgentDefaultsValues,
 } from "./agent-write-audit.js";
-import { mergeAgentDefaultsPatch } from "./agent-defaults-patch.js";
+import { mergeAgentDefaultsPatch, rebaseAgentDefaultsObject } from "./agent-defaults-patch.js";
 import { getCredentialConnection } from "../credentials/store.js";
 import { createReadWatchdog } from "../db/read-watchdog.js";
 import { getRaviStateDir } from "../utils/paths.js";
@@ -10074,12 +10074,14 @@ export function dbRebaseAgentDefaults(
     .transaction(() => {
       const row = getStatements().getAgent.get(id) as AgentRow | undefined;
       if (!row) throw new Error(`Agent not found: ${id}`);
-      const intended = next ?? {};
-      const diff = diffAgentDefaults(base ?? {}, intended);
-      const merged: Record<string, unknown> = { ...parseAgentDefaultsRecord(row.defaults ?? null) };
-      for (const key of [...diff.added, ...diff.changed]) merged[key] = intended[key];
-      for (const key of diff.removed) delete merged[key];
-      return dbUpdateAgent(id, { defaults: Object.keys(merged).length > 0 ? merged : null });
+      const stored = parseAgentDefaultsRecord(row.defaults ?? null);
+      // Deep three-way merge (objects per key, arrays as sets): two writers
+      // touching different entries of the same top-level key both survive.
+      const merged = rebaseAgentDefaultsObject(stored, base, next);
+      // dbUpdateAgent's break-glass sink guard reads the row inside this
+      // transaction, so it judges the state actually being replaced (not the
+      // copy the caller read earlier).
+      return dbUpdateAgent(id, { defaults: merged });
     })
     .immediate();
 }

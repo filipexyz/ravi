@@ -175,3 +175,47 @@ describe("dbRebaseAgentDefaults (writers that build a whole object from an earli
     expect(dbGetAgent("rebase-b")!.defaults ?? null).toBeNull();
   });
 });
+
+describe("dbRebaseAgentDefaults deep merge and in-transaction guard", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-agent-defaults-deep-test-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("two permission writers granting different capabilities from the same read both land", () => {
+    dbCreateAgent({ id: "deep-a", cwd: "/tmp/deep-a" });
+    const git = { permission: "execute", objectType: "executable", objectId: "git" } as const;
+    dbUpdateAgent("deep-a", { defaults: { runtimePermissions: { profile: "explicit-only", capabilities: [git] } } });
+    const read = dbGetAgent("deep-a")!.defaults ?? {};
+
+    const gh = { permission: "execute", objectType: "executable", objectId: "gh" } as const;
+    const jq = { permission: "execute", objectType: "executable", objectId: "jq" } as const;
+    dbRebaseAgentDefaults(
+      "deep-a",
+      read,
+      buildAgentRuntimePermissionsDefaults(read, { profile: "explicit-only", capabilities: [git, gh] }),
+    );
+    dbRebaseAgentDefaults(
+      "deep-a",
+      read,
+      buildAgentRuntimePermissionsDefaults(read, { profile: "explicit-only", capabilities: [git, jq] }),
+    );
+
+    const caps = (dbGetAgent("deep-a")!.defaults?.runtimePermissions as { capabilities?: Array<{ objectId: string }> })
+      ?.capabilities;
+    expect(caps?.map((cap) => cap.objectId).sort()).toEqual(["gh", "git", "jq"]);
+  });
+
+  it("redacts secret-looking keys nested under a neutral top-level key", () => {
+    dbCreateAgent({ id: "deep-c", cwd: "/tmp/deep-c" });
+    dbUpdateAgent("deep-c", { defaults: { provider: { name: "el", apiKey: "sk-old" } } });
+    dbUpdateAgent("deep-c", { defaults: { provider: { name: "el", apiKey: "sk-new" } } });
+    const detail = latestAudit("deep-c").oldValue as Record<string, any>;
+    expect(detail.previous).toEqual({ provider: { name: "el", apiKey: "[redacted]" } });
+    expect(JSON.stringify(detail)).not.toContain("sk-old");
+  });
+});

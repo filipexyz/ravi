@@ -48,14 +48,26 @@ An agent is not a human user, contact, chat, route, or permission profile.
   transaction, so a concurrent writer in another process cannot lose an
   update. Writers that build a whole defaults object from an earlier read
   (`agents permissions`, `agents model-broker`, a Library profile, the
-  capability provider) MUST land only the keys they changed, applied over the
-  stored row in one transaction (`dbRebaseAgentDefaults`).
+  capability provider) MUST land only what they changed, applied over the
+  stored row in one transaction (`dbRebaseAgentDefaults`). The merge is deep:
+  when nobody else wrote, the writer's value stands as built; otherwise objects
+  merge key by key at any depth and arrays merge as sets (added elements
+  appended, removed elements dropped). `runtimePermissions.capabilities`
+  entries are compared by canonical identity (`permission:objectType:objectId`
+  string and object forms are the same capability), so a revocation applies
+  whatever format another writer stored. Two writers that touch
+  different entries of the same top-level key (two capabilities granted
+  concurrently) both land. The break-glass check of that write MUST judge the
+  transition from the row as stored inside the transaction, not the copy the
+  caller read earlier (the `dbUpdateAgent` sink guard runs inside it).
   `agents set defaults` MUST refuse any change to `runtimePermissions`; only
   `ravi agents permissions <id>` writes it, for agents and the operator alike.
 - Every write to `agents` that changes something MUST leave one `audit_log` row
   (`agent.updated`) with the caller and the changed fields/defaults keys, and
-  only the old value of changed or removed keys (secret-looking key names
-  redacted), never the whole previous object. The audit write fails open: a
+  only the old value of changed or removed keys in `detail.previous` (named
+  `previousDefaults`, holding the whole object, before #1057), with
+  secret-looking key names redacted at any depth; never the whole previous
+  object. The audit write fails open: a
   failure is logged as a warning and the agent write still lands, because the
   audit exists to say who wrote, not to gate writes.
 - A client that edits part of an agent's defaults MUST send only the keys it

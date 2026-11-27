@@ -50,15 +50,29 @@ export function diffAgentDefaults(before: unknown, after: unknown): AgentDefault
 
 const SECRET_LIKE_KEY = /key|token|secret|password|credential/i;
 
+/** Copy of a value with every secret-looking key, at any depth, replaced by "[redacted]". */
+export function redactSecretLikeValues(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactSecretLikeValues);
+  if (isPlainRecord(value)) {
+    const out: Record<string, unknown> = {};
+    for (const [key, inner] of Object.entries(value)) {
+      out[key] = SECRET_LIKE_KEY.test(key) ? "[redacted]" : redactSecretLikeValues(inner);
+    }
+    return out;
+  }
+  return value;
+}
+
 /**
  * Old values of the keys a write changed or removed, for audit_log.old_value.
- * Secret-looking key names are recorded as "[redacted]".
+ * Secret-looking key names are recorded as "[redacted]" at any depth
+ * (`{ provider: { apiKey } }` included).
  */
 export function previousAgentDefaultsValues(before: unknown, diff: AgentDefaultsDiff): Record<string, unknown> {
   const a = isPlainRecord(before) ? before : {};
   const out: Record<string, unknown> = {};
   for (const key of [...diff.changed, ...diff.removed]) {
-    out[key] = SECRET_LIKE_KEY.test(key) ? "[redacted]" : a[key];
+    out[key] = SECRET_LIKE_KEY.test(key) ? "[redacted]" : redactSecretLikeValues(a[key]);
   }
   return out;
 }

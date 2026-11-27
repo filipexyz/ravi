@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 const actualCliContextModule = await import("../context.js");
-const { mergeAgentDefaultsPatch } = await import("../../router/agent-defaults-patch.js");
+const { mergeAgentDefaultsPatch, rebaseAgentDefaultsObject } = await import("../../router/agent-defaults-patch.js");
 const actualRouterDbModule = await import("../../router/router-db.js");
 const actualRouterSessionsModule = await import("../../router/sessions.js");
 
@@ -52,6 +52,7 @@ type SessionLike = {
 };
 
 let currentAgent: AgentLike | null = null;
+let beforeRebaseHook: (() => void) | null = null;
 let allAgents: AgentLike[] = [];
 let createAgentCalls: Array<Record<string, unknown>> = [];
 let updateAgentCalls: Array<{ id: string; partial: Record<string, unknown> }> = [];
@@ -165,12 +166,10 @@ mock.module("../../router/config.js", () => ({
     base: Record<string, unknown> | null | undefined,
     next: Record<string, unknown> | null | undefined,
   ) => {
-    const stored = currentAgent?.id === id ? { ...(currentAgent.defaults ?? {}) } : {};
-    const b = base ?? {};
-    const n = next ?? {};
-    for (const key of Object.keys(n)) if (JSON.stringify(b[key]) !== JSON.stringify(n[key])) stored[key] = n[key];
-    for (const key of Object.keys(b)) if (!(key in n)) delete stored[key];
-    const merged = Object.keys(stored).length > 0 ? stored : null;
+    // The real pure merge, not a copy (review N2 of #1057).
+    beforeRebaseHook?.();
+    const stored = currentAgent?.id === id ? (currentAgent.defaults ?? null) : null;
+    const merged = rebaseAgentDefaultsObject(stored, base, next);
     updateAgentCalls.push({ id, partial: { defaults: merged } });
     if (currentAgent?.id === id) currentAgent = { ...currentAgent, defaults: merged };
   },
@@ -606,6 +605,36 @@ describe("AgentsCommands set model validation", () => {
 
     await expect(commands.set("dev", "effort", "turbo", true)).rejects.toThrow("Invalid effort: turbo");
     expect(updateAgentCalls).toHaveLength(0);
+  });
+
+  it("agents permissions reports the stored grants, including one landed between its read and write", () => {
+    const gh = { permission: "execute", objectType: "executable", objectId: "gh" };
+    currentAgent = {
+      id: "dev",
+      cwd: "/tmp/dev",
+      provider: "pi",
+      defaults: { runtimePermissions: { profile: "explicit-only" } },
+    };
+    beforeRebaseHook = () => {
+      currentAgent = {
+        ...currentAgent!,
+        defaults: { runtimePermissions: { profile: "explicit-only", capabilities: [gh] } },
+      };
+    };
+    try {
+      const payload = new AgentsCommands().permissions(
+        "dev",
+        "explicit-only",
+        "execute:executable:jq",
+        true,
+        undefined,
+        true,
+      ) as { after: { capabilities?: Array<{ objectId: string }> } | null; defaults: Record<string, unknown> | null };
+      expect(payload.after?.capabilities?.map((cap) => cap.objectId).sort()).toEqual(["gh", "jq"]);
+      expect(JSON.stringify(payload.defaults)).toContain('"gh"');
+    } finally {
+      beforeRebaseHook = null;
+    }
   });
 
   it("merges a defaults write per key and keeps runtimePermissions (27/11 overlay TTS save)", async () => {
