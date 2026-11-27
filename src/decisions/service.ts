@@ -316,14 +316,11 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-const NEGATION = "(?:não|nao|not|no|nunca|never)(?![\\p{L}\\p{N}_])";
-
 /**
- * Where the owner names the audience next to the decision: `<id> <scope>` (separated only by spaces or `:,;-`). A
- * negation word right before the id ("não dec_x org") or right after the scope without a `:` between ("dec_x org
- * não, só desta thread", "dec_x org? não") never widens; after a `:` the text is the answer itself ("dec_x org: não
- * use a api v1"). Matched on the original text, case-insensitively, so the span cuts the same characters it measured.
- * Returns the span of the approving pair, or null; in doubt, null.
+ * Where the owner approves the audience: the message starts with `<id> <scope>:` (spaces or `,;-` allowed between id
+ * and scope) and the answer is what follows the colon. Anything else never widens: text before the pair, or words
+ * glued to the scope without `:` ("dec_x org jamais", "dec_x org não, só desta thread"), whatever they mean. Matched on
+ * the original text, case-insensitively. Returns the span of the approving pair, or null; in doubt, null.
  */
 export function findOwnerScopeApproval(
   text: string,
@@ -331,19 +328,12 @@ export function findOwnerScopeApproval(
   scope: DecisionScope,
 ): { start: number; end: number } | null {
   const pattern = new RegExp(
-    `(^|[^\\p{L}\\p{N}_])${escapeRegExp(decisionId)}[\\s:,;-]*${escapeRegExp(decisionScopeLiteral(scope))}(?![\\p{L}\\p{N}_]|[:.-][\\p{L}\\p{N}])`,
-    "giu",
+    `^(\\s*)${escapeRegExp(decisionId)}[\\s,;-]*${escapeRegExp(decisionScopeLiteral(scope))}\\s*:`,
+    "iu",
   );
-  const negatedBefore = new RegExp(`(^|[^\\p{L}\\p{N}_])${NEGATION}[\\s:,;-]*$`, "iu");
-  const negatedAfter = new RegExp(`^(?![\\s]*:)[\\s?!.,;-]*${NEGATION}`, "iu");
-  for (const match of text.matchAll(pattern)) {
-    const start = match.index + match[1]!.length;
-    const end = match.index + match[0].length;
-    if (negatedBefore.test(text.slice(0, start))) continue;
-    if (negatedAfter.test(text.slice(end))) continue;
-    return { start, end };
-  }
-  return null;
+  const match = pattern.exec(text);
+  if (!match) return null;
+  return { start: match[1]!.length, end: match[0].length };
 }
 
 export function ownerApprovesScope(text: string, decisionId: string, scope: DecisionScope): boolean {
