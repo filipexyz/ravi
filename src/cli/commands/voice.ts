@@ -1461,15 +1461,15 @@ export class VoiceDevicesCommands {
     worker?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({
-      flags: "--execute",
-      description: "Actually pair and print the key once; default is a dry-run that only shows the plan (exit 3)",
-    })
-    execute?: boolean,
-    @Option({
       flags: "--profiles <ids>",
       description: "Voice profiles it may start calls with (comma-separated; default '*', any)",
     })
     profilesValue?: string | string[],
+    @Option({
+      flags: "--execute",
+      description: "Actually pair and print the key once; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const op = "voice devices pair";
     return run(op, asJson, () => {

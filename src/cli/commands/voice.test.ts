@@ -214,7 +214,7 @@ describe("ravi voice commands", () => {
 
   it("pairing is braked, needs a contact and limits the wildcard to the owner", async () => {
     const devices = new VoiceDevicesCommands();
-    const missing = await contractError(() => devices.pair(undefined, undefined, "main", false, true, true));
+    const missing = await contractError(() => devices.pair(undefined, undefined, "main", false, true, undefined, true));
     expect(missing.code).toBe("USAGE_ERROR");
   });
 
@@ -225,13 +225,13 @@ describe("ravi voice commands", () => {
     const { personCredentialContactId } = await import("../../runtime/person-credential.js");
     const person = createContact({ phone: "5511900000995", name: "Person" });
     const devices = new VoiceDevicesCommands();
-    const paired = (await quiet(() => devices.pair(person.id, "phone", "main", false, true, true))) as {
+    const paired = (await quiet(() => devices.pair(person.id, "phone", "main", false, true, undefined, true))) as {
       device: { id: string };
     };
     const device = getVoiceDevice(paired.device.id);
     expect(personCredentialContactId(dbGetContext(device?.contextId ?? ""))).toBe(person.id);
 
-    const worker = (await quiet(() => devices.pair(person.id, "worker", undefined, true, true, true))) as {
+    const worker = (await quiet(() => devices.pair(person.id, "worker", undefined, true, true, undefined, true))) as {
       device: { id: string };
     };
     const workerDevice = getVoiceDevice(worker.device.id);
@@ -300,7 +300,7 @@ describe("ravi voice commands", () => {
       const { getVoiceDevice } = await import("../../voice/store.js");
       const person = createContact({ phone: `55119${Math.floor(Math.random() * 1e8)}`, name: "Person" });
       const paired = (await quiet(() =>
-        new VoiceDevicesCommands().pair(person.id, "phone", "main", false, true, true, profiles),
+        new VoiceDevicesCommands().pair(person.id, "phone", "main", false, true, profiles, true),
       )) as { device: { id: string; profiles: string[] } };
       const device = getVoiceDevice(paired.device.id);
       return {
@@ -364,7 +364,7 @@ describe("ravi voice commands", () => {
       const { createContact } = await import("../../contacts.js");
       const person = createContact({ phone: "5511900000777", name: "Person" });
       const error = await contractError(() =>
-        new VoiceDevicesCommands().pair(person.id, "phone", "main", false, true, true, " , "),
+        new VoiceDevicesCommands().pair(person.id, "phone", "main", false, true, " , ", true),
       );
       expect(error.code).toBe("USAGE_ERROR");
     });
