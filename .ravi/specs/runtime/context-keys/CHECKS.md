@@ -50,4 +50,8 @@
   then scans the whole database file and its WAL for those keys.
 - `src/adapters/adapter-store.test.ts` checks a session adapter debug snapshot
   never stores the bound key, and that the migration removes a key an older
-  release stored there (row and files scanned).
+  release stored there (row and files scanned), even when the connection has
+  `secure_delete` off: the migration forces it on for its rewrite and restores
+  the previous value.
+- `src/adapters/session-adapter-bus.test.ts` checks that events published on
+  `ravi.session.<name>.adapter.*` carry the context id and never the bound key.

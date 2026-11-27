@@ -194,6 +194,44 @@ describe("Session adapter store", () => {
     }
   });
 
+  it("wipes an old snapshot key from the database file even when SQLite's secure_delete is off", () => {
+    // The migration forces secure_delete on for its rewrite, so the result does
+    // not depend on the build's default (Bun ships FAST). With it off, the freed
+    // space of a rewritten row keeps the front of the old cell (measured).
+    const key = `rctx_oldSnapshotKeyWithSecureDeleteOff${"0123456789".repeat(8)}`;
+    // SQLite writes the shortened cell over the tail of the old one, so what
+    // survives in freed space is the front of the old cell: a key fragment.
+    const fragment = key.slice(0, 32);
+    const ids = Array.from({ length: 20 }, (_, index) => `${TEST_ADAPTER_ID}-sd-${index}`);
+    try {
+      for (const [index, adapterId] of ids.entries()) {
+        saveSessionAdapter({ adapterId, definition: { ...buildDefinition(), name: `smoke-sd-${index}` } });
+        const bind: Record<string, unknown> = { contextId: `ctx_${index}`, cliName: "smoke" };
+        if (index === 10) bind.contextKey = key;
+        getDb()
+          .prepare("INSERT INTO session_adapter_debug (adapter_id, snapshot_json, updated_at) VALUES (?, ?, ?)")
+          .run(adapterId, JSON.stringify({ bind, adapterId, lastEvent: { note: "x".repeat(200) } }), Date.now());
+      }
+      getDb().exec("PRAGMA wal_checkpoint(TRUNCATE)");
+      const dbPath = getRaviDbPath();
+      expect(readFileSync(dbPath).includes(key)).toBe(true);
+
+      getDb().exec("PRAGMA secure_delete = OFF");
+      hashStoredContextKeys(getDb());
+
+      expect((getDb().prepare("PRAGMA secure_delete").get() as { secure_delete: number }).secure_delete).toBe(0);
+      for (const path of [dbPath, `${dbPath}-wal`]) {
+        if (existsSync(path)) expect(readFileSync(path).includes(fragment)).toBe(false);
+      }
+    } finally {
+      getDb().exec("PRAGMA secure_delete = FAST");
+      for (const adapterId of ids) {
+        getDb().prepare("DELETE FROM session_adapter_debug WHERE adapter_id = ?").run(adapterId);
+        getDb().prepare("DELETE FROM session_adapters WHERE adapter_id = ?").run(adapterId);
+      }
+    }
+  });
+
   it("tracks configured, running, stopped, and broken states distinctly", () => {
     saveSessionAdapter({
       adapterId: TEST_ADAPTER_ID,
