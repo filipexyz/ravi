@@ -14,7 +14,11 @@ import {
   dbUpdateContextMetadata,
   closeRouterDb,
   getDb,
+  getRaviDbPath,
+  hashContextKey,
+  hashStoredContextKeys,
 } from "./router-db.js";
+import { existsSync, readFileSync } from "node:fs";
 import { resolveRuntimeContext } from "../runtime/context-registry.js";
 import { getOrCreateSession } from "./sessions.js";
 import { closeSlackThreadLifecycle, registerInboundSlackThread } from "../channels/slack/thread-lifecycle-store.js";
@@ -306,6 +310,34 @@ describe("context metadata and transactional revocation persistence", () => {
       const context = createContext(id, { expiresAt: now + 60_000, ...overrides });
       expect(dbRenewActiveContext(context.contextId, context.expiresAt, 60_000, now + 1_000)).toBeNull();
       expect(dbGetContext(context.contextId)).toEqual(context);
+    }
+  });
+  it("zeroes migrated clear keys even when the connection has secure_delete off, and restores the setting", () => {
+    // A long legacy key: SQLite writes the shorter hashed row over the tail of
+    // the old cell, so freed space keeps its front unless secure_delete is on.
+    const legacyKey = `rctx_legacyKeyWithSecureDeleteOff${"0123456789".repeat(20)}`;
+    const fragment = legacyKey.slice(0, 32);
+    const contexts = Array.from({ length: 12 }, (_, index) => createContext(`secure-delete-${index}`));
+    const target = contexts[6]!;
+    getDb().prepare("UPDATE contexts SET context_key = ? WHERE context_id = ?").run(legacyKey, target.contextId);
+    getDb().exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    const dbPath = getRaviDbPath();
+    expect(readFileSync(dbPath).includes(fragment)).toBe(true);
+
+    getDb().exec("PRAGMA secure_delete = OFF");
+    try {
+      expect(hashStoredContextKeys(getDb())).toBe(1);
+      expect((getDb().prepare("PRAGMA secure_delete").get() as { secure_delete: number }).secure_delete).toBe(0);
+    } finally {
+      getDb().exec("PRAGMA secure_delete = FAST");
+    }
+
+    const stored = getDb().prepare("SELECT context_key FROM contexts WHERE context_id = ?").get(target.contextId) as {
+      context_key: string;
+    };
+    expect(stored.context_key).toBe(hashContextKey(legacyKey));
+    for (const path of [dbPath, `${dbPath}-wal`]) {
+      if (existsSync(path)) expect(readFileSync(path).includes(fragment)).toBe(false);
     }
   });
 });
