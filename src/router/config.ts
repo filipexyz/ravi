@@ -16,8 +16,6 @@ import {
   dbListRoutes,
   dbGetAgent,
   dbUpdateAgent,
-  dbPatchAgentDefaults,
-  dbRebaseAgentDefaults,
   dbDeleteAgent,
   dbCreateAgent,
   dbSetAgentDebounce,
@@ -31,6 +29,8 @@ import {
   type ChannelConfig,
   type InstanceConfig,
 } from "./router-db.js";
+// Namespace import: tests that mock router-db partially must still load this module.
+import * as routerDb from "./router-db.js";
 
 const log = logger.child("router:config");
 
@@ -129,7 +129,7 @@ export function updateAgent(id: string, partial: AgentUpdateInput): void {
  * write transaction. runtimePermissions is read-only here.
  */
 export function patchAgentDefaults(id: string, patch: Record<string, unknown>): void {
-  dbPatchAgentDefaults(id, patch);
+  routerDb.dbPatchAgentDefaults(id, patch);
 }
 
 /**
@@ -141,7 +141,7 @@ export function rebaseAgentDefaults(
   base: Record<string, unknown> | null | undefined,
   next: Record<string, unknown> | null | undefined,
 ): void {
-  dbRebaseAgentDefaults(id, base, next);
+  routerDb.dbRebaseAgentDefaults(id, base, next);
 }
 
 /**

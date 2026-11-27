@@ -35,8 +35,6 @@ import {
   getAllAgents,
   createAgent,
   updateAgent,
-  patchAgentDefaults,
-  rebaseAgentDefaults,
   deleteAgent,
   setAgentDebounce,
   ensureAgentDirs,
@@ -76,6 +74,8 @@ import {
 import { formatCliRuntimeTarget, getCliRuntimeMismatchMessage, inspectCliRuntimeTarget } from "../runtime-target.js";
 import type { AgentConfig, AgentUpdateInput } from "../../router/types.js";
 import { mergeAgentDefaultsPatch } from "../../router/agent-defaults-patch.js";
+// Namespace import: tests that mock router/config partially must still load this module.
+import * as routerConfig from "../../router/config.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { searchTagBindingsForSelector } from "../../tags/service.js";
 import type { TagBinding } from "../../tags/types.js";
@@ -1607,7 +1607,7 @@ SOURCES
       } else {
         updates = { [key]: parsedValue };
       }
-      if (defaultsPatch) patchAgentDefaults(id, defaultsPatch);
+      if (defaultsPatch) routerConfig.patchAgentDefaults(id, defaultsPatch);
       else updateAgent(id, updates);
       if (key === "cwd" || key === "provider") {
         ensureAgentDirs(loadRouterConfig());
@@ -1778,7 +1778,7 @@ SOURCES
     // Sweep again after the write to catch a context issued concurrently from
     // the old configuration while the mutation was in progress.
     revokeLiveRuntimeContextsForAgent(id);
-    rebaseAgentDefaults(id, agent.defaults, nextDefaults);
+    routerConfig.rebaseAgentDefaults(id, agent.defaults, nextDefaults);
     revokeLiveRuntimeContextsForAgent(id);
     const updated = getAgent(id) ?? { ...agent, defaults: nextDefaults };
     const payload = {
@@ -1961,7 +1961,7 @@ SOURCES
         );
       }
     }
-    rebaseAgentDefaults(id, agent.defaults, nextDefaults);
+    routerConfig.rebaseAgentDefaults(id, agent.defaults, nextDefaults);
     const updated = getAgent(id) ?? { ...agent, defaults: nextDefaults };
     const next = readRuntimeModelBrokerSelection(updated);
     const payload = {
