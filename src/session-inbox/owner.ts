@@ -31,9 +31,15 @@ function ownerIds(deps: InboxOwnerDeps): Set<string> {
   return new Set((deps.ownerContactIds ?? (() => findContactsByTag(OWNER_CONTACT_TAG).map((c) => c.id)))());
 }
 
+/**
+ * Exactly one owner, as Knowledge requires (src/knowledge/owner.ts): with no owner or with more
+ * than one contact tagged as owner, nobody drains the inbox (fail closed).
+ */
 function isOwnersDirectChat(chat: { chatId: string; channel: string | null }, deps: InboxOwnerDeps): boolean {
+  const owners = ownerIds(deps);
+  if (owners.size !== 1) return false;
   const contactId = (deps.dmContact ?? dmContactForChat)(chat);
-  return Boolean(contactId && ownerIds(deps).has(contactId));
+  return Boolean(contactId && owners.has(contactId));
 }
 
 /** A human turn drains only when it comes from the owner's own direct chat. Never throws. */

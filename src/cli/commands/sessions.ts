@@ -8588,7 +8588,7 @@ export class SessionCommands {
       reportText = `${reportText}\nRevisão não despachada pelo runtime: ${reviewDispatch.reason}.`;
     }
     try {
-      result = await reportSlackThreadProgress(session, reportText);
+      result = await reportSlackThreadProgress(session, reportText, undefined, { awaiting: Boolean(awaitingKind) });
     } catch (error) {
       rethrowSlackThreadError(error);
     }

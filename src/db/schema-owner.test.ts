@@ -221,7 +221,7 @@ it("channels startup refuses missing state before connecting to NATS and creates
   expect(readdirSync(state).filter((name) => name.endsWith(".db"))).toEqual([]);
 });
 
-it.each(["channel-outbound-publish", "slack-automatic-output", "cloud-chat"])(
+it.each(["channel-outbound-publish", "slack-automatic-output", "cloud-chat", "session-inbox"])(
   "channels startup refuses missing %s readiness even when router schema is ready",
   (component) => {
     const state = fixture();
