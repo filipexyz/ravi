@@ -55,8 +55,10 @@
   secret-looking names redacted at any depth.
 - Two writers that build from the same read and grant different capabilities
   MUST both land (deep merge; arrays as sets).
-- The break-glass guard of a rebased permission write MUST see the row as
-  stored inside the write transaction; a refusal MUST write nothing.
+- The break-glass check of a rebased permission write MUST see the row as
+  stored inside the write transaction: a dormant break-glass planted between an
+  agent's early check and its write MUST be refused, and the refusal MUST write
+  nothing.
 
 ## Commands
 

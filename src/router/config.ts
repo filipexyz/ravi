@@ -140,9 +140,8 @@ export function rebaseAgentDefaults(
   id: string,
   base: Record<string, unknown> | null | undefined,
   next: Record<string, unknown> | null | undefined,
-  guard?: (stored: Record<string, unknown>, result: Record<string, unknown>) => void,
 ): void {
-  routerDb.dbRebaseAgentDefaults(id, base, next, guard);
+  routerDb.dbRebaseAgentDefaults(id, base, next);
 }
 
 /**

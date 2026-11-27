@@ -53,9 +53,9 @@ An agent is not a human user, contact, chat, route, or permission profile.
   objects merge key by key at any depth and arrays merge as sets (added
   elements appended, removed elements dropped), so two writers that touch
   different entries of the same top-level key (two capabilities granted
-  concurrently) both land. A break-glass guard for that write MUST judge the
+  concurrently) both land. The break-glass check of that write MUST judge the
   transition from the row as stored inside the transaction, not the copy the
-  caller read earlier.
+  caller read earlier (the `dbUpdateAgent` sink guard runs inside it).
   `agents set defaults` MUST refuse any change to `runtimePermissions`; only
   `ravi agents permissions <id>` writes it, for agents and the operator alike.
 - Every write to `agents` that changes something MUST leave one `audit_log` row

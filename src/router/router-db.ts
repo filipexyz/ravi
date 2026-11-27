@@ -10068,7 +10068,6 @@ export function dbRebaseAgentDefaults(
   id: string,
   base: Record<string, unknown> | null | undefined,
   next: Record<string, unknown> | null | undefined,
-  guard?: (stored: Record<string, unknown>, result: Record<string, unknown>) => void,
 ): AgentConfig {
   const database = getDb();
   return database
@@ -10079,9 +10078,9 @@ export function dbRebaseAgentDefaults(
       // Deep three-way merge (objects per key, arrays as sets): two writers
       // touching different entries of the same top-level key both survive.
       const merged = rebaseAgentDefaultsObject(stored, base, next);
-      // A guard (break-glass) judges the transition from the row as stored
-      // now, inside the write lock, not the copy the caller read earlier.
-      guard?.(stored, merged ?? {});
+      // dbUpdateAgent's break-glass sink guard reads the row inside this
+      // transaction, so it judges the state actually being replaced (not the
+      // copy the caller read earlier).
       return dbUpdateAgent(id, { defaults: merged });
     })
     .immediate();

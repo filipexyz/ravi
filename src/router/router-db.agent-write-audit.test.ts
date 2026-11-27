@@ -210,24 +210,6 @@ describe("dbRebaseAgentDefaults deep merge and in-transaction guard", () => {
     expect(caps?.map((cap) => cap.objectId).sort()).toEqual(["gh", "git", "jq"]);
   });
 
-  it("the guard sees the row as stored inside the transaction, and a refusal writes nothing", () => {
-    dbCreateAgent({ id: "deep-b", cwd: "/tmp/deep-b" });
-    dbUpdateAgent("deep-b", { defaults: { tts_voice: "x" } });
-    const read = dbGetAgent("deep-b")!.defaults ?? {};
-    // Another writer lands a profile after the caller's read.
-    dbUpdateAgent("deep-b", { defaults: { tts_voice: "x", runtimePermissions: { profile: "full-access" } } });
-
-    let seen: Record<string, unknown> | null = null;
-    expect(() =>
-      dbRebaseAgentDefaults("deep-b", read, { ...read, tts_voice: "y" }, (stored) => {
-        seen = stored;
-        throw new Error("guard refused");
-      }),
-    ).toThrow("guard refused");
-    expect((seen as Record<string, any> | null)?.runtimePermissions).toEqual({ profile: "full-access" });
-    expect(dbGetAgent("deep-b")!.defaults?.tts_voice).toBe("x");
-  });
-
   it("redacts secret-looking keys nested under a neutral top-level key", () => {
     dbCreateAgent({ id: "deep-c", cwd: "/tmp/deep-c" });
     dbUpdateAgent("deep-c", { defaults: { provider: { name: "el", apiKey: "sk-old" } } });

@@ -166,7 +166,8 @@ mock.module("../../router/config.js", () => ({
     next: Record<string, unknown> | null | undefined,
   ) => {
     // The real pure merge, not a copy (review N2 of #1057).
-    const merged = rebaseAgentDefaultsObject(currentAgent?.id === id ? currentAgent.defaults : null, base, next);
+    const stored = currentAgent?.id === id ? (currentAgent.defaults ?? null) : null;
+    const merged = rebaseAgentDefaultsObject(stored, base, next);
     updateAgentCalls.push({ id, partial: { defaults: merged } });
     if (currentAgent?.id === id) currentAgent = { ...currentAgent, defaults: merged };
   },

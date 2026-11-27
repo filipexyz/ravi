@@ -1778,17 +1778,9 @@ SOURCES
     // Sweep again after the write to catch a context issued concurrently from
     // the old configuration while the mutation was in progress.
     revokeLiveRuntimeContextsForAgent(id);
-    // The guard runs again inside the write transaction, against the row as
-    // stored there (another permission writer may have landed in between).
-    routerConfig.rebaseAgentDefaults(id, agent.defaults, nextDefaults, (stored, result) =>
-      assertAgentBreakGlassRaiseAllowed(
-        "agents permissions",
-        id,
-        getAgentRuntimePermissionsConfigFromDefaults(stored),
-        getAgentRuntimePermissionsConfigFromDefaults(result),
-        { warnOperator: false },
-      ),
-    );
+    // dbUpdateAgent's break-glass sink guard runs again inside the write
+    // transaction, against the row as stored there.
+    routerConfig.rebaseAgentDefaults(id, agent.defaults, nextDefaults);
     revokeLiveRuntimeContextsForAgent(id);
     const updated = getAgent(id) ?? { ...agent, defaults: nextDefaults };
     const payload = {
