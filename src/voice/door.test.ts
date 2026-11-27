@@ -18,6 +18,7 @@ import {
   listVoiceTurns,
   saveVoiceProfile,
   defaultVoiceProfile,
+  deleteVoiceProfile,
   updateOpenVoiceCall,
   endOpenVoiceCall,
   updateVoiceCall,
@@ -627,6 +628,25 @@ describe("voice door", () => {
     expect(listVoiceEvents(call.id).some((event) => event.data.limit === "max_daily_cost")).toBe(false);
     expect(getVoiceProfileDailyUsage("busy").costUsd).toBe(5);
     expect(getVoiceDailyUsage().costUsd).toBeCloseTo(5 + getVoiceProfileDailyUsage("quiet").costUsd, 5);
+  });
+
+  it("a call whose profile was deleted spends and is limited on the default profile", async () => {
+    saveVoiceProfile({ ...defaultVoiceProfile(), maxCallCostUsd: 100, maxDailyCostUsd: 0.005 });
+    saveVoiceProfile({ ...defaultVoiceProfile(), id: "gone", maxCallCostUsd: 100, maxDailyCostUsd: 100 });
+    const { door } = harness();
+    const call = makeCall("push", { profileId: "gone" });
+    deleteVoiceProfile("gone");
+    await door.handleControl({
+      op: "utterance",
+      callId: call.id,
+      turnId: "vt_g",
+      text: "oi",
+      speaker: { kind: "operator", id: "operator" },
+    });
+    await until(() => getVoiceCall(call.id)?.state === "ended", "ended by the default daily limit");
+    expect(listVoiceEvents(call.id).some((event) => event.data.limit === "max_daily_cost")).toBe(true);
+    expect(getVoiceProfileDailyUsage("default").costUsd).toBeGreaterThan(0);
+    expect(getVoiceProfileDailyUsage("gone").costUsd).toBe(0);
   });
 
   it("ends the call when its own profile reaches the daily limit", async () => {
