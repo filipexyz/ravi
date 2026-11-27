@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 const actualCliContextModule = await import("../context.js");
+const { mergeAgentDefaultsPatch } = await import("../../router/agent-defaults-patch.js");
 const actualRouterDbModule = await import("../../router/router-db.js");
 const actualRouterSessionsModule = await import("../../router/sessions.js");
 
@@ -150,6 +151,13 @@ mock.module("../../router/config.js", () => ({
     updateAgentCalls.push({ id, partial });
     if (currentAgent?.id === id) {
       currentAgent = { ...currentAgent, ...partial };
+    }
+  },
+  patchAgentDefaults: (id: string, patch: Record<string, unknown>) => {
+    const merged = mergeAgentDefaultsPatch(id, currentAgent?.id === id ? currentAgent.defaults : null, patch);
+    updateAgentCalls.push({ id, partial: { defaults: merged } });
+    if (currentAgent?.id === id) {
+      currentAgent = { ...currentAgent, defaults: merged };
     }
   },
   deleteAgent: (id: string) => {

@@ -41,7 +41,21 @@
 - Human output MUST list all active overrides and MUST avoid raw channel ids.
 - A mutation with no active session overrides MUST NOT print a warning.
 
+## Agent Defaults Write Checks
+
+- A defaults patch without `runtimePermissions` MUST keep the stored
+  `runtimePermissions` and every key it did not name; `null` MUST remove a key.
+- A defaults patch that sets, replaces or removes `runtimePermissions` MUST be
+  refused with `AGENT_DEFAULTS_PERMISSIONS_READ_ONLY` and write nothing.
+- The merge MUST read the row inside the write transaction
+  (`dbPatchAgentDefaults`), not a copy read earlier by the caller.
+- The `audit_log` actor MUST name the runtime context (`context=`, `agent=`)
+  inside a gateway call and `console:<sub>` for a Console invocation.
+- `audit_log.old_value` MUST hold only changed/removed keys, with
+  secret-looking names redacted.
+
 ## Commands
 
 - `bun test src/cli/commands/agents.test.ts`
+- `bun test src/router/router-db.agent-write-audit.test.ts src/router/agent-defaults-patch.test.ts`
 - `bun test src/router/router.test.ts`

@@ -16,6 +16,7 @@ import {
   dbListRoutes,
   dbGetAgent,
   dbUpdateAgent,
+  dbPatchAgentDefaults,
   dbDeleteAgent,
   dbCreateAgent,
   dbSetAgentDebounce,
@@ -120,6 +121,14 @@ export function loadRouterConfig(): RouterConfig {
 export function updateAgent(id: string, partial: AgentUpdateInput): void {
   const { id: _ignoreId, ...updates } = partial;
   dbUpdateAgent(id, updates);
+}
+
+/**
+ * Merge a defaults patch into an agent (per key, `null` removes a key) in one
+ * write transaction. runtimePermissions is read-only here.
+ */
+export function patchAgentDefaults(id: string, patch: Record<string, unknown>): void {
+  dbPatchAgentDefaults(id, patch);
 }
 
 /**

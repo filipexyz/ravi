@@ -48,6 +48,21 @@ export function diffAgentDefaults(before: unknown, after: unknown): AgentDefault
   return { added: added.sort(), removed: removed.sort(), changed: changed.sort() };
 }
 
+const SECRET_LIKE_KEY = /key|token|secret|password|credential/i;
+
+/**
+ * Old values of the keys a write changed or removed, for audit_log.old_value.
+ * Secret-looking key names are recorded as "[redacted]".
+ */
+export function previousAgentDefaultsValues(before: unknown, diff: AgentDefaultsDiff): Record<string, unknown> {
+  const a = isPlainRecord(before) ? before : {};
+  const out: Record<string, unknown> = {};
+  for (const key of [...diff.changed, ...diff.removed]) {
+    out[key] = SECRET_LIKE_KEY.test(key) ? "[redacted]" : a[key];
+  }
+  return out;
+}
+
 export function agentDefaultsDiffIsEmpty(diff: AgentDefaultsDiff): boolean {
   return diff.added.length === 0 && diff.removed.length === 0 && diff.changed.length === 0;
 }

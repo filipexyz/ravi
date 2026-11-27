@@ -21,7 +21,13 @@ import { mkdirSync, existsSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 import { logger } from "../utils/logger.js";
-import { agentDefaultsDiffIsEmpty, describeAgentWriteActor, diffAgentDefaults } from "./agent-write-audit.js";
+import {
+  agentDefaultsDiffIsEmpty,
+  describeAgentWriteActor,
+  diffAgentDefaults,
+  previousAgentDefaultsValues,
+} from "./agent-write-audit.js";
+import { mergeAgentDefaultsPatch } from "./agent-defaults-patch.js";
 import { getCredentialConnection } from "../credentials/store.js";
 import { createReadWatchdog } from "../db/read-watchdog.js";
 import { getRaviStateDir } from "../utils/paths.js";
@@ -10033,6 +10039,24 @@ export function dbUpdateAgent(id: string, updates: AgentUpdateInput): AgentConfi
 }
 
 /**
+ * Apply a defaults patch (`agents set <id> defaults`) inside one IMMEDIATE
+ * transaction: the read of the current defaults, the per-key merge and the
+ * write happen under the write lock, so a concurrent writer in another
+ * process cannot slip between them and lose an update.
+ */
+export function dbPatchAgentDefaults(id: string, patch: Record<string, unknown>): AgentConfig {
+  const database = getDb();
+  return database
+    .transaction(() => {
+      const row = getStatements().getAgent.get(id) as AgentRow | undefined;
+      if (!row) throw new Error(`Agent not found: ${id}`);
+      const merged = mergeAgentDefaultsPatch(id, parseAgentDefaultsRecord(row.defaults ?? null), patch);
+      return dbUpdateAgent(id, { defaults: merged });
+    })
+    .immediate();
+}
+
+/**
  * One audit_log row per agent write: who wrote and which fields/defaults keys
  * changed. A write that drops runtimePermissions is logged as a warning, since
  * it silently narrows (or widens) every future turn of the agent.
@@ -10057,7 +10081,11 @@ function recordAgentWriteAudit(id: string, row: AgentRow, updates: AgentUpdateIn
   const detail = {
     fields,
     ...(defaultsChanged ? { defaults: defaultsDiff } : {}),
-    ...(defaultsChanged ? { previousDefaults: parseAgentDefaultsRecord(row.defaults ?? null) } : {}),
+    // Only the old value of keys that changed or were removed, never the whole
+    // object: defaults is free-form JSON and a secret-looking key is redacted.
+    ...(defaultsChanged && defaultsDiff
+      ? { previous: previousAgentDefaultsValues(parseAgentDefaultsRecord(row.defaults ?? null), defaultsDiff) }
+      : {}),
   };
   try {
     getStatements().insertAuditLog.run("agent.updated", "agent", id, JSON.stringify(detail), actor, now);
