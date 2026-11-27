@@ -884,6 +884,35 @@ export class VoiceCallsCommands {
     });
   }
 
+  @Command({
+    name: "activity",
+    description: "Tell the call whether the person is talking (holds when_idle speech until they stop)",
+  })
+  @CommandAccess({ kind: "mutate", resource: "voice", action: "calls.activity", risk: "low" })
+  async activity(
+    @Arg("call", { description: "Call id" }) callId: string,
+    @Arg("state", {
+      required: true,
+      description: "speaking or quiet",
+      schema: z.enum(["speaking", "quiet"]),
+    })
+    state: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const op = "voice calls activity";
+    return run(op, asJson, async () => {
+      const caller = resolveVoiceCaller(op);
+      const call = requireActiveCall(op, callId, asJson);
+      assertCallerControlsCall(caller, call, "speak");
+      if (state !== "speaking" && state !== "quiet") {
+        fail(op, "USAGE_ERROR", "--state must be speaking or quiet.", asJson, CONTRACT_EXIT_USAGE);
+      }
+      const speaking = state === "speaking";
+      await sendVoiceControl({ op: "activity", callId: call.id, speaking });
+      return emit({ callId: call.id, speaking }, asJson, () => console.log(speaking ? "speaking" : "quiet"));
+    });
+  }
+
   @Command({ name: "cancel-turn", description: "Cancel one of this call's turns (never other work)" })
   @CommandAccess({ kind: "mutate", resource: "voice", action: "calls.cancel-turn", risk: "low" })
   async cancelTurn(
@@ -1614,6 +1643,7 @@ declareCommandReturns(VoiceCallsCommands, {
     path: z.string().optional(),
   }),
   silence: z.object({ callId: z.string(), silenced: z.literal(true) }),
+  activity: z.object({ callId: z.string(), speaking: z.boolean() }),
   cancelTurn: z.object({ callId: z.string(), turnId: z.string(), cancelRequested: z.literal(true) }),
   approve: z.object({
     callId: z.string(),

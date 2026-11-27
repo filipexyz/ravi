@@ -123,6 +123,21 @@ describe("ravi voice commands", () => {
     expect(getVoiceCall(String(started.callId))?.profileId).toBe("fresh");
   });
 
+  it("activity tells the door whether the person is talking", async () => {
+    const calls = new VoiceCallsCommands();
+    const started = (await quiet(() => calls.start("main", undefined, "mock", undefined, true))) as Record<
+      string,
+      unknown
+    >;
+    const callId = String(started.callId);
+    const result = (await quiet(() => calls.activity(callId, "speaking", true))) as Record<string, unknown>;
+    expect(result).toEqual({ callId, speaking: true });
+    const control = emitted.find((message) => message.topic === `ravi.voice.${callId}.ctl`);
+    expect(control?.data).toMatchObject({ op: "activity", callId, speaking: true });
+    const bad = await contractError(() => calls.activity(callId, "loud", true));
+    expect(bad.code).toBe("USAGE_ERROR");
+  });
+
   it("refuses an engine that is not configured", async () => {
     const error = await contractError(() =>
       new VoiceCallsCommands().start("main", undefined, "handsfree", undefined, true),

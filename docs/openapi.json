@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "82eba5e9d98ec99b"
+    "version": "ee83864929f1bdca"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -158414,6 +158414,76 @@
         "summary": "Analyze a video (YouTube URL or local file) and save to markdown",
         "tags": [
           "video"
+        ]
+      }
+    },
+    "/api/v1/voice/calls/activity": {
+      "post": {
+        "operationId": "voice.calls.activity",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "call": {
+                    "description": "Call id",
+                    "type": "string"
+                  },
+                  "state": {
+                    "description": "speaking or quiet",
+                    "enum": [
+                      "speaking",
+                      "quiet"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "call",
+                  "state"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "callId": {
+                      "type": "string"
+                    },
+                    "speaking": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "callId",
+                    "speaking"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Tell the call whether the person is talking (holds when_idle speech until they stop)",
+        "tags": [
+          "voice"
         ]
       }
     },
