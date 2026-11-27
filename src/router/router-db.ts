@@ -10772,14 +10772,34 @@ export function dbListDeletedInstances(): InstanceConfig[] {
  * Older releases also copied the bound key into session adapter debug
  * snapshots. Remove it there (the snapshot keeps the context id).
  */
-function scrubStoredContextKeyCopies(db: Database): void {
+function scrubStoredContextKeyCopies(db: Database): number {
   const table = db
     .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session_adapter_debug'")
     .get();
-  if (!table) return;
-  db.exec(`UPDATE session_adapter_debug
+  if (!table) return 0;
+  return db
+    .prepare(`UPDATE session_adapter_debug
     SET snapshot_json = json_remove(snapshot_json, '$.bind.contextKey')
-    WHERE json_valid(snapshot_json) AND json_extract(snapshot_json, '$.bind.contextKey') IS NOT NULL`);
+    WHERE json_valid(snapshot_json) AND json_extract(snapshot_json, '$.bind.contextKey') IS NOT NULL`)
+    .run().changes;
+}
+
+/** Run `work` with SQLite zeroing the bytes it frees, whatever the build's default is. */
+function withSecureDelete<T>(db: Database, work: () => T): T {
+  const previous = (db.prepare("PRAGMA secure_delete").get() as { secure_delete: number }).secure_delete;
+  db.exec("PRAGMA secure_delete = ON");
+  try {
+    return work();
+  } finally {
+    db.exec(`PRAGMA secure_delete = ${previous === 1 ? "ON" : previous === 2 ? "FAST" : "OFF"}`);
+  }
+}
+
+/** Fold the WAL into the main file and truncate it; retried in the background when busy. */
+function truncateWal(db: Database): boolean {
+  const checkpoint = db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get() as { busy: number } | undefined;
+  if (checkpoint?.busy) scheduleWalTruncateRetry(db);
+  return Boolean(checkpoint?.busy);
 }
 
 /** A busy truncate (another reader) leaves old frames in the WAL: try again shortly, a few times. */
@@ -10803,22 +10823,22 @@ export function hashStoredContextKeys(db: Database): number {
   const rows = db
     .prepare(`SELECT context_id, context_key FROM contexts WHERE context_key NOT LIKE '${"sha256:"}%'`)
     .all() as Array<{ context_id: string; context_key: string }>;
-  scrubStoredContextKeyCopies(db);
-  if (rows.length === 0) return 0;
+  if (rows.length === 0) {
+    // Snapshots written by an older release can hold a key even when every
+    // context is already hashed; wipe them the same way as the rewrite below.
+    if (withSecureDelete(db, () => scrubStoredContextKeyCopies(db)) > 0) truncateWal(db);
+    return 0;
+  }
   const update = db.prepare("UPDATE contexts SET context_key = ? WHERE context_id = ?");
   // Zero the bytes the clear keys occupied, then fold the WAL into the main file
   // and truncate it, so the keys do not survive in free pages or old WAL frames.
-  const previousSecureDelete = (db.prepare("PRAGMA secure_delete").get() as { secure_delete: number }).secure_delete;
-  db.exec("PRAGMA secure_delete = ON");
-  try {
+  withSecureDelete(db, () =>
     db.transaction(() => {
       for (const row of rows) update.run(hashContextKey(row.context_key), row.context_id);
-    })();
-  } finally {
-    db.exec(`PRAGMA secure_delete = ${previousSecureDelete ? "ON" : "OFF"}`);
-  }
-  const checkpoint = db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get() as { busy: number } | undefined;
-  if (checkpoint?.busy) scheduleWalTruncateRetry(db);
+      scrubStoredContextKeyCopies(db);
+    })(),
+  );
+  const walCheckpointBusy = truncateWal(db);
   const now = Date.now();
   const stillLive = rows.length
     ? (
@@ -10836,7 +10856,7 @@ export function hashStoredContextKeys(db: Database): number {
   log.warn("Hashed stored context keys; earlier copies of the state database still hold them in the clear", {
     count: rows.length,
     stillLive,
-    walCheckpointBusy: Boolean(checkpoint?.busy),
+    walCheckpointBusy,
     rotate: "ravi context revoke <contextId>, then issue a new key (see spec runtime/context-keys RUNBOOK)",
   });
   return rows.length;
