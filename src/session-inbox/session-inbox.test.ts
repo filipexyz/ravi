@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { closeRouterDb, dbSetSetting, dbUpsertChat, dbUpsertChatParticipant, getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { createQueuedRuntimeUserMessage, createRuntimeMessageGenerator } from "../runtime/delivery-queue.js";
+import type { RuntimeHostStreamingSession } from "../runtime/host-session.js";
 import {
   composeInboxWithTurnPrompt,
+  createInboxTurnWiring,
   inboxTurnOutcome,
   prepareInboxForTurn,
   settleInboxTurn,
@@ -779,5 +782,103 @@ describe("a listed parent the owner cannot reach stays immediate (Devin review o
     ).toBe("now");
     // The real lookup: a session with no default chat is not reachable by the owner.
     expect(threadNoticeDelivery(input, { setting: () => "eng" })).toBe("now");
+  });
+});
+
+describe("the runtime turn chain settles the block (review N2 of c66bb7a)", () => {
+  function streamingSession(): RuntimeHostStreamingSession {
+    return {
+      sessionKey: "agent:main:main",
+      agentId: "main",
+      queryHandle: { provider: "codex", events: (async function* () {})(), interrupt: async () => {} },
+      starting: false,
+      abortController: new AbortController(),
+      pushMessage: null,
+      pendingWake: false,
+      pendingMessages: [
+        createQueuedRuntimeUserMessage({
+          prompt: "oi",
+          source: { channel: "slack", accountId: "a", chatId: OWNER_DM, actorType: "contact" },
+        } as never),
+      ],
+      currentModel: "m",
+      toolRunning: false,
+      lastActivity: Date.now(),
+      done: false,
+      interrupted: false,
+      turnActive: false,
+      compacting: false,
+      onTurnComplete: null,
+      currentToolSafety: null,
+      pendingAbort: false,
+    } as RuntimeHostStreamingSession;
+  }
+
+  async function runTurn(options: { terminal?: string; failPreparation?: boolean }) {
+    const a = add("resultado");
+    const session = streamingSession();
+    const wiring = createInboxTurnWiring({ sessionName: SESSION, sessionKey: "agent:main:main", session, ownerDeps });
+    const generator = createRuntimeMessageGenerator({
+      sessionName: SESSION,
+      session,
+      stashedMessages: new Map(),
+      transformTurnPrompt: ({ combinedPrompt, deliverableMessages }) => {
+        const { prompt, inbox } = wiring.beginTurn(combinedPrompt, deliverableMessages);
+        return composeInboxWithTurnPrompt(inbox, prompt);
+      },
+      afterTurnEnd: () => wiring.endTurn(),
+      traceTurnStart: () => {
+        if (options.failPreparation) throw new Error("preparation failed");
+        return undefined;
+      },
+    });
+    if (options.failPreparation) {
+      await expect(generator.next()).rejects.toThrow("preparation failed");
+      return a;
+    }
+    const yielded = await generator.next();
+    expect(String(yielded.value?.message.content)).toContain("corpo de resultado");
+    expect(getInboxItem(a.id)?.state).toBe("reserved");
+    if (options.terminal) {
+      session.currentCrashRecoveryTerminal = {
+        status: options.terminal as never,
+        completedAt: Date.now(),
+        startedTool: false,
+        materializedOutput: true,
+      };
+    }
+    session.onTurnComplete?.();
+    session.done = true;
+    await generator.return(undefined);
+    return a;
+  }
+
+  it("a turn that recorded complete delivers the block it carried", async () => {
+    const a = await runTurn({ terminal: "complete" });
+    expect(getInboxItem(a.id)?.state).toBe("delivered");
+  });
+
+  it("a failed turn, or one with no terminal, returns the block", async () => {
+    const failed = await runTurn({ terminal: "failed" });
+    expect(getInboxItem(failed.id)?.state).toBe("pending");
+  });
+
+  it("a turn whose preparation failed returns the block", async () => {
+    const a = await runTurn({ failPreparation: true });
+    expect(getInboxItem(a.id)?.state).toBe("pending");
+  });
+});
+
+describe("an inbox table from before sent_at gains the column (review N4 of c66bb7a)", () => {
+  it("adds sent_at by reading the schema, not an error message", () => {
+    getDb().exec(`CREATE TABLE session_inbox (
+      id TEXT PRIMARY KEY, target_session_name TEXT NOT NULL, source_kind TEXT NOT NULL,
+      source_ref TEXT NOT NULL, supersede_key TEXT, title TEXT NOT NULL, body TEXT NOT NULL,
+      state TEXT NOT NULL, created_at INTEGER NOT NULL, reserved_turn TEXT, reserved_at INTEGER,
+      delivered_at INTEGER, superseded_by TEXT)`);
+    const item = add("a");
+    const columns = getDb().prepare("PRAGMA table_info(session_inbox)").all() as { name: string }[];
+    expect(columns.map((column) => column.name)).toContain("sent_at");
+    expect(getInboxItem(item.id)?.sentAt ?? null).toBeNull();
   });
 });

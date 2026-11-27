@@ -100,11 +100,10 @@ function migrateInboxSchema(db: ReturnType<typeof getDb>): void {
     CREATE INDEX IF NOT EXISTS idx_session_inbox_target_state
       ON session_inbox(target_session_name, state, created_at);
   `);
-  try {
+  // A table created before `sent_at` existed gains it; the check reads the schema, not an error text.
+  const columns = db.prepare("PRAGMA table_info(session_inbox)").all() as { name: string }[];
+  if (!columns.some((column) => column.name === "sent_at")) {
     db.exec("ALTER TABLE session_inbox ADD COLUMN sent_at INTEGER");
-  } catch (error) {
-    // The column already exists (a database created after it was added): nothing to do.
-    if (!/duplicate column/i.test(String(error))) throw error;
   }
 }
 
