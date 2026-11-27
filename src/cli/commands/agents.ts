@@ -73,6 +73,7 @@ import {
 } from "../../runtime/agent-instructions.js";
 import { formatCliRuntimeTarget, getCliRuntimeMismatchMessage, inspectCliRuntimeTarget } from "../runtime-target.js";
 import type { AgentConfig, AgentUpdateInput } from "../../router/types.js";
+import { mergeAgentDefaultsPatch } from "../../router/agent-defaults-patch.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { searchTagBindingsForSelector } from "../../tags/service.js";
 import type { TagBinding } from "../../tags/types.js";
@@ -1562,6 +1563,14 @@ SOURCES
       } catch {
         fail(`defaults must be valid JSON object, e.g. '{"tts_voice":"abc","image_mode":"fast"}'`);
       }
+    }
+    if (key === "defaults") {
+      // Merge per key, never replace: a caller holding a stale or partial copy
+      // (27/11: the WhatsApp overlay read a paginated agent list, missed the
+      // agent and wrote only its TTS keys) must not erase keys it never saw.
+      // `null` removes a key. runtimePermissions only changes through
+      // `ravi agents permissions`, which owns the break-glass and revocation flow.
+      parsedValue = mergeAgentDefaultsPatch(id, agent.defaults, parsedValue as Record<string, unknown>);
     }
     if (key === "defaults") {
       // defaults carries runtimePermissions: the same break-glass rule as `agents permissions`.

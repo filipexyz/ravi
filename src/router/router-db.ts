@@ -21,6 +21,7 @@ import { mkdirSync, existsSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 import { logger } from "../utils/logger.js";
+import { agentDefaultsDiffIsEmpty, describeAgentWriteActor, diffAgentDefaults } from "./agent-write-audit.js";
 import { getCredentialConnection } from "../credentials/store.js";
 import { createReadWatchdog } from "../db/read-watchdog.js";
 import { getRaviStateDir } from "../utils/paths.js";
@@ -10027,8 +10028,45 @@ export function dbUpdateAgent(id: string, updates: AgentUpdateInput): AgentConfi
     id,
   );
 
-  log.info("Updated agent", { id });
+  recordAgentWriteAudit(id, row, updates, now);
   return dbGetAgent(id)!;
+}
+
+/**
+ * One audit_log row per agent write: who wrote and which fields/defaults keys
+ * changed. A write that drops runtimePermissions is logged as a warning, since
+ * it silently narrows (or widens) every future turn of the agent.
+ */
+function recordAgentWriteAudit(id: string, row: AgentRow, updates: AgentUpdateInput, now: number): void {
+  const fields = Object.keys(updates).filter(
+    (key) => (updates as Record<string, unknown>)[key] !== undefined && key !== "defaults",
+  );
+  const defaultsDiff =
+    updates.defaults !== undefined
+      ? diffAgentDefaults(parseAgentDefaultsRecord(row.defaults ?? null), updates.defaults ?? null)
+      : null;
+  const defaultsChanged = defaultsDiff !== null && !agentDefaultsDiffIsEmpty(defaultsDiff);
+  if (fields.length === 0 && !defaultsChanged) {
+    log.info("Updated agent", { id, changed: "none" });
+    return;
+  }
+  const actor = describeAgentWriteActor();
+  const runtimePermissionsTouched =
+    defaultsDiff !== null &&
+    [...defaultsDiff.added, ...defaultsDiff.removed, ...defaultsDiff.changed].includes("runtimePermissions");
+  const detail = {
+    fields,
+    ...(defaultsChanged ? { defaults: defaultsDiff } : {}),
+    ...(defaultsChanged ? { previousDefaults: parseAgentDefaultsRecord(row.defaults ?? null) } : {}),
+  };
+  try {
+    getStatements().insertAuditLog.run("agent.updated", "agent", id, JSON.stringify(detail), actor, now);
+  } catch (error) {
+    log.warn("Agent write audit failed", { id, error: error instanceof Error ? error.message : String(error) });
+  }
+  const summary = { id, actor, fields, defaults: defaultsChanged ? defaultsDiff : undefined };
+  if (runtimePermissionsTouched) log.warn("Updated agent runtimePermissions", summary);
+  else log.info("Updated agent", summary);
 }
 
 /**
@@ -12186,7 +12224,9 @@ export function dbUpdateCostEventPricing(update: CostEventPricingUpdate): void {
 export function dbListAuditLog(entity?: string, limit = 100): AuditEntry[] {
   const db = getDb();
   const rows = entity
-    ? (db.prepare("SELECT * FROM audit_log WHERE entity = ? ORDER BY ts DESC LIMIT ?").all(entity, limit) as Array<{
+    ? (db
+        .prepare("SELECT * FROM audit_log WHERE entity = ? ORDER BY ts DESC, id DESC LIMIT ?")
+        .all(entity, limit) as Array<{
         id: number;
         action: string;
         entity: string;
@@ -12195,7 +12235,7 @@ export function dbListAuditLog(entity?: string, limit = 100): AuditEntry[] {
         actor: string;
         ts: number;
       }>)
-    : (db.prepare("SELECT * FROM audit_log ORDER BY ts DESC LIMIT ?").all(limit) as Array<{
+    : (db.prepare("SELECT * FROM audit_log ORDER BY ts DESC, id DESC LIMIT ?").all(limit) as Array<{
         id: number;
         action: string;
         entity: string;

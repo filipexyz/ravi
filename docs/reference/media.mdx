@@ -302,15 +302,14 @@ ravi settings set image.provider openai
 ravi instances set wa-main defaults '{"image_provider":"openai","image_model":"gpt-image-2","image_format":"png"}'
 ```
 
-<Warning>
-`defaults` replaces the whole JSON object, and the agent's defaults also hold its runtime permissions (`runtimePermissions`). Writing `ravi agents set main defaults '{"tts_lang":"en"}'` would drop the agent's permission profile. Read the current object first and write back the merged version:
+<Note>
+`ravi agents set <agent> defaults` merges the JSON into the agent's current defaults: keys you send are set, keys you leave out are kept, and a key set to `null` is removed. The agent's runtime permissions (`runtimePermissions`) also live there but cannot be changed by this command; use `ravi agents permissions <agent>`. Every write is recorded in the audit log with who made it and which keys changed.
 
 ```bash
-ravi agents show main --json | jq -c '.agent.defaults + {"tts_lang":"en","stickers":{"enabled":true}}'
-ravi agents set main defaults '<paste the JSON printed above>'
-ravi agents permissions main    # confirm the profile is still there
+ravi agents set main defaults '{"tts_lang":"en","stickers":{"enabled":true}}'
+ravi agents set main defaults '{"tts_voice":null}'    # remove one key
 ```
-</Warning>
+</Note>
 
 ## Files people send to your agent
 
