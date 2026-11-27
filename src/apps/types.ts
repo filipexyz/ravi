@@ -83,7 +83,17 @@ export interface RaviAppManifest {
   skills?: unknown;
   health?: unknown;
   versioning?: unknown;
+  /** Asks that turns held below the agent may call this app (spec apps/manifest, "Restricted Turn Calls"). */
+  sandbox?: RaviAppSandboxDeclaration;
   [key: string]: unknown;
+}
+
+export interface RaviAppSandboxDeclaration {
+  /**
+   * True asks that a restricted turn may call this app: only the `ravi apps run|show <id>` command leaves the
+   * provider's sandbox, and only after the operator trusts this exact manifest (`ravi apps trust`). Grants nothing.
+   */
+  callableFromRestrictedTurns?: boolean;
 }
 
 export type RaviAppOperationInterface = "builtin" | "cli" | "script";

@@ -510,6 +510,8 @@ function operationPrefixForAppId(id: string): string {
   return id.replace(/\//g, ".");
 }
 
+import { untrustApp } from "./trust.js";
+
 export function deleteApp(options: RaviAppDeleteOptions): RaviAppDeleteResult {
   const id = normalizeAppId(options.id);
   const repoRoot = findRepoRoot(resolve(options.cwd ?? process.cwd()));
@@ -529,6 +531,7 @@ export function deleteApp(options: RaviAppDeleteOptions): RaviAppDeleteResult {
     ]);
   }
 
+  if (!dryRun) untrustApp(id);
   const files: RaviAppDeleteFileResult[] = candidates.map((c) => {
     const exists = existsSync(c.path);
     if (!exists) return { kind: c.kind, path: c.path, action: "not_found" as const };

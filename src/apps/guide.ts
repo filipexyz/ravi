@@ -5,6 +5,8 @@ import type { RaviAppManifestRecord, RaviAppsGuidePrompt, RaviAppsGuideResult } 
 export const RAVI_APPS_SKILL = "ravi-system-apps";
 
 export const RAVI_APPS_COMMAND_GUIDANCE = [
+  { command: "trust", promptId: "trust", audience: "public" },
+  { command: "untrust", promptId: "trust", audience: "public" },
   { command: "list", promptId: "discover", audience: "public" },
   { command: "show", promptId: "inspect", audience: "public" },
   { command: "check", promptId: "validate", audience: "public" },
@@ -36,6 +38,13 @@ export function buildAppsGuide(id?: string): RaviAppsGuideResult {
 
 function basePrompts(): RaviAppsGuidePrompt[] {
   return [
+    {
+      id: "trust",
+      title: "Operator trust for restricted turns",
+      prompt:
+        "Only the operator's local terminal can trust an opted-in manifest. Trust pins its exact hash; changed manifests require a new confirmation. Held turns use a single literal ravi apps run|show command with their own grants.",
+      commands: ["ravi apps trust <app-id> --execute", "ravi apps untrust <app-id>"],
+    },
     {
       id: "discover",
       title: "Discover Ravi apps",

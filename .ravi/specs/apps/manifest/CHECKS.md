@@ -131,3 +131,5 @@
     is installed`) when the required app's manifest does not parse.
   - Confirm an app with neither field is validated and reported exactly as
     before.
+
+- `bun test src/apps/restricted-turn.test.ts`: operator-only trust, exact manifest hash/path, syntax negatives, app grant, invalid declarations, revocation and shared Bash-hook behavior.

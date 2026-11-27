@@ -686,12 +686,15 @@ export function commitRollback(plan: StorePlan & { packagePath: string }, ctx: S
 }
 
 /** Remove the active copy and the receipt; both go to the trash, so nothing is lost by accident. */
+import { untrustApp } from "../trust.js";
+
 export function uninstallApp(
   id: string,
   ctx: StoreOperationContext = {},
 ): { id: string; version: string; trash: string } {
   const receipt = readReceipt(id, ctx.env);
   if (!receipt) throw new AppStoreError("APP_NOT_INSTALLED", `${id} is not installed from the store.`, 1, { id });
+  untrustApp(id, ctx.env);
   const trash = join(
     appStoreRoot(ctx.env),
     "trash",
