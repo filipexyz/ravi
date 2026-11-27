@@ -7275,3 +7275,91 @@ describe("Slack slash commands (/ravi)", () => {
     expect(published[0]?.payload.receivedAt).toBe(1_800_000_000_000);
   });
 });
+
+describe("Responder on a decision card", () => {
+  function decisionService(opened: unknown[], published: unknown[]) {
+    return new SlackSocketModeService({
+      accountId: "slack-decision-answer",
+      appToken: "xapp-fixture",
+      botToken: "xoxb-fixture",
+      webClient: {
+        viewsOpen: async (input: unknown) => {
+          opened.push(input);
+          return { ok: true, view: { id: "V-opened" } };
+        },
+      } as unknown as SlackWebApiClient,
+      publishInteraction: async (...args) => {
+        published.push(args);
+      },
+      publishPrompt: async (...args) => {
+        published.push(args);
+      },
+      getRouterConfig: () => {
+        throw new Error("A decision form must not enter routing");
+      },
+    });
+  }
+
+  it("opens the answer form in the runner and publishes nothing", async () => {
+    const opened: unknown[] = [];
+    const published: unknown[] = [];
+    const acks: string[] = [];
+    const result = await decisionService(opened, published).handleEnvelope(
+      {
+        type: "interactive",
+        envelope_id: "env-decision-open",
+        payload: {
+          type: "block_actions",
+          trigger_id: "trigger-decision",
+          user: { id: "UOWNER" },
+          channel: { id: "C123" },
+          container: { type: "message", channel_id: "C123", message_ts: "1713000000.000100" },
+          message: { ts: "1713000000.000100" },
+          actions: [{ type: "button", action_id: "ravi_decision_answer", value: "dec_abc123:2" }],
+        },
+      },
+      (id) => {
+        acks.push(id);
+      },
+    );
+    expect(result).toBe("processed");
+    expect(acks).toEqual(["env-decision-open"]);
+    expect(published).toEqual([]);
+    const view = (opened[0] as { triggerId: string; view: { private_metadata: string } }).view;
+    expect((opened[0] as { triggerId: string }).triggerId).toBe("trigger-decision");
+    expect(JSON.parse(view.private_metadata)).toEqual({ d: "dec_abc123", r: 2, c: "C123", t: "1713000000.000100" });
+  });
+
+  it("publishes the submitted form with its pointer for the daemon to check", async () => {
+    const opened: unknown[] = [];
+    const published: unknown[] = [];
+    await decisionService(opened, published).handleEnvelope(
+      {
+        type: "interactive",
+        envelope_id: "env-decision-submit",
+        payload: {
+          type: "view_submission",
+          user: { id: "UOWNER" },
+          view: {
+            id: "V-opened",
+            callback_id: "ravi_decision_answer_submit",
+            private_metadata: '{"d":"dec_abc123","r":2,"c":"C123","t":"1713000000.000100"}',
+            state: { values: { ravi_decision_answer_text: { answer: { value: "sonnet" } } } },
+          },
+        },
+      },
+      () => {},
+    );
+    expect(opened).toEqual([]);
+    expect(published[0]).toEqual([
+      "ravi.inbound.interaction",
+      expect.objectContaining({
+        interactionType: "view_submission",
+        userId: "UOWNER",
+        viewId: "V-opened",
+        viewCallbackId: "ravi_decision_answer_submit",
+        viewPrivateMetadata: '{"d":"dec_abc123","r":2,"c":"C123","t":"1713000000.000100"}',
+      }),
+    ]);
+  });
+});
