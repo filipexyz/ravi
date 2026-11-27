@@ -40,6 +40,14 @@ export const BREAK_GLASS_CAPABILITIES: readonly string[] = ["admin:system:*", "e
 // this module, so it must not import them back at load time: scope.js reaches
 // the provider registry and router-db. It is required lazily, on first call.
 function scopeAgentId(): string | undefined {
+  // The operator's terminal resolves the local default credential
+  // (`~/.ravi/credentials.json`, an admin-bootstrap key bound to the
+  // `bootstrap` identity) when no runtime context is set. That identity is the
+  // operator's own key, not an agent turn: the same rule as
+  // credentials/authorization.ts and voice/authority.ts. The same key presented
+  // through the gateway carries no `contextOrigin` and stays an agent/remote caller.
+  const { getContext } = require("../cli/context.js") as typeof import("../cli/context.js");
+  if (getContext()?.contextOrigin === "default-credential") return undefined;
   const { getScopeContext } = require("./scope.js") as typeof import("./scope.js");
   return getScopeContext()?.agentId ?? undefined;
 }
