@@ -125,9 +125,11 @@ describe("sessions answer through an open Ask, with the real store", () => {
 
   it("leaves an answer from a caller with access to the asker as it was: approval source and barrier", async () => {
     setup();
-    updateSessionSource(ASKED, { channel: "whatsapp", accountId: "luis", chatId: "5511900000001@s.whatsapp.net" });
+    const source = { channel: "whatsapp", accountId: "luis", chatId: "5511900000001@s.whatsapp.net" };
+    // The answerer's stored chat is a stale delivery, not this invocation's origin.
+    updateSessionSource(ASKED, { channel: "whatsapp", accountId: "luis", chatId: "120363431846316920@g.us" });
     // Unscoped: the operator's own answer, with full access to the asker.
-    await runWithContext({ sessionKey: ASKED, sessionName: "asked-main", suppressCliOutput: true }, () =>
+    await runWithContext({ sessionKey: ASKED, sessionName: "asked-main", suppressCliOutput: true, source }, () =>
       new SessionCommands().answer(ASKER, "resposta", undefined, undefined, undefined, undefined, true),
     );
     expect(published).toHaveLength(1);
