@@ -499,7 +499,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | channels-slack | src/channels/slack/thread-lifecycle.ts | 771 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:79070e050ee994049ecf949b |
 | channels-slack | src/channels/slack/thread-lifecycle.ts | 785 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3830479576acbc9a4faf42e7 |
 | channels-slack | src/channels/slack/thread-lifecycle.ts | 838 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3128594da318c7d29f0f5eb0 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 1290 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:168c889a92f9cf70994d3983 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 1286 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:168c889a92f9cf70994d3983 |
 | channels-slack | src/channels/slack/thread-requester.ts | 34 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-requester.ts:906a166dfda93a7451e16429 |
 | channels-slack | src/channels/slack/thread-requester.ts | 64 | triaged-follow-up | catch-without-binding | src/channels/slack/thread-requester.ts:518fbe45995656bbf2c7b34e |
 | channels-slack | src/channels/slack/thread-requester.ts | 73 | triaged-follow-up | catch-without-binding | src/channels/slack/thread-requester.ts:4e96a74ec3eda3554d5b7d4b |
