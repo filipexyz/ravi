@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { mergeAgentDefaultsPatch } from "./agent-defaults-patch.js";
+import { mergeAgentDefaultsPatch, rebaseAgentDefaultsObject } from "./agent-defaults-patch.js";
 
 const FULL_ACCESS = {
   profile: "full-access",
@@ -60,5 +60,52 @@ describe("mergeAgentDefaultsPatch (agents set <id> defaults)", () => {
 
   it("starts from an empty object when the agent has no defaults", () => {
     expect(mergeAgentDefaultsPatch("main", null, { tts_voice: "y" })).toEqual({ tts_voice: "y" });
+  });
+});
+
+describe("rebaseAgentDefaultsObject (deep three-way merge)", () => {
+  it("keeps two writers' changes to different entries of the same top-level key", () => {
+    const base = { modelBroker: { brokerId: "a", profileRef: "p1" } };
+    const current = { modelBroker: { brokerId: "a", profileRef: "p1", required: true } };
+    const next = { modelBroker: { brokerId: "b", profileRef: "p1" } };
+    expect(rebaseAgentDefaultsObject(current, base, next)).toEqual({
+      modelBroker: { brokerId: "b", profileRef: "p1", required: true },
+    });
+  });
+
+  it("keeps two capabilities granted concurrently (arrays merge as sets)", () => {
+    const git = { permission: "execute", objectType: "executable", objectId: "git" };
+    const gh = { permission: "execute", objectType: "executable", objectId: "gh" };
+    const jq = { permission: "execute", objectType: "executable", objectId: "jq" };
+    const base = { runtimePermissions: { profile: "explicit-only", capabilities: [git] } };
+    const current = { runtimePermissions: { profile: "explicit-only", capabilities: [git, gh] } };
+    const next = { runtimePermissions: { profile: "explicit-only", capabilities: [git, jq] } };
+    expect(rebaseAgentDefaultsObject(current, base, next)).toEqual({
+      runtimePermissions: { profile: "explicit-only", capabilities: [git, gh, jq] },
+    });
+  });
+
+  it("drops an element the writer removed and keeps one another writer added", () => {
+    const base = { tags: ["a", "b"] };
+    const current = { tags: ["a", "b", "c"] };
+    const next = { tags: ["a"] };
+    expect(rebaseAgentDefaultsObject(current, base, next)).toEqual({ tags: ["a", "c"] });
+  });
+
+  it("leaves the stored row alone when the writer changed nothing", () => {
+    const current = { tts_voice: "y", stickers: { enabled: true } };
+    expect(rebaseAgentDefaultsObject(current, { tts_voice: "x" }, { tts_voice: "x" })).toEqual(current);
+  });
+
+  it("removes a top-level key the writer removed and returns null when nothing is left", () => {
+    expect(
+      rebaseAgentDefaultsObject({ modelBroker: { brokerId: "b" } }, { modelBroker: { brokerId: "b" } }, null),
+    ).toBe(null);
+  });
+
+  it("a leaf change wins over the stored value", () => {
+    expect(rebaseAgentDefaultsObject({ tts_voice: "y" }, { tts_voice: "x" }, { tts_voice: "z" })).toEqual({
+      tts_voice: "z",
+    });
   });
 });

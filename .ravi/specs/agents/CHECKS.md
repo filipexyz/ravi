@@ -51,8 +51,12 @@
   (`dbPatchAgentDefaults`), not a copy read earlier by the caller.
 - The `audit_log` actor MUST name the runtime context (`context=`, `agent=`)
   inside a gateway call and `console:<sub>` for a Console invocation.
-- `audit_log.old_value` MUST hold only changed/removed keys, with
-  secret-looking names redacted.
+- `audit_log.old_value.previous` MUST hold only changed/removed keys, with
+  secret-looking names redacted at any depth.
+- Two writers that build from the same read and grant different capabilities
+  MUST both land (deep merge; arrays as sets).
+- The break-glass guard of a rebased permission write MUST see the row as
+  stored inside the write transaction; a refusal MUST write nothing.
 
 ## Commands
 

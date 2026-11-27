@@ -404,6 +404,14 @@ function applyProfile(agentId: string, profile: AgentRuntimePermissionProfile): 
     agentId,
     agent?.defaults,
     buildAgentRuntimePermissionsDefaults(agent?.defaults, next),
+    (stored, result) =>
+      assertAgentBreakGlassRaiseAllowed(
+        "agents library",
+        agentId,
+        getAgentRuntimePermissionsConfigFromDefaults(stored),
+        getAgentRuntimePermissionsConfigFromDefaults(result),
+        { warnOperator: false },
+      ),
   );
 }
 

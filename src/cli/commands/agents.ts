@@ -1778,7 +1778,17 @@ SOURCES
     // Sweep again after the write to catch a context issued concurrently from
     // the old configuration while the mutation was in progress.
     revokeLiveRuntimeContextsForAgent(id);
-    routerConfig.rebaseAgentDefaults(id, agent.defaults, nextDefaults);
+    // The guard runs again inside the write transaction, against the row as
+    // stored there (another permission writer may have landed in between).
+    routerConfig.rebaseAgentDefaults(id, agent.defaults, nextDefaults, (stored, result) =>
+      assertAgentBreakGlassRaiseAllowed(
+        "agents permissions",
+        id,
+        getAgentRuntimePermissionsConfigFromDefaults(stored),
+        getAgentRuntimePermissionsConfigFromDefaults(result),
+        { warnOperator: false },
+      ),
+    );
     revokeLiveRuntimeContextsForAgent(id);
     const updated = getAgent(id) ?? { ...agent, defaults: nextDefaults };
     const payload = {
