@@ -41,6 +41,7 @@ import {
   reconcileSlackThreadLifecycle,
   THREAD_SEND_DEFAULT_DELIVERY_BARRIER,
   updateReopenedSlackThreadCard,
+  updateSlackThreadCard,
 } from "./thread-lifecycle.js";
 import { reopenThreadsForDeliveredInstructions } from "./thread-instruction-delivery.js";
 import type { DeliveryBarrier, DeliveryBarrierSource } from "../../delivery-barriers.js";
@@ -381,6 +382,39 @@ describe("Slack thread lifecycle", () => {
     ).toBe(true);
     expect((await closeSlackThreadRecord(record, undefined, deps)).changed).toBe(false);
     expect(findSlackThreadLifecycleByChildRef("unknown")).toBeNull();
+  });
+
+  it("the card of a thread waiting on a decision shows only the question's first line", async () => {
+    const fixture = seedPendingCreation();
+    const jobs: ChannelOutboundJob[] = [];
+    const deps = {
+      publishPrompt: mock(async () => {}),
+      publishEvent: mock(async () => {}),
+      publishOutbound: mock(async (job: ChannelOutboundJob) => {
+        jobs.push(job);
+      }),
+    };
+    await finalizeSlackThreadCreation(fixture.requestId, deps);
+    const record = getSlackThreadLifecycle(fixture.requestId)!;
+    askDecisionRecord(
+      {
+        type: "thread",
+        id: fixture.requestId,
+        chatId: record.threadCanonicalChatId!,
+        sessionKey: record.childSessionKey!,
+      },
+      {
+        key: "default",
+        ask: "Qual modo é o padrão?\nOpções:\n- vinculado\n- conversa\nRecomendação: vinculado",
+      },
+    );
+    jobs.length = 0;
+    await updateSlackThreadCard(record, { status: "running" }, deps);
+    const card = jobs.find((job) => job.request.content.type === "chat_action")?.request.content;
+    expect(card?.type === "chat_action" ? card.threadCard : undefined).toMatchObject({
+      status: "waiting",
+      note: "Qual modo é o padrão?",
+    });
   });
 
   it("materializes one child turn after durable root delivery and applies its model first", async () => {
