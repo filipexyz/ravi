@@ -102,6 +102,7 @@ import {
   isCredentialIntakeEnvelope,
   type CredentialIntakeDependencies,
 } from "./credential-intake.js";
+import { isSlackDecisionAnswerOpenEnvelope, openSlackDecisionAnswerForm } from "./decision-answer.js";
 import { extractSlackMessageText } from "./message-content.js";
 import { slackInboundReactionFromEnvelope } from "./reactions.js";
 import {
@@ -932,6 +933,11 @@ export class SlackSocketModeService {
     }
     if (envelope.type === SLACK_COMMAND_ENVELOPE_TYPE) {
       return this.processSlashCommandEnvelope(envelope, ack);
+    }
+    // Responder on a card waiting for a decision: Slack's trigger lasts three seconds, so the form opens here.
+    if (isSlackDecisionAnswerOpenEnvelope(envelope)) {
+      await openSlackDecisionAnswerForm({ envelope, client: this.webClient, ack });
+      return "processed";
     }
     const envelopeId = cleanSlackId(envelope.envelope_id);
     const messageEvent = envelopeEvent(envelope);
@@ -1802,6 +1808,8 @@ export class SlackSocketModeService {
       containerType: stringField(container, "type"),
       viewId: stringField(view, "id"),
       viewCallbackId: stringField(view, "callback_id"),
+      // The pointer a Ravi form keeps (decision answer); the consumer rechecks everything it names.
+      viewPrivateMetadata: stringField(view, "private_metadata"),
       actionId: stringField(firstAction, "action_id"),
       blockId: stringField(firstAction, "block_id"),
       actionType: stringField(firstAction, "type"),

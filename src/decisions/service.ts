@@ -432,6 +432,18 @@ export interface DecisionAnswerOptions {
   sourceQuote?: string;
   /** An answered decision this answer replaces. */
   supersedes?: string;
+  /**
+   * The answer came from the owner's own verified click on the decision's card (a channel interaction, never text):
+   * the contact the platform resolved, the card's revision, and the interaction id kept as provenance. It replaces
+   * the source message and never falls back to the local operator's authority.
+   */
+  verifiedOwner?: VerifiedOwnerAnswer;
+}
+
+export interface VerifiedOwnerAnswer {
+  contactId: string;
+  revision: number;
+  ref: string;
 }
 
 /**
@@ -447,6 +459,7 @@ export function checkDecisionAnswer(
   options: DecisionAnswerOptions = {},
   text?: string,
 ): { source: DecisionAnswerSource | null; scope: DecisionScope; replaced: Decision | null } {
+  if (options.verifiedOwner) return checkVerifiedOwnerAnswer(decision, sourceMessage, options, text);
   // A supplied source must resolve, even when blank: absence is valid, an unusable source is not.
   const source =
     sourceMessage !== undefined ? resolveDecisionAnswerSource(decision, sourceMessage, options.sourceQuote) : null;
@@ -473,6 +486,49 @@ export function checkDecisionAnswer(
   return { source, scope, replaced };
 }
 
+/**
+ * The owner answering on the decision's card. The click is the binding: the decision, its revision and the scope come
+ * from the card and the interaction, and the person from the platform's verified sender, so no text is matched. It
+ * answers only the revision shown, only as the decision's own human owner, and widens only to the org and only when
+ * that owner is the installation owner. The local operator's authority never applies here.
+ */
+function checkVerifiedOwnerAnswer(
+  decision: Decision,
+  sourceMessage: string | undefined,
+  options: DecisionAnswerOptions,
+  text?: string,
+): { source: null; scope: DecisionScope; replaced: null } {
+  const owner = options.verifiedOwner!;
+  if (sourceMessage !== undefined || options.sourceQuote !== undefined || options.supersedes !== undefined)
+    throw new DecisionError("DECISION_INVALID_ANSWER", "A card answer carries no source message nor replacement.", {
+      exitCode: 2,
+    });
+  if (decision.status !== "open" || decision.revision !== owner.revision)
+    throw new DecisionError("DECISION_STALE_CARD", "This card shows an older question or one already answered.", {
+      exitCode: 2,
+    });
+  if (decision.ownerType !== "human" || !owner.contactId || decision.ownerId !== owner.contactId)
+    throw new DecisionError("DECISION_SOURCE_NOT_OWNER", "Only the decision's owner answers on its card.", {
+      exitCode: 2,
+    });
+  const scope = options.scope ?? { type: "origin" as const, id: null };
+  if (scope.type !== "origin" && !(scope.type === "org" && isInstallationOwner(owner.contactId)))
+    throw new DecisionError(
+      "DECISION_SCOPE_NOT_AUTHORIZED",
+      "Only the installation owner widens a decision from its card, and only to the org.",
+      { exitCode: 2 },
+    );
+  if (text !== undefined && !text.trim())
+    throw new DecisionError("DECISION_INVALID_ANSWER", "The answer is empty.", { exitCode: 2 });
+  if (scope.type !== "origin" && text !== undefined && text.trim().length > WIDE_DECISION_ANSWER_MAX)
+    throw new DecisionError(
+      "DECISION_INVALID_ANSWER",
+      `An answer beyond its thread or task must fit ${WIDE_DECISION_ANSWER_MAX} characters: every turn in scope carries it whole.`,
+      { exitCode: 2 },
+    );
+  return { source: null, scope, replaced: null };
+}
+
 export async function answerDecision(
   id: string,
   text: string,
@@ -491,9 +547,11 @@ export async function answerDecision(
     validateDecisionMutation(current.origin, "answer", current);
     // Rechecked against the decision this transaction commits: its owner or scope may have changed since.
     const { source, scope, replaced } = checkDecisionAnswer(current, sourceMessage, options, text);
+    const owner = options.verifiedOwner;
     const subject = [
       label ? `for ${label}` : null,
       source ? `[source contact:${source.contactId} message:${source.messageId}]` : null,
+      owner ? `[card contact:${owner.contactId} interaction:${owner.ref}]` : null,
     ]
       .filter(Boolean)
       .join(" ");
@@ -503,6 +561,13 @@ export async function answerDecision(
         recordDecisionAnswerSource(
           getDecision(id)!,
           { contactId: source.contactId, messageId: source.messageId, excerpt: source.excerpt },
+          who.actor,
+        );
+      // The owner's click is the source: the interaction id, and the answer as they submitted it.
+      else if (owner)
+        recordDecisionAnswerSource(
+          getDecision(id)!,
+          { contactId: owner.contactId, messageId: owner.ref, excerpt: text.trim().slice(0, SOURCE_EXCERPT_MAX) },
           who.actor,
         );
       if (replaced) supersedeDecisionRecord(replaced.id, id, who.actor, now);

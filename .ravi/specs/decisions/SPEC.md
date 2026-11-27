@@ -58,6 +58,13 @@ A decision owns a question, owner, immutable answer and audit history. Tasks and
 - The store MUST settle a scope only when the answering path passes it; an answer recorded without one stays in its origin, whatever scope was proposed. `supersede` returns only the replaced decision's id and new state, never its record.
 - Decision waits (`sessions report --awaiting decision`) MUST propose the origin scope.
 
+## Owner answers on the card
+
+- The owner MUST be able to answer without typing the decision's id or scope. A thread's programmatic root card waiting on an open decision whose owner is a person MUST offer Responder, carrying only `<decision id>:<revision>`. The channel adapter opens a form with the answer and the audience (this thread, the default, or the org) and hands the core the platform's verified sender, the decision and revision the card showed, the chosen audience and the submitted text (`answerDecisionFromOwnerCard`). The core is channel-free; Slack is the first adapter.
+- The person MUST be resolved from the verified platform sender by the channel's identity lookup (the one the grant gate uses), never from typed text, the button value or the form metadata. A card answer MUST be refused, recording nothing, when: the sender resolves to no contact; the contact is not the decision's human owner; the card's revision is not the decision's current revision or the decision is no longer open; the answer is empty; the chosen audience is not `origin` or `org`; or it is `org` and the owner is not the installation owner. A card answer MUST NOT borrow the local operator's authority, even when it runs in the operator's process, and carries no source message nor replacement.
+- The interaction id MUST be recorded as the answer's source (`source_message_id`, the submitted answer as `source_excerpt`) and the verified contact and interaction in the provenance. The person MUST be told privately whether the answer was recorded and why not.
+- A free-text reply to the card is not an answer; the typed `<id> <scope>:` form stays the technical path for the CLI and the recorder. Widening by quoting a message is not offered: the audience is chosen only in the form.
+
 ## Thread delivery
 
 - A thread question MUST be presented in that thread and prioritized on its programmatic root card. A root written by a person MUST NOT be edited. Thread summaries MUST expose `openDecisionCount`.

@@ -45,6 +45,8 @@ Toda decisão tem escopo: `thread` (a origem, padrão), `agent:<id>`, `project:<
 
 A fonte (`--source-message`) precisa ser uma mensagem do dono depois da pergunta, no chat da decisão ou numa DM, amarrada a esta decisão: cita o id da decisão ou contém o trecho passado em `--source-quote`. O trecho fica gravado na decisão.
 
+**O dono responde no cartão, sem digitar id nem escopo.** Quando a thread espera uma decisão de uma pessoa, o cartão da thread no Slack ganha o botão **Responder**: abre um formulário com a resposta e "Vale para" (só esta thread, o padrão, ou toda a org). Quem responde é o remetente verificado do Slack; só o dono da decisão responde, só o dono da instalação amplia para a org, e cartão antigo ou decisão já respondida recusa. Não peça ao Luís o formato `<id> <escopo>:` — aponte o botão. O formato escrito abaixo é o caminho técnico (CLI, gravação a partir de mensagem).
+
 Ampliar além da thread exige uma mensagem do **dono da instalação** (contato com a tag `permission-owner`; o `--owner` da pergunta não conta) que **comece** com `<id> <escopo>:` seguido da resposta, por exemplo `dec_abc org: sem confirmação em grupos`; a resposta gravada tem de ser exatamente o que vem depois dos dois-pontos (nunca um pedaço). Texto antes do par ou palavra colada ao escopo sem `:` ("dec_abc org jamais", "dec_abc org não") não amplia; proibição depois dos dois-pontos é resposta válida (`dec_abc org: não use a api v1`). A tag `org-internal` só é posta ou tirada pelo dono da instalação ou pelo operador. Ou o operador local no terminal (automação disparada pelo daemon não conta). Agent nenhum amplia por conta própria, por maior que seja o grant (`DECISION_SCOPE_NOT_AUTHORIZED`). Resposta ampla cabe em 2000 caracteres.
 
 ```bash
