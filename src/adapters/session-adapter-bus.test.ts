@@ -369,6 +369,19 @@ describe("session adapter bus", () => {
       ),
     );
 
+    // Events go out on the bus: they name the bound context, never its key.
+    const boundKey = first.options.env?.RAVI_CONTEXT_KEY as string;
+    expect(natsHarness.published.length).toBeGreaterThan(0);
+    for (const entry of natsHarness.published) {
+      expect(JSON.stringify(entry.data)).not.toContain(boundKey);
+      expect(JSON.stringify(entry.data)).not.toContain("rctx_");
+    }
+    expect(
+      natsHarness.published.some(
+        (entry) => typeof (entry.data.context as { contextId?: unknown } | undefined)?.contextId === "string",
+      ),
+    ).toBe(true);
+
     const readyEventsBeforeRestart = natsHarness.published.filter(
       (entry) =>
         entry.topic === FROM_ADAPTER_TOPIC && entry.data.type === "adapter.event" && entry.data.event === "ready",

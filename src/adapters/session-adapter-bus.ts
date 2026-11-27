@@ -282,9 +282,10 @@ function buildSessionEnvelope(
       agentId: session.agentId,
       agentCwd: session.agentCwd,
     },
+    // Never the key: these events go out on the bus to any subscriber of
+    // ravi.session.>. The adapter process gets its key through its own env.
     context: {
       contextId: context.contextId,
-      contextKey: context.contextKey,
       kind: context.kind,
     },
     publishedAt: Date.now(),
