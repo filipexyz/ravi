@@ -1198,10 +1198,11 @@ function callerIsThreadParent(
   lifecycle: { parentSessionKey: string } | null | undefined,
 ): boolean {
   if (!lifecycle) return false;
-  const callerRef = resolveCurrentSessionRef();
-  const caller = callerRef ? resolveSession(callerRef) : null;
-  if (!caller || caller.sessionKey !== lifecycle.parentSessionKey) return false;
-  return !isScopeEnforced(scopeCtx) || canModifySession(scopeCtx, sessionActionRef(caller));
+  // Identity is the immutable session key of the running turn, never a name: a reused session name must not
+  // make the new holder look like the thread's parent.
+  const callerKey = getContext()?.sessionKey?.trim();
+  if (!callerKey || callerKey !== lifecycle.parentSessionKey) return false;
+  return !isScopeEnforced(scopeCtx) || canModifySession(scopeCtx, callerKey);
 }
 
 function extractActionMessageText(message: ChatMessageWithSortKey | ChatMessageRecord): string | undefined {

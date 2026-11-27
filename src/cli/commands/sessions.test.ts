@@ -287,7 +287,10 @@ mock.module("../../channels/slack/thread-lifecycle-store.js", () => ({
     return recentSlackThreadRequest;
   },
   findSlackThreadLifecycleByChildSession: () => childThreadLifecycle,
-  findSlackThreadLifecycleByChildRef: () => orphanThread,
+  findSlackThreadLifecycleByChildRef: (ref: string) =>
+    orphanThread && (orphanThread.childSessionKey === ref || orphanThread.childSessionName === ref)
+      ? orphanThread
+      : null,
 }));
 
 mock.module("../../router/thread-identity.js", () => ({
@@ -2294,7 +2297,7 @@ describe("SessionCommands attach hints", () => {
     scopeEnforced = true;
 
     // The parent may modify itself, not the child: that is the case that answered 422 before.
-    modifyAllowedRefs = new Set(["main"]);
+    modifyAllowedRefs = new Set([parentKey]);
     toolContext = { sessionKey: parentKey, sessionName: "main" };
     const result = await new SessionCommands().closeThread("done", child.name, true);
     expect(result).toMatchObject({ closed: true, childSession: { sessionKey: childKey } });
@@ -2305,6 +2308,14 @@ describe("SessionCommands attach hints", () => {
     closedSlackThreads.length = 0;
     modifyAllowedRefs = new Set(["other"]);
     toolContext = { sessionKey: other.sessionKey, sessionName: "other" };
+    await expect(new SessionCommands().closeThread("done", child.name, true)).rejects.toMatchObject({
+      code: "SESSION_NOT_FOUND",
+    });
+
+    // A turn that carries the parent's name but another session key (reused name) is not the owner.
+    closedSlackThreads.length = 0;
+    modifyAllowedRefs = new Set(["main", other.sessionKey]);
+    toolContext = { sessionKey: other.sessionKey, sessionName: "main" };
     await expect(new SessionCommands().closeThread("done", child.name, true)).rejects.toMatchObject({
       code: "SESSION_NOT_FOUND",
     });
