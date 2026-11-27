@@ -45,3 +45,7 @@ normative: false
 - Review of #1026 @6621657: new speech while a delegation settles never erases its request (pruning
   waits for pending delegations); words kept after the offset never reopen a closed utterance; a
   sideband replaced while the transcript is published starts no turn (`door.test.ts`).
+- Daily limit per profile: `door.test.ts` shows another profile's spend neither ends a call nor
+  counts against its profile, and a call ends with `limit: max_daily_cost` when its own profile
+  reaches the limit; `voice.test.ts` shows `calls start` refuses only the profile that spent its day.
+  Both tests fail when the check reads another profile's meter.

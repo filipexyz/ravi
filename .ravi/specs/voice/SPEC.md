@@ -196,7 +196,10 @@ and resumes with `after`.
 - Each profile has `maxCallMinutes`, `maxCallCostUsd` and `maxDailyCostUsd`. The door ends the call
   with `reason: limit` when one is reached. Defaults: 30 minutes, US$ 2 per call, US$ 10 per day.
 - Usage is metered per call (audio seconds in and out, characters synthesized, engine minutes) and
-  summed per day.
+  summed per day, both in total and per profile.
+- `maxDailyCostUsd` MUST be checked against the day's spend of the call's own profile, never against
+  the total of every profile: another profile's spend neither refuses a start nor ends a call. The day
+  total is kept for reporting only.
 - No audio is recorded. Synthesized clips are kept only until the call ends, for `calls audio`.
 
 ## Storage

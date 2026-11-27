@@ -37,7 +37,9 @@ const { cleanupIsolatedRaviState, createIsolatedRaviState } = await import("../.
 const { getOrCreateSession } = await import("../../router/sessions.js");
 const { claimApprovalDecision, createApprovalRequest } = await import("../../approval/store.js");
 const { deliverVoiceApprovalRequest, listOpenVoiceApprovals } = await import("../../voice/approvals.js");
-const { getVoiceCall, listVoiceEvents } = await import("../../voice/store.js");
+const { addVoiceDailyUsage, defaultVoiceProfile, getVoiceCall, listVoiceEvents, saveVoiceProfile } = await import(
+  "../../voice/store.js"
+);
 const { ContractError } = await import("../agent-contract.js");
 const { VoiceCallsCommands, VoiceDevicesCommands, VoiceEnginesCommands, setVoiceApprovalDecisionWaitForTests } =
   await import("./voice.js");
@@ -105,6 +107,20 @@ describe("ravi voice commands", () => {
     const error = await contractError(() => new VoiceCallsCommands().start("main", undefined, "mock", undefined, true));
     expect(error.code).toBe("VOICE_AGENT_TURN_REFUSED");
     expect(error.exitCode).toBe(3);
+  });
+
+  it("checks the daily limit of the chosen profile only", async () => {
+    saveVoiceProfile({ ...defaultVoiceProfile(), id: "spent", mode: "mock", maxDailyCostUsd: 1 });
+    saveVoiceProfile({ ...defaultVoiceProfile(), id: "fresh", mode: "mock", maxDailyCostUsd: 1 });
+    addVoiceDailyUsage("spent", 1, 60);
+    const calls = new VoiceCallsCommands();
+    const refused = await contractError(() => calls.start("main", "spent", undefined, undefined, true));
+    expect(refused.code).toBe("VOICE_LIMIT_REACHED");
+    const started = (await quiet(() => calls.start("main", "fresh", undefined, undefined, true))) as Record<
+      string,
+      unknown
+    >;
+    expect(getVoiceCall(String(started.callId))?.profileId).toBe("fresh");
   });
 
   it("refuses an engine that is not configured", async () => {

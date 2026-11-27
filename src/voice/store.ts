@@ -132,6 +132,14 @@ function migrateVoiceSchema(): void {
       cost_usd REAL NOT NULL DEFAULT 0,
       seconds REAL NOT NULL DEFAULT 0
     );
+    -- The daily limit is a field of the profile, so it is metered per profile. voice_usage_daily keeps the total.
+    CREATE TABLE IF NOT EXISTS voice_usage_daily_profile (
+      day TEXT NOT NULL,
+      profile_id TEXT NOT NULL,
+      cost_usd REAL NOT NULL DEFAULT 0,
+      seconds REAL NOT NULL DEFAULT 0,
+      PRIMARY KEY (day, profile_id)
+    );
     CREATE TABLE IF NOT EXISTS voice_audio (
       call_id TEXT NOT NULL REFERENCES voice_calls(id) ON DELETE CASCADE,
       item_id TEXT NOT NULL,
@@ -701,9 +709,13 @@ export function voiceUsageDay(now = Date.now()): string {
   return new Date(now).toISOString().slice(0, 10);
 }
 
-export function addVoiceDailyUsage(costUsd: number, seconds: number, now = Date.now()): void {
+/** Add usage to the day's total and to the day's meter of the profile the call runs on. */
+export function addVoiceDailyUsage(profileId: string, costUsd: number, seconds: number, now = Date.now()): void {
   if (costUsd <= 0 && seconds <= 0) return;
   const database = store();
+  const day = voiceUsageDay(now);
+  const cost = Math.max(0, costUsd);
+  const secs = Math.max(0, seconds);
   executeWrite(
     database,
     () => {
@@ -712,12 +724,32 @@ export function addVoiceDailyUsage(costUsd: number, seconds: number, now = Date.
           `INSERT INTO voice_usage_daily (day, cost_usd, seconds) VALUES (?, ?, ?)
            ON CONFLICT(day) DO UPDATE SET cost_usd = cost_usd + excluded.cost_usd, seconds = seconds + excluded.seconds`,
         )
-        .run(voiceUsageDay(now), Math.max(0, costUsd), Math.max(0, seconds));
+        .run(day, cost, secs);
+      database
+        .prepare(
+          `INSERT INTO voice_usage_daily_profile (day, profile_id, cost_usd, seconds) VALUES (?, ?, ?, ?)
+           ON CONFLICT(day, profile_id) DO UPDATE SET cost_usd = cost_usd + excluded.cost_usd,
+             seconds = seconds + excluded.seconds`,
+        )
+        .run(day, profileId, cost, secs);
     },
     { label: "voice:addDailyUsage" },
   );
 }
 
+/** Today's usage of one profile: what its `maxDailyCostUsd` is checked against. */
+export function getVoiceProfileDailyUsage(
+  profileId: string,
+  now = Date.now(),
+): { day: string; profileId: string; costUsd: number; seconds: number } {
+  const day = voiceUsageDay(now);
+  const row = store()
+    .prepare("SELECT cost_usd, seconds FROM voice_usage_daily_profile WHERE day = ? AND profile_id = ?")
+    .get(day, profileId) as { cost_usd: number; seconds: number } | null;
+  return { day, profileId, costUsd: row?.cost_usd ?? 0, seconds: row?.seconds ?? 0 };
+}
+
+/** Today's usage across every profile. Reporting only: no limit reads it. */
 export function getVoiceDailyUsage(now = Date.now()): { day: string; costUsd: number; seconds: number } {
   const day = voiceUsageDay(now);
   const row = store().prepare("SELECT cost_usd, seconds FROM voice_usage_daily WHERE day = ?").get(day) as {
