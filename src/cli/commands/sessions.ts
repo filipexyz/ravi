@@ -7319,19 +7319,10 @@ export class SessionCommands {
    * Resolve the caller's channel source for cascading approval delegation.
    * When agent A sends a task to agent B, A's channel becomes B's approval source.
    */
-  private resolveCallerApprovalSource(): { channel: string; accountId: string; chatId: string } | undefined {
-    const callerCtx = getContext();
-    if (!callerCtx?.sessionKey) return undefined;
-
-    const callerSession = resolveSession(callerCtx.sessionKey);
-    if (callerSession?.lastChannel && callerSession.lastTo) {
-      return {
-        channel: callerSession.lastChannel,
-        accountId: callerSession.lastAccountId ?? "",
-        chatId: callerSession.lastTo,
-      };
-    }
-    return undefined;
+  private resolveCallerApprovalSource() {
+    const caller = getContext();
+    // Use the exact invocation, never this session's previous delivery.
+    return caller?.context ? caller.context.source : caller?.source;
   }
 
   private buildThreadActorForSend(): ThreadActor {
@@ -7400,7 +7391,9 @@ export class SessionCommands {
         deliveryBarrierSource,
         ...(promptPayload ?? {}),
         ...(cliDestination ? { _cliDestination: true } : {}),
-        _turnOrigin: buildSessionRelayTurnOrigin(action, getContext()),
+        _turnOrigin: buildSessionRelayTurnOrigin(action, getContext(), {
+          borrowApprovalOrigin: !options.withoutApprovalSource,
+        }),
       } as Record<string, unknown>);
     } catch (error) {
       failSessionRelay(`sessions ${action}`, error, asJson);

@@ -84,7 +84,7 @@ The agent always replies, but what it may do depends on who is talking. A sender
 |---|---|---|
 | Denial says `... without a resolved contact has 0 capabilities` | Sender has no contact, or the identity is linked to another instance | `ravi contacts add U0OWNER "Name" --channel slack --instance slack-main` (or the phone number on WhatsApp). Check with `ravi contacts info <contact>` |
 | `ravi agents show main` shows `Permissions: bootstrap` | The agent ceiling is the minimum | `ravi agents permissions main full-access --execute`. See [Make yourself the owner](/start/owner) |
-| An action that needs approval is refused with `No approval source available.` | The turn came from the terminal, which has no chat to ask in | Grant the capability on the agent, or ask from a chat |
+| An action that needs approval is refused with `Não há chat de origem para pedir aprovação.` | The turn came from the terminal, which has no chat to ask in | Grant the capability on the agent, or ask from a chat |
 | A tool call returns `RAVI_SKILL_REQUIRED: ...` | First use of a command group delivers its skill | Normal: the agent reads it and retries |
 
 To see what is allowed and watch denials live:

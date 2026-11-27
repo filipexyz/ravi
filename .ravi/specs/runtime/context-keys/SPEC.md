@@ -38,6 +38,22 @@ Runtime context keys are opaque credentials that connect provider turns, Ravi to
   by materializing no tool/executable/CLI/session authority.
 - Internal or local prompts without an external source MAY use the workspace
   compartment `agent_identity:<agent-id>:workspace:default`.
+- Delegated turns MUST persist their approval origin in
+  `metadata.approvalSource`, never in `contexts.source_json`: prefer the explicit
+  turn source, then the trusted producer's exact caller context source. Only a
+  producer with no caller reference may use its validated delegated approval
+  source; an exact caller with no origin MUST NOT fall back to a historical
+  hint. A relay that marks itself `borrowApprovalOrigin: false` (an answer sent
+  through an Ask) keeps the caller for authority narrowing but borrows no
+  approval origin. Warm turns MUST read their own prompt, never a captured
+  launch approval destination. Preserve channel,
+  account, chat, thread, instance and canonical chat identity. Never consult a
+  different session's latest speaker to reconstruct authority.
+- Propagating an approval origin MUST NOT turn a relay into a human turn or
+  change its actor, capability intersection, output destination or grant policy.
+  Borrowed source MUST be marked `approvalSourceOnly` and hidden from command
+  surfaces and durable grant construction; derived contexts MUST preserve this
+  marker. Rotation into a turn with no source MUST remove the previous source.
 - Child contexts issued from a `turn-runtime` context MUST remain derived
   credentials and MUST NOT bypass `resolveRuntimeContext`.
 - Caller-supplied child metadata MUST NOT replace or erase `parentContextId`,

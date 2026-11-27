@@ -75,6 +75,7 @@ import { handleSlackThreadCreationDelivery, reconcileSlackThreadLifecycle } from
 import { reconcileHandoffs } from "./handoffs/reconcile.js";
 import { sendSlackMedia } from "./channels/slack/media.js";
 import { deliverSlackAutomaticMedia } from "./channels/slack/automatic-media-output.js";
+import { attachApprovalRequestMessageId, getApprovalRequest, recordApprovalDeliveries } from "./approval/store.js";
 import { finalizeStoredSlackApprovalDelivery } from "./approval/service.js";
 import { sendSlackPrivateCards, sendSlackText } from "./channels/slack/text-send.js";
 import { SessionResponseQueue } from "./gateway-response-order.js";
@@ -2075,15 +2076,73 @@ export class Gateway {
       if (typeof data.requestId !== "string" || typeof data.messageId !== "string") {
         throw new Error("Invalid approval finalization request.");
       }
-      await finalizeStoredSlackApprovalDelivery({ requestId: data.requestId, messageId: data.messageId });
+      const request = getApprovalRequest(data.requestId);
+      if (!request || request.status === "pending") throw new Error("Approval is not terminal.");
+      if (request.channel.trim().toLowerCase() === "slack") {
+        await finalizeStoredSlackApprovalDelivery({ requestId: data.requestId, messageId: data.messageId });
+      } else {
+        if (request.messageId !== data.messageId) throw new Error("Approval delivery does not match.");
+        const target = resolveOutboundAccount(request.accountId, { channel: request.channel });
+        if (target.kind !== "omni") throw new Error("Approval finalization adapter is unavailable.");
+        // Fixed product wording only: a human's rejection text never reaches a non-Slack card.
+        const closing =
+          request.status === "expired"
+            ? "O prazo deste pedido terminou."
+            : request.decision === "approved"
+              ? "Pedido aprovado."
+              : "Pedido recusado.";
+        const text = `Pedido de aprovação encerrado. ${closing}`;
+        await this.omniSender.editMessage(
+          target.instanceId,
+          normalizeOutboundJid(request.chatId),
+          data.messageId,
+          text,
+        );
+      }
       response = { success: true };
     } catch {
       // no-cause: Approval delivery errors may contain provider credentials; emit only the fixed failure notice.
       this.workDrain.recordFailure("approval-finalization");
-      response = { success: false, error: "Slack approval finalization failed." };
+      response = { success: false, error: "Approval finalization failed." };
     }
     if (typeof data.replyTopic === "string" && /^ravi\._reply\.[A-Za-z0-9-]+$/.test(data.replyTopic)) {
       await this.emitEvent(data.replyTopic, response);
+    }
+  }
+
+  /** Delivery owns correlation even after the requesting CLI stops listening. */
+  private async recordDirectApprovalDelivery(
+    data: DirectSendRequest,
+    messageId: string | undefined,
+    deliveries?: Array<{ userId: string; kind: "dm" | "ephemeral"; chatId: string; messageId: string }>,
+  ): Promise<void> {
+    if (!data.approvalRequestId || !messageId) return;
+    const request = getApprovalRequest(data.approvalRequestId);
+    if (
+      !request ||
+      request.channel !== data.channel ||
+      request.accountId !== data.accountId ||
+      request.chatId !== data.to ||
+      (request.threadId ?? undefined) !== data.threadId
+    ) {
+      // The card is already out: leave both ids so an operator can find and close it.
+      log.warn("Delivered approval card does not match its request and was not recorded", {
+        requestId: data.approvalRequestId,
+        messageId,
+      });
+      throw new Error("Approval delivery target does not match its request.");
+    }
+    if (deliveries?.length)
+      recordApprovalDeliveries(
+        request.id,
+        deliveries.map((delivery) => ({ ...delivery, createdAt: Date.now() })),
+      );
+    const current = attachApprovalRequestMessageId(request.id, messageId);
+    if (current?.status !== "pending") {
+      const ids = deliveries?.length
+        ? deliveries.filter((delivery) => delivery.kind === "dm").map((delivery) => delivery.messageId)
+        : [messageId];
+      for (const id of ids) await this.handleApprovalFinalizationEvent({ requestId: request.id, messageId: id });
     }
   }
 
@@ -2196,16 +2255,25 @@ export class Gateway {
         if (typingDelayMs > 0) {
           await this.omniSender.sendTyping(instanceId, to, true);
           await new Promise((resolve) => setTimeout(resolve, typingDelayMs));
-          const res = await this.omniSender.send(instanceId, to, prepared.text, { mentions: prepared.mentions });
+          const res = await this.omniSender.send(instanceId, to, prepared.text, {
+            mentions: prepared.mentions,
+            // Only an approval card routes to a thread here; other producers keep their previous delivery.
+            ...(data.approvalRequestId && data.threadId ? { threadId: data.threadId } : {}),
+          });
           messageId = res.messageId;
           await this.omniSender.sendTyping(instanceId, to, false);
         } else {
-          const res = await this.omniSender.send(instanceId, to, prepared.text, { mentions: prepared.mentions });
+          const res = await this.omniSender.send(instanceId, to, prepared.text, {
+            mentions: prepared.mentions,
+            // Only an approval card routes to a thread here; other producers keep their previous delivery.
+            ...(data.approvalRequestId && data.threadId ? { threadId: data.threadId } : {}),
+          });
           messageId = res.messageId;
         }
         log.info("Send HTTP completed", { to, durationMs: Date.now() - sendStart });
       }
 
+      await this.recordDirectApprovalDelivery(data, messageId);
       log.info("Direct send delivered", { to, instanceId, messageId });
 
       if (data.replyTopic) {
@@ -2281,6 +2349,7 @@ export class Gateway {
           });
           return;
         }
+        await this.recordDirectApprovalDelivery(data, result.deliveries[0]?.messageId, result.deliveries);
         await reply({
           success: true,
           messageId: result.deliveries[0]?.messageId,
@@ -2312,6 +2381,7 @@ export class Gateway {
           onFailure: () => this.workDrain.recordFailure("native-direct-send"),
         },
       );
+      await this.recordDirectApprovalDelivery(data, delivered.messageId);
       log.info("Native direct send delivered", {
         accountId: resolved.accountId,
         provider: resolved.provider,

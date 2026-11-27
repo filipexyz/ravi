@@ -1,3 +1,4 @@
+import { runtimeCommandSource } from "../runtime/context-source.js";
 /**
  * CLI Tool Context
  *
@@ -103,7 +104,7 @@ export function getContext(options: { localOnly?: boolean } = {}): ToolContext |
       agentId: resolvedContext.agentId ?? env.RAVI_AGENT_ID,
     };
 
-    const source = resolvedContext.source;
+    const source = runtimeCommandSource(resolvedContext);
     if (source) {
       const instanceId = source.instanceId ?? env.RAVI_INSTANCE_ID;
       const canonicalChatId = source.canonicalChatId ?? env.RAVI_CANONICAL_CHAT_ID;
@@ -115,7 +116,12 @@ export function getContext(options: { localOnly?: boolean } = {}): ToolContext |
         ...(source.threadId ? { threadId: source.threadId } : {}),
         ...(canonicalChatId ? { canonicalChatId } : {}),
       };
-    } else if (env.RAVI_CHANNEL && env.RAVI_ACCOUNT_ID && env.RAVI_CHAT_ID) {
+    } else if (
+      resolvedContext.metadata?.approvalSourceOnly !== true &&
+      env.RAVI_CHANNEL &&
+      env.RAVI_ACCOUNT_ID &&
+      env.RAVI_CHAT_ID
+    ) {
       ctx.source = {
         channel: env.RAVI_CHANNEL,
         accountId: env.RAVI_ACCOUNT_ID,

@@ -1,4 +1,5 @@
 import { getContext } from "../cli/context.js";
+import { approvalOrigin, runtimeCommandSource } from "../runtime/context-source.js";
 import { actorHoldsCredentialAction, authorizeCredentialUse, type CredentialBrokerAuthority } from "./authorization.js";
 export type { CredentialBrokerAuthority } from "./authorization.js";
 import { readSecret, redactSecretRef } from "./backends.js";
@@ -89,10 +90,15 @@ export async function resolveCredentialSecret(input: {
       decision = "needs_approval";
       approvalStatus = "pending";
       audit("approval_pending");
-      const { isFixedApprovalRefusalReason, requestCascadingApproval } = await import("../approval/service.js");
+      const { APPROVAL_REFUSAL_REASON, isFixedApprovalRefusalReason, requestCascadingApproval } = await import(
+        "../approval/service.js"
+      );
       const context = authorization.context;
       const result = await requestCascadingApproval({
-        resolvedSource: context.source,
+        // A relayed turn has no origin of its own; its card goes to the caller's origin, marked as delegated.
+        resolvedSource: runtimeCommandSource(context),
+        approvalSource: runtimeCommandSource(context) ? undefined : approvalOrigin(context),
+        callerContextId: context.contextId,
         type: "permission",
         sessionName: context.sessionName ?? context.contextId,
         agentId: context.agentId!,
@@ -106,6 +112,10 @@ export async function resolveCredentialSecret(input: {
         },
       });
       if (!result.approved) {
+        if (result.reason === APPROVAL_REFUSAL_REASON.callerInvalid) {
+          approvalStatus = "expired";
+          throw new CredentialBrokerError("caller_invalid", APPROVAL_REFUSAL_REASON.callerInvalid);
+        }
         approvalStatus = "denied";
         // Keep only fixed text the approval service wrote: an exception
         // message or a rejecting human's words never leave as `detail`.
@@ -164,7 +174,12 @@ export async function resolveCredentialSecret(input: {
     // An approval refusal keeps its reason only when it is fixed text the
     // approval service wrote (checked where it was thrown), so the caller can
     // show the way out without echoing an exception or a person's words.
-    const detail = error instanceof CredentialBrokerError && code === "approval_denied" ? error.detail : undefined;
+    const detail =
+      code === "caller_invalid"
+        ? "O chamador da operação não está mais válido. Inicie uma nova tentativa; a aprovação anterior não pode ser aplicada."
+        : error instanceof CredentialBrokerError && code === "approval_denied"
+          ? error.detail
+          : undefined;
     throw new CredentialBrokerError(
       code,
       `Credential operation failed (${code}): ${input.provider}:${input.connection}`,

@@ -81,6 +81,26 @@ it("uses the publishing session and its actual reply thread without mutating ses
   ).toEqual(source);
   expect(getDb().query("SELECT * FROM sessions").all()).toEqual(before);
 });
+it("keeps the publishing session's destination when the turn only borrowed an approval origin", () => {
+  const borrowed = { channel: "slack", accountId: "main", chatId: "D-caller-dm" };
+  // A relayed turn: the caller's chat routes approval cards only, never this session's CI follow.
+  const relayed = {
+    ...context,
+    context: { ...context.context!, metadata: { approvalSource: borrowed, approvalSourceOnly: true } },
+  };
+  expect(runWithContext(relayed, () => resolvePublicationContext()).source).toEqual({
+    channel: "slack",
+    accountId: "main",
+    chatId: "C-test",
+    threadId: "thread-1",
+  });
+  // An older record that still stored the borrowed origin in `source` is filtered by its marker.
+  const legacy = {
+    ...context,
+    context: { ...context.context!, source: borrowed, metadata: { approvalSourceOnly: true } },
+  };
+  expect(runWithContext(legacy, () => resolvePublicationContext()).source).toMatchObject({ chatId: "C-test" });
+});
 it("fails closed when ambient session aliases disagree with the authenticated session", () => {
   expect(() =>
     runWithContext({ ...context, sessionKey: "other-session", sessionName: "other-session" }, () =>
