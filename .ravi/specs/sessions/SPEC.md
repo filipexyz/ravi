@@ -118,8 +118,10 @@ Sessions do NOT own:
   keys, 7-day window). While it is open, the asked session MAY run
   `sessions answer` to the asker without `access` to it, and MUST NOT gain
   anything else: read, recap, info, send, ask, execute, inform and every setter
-  still need access. An answer sent through an Ask MUST NOT take `--channel` or
-  `--to`, and a caller that was not asked, or whose Ask closed, MUST get the
+  still need access. An answer sent through an Ask MUST NOT take `--channel`,
+  `--to`, `--barrier`, `--steer` or `--immediate` (it waits for the asker's
+  current response), MUST NOT carry the answerer's chat as the asker's
+  approval source, and a caller that was not asked, or whose Ask closed, MUST get the
   same "Session not found" as an unknown session. The sender named in the Ask
   text grants nothing. Origin: 26/11, an agent asked by a session it could not
   see was refused the exact answer command the Ask told it to run.

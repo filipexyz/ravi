@@ -6045,7 +6045,7 @@ export class SessionCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
   ) {
-    const resolved = this.resolveAnswerTarget(target, channel, to);
+    const resolved = this.resolveAnswerTarget(target, { channel, to, barrier, steer, immediate });
     if (!resolved) return;
     const { session, throughAsk } = resolved;
 
@@ -6073,6 +6073,9 @@ export class SessionCommands {
       undefined,
       false,
       asJson,
+      // The answerer's chat is not where the asker's turn asks for approval or input: through an
+      // Ask the answer carries no approval source, so the asker's own source (or none) applies.
+      { withoutApprovalSource: throughAsk },
     );
     if (shouldReturnStructuredResult(asJson)) {
       // An answer sent through an Ask grants no view of the asker: the receipt names only the
@@ -7137,9 +7140,9 @@ export class SessionCommands {
    */
   private resolveAnswerTarget(
     nameOrKey: string,
-    channel?: string,
-    to?: string,
+    overrides: { channel?: string; to?: string; barrier?: string; steer?: boolean; immediate?: boolean } = {},
   ): { session: SessionEntry; throughAsk: boolean } | null {
+    const { channel, to } = overrides;
     const direct = (): { session: SessionEntry; throughAsk: boolean } | null => {
       const session = this.resolveTarget(nameOrKey);
       return session ? { session, throughAsk: false } : null;
@@ -7162,9 +7165,25 @@ export class SessionCommands {
       fail(`Session not found: ${nameOrKey}`);
       return null;
     }
+    // The caller was asked, so the session is no secret here: these refusals are permission
+    // denials with their own code, unlike the "not found" given to a caller never asked.
     if (channel || to) {
-      fail("An answer sent through an open Ask goes back where the Ask came from: --channel and --to are refused.");
-      return null;
+      throw new CliExpectedError(
+        "An answer sent through an open Ask goes back where the Ask came from: --channel and --to are refused.",
+        "PERMISSION_DENIED",
+        1,
+        "Run the answer without --channel and --to.",
+      );
+    }
+    // Delivering an answer is not choosing when to cut into the asker's turn: it waits for the
+    // asker's response like any answer.
+    if (overrides.barrier || overrides.steer || overrides.immediate) {
+      throw new CliExpectedError(
+        "An answer sent through an open Ask waits for the asker's current response: --barrier, --steer and --immediate are refused.",
+        "PERMISSION_DENIED",
+        1,
+        "Run the answer without --barrier, --steer and --immediate.",
+      );
     }
     return { session, throughAsk: true };
   }
@@ -7363,19 +7382,20 @@ export class SessionCommands {
     promptPayload?: Record<string, unknown>,
     cliDestination = false,
     asJson?: boolean,
+    options: { withoutApprovalSource?: boolean } = {},
   ): Promise<void> {
     this.assertSessionTakesPrompts(session);
     const { source, context } = this.resolveSource(session, channelOverride, toOverride);
 
     // Resolve caller's source for approval delegation (cascading approvals)
-    const _approvalSource = this.resolveCallerApprovalSource();
+    const _approvalSource = options.withoutApprovalSource ? undefined : this.resolveCallerApprovalSource();
 
     try {
       await publishSessionPrompt(sessionName, {
         prompt,
         source,
         context,
-        _approvalSource,
+        ...(_approvalSource ? { _approvalSource } : {}),
         deliveryBarrier,
         deliveryBarrierSource,
         ...(promptPayload ?? {}),
