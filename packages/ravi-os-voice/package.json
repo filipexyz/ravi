@@ -11,24 +11,33 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist/", "README.md"],
+  "files": [
+    "dist/",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "peerDependencies": {
-    "@ravi-os/sdk": ">=0.261009.1",
+    "@ravi-os/sdk": ">=0.261125.1",
     "livekit-client": "^2.0.0"
   },
   "peerDependenciesMeta": {
-    "livekit-client": { "optional": true }
+    "livekit-client": {
+      "optional": true
+    }
   },
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/filipexyz/ravi.git",
     "directory": "packages/ravi-os-voice"
   },
-  "publishConfig": { "access": "public" }
+  "publishConfig": {
+    "access": "public"
+  }
 }

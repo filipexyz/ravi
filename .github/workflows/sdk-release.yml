@@ -75,8 +75,12 @@ jobs:
 
       - name: Resolve prefix
         id: prefix
+        env:
+          # The dispatch input reaches the script as data, never as source: a template expansion inside `run` would
+          # let a dispatcher inject shell into a job that holds contents:write and id-token:write.
+          PREFIX_INPUT: ${{ github.event.inputs.prefix }}
         run: |
-          PREFIX="${{ github.event.inputs.prefix }}"
+          PREFIX="${PREFIX_INPUT:-}"
           if [ -z "$PREFIX" ]; then
             PREFIX=$(jq -r '.version | split(".") | .[0]' "$SDK_PACKAGE_PATH")
             # The push of a bump can be declined, so the manifest of the branch may be behind the registry. An omitted
@@ -105,7 +109,17 @@ jobs:
           TODAY=$(date -u +%y%m%d)
           PATTERN="${PREFIX}.${TODAY}."
 
-          VERSIONS_JSON=$(npm view "$PACKAGE" versions --json 2>/dev/null || echo '[]')
+          # A package that was never published answers E404 on stdout with exit 1. That, and only that, means no
+          # version yet; any other failure stops the release, so a network error never repeats a version.
+          if VERSIONS_JSON=$(npm view "$PACKAGE" versions --json 2>/dev/null); then
+            :
+          elif echo "$VERSIONS_JSON" | grep -Eq '"code": *"E404"'; then
+            echo "${PACKAGE} is not on npm yet; this is its first version."
+            VERSIONS_JSON='[]'
+          else
+            echo "::error::npm view ${PACKAGE} versions failed and did not answer E404; refusing to derive a version."
+            exit 1
+          fi
           if [ -z "$VERSIONS_JSON" ]; then
             VERSIONS_JSON='[]'
           fi

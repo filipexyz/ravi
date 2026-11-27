@@ -12,11 +12,11 @@ This guide covers building Ravi from source, running the checks CI runs, and sen
 
 Both release workflows use GitHub-hosted runners, Node 24 and pinned npm 11.21.1.
 The publish job has `id-token: write`. Bun still installs and builds dependencies;
-`npm publish` publishes both `ravi.bot` and `@ravi-os/sdk` with provenance.
-The SDK manifest identifies this repository and its package directory for provenance.
+`npm publish` publishes `ravi.bot`, `@ravi-os/sdk` and `@ravi-os/voice` with provenance.
+The SDK and voice manifests identify this repository and its package directory for provenance.
 
 **Manual prerequisite — Luís, or an npm maintainer who can change each package's
-settings, must configure both packages on npmjs.com.** This is separate from
+settings, must configure each package on npmjs.com.** This is separate from
 merging a workflow change; no secret or package policy is changed by the PR.
 
 1. Open **Packages → ravi.bot → Settings → Trusted publishing → Add trusted publisher → GitHub Actions**.
@@ -29,6 +29,12 @@ merging a workflow change; no secret or package policy is changed by the PR.
 3. Repeat for **Packages → @ravi-os/sdk → Settings → Trusted publishing** with the
    same owner/repository, filename **`sdk-release.yml`**, no environment, and both
    allowed actions enabled.
+   For **@ravi-os/voice**, the package does not exist on npm until its first publish,
+   so npm has no settings page for it yet. The first release of the voice kit
+   authenticates with the `NPM_TOKEN` fallback (the token must be able to publish
+   under the `@ravi-os` scope). Dispatch **Voice Release** on `dev`. Then add the
+   trusted publisher on **Packages → @ravi-os/voice → Settings → Trusted publishing**,
+   with filename **`voice-release.yml`** and the same options, so the next releases use OIDC.
 4. Arrange the first authorized release within **2 days** of creating each
    configuration. npm expires configurations that have not completed a successful
    first publish in that window. An expired configuration must be recreated.
