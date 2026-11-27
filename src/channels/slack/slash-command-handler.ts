@@ -324,7 +324,11 @@ export interface SlackCommandSource extends SlackCommandLocation {
   readonly surface: "command" | "button" | "shortcut";
   /** The runner already answered static text inside the ack. */
   readonly ackedWithHelp?: boolean;
-  /** The answer takes the place of the card that was clicked, instead of adding a message. */
+  /**
+   * The answer takes the place of the message that was clicked, instead of adding a private one.
+   * Only the confirmation card of a shortcut asks for it: that card is its own ephemeral message.
+   * Anything else keeps the message it came from, so a button on the thread card leaves the card alone.
+   */
   readonly replaceOriginal?: boolean;
   /**
    * The answer is a private card in the thread with this root ts, and not a reply on a
@@ -396,7 +400,9 @@ export function slackCommandChannel(source: SlackCommandSource, deps: SlackComma
       try {
         await (deps.respond ?? respondToSlackInteraction)({
           responseUrlId: source.responseUrlId,
-          payload: (source.replaceOriginal ? { ...message, replace_original: true } : message) as unknown as Record<
+          // Always said out loud: on a button's `response_url` Slack replaces the clicked message when the
+          // field is missing, and the thread card had already been refreshed to "closed" by then.
+          payload: { ...message, replace_original: source.replaceOriginal === true } as unknown as Record<
             string,
             unknown
           >,
