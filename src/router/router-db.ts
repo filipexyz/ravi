@@ -12219,7 +12219,9 @@ export function dbUpdateCostEventPricing(update: CostEventPricingUpdate): void {
 export function dbListAuditLog(entity?: string, limit = 100): AuditEntry[] {
   const db = getDb();
   const rows = entity
-    ? (db.prepare("SELECT * FROM audit_log WHERE entity = ? ORDER BY ts DESC LIMIT ?").all(entity, limit) as Array<{
+    ? (db
+        .prepare("SELECT * FROM audit_log WHERE entity = ? ORDER BY ts DESC, id DESC LIMIT ?")
+        .all(entity, limit) as Array<{
         id: number;
         action: string;
         entity: string;
@@ -12228,7 +12230,7 @@ export function dbListAuditLog(entity?: string, limit = 100): AuditEntry[] {
         actor: string;
         ts: number;
       }>)
-    : (db.prepare("SELECT * FROM audit_log ORDER BY ts DESC LIMIT ?").all(limit) as Array<{
+    : (db.prepare("SELECT * FROM audit_log ORDER BY ts DESC, id DESC LIMIT ?").all(limit) as Array<{
         id: number;
         action: string;
         entity: string;

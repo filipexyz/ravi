@@ -53,34 +53,26 @@ export function agentDefaultsDiffIsEmpty(diff: AgentDefaultsDiff): boolean {
 }
 
 /**
- * Who is writing, from the ambient invocation. Never throws: an audit row with
- * an imprecise actor is better than a write that fails because the actor could
- * not be described.
+ * Who is writing, from the ambient invocation. Both lookups only read
+ * AsyncLocalStorage (`localOnly` skips the credential file), so neither
+ * throws; with no invocation it falls back to the process identity.
  */
 export function describeAgentWriteActor(): string {
-  try {
-    const consoleInvocation = currentConsoleInvocation();
-    if (consoleInvocation) {
-      const subject = consoleInvocation.grant?.sub;
-      return typeof subject === "string" && subject ? `console:${subject}` : "console";
-    }
-  } catch {
-    // fall through
+  const consoleInvocation = currentConsoleInvocation();
+  if (consoleInvocation) {
+    const subject = consoleInvocation.grant?.sub;
+    return typeof subject === "string" && subject ? `console:${subject}` : "console";
   }
-  try {
-    const ctx = getContext({ localOnly: true });
-    if (ctx) {
-      const parts: string[] = [];
-      const kind = ctx.context?.kind;
-      if (kind) parts.push(`kind=${kind}`);
-      if (ctx.contextId) parts.push(`context=${ctx.contextId}`);
-      if (ctx.agentId) parts.push(`agent=${ctx.agentId}`);
-      if (ctx.sessionName) parts.push(`session=${ctx.sessionName}`);
-      if (ctx.transport) parts.push(`transport=${ctx.transport}`);
-      if (parts.length > 0) return parts.join(" ");
-    }
-  } catch {
-    // fall through
+  const ctx = getContext({ localOnly: true });
+  if (ctx) {
+    const parts: string[] = [];
+    const kind = ctx.context?.kind;
+    if (kind) parts.push(`kind=${kind}`);
+    if (ctx.contextId) parts.push(`context=${ctx.contextId}`);
+    if (ctx.agentId) parts.push(`agent=${ctx.agentId}`);
+    if (ctx.sessionName) parts.push(`session=${ctx.sessionName}`);
+    if (ctx.transport) parts.push(`transport=${ctx.transport}`);
+    if (parts.length > 0) return parts.join(" ");
   }
   const env = process.env;
   const parts: string[] = [];
