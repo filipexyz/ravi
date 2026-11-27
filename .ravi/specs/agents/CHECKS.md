@@ -55,6 +55,9 @@
   secret-looking names redacted at any depth.
 - Two writers that build from the same read and grant different capabilities
   MUST both land (deep merge; arrays as sets).
+- A capability revoked by a rebased writer MUST be gone even when another
+  writer re-wrote the list in the other format (string vs object), and the
+  same capability granted in both formats MUST land once.
 - The break-glass check of a rebased permission write MUST see the row as
   stored inside the write transaction: a dormant break-glass planted between an
   agent's early check and its write MUST be refused, and the refusal MUST write

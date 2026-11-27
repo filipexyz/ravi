@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { mergeAgentDefaultsPatch, rebaseAgentDefaultsObject } from "./agent-defaults-patch.js";
+import { capabilityItemKey, mergeAgentDefaultsPatch, rebaseAgentDefaultsObject } from "./agent-defaults-patch.js";
 
 const FULL_ACCESS = {
   profile: "full-access",
@@ -129,5 +129,71 @@ describe("rebaseAgentDefaultsObject (deep three-way merge)", () => {
     expect(rebaseAgentDefaultsObject({ tts_voice: "y" }, { tts_voice: "x" }, { tts_voice: "z" })).toEqual({
       tts_voice: "z",
     });
+  });
+
+  it("a revocation applies when another writer re-wrote the capability list as objects (review B1 of #1059)", () => {
+    const base = { runtimePermissions: { profile: "explicit-only", capabilities: ["use:tool:Bash", "view:agent:*"] } };
+    const next = { runtimePermissions: { profile: "explicit-only", capabilities: ["view:agent:*"] } };
+    const current = {
+      runtimePermissions: {
+        profile: "explicit-only",
+        capabilities: [
+          { permission: "use", objectType: "tool", objectId: "Bash" },
+          { permission: "view", objectType: "agent", objectId: "*" },
+          { permission: "view", objectType: "agent", objectId: "other" },
+        ],
+      },
+    };
+    const merged = rebaseAgentDefaultsObject(current, base, next) as {
+      runtimePermissions: { capabilities: unknown[] };
+    };
+    const keys = merged.runtimePermissions.capabilities.map(capabilityItemKey);
+    expect(keys).not.toContain("cap:use:tool:Bash");
+    expect(keys.sort()).toEqual(["cap:view:agent:*", "cap:view:agent:other"]);
+  });
+
+  it("a revocation applies when the reader saw objects and the stored list is strings", () => {
+    const bash = { permission: "use", objectType: "tool", objectId: "Bash" };
+    const view = { permission: "view", objectType: "agent", objectId: "*" };
+    const base = { runtimePermissions: { profile: "explicit-only", capabilities: [bash, view] } };
+    const next = { runtimePermissions: { profile: "explicit-only", capabilities: [view] } };
+    const current = {
+      runtimePermissions: { profile: "explicit-only", capabilities: ["use:tool:Bash", "view:agent:*", "use:skill:x"] },
+    };
+    const merged = rebaseAgentDefaultsObject(current, base, next) as {
+      runtimePermissions: { capabilities: unknown[] };
+    };
+    expect(merged.runtimePermissions.capabilities.map(capabilityItemKey).sort()).toEqual([
+      "cap:use:skill:x",
+      "cap:view:agent:*",
+    ]);
+  });
+
+  it("the same capability granted in two formats lands once (review N2 of #1059)", () => {
+    const base = { runtimePermissions: { profile: "explicit-only", capabilities: [] as unknown[] } };
+    const current = { runtimePermissions: { profile: "explicit-only", capabilities: ["execute:executable:gh"] } };
+    const next = {
+      runtimePermissions: {
+        profile: "explicit-only",
+        capabilities: [{ permission: "execute", objectType: "executable", objectId: "gh" }],
+      },
+    };
+    const merged = rebaseAgentDefaultsObject(current, base, next) as {
+      runtimePermissions: { capabilities: unknown[] };
+    };
+    expect(merged.runtimePermissions.capabilities).toEqual(["execute:executable:gh"]);
+  });
+
+  it("a pure reorder stands when nobody else wrote (review N1 of #1059)", () => {
+    expect(rebaseAgentDefaultsObject({ order: ["a", "b"] }, { order: ["a", "b"] }, { order: ["b", "a"] })).toEqual({
+      order: ["b", "a"],
+    });
+  });
+
+  it("capabilityItemKey treats string and object forms as the same capability", () => {
+    expect(capabilityItemKey("view:agent:team:alpha")).toBe(
+      capabilityItemKey({ permission: "view", objectType: "agent", objectId: "team:alpha" }),
+    );
+    expect(capabilityItemKey("not-a-capability")).toBe(JSON.stringify("not-a-capability"));
   });
 });

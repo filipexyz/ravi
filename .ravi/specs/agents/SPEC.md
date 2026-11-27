@@ -50,8 +50,12 @@ An agent is not a human user, contact, chat, route, or permission profile.
   (`agents permissions`, `agents model-broker`, a Library profile, the
   capability provider) MUST land only what they changed, applied over the
   stored row in one transaction (`dbRebaseAgentDefaults`). The merge is deep:
-  objects merge key by key at any depth and arrays merge as sets (added
-  elements appended, removed elements dropped), so two writers that touch
+  when nobody else wrote, the writer's value stands as built; otherwise objects
+  merge key by key at any depth and arrays merge as sets (added elements
+  appended, removed elements dropped). `runtimePermissions.capabilities`
+  entries are compared by canonical identity (`permission:objectType:objectId`
+  string and object forms are the same capability), so a revocation applies
+  whatever format another writer stored. Two writers that touch
   different entries of the same top-level key (two capabilities granted
   concurrently) both land. The break-glass check of that write MUST judge the
   transition from the row as stored inside the transaction, not the copy the
