@@ -36532,6 +36532,66 @@ public struct TagsDetachReturn: Codable, Sendable {
   }
 }
 
+public struct TagsDoctorOptions: Codable, Sendable {
+  public var limit: String?
+
+  public init(limit: String? = nil) {
+    self.limit = limit
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case limit = "limit"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct TagsDoctorReturn: Codable, Sendable {
+  public var bindingsByAssetType: [RaviJSON]
+  public var consumers: [RaviJSON]
+  public var generatedAt: Double
+  public var legacyMirrors: [RaviJSON]
+  public var limit: Double
+  public var orphanBindings: RaviJSON
+  public var powerTags: [RaviJSON]
+  public var summary: RaviJSON
+  public var tagRuleErrors: [RaviJSON]
+  public var tagsWithoutConsumer: [RaviJSON]
+  public var unboundDefinitions: [RaviJSON]
+
+  public init(bindingsByAssetType: [RaviJSON], consumers: [RaviJSON], generatedAt: Double, legacyMirrors: [RaviJSON], limit: Double, orphanBindings: RaviJSON, powerTags: [RaviJSON], summary: RaviJSON, tagRuleErrors: [RaviJSON], tagsWithoutConsumer: [RaviJSON], unboundDefinitions: [RaviJSON]) {
+    self.bindingsByAssetType = bindingsByAssetType
+    self.consumers = consumers
+    self.generatedAt = generatedAt
+    self.legacyMirrors = legacyMirrors
+    self.limit = limit
+    self.orphanBindings = orphanBindings
+    self.powerTags = powerTags
+    self.summary = summary
+    self.tagRuleErrors = tagRuleErrors
+    self.tagsWithoutConsumer = tagsWithoutConsumer
+    self.unboundDefinitions = unboundDefinitions
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case bindingsByAssetType = "bindingsByAssetType"
+    case consumers = "consumers"
+    case generatedAt = "generatedAt"
+    case legacyMirrors = "legacyMirrors"
+    case limit = "limit"
+    case orphanBindings = "orphanBindings"
+    case powerTags = "powerTags"
+    case summary = "summary"
+    case tagRuleErrors = "tagRuleErrors"
+    case tagsWithoutConsumer = "tagsWithoutConsumer"
+    case unboundDefinitions = "unboundDefinitions"
+  }
+}
+
 public struct TagsListOptions: Codable, Sendable {
   public var cursor: String?
   public var fields: String?

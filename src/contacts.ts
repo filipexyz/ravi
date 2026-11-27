@@ -1327,6 +1327,16 @@ function assertContactActivationAllowed(
   warnOperatorBreakGlass(`activating contact:${input.contactId}`, reasons);
 }
 
+/** Contact ids whose contact policy carries at least one tag (read-only; `ravi tags doctor`). */
+export function listContactIdsWithPolicyTags(): string[] {
+  const rows = ensureDb()
+    .prepare(
+      "SELECT contact_id AS id FROM contact_policies WHERE tags_json IS NOT NULL AND TRIM(tags_json) NOT IN ('', '[]') ORDER BY contact_id",
+    )
+    .all() as Array<{ id: string }>;
+  return rows.map((row) => row.id);
+}
+
 function currentContactPolicyTags(database: Database, contactId: string): string[] {
   const row = database.prepare("SELECT tags_json FROM contact_policies WHERE contact_id = ?").get(contactId) as
     | { tags_json: string | null }
