@@ -6,7 +6,7 @@ import { getOrCreateSession, getSession } from "../router/index.js";
 import { createSlackThreadLifecycle, markSlackThreadRootDelivered } from "../channels/slack/thread-lifecycle-store.js";
 import { finalizeSlackThreadCreation } from "../channels/slack/thread-lifecycle.js";
 import { createContact } from "../contacts.js";
-import { askDecision, resolveDecisionOrigin } from "./service.js";
+import { askDecision, decisionHistory, resolveDecisionOrigin } from "./service.js";
 import { findDecisionCardForm, getDecision, recordDecisionCardForm } from "./store.js";
 import { answerDecisionFromOwnerCard, type OwnerCardAnswerInput } from "./owner-card.js";
 import type { Decision, DecisionOrigin } from "./types.js";
@@ -130,6 +130,8 @@ describe("owner answers a decision on its card", () => {
     expect(stored.scope.type).toBe("origin");
     expect(stored.sourceMessageId).toBe("slack:view:V1");
     expect(stored.answeredBy).toContain(`[card contact:${OWNER} interaction:slack:view:V1]`);
+    // Named by the verified contact, never as whoever runs the consumer.
+    expect(stored.answeredBy?.startsWith(`card:${OWNER} `)).toBe(true);
   });
 
   it("widens to the org when the installation owner chooses it", async () => {
@@ -238,5 +240,11 @@ describe("owner answers a decision on its card", () => {
     expect(findDecisionCardForm(decision.id, "V-real")).toEqual(form);
     expect(findDecisionCardForm(decision.id, "V-other")).toBeNull();
     expect(findDecisionCardForm("dec_other", "V-real")).toBeNull();
+    // History shows that a form was opened, never its binding.
+    const shown = decisionHistory(decision.id).find((row) => row.type === "card-form-opened")!;
+    expect(shown.actor).toBeNull();
+    expect(JSON.parse(shown.snapshot)).toEqual({ revision: decision.revision, channel: "slack" });
+    expect(shown.snapshot).not.toContain("V-real");
+    expect(shown.snapshot).not.toContain("UOWNER");
   });
 });

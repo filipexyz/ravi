@@ -29,6 +29,17 @@ export const SLACK_THREAD_STOP_ACTION_ID = "ravi_thread_stop";
 /** Responder on a card waiting for a decision: opens the answer form (decision-answer.ts). */
 export const SLACK_DECISION_ANSWER_ACTION_ID = "ravi_decision_answer";
 
+/** An open decision with a human owner, as the card offers it. */
+export interface SlackThreadCardDecision {
+  readonly id: string;
+  readonly revision: number;
+  /** Short label for the button when the card offers more than one. */
+  readonly key?: string;
+}
+
+/** At most this many Responder buttons on one card; Slack allows 25 elements per actions block. */
+export const SLACK_DECISION_ANSWER_MAX_BUTTONS = 5;
+
 export interface SlackThreadCardState {
   readonly status: SlackThreadCardStatus;
   /**
@@ -46,10 +57,11 @@ export interface SlackThreadCardState {
   /** Requested runtime shape, e.g. `codex · gpt-5.4 · high`; shown only when the caller pinned one. */
   readonly runtime?: string;
   /**
-   * The open decision the card waits on, with a human owner: the card offers Responder. The button carries the id and
-   * the revision only; who may answer, and to which audience, is checked when the form comes back.
+   * The open decisions the card waits on that have a human owner: the card offers Responder for each (up to
+   * SLACK_DECISION_ANSWER_MAX_BUTTONS). A button carries the id and the revision only; who may answer, and to which
+   * audience, is checked when the form opens and again when it comes back.
    */
-  readonly decision?: { readonly id: string; readonly revision: number };
+  readonly decisions?: readonly SlackThreadCardDecision[];
 }
 
 export interface SlackThreadCardMessage {
@@ -130,7 +142,7 @@ export function buildSlackThreadCard(rawBrief: string, state: SlackThreadCardSta
 
   // A closed thread has nothing left to close or stop.
   const controls = [
-    ...(state.status === "waiting" && state.decision ? [decisionAnswerBlock(state.decision)] : []),
+    ...(state.status === "waiting" && state.decisions?.length ? [decisionAnswerBlock(state.decisions)] : []),
     ...(state.controls === true && state.status !== "closed" ? [threadControlsBlock()] : []),
   ];
 
@@ -156,20 +168,35 @@ export function parseSlackDecisionAnswerValue(value: unknown): { id: string; rev
   return match ? { id: match[1]!, revision: Number(match[2]) } : null;
 }
 
-/** Responder, for the person who owns the pending decision; nothing to type but the answer itself. */
-function decisionAnswerBlock(decision: { readonly id: string; readonly revision: number }): SlackBlockKitBlock {
+/** Each Responder's action id: the first is the base id, the next ones add `_2`, `_3`… (unique within the block). */
+export function slackDecisionAnswerActionId(index: number): string {
+  return index === 0 ? SLACK_DECISION_ANSWER_ACTION_ID : `${SLACK_DECISION_ANSWER_ACTION_ID}_${index + 1}`;
+}
+
+export function isSlackDecisionAnswerActionId(value: unknown): boolean {
+  return typeof value === "string" && /^ravi_decision_answer(?:_[2-9])?$/.test(value);
+}
+
+/**
+ * Responder for each pending decision a person owns; nothing to type but the answer itself. With one decision the
+ * button says Responder; with more, each names its decision's key.
+ */
+function decisionAnswerBlock(decisions: readonly SlackThreadCardDecision[]): SlackBlockKitBlock {
+  const shown = decisions.slice(0, SLACK_DECISION_ANSWER_MAX_BUTTONS);
   return {
     type: "actions",
     block_id: "ravi_decision_actions",
-    elements: [
-      {
-        type: "button",
-        action_id: SLACK_DECISION_ANSWER_ACTION_ID,
-        text: { type: "plain_text", text: "Responder", emoji: true },
-        style: "primary",
-        value: encodeSlackDecisionAnswerValue(decision),
+    elements: shown.map((decision, index) => ({
+      type: "button",
+      action_id: slackDecisionAnswerActionId(index),
+      text: {
+        type: "plain_text",
+        text: shown.length === 1 || !decision.key ? "Responder" : `Responder: ${decision.key.slice(0, 40)}`,
+        emoji: true,
       },
-    ],
+      ...(index === 0 ? { style: "primary" } : {}),
+      value: encodeSlackDecisionAnswerValue(decision),
+    })),
   };
 }
 

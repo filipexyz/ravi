@@ -24,7 +24,7 @@ const GROUP_JID_RE = /^(\d+(?:-\d+)?)@g\.us$/i;
 /** Phone number with optional + prefix and formatting */
 const PHONE_RE = /^\+?[\d\s\-().]+$/;
 /** Phone number as typed for a contact ref: PHONE_RE plus `/` separators */
-const CONTACT_PHONE_RE = /^\+?[\d\s\-().\/]+$/;
+const CONTACT_PHONE_RE = /^\+?[\d\s\-()./]+$/;
 
 interface JidComponents {
   user: string;

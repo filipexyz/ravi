@@ -264,7 +264,7 @@ describe("Responder on a card waiting for a decision", () => {
       status: "waiting",
       controls: true,
       note: "Sonnet ou Opus?",
-      decision: { id: "dec_abc123", revision: 3 },
+      decisions: [{ id: "dec_abc123", revision: 3 }],
     });
     const responder = actionIds(card.blocks).find((b) => b.action_id === SLACK_DECISION_ANSWER_ACTION_ID);
     expect(responder?.value).toBe("dec_abc123:3");
@@ -273,11 +273,15 @@ describe("Responder on a card waiting for a decision", () => {
 
   it("offers nothing when the card is not waiting or has no decision for a person", () => {
     for (const card of [
-      buildSlackThreadCard("Decide\nBrief", { status: "open", controls: true, decision: { id: "dec_x", revision: 1 } }),
+      buildSlackThreadCard("Decide\nBrief", {
+        status: "open",
+        controls: true,
+        decisions: [{ id: "dec_x", revision: 1 }],
+      }),
       buildSlackThreadCard("Decide\nBrief", {
         status: "closed",
         controls: true,
-        decision: { id: "dec_x", revision: 1 },
+        decisions: [{ id: "dec_x", revision: 1 }],
       }),
       buildSlackThreadCard("Decide\nBrief", { status: "waiting", controls: true, note: "?" }),
     ])
@@ -287,5 +291,34 @@ describe("Responder on a card waiting for a decision", () => {
   it("parses only a decision id and a positive revision", () => {
     for (const value of ["", "dec_x", "dec_x:0", "dec_x:-1", "x:1", "dec_x:1:2", "dec_ x:1", 5, null])
       expect(parseSlackDecisionAnswerValue(value)).toBeNull();
+  });
+});
+
+describe("Responder for each decision a person owns", () => {
+  it("offers one button per decision, each with its own action id, value and key", () => {
+    const card = buildSlackThreadCard("Decide\nBrief", {
+      status: "waiting",
+      controls: true,
+      note: "?",
+      decisions: [
+        { id: "dec_one", revision: 1, key: "modelo" },
+        { id: "dec_two", revision: 4, key: "prazo" },
+      ],
+    });
+    const block = card.blocks.find((b) => b.block_id === "ravi_decision_actions") as {
+      elements: Array<{ action_id: string; value: string; text: { text: string } }>;
+    };
+    expect(block.elements.map((e) => e.action_id)).toEqual(["ravi_decision_answer", "ravi_decision_answer_2"]);
+    expect(block.elements.map((e) => e.value)).toEqual(["dec_one:1", "dec_two:4"]);
+    expect(block.elements.map((e) => e.text.text)).toEqual(["Responder: modelo", "Responder: prazo"]);
+  });
+
+  it("caps the buttons at five", () => {
+    const card = buildSlackThreadCard("Decide\nBrief", {
+      status: "waiting",
+      decisions: Array.from({ length: 7 }, (_, i) => ({ id: `dec_${i}`, revision: 1, key: `k${i}` })),
+    });
+    const block = card.blocks.find((b) => b.block_id === "ravi_decision_actions") as { elements: unknown[] };
+    expect(block.elements).toHaveLength(5);
   });
 });

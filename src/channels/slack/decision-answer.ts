@@ -36,7 +36,8 @@ import type { SlackWebApiClient } from "./client.js";
 import { createEnvelopeDedupe } from "./envelope-dedupe.js";
 import "./grantors.js";
 import { getSlackThreadLifecycle } from "./thread-lifecycle-store.js";
-import { parseSlackDecisionAnswerValue, SLACK_DECISION_ANSWER_ACTION_ID } from "./thread-card.js";
+import { isSlackDecisionAnswerActionId, parseSlackDecisionAnswerValue } from "./thread-card.js";
+import { isInstallationOwner } from "../../decisions/org-tag.js";
 import type { SlackSocketEnvelope } from "./types.js";
 
 const log = logger.child("slack:decision-answer");
@@ -98,6 +99,7 @@ export function parseSlackDecisionAnswerForm(value: unknown): SlackDecisionAnswe
 export function buildSlackDecisionAnswerModal(
   ref: SlackDecisionAnswerFormRef,
   question: string,
+  options: { offerOrg: boolean } = { offerOrg: true },
 ): Record<string, unknown> {
   const shown =
     question.trim().length > QUESTION_MAX_LENGTH
@@ -123,17 +125,27 @@ export function buildSlackDecisionAnswerModal(
           max_length: ANSWER_MAX_LENGTH,
         },
       },
-      {
-        type: "input",
-        block_id: SLACK_DECISION_ANSWER_SCOPE_BLOCK,
-        label: { type: "plain_text", text: "Vale para" },
-        element: {
-          type: "radio_buttons",
-          action_id: SLACK_DECISION_ANSWER_SCOPE_ACTION,
-          initial_option: scopeOption("origin"),
-          options: [scopeOption("origin"), scopeOption("org")],
-        },
-      },
+      // Only the installation owner may widen: anyone else gets no choice to make, and the answer stays in the thread.
+      ...(options.offerOrg
+        ? [
+            {
+              type: "input",
+              block_id: SLACK_DECISION_ANSWER_SCOPE_BLOCK,
+              label: { type: "plain_text", text: "Vale para" },
+              element: {
+                type: "radio_buttons",
+                action_id: SLACK_DECISION_ANSWER_SCOPE_ACTION,
+                initial_option: scopeOption("origin"),
+                options: [scopeOption("origin"), scopeOption("org")],
+              },
+            },
+          ]
+        : [
+            {
+              type: "context",
+              elements: [{ type: "plain_text", text: "A resposta vale para esta thread." }],
+            },
+          ]),
     ],
   };
 }
@@ -159,16 +171,18 @@ export function slackDecisionAnswerOpenFromEnvelope(
   const payload = record(envelope.payload);
   if (!payload || payload.type !== "block_actions") return null;
   const actions = Array.isArray(payload.actions) ? payload.actions : [];
-  const action = actions.map(record).find((entry) => entry?.action_id === SLACK_DECISION_ANSWER_ACTION_ID);
+  const action = actions.map(record).find((entry) => isSlackDecisionAnswerActionId(entry?.action_id));
   if (!action) return null;
   const decision = parseSlackDecisionAnswerValue(action.value);
   const triggerId = text(payload.trigger_id);
   const container = record(payload.container);
   const message = record(payload.message);
   const channelId = text(record(payload.channel)?.id) || text(container?.channel_id);
-  // The card is the thread's root: its own ts is the thread.
-  const threadTs =
-    text(message?.thread_ts) || text(container?.thread_ts) || text(message?.ts) || text(container?.message_ts);
+  // Only the card at the root of the thread: the clicked message's own ts is the thread. A button posted as a reply
+  // inside the thread (its thread_ts names another message) is not the card.
+  const threadTs = text(message?.ts) || text(container?.message_ts);
+  const repliedTo = text(message?.thread_ts) || text(container?.thread_ts);
+  if (repliedTo && repliedTo !== threadTs) return null;
   const userId = text(record(payload.user)?.id);
   if (!decision || !triggerId || !SLACK_ID.test(userId) || !SLACK_ID.test(channelId) || !SLACK_TS.test(threadTs))
     return null;
@@ -180,7 +194,7 @@ export function isSlackDecisionAnswerOpenEnvelope(envelope: SlackSocketEnvelope)
   const payload = record(envelope.payload);
   if (!payload || payload.type !== "block_actions") return false;
   const actions = Array.isArray(payload.actions) ? payload.actions : [];
-  return actions.some((entry) => record(entry)?.action_id === SLACK_DECISION_ANSWER_ACTION_ID);
+  return actions.some((entry) => isSlackDecisionAnswerActionId(record(entry)?.action_id));
 }
 
 export interface SlackDecisionAnswerFormDependencies {
@@ -188,6 +202,7 @@ export interface SlackDecisionAnswerFormDependencies {
   readonly getThread: typeof getSlackThreadLifecycle;
   readonly resolveSender: typeof resolveVerifiedSenderOwner;
   readonly recordForm: typeof recordDecisionCardForm;
+  readonly isInstallationOwner: (contactId: string) => boolean;
 }
 
 const defaultFormDependencies: SlackDecisionAnswerFormDependencies = {
@@ -195,6 +210,7 @@ const defaultFormDependencies: SlackDecisionAnswerFormDependencies = {
   getThread: getSlackThreadLifecycle,
   resolveSender: resolveVerifiedSenderOwner,
   recordForm: recordDecisionCardForm,
+  isInstallationOwner,
 };
 
 /**
@@ -276,7 +292,9 @@ export async function openSlackDecisionAnswerForm(input: {
     }
     const result = await input.client.viewsOpen({
       triggerId: open.triggerId,
-      view: buildSlackDecisionAnswerModal(open.form, decision.ask),
+      view: buildSlackDecisionAnswerModal(open.form, decision.ask, {
+        offerOrg: deps.isInstallationOwner(decision.ownerId!),
+      }),
     });
     const viewId = text(record(result?.view)?.id);
     if (!result?.ok || !viewId) return;

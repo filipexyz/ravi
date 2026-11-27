@@ -34,7 +34,7 @@ describe("Responder on the thread card", () => {
       status: "waiting",
       controls: true,
       note: "Sonnet ou Opus?",
-      decision: { id: "dec_abc123", revision: 2 },
+      decisions: [{ id: "dec_abc123", revision: 2 }],
     });
     const responder = buttons(card.blocks).find((b) => b.action_id === SLACK_DECISION_ANSWER_ACTION_ID);
     expect(responder?.value).toBe("dec_abc123:2");
@@ -45,7 +45,7 @@ describe("Responder on the thread card", () => {
     const open = buildSlackThreadCard("Decide\nBrief", {
       status: "open",
       controls: true,
-      decision: { id: "dec_x", revision: 1 },
+      decisions: [{ id: "dec_x", revision: 1 }],
     });
     const waiting = buildSlackThreadCard("Decide\nBrief", { status: "waiting", controls: true, note: "?" });
     for (const card of [open, waiting])
@@ -53,7 +53,9 @@ describe("Responder on the thread card", () => {
   });
 });
 
-function responderEnvelope(input: { value?: string; user?: string; ts?: string } = {}): Record<string, unknown> {
+function responderEnvelope(
+  input: { value?: string; user?: string; ts?: string; threadTs?: string; actionId?: string } = {},
+): Record<string, unknown> {
   const ts = input.ts ?? "1713000000.000100";
   return {
     envelope_id: "env-1",
@@ -64,8 +66,8 @@ function responderEnvelope(input: { value?: string; user?: string; ts?: string }
       user: { id: input.user ?? "UOWNER" },
       channel: { id: "C123" },
       container: { type: "message", channel_id: "C123", message_ts: ts },
-      message: { ts },
-      actions: [{ action_id: SLACK_DECISION_ANSWER_ACTION_ID, value: input.value ?? "dec_abc123:2" }],
+      message: { ts, ...(input.threadTs ? { thread_ts: input.threadTs } : {}) },
+      actions: [{ action_id: input.actionId ?? SLACK_DECISION_ANSWER_ACTION_ID, value: input.value ?? "dec_abc123:2" }],
     },
   };
 }
@@ -80,7 +82,13 @@ const DECISION = {
   origin: { type: "thread", id: "thread-req", chatId: "chat-1", sessionKey: "sk" },
 } as unknown as Decision;
 
-function formDeps(overrides: Partial<{ decision: Decision | null; thread: Record<string, unknown> | null }> = {}) {
+function formDeps(
+  overrides: Partial<{
+    decision: Decision | null;
+    thread: Record<string, unknown> | null;
+    installationOwner: boolean;
+  }> = {},
+) {
   const recorded: DecisionCardForm[] = [];
   const deps: SlackDecisionAnswerFormDependencies = {
     getDecision: () => ("decision" in overrides ? overrides.decision! : DECISION),
@@ -92,6 +100,7 @@ function formDeps(overrides: Partial<{ decision: Decision | null; thread: Record
     recordForm: (_decision, form) => {
       recorded.push(form);
     },
+    isInstallationOwner: () => overrides.installationOwner ?? true,
   };
   return { deps, recorded };
 }
@@ -163,6 +172,40 @@ describe("opening the form", () => {
       expect(opened[0]!.view.submit).toBeUndefined();
       expect(recorded).toEqual([]);
     }
+  });
+
+  it("opens nothing for a Responder posted as a reply inside the thread, only for the root card", () => {
+    // A reply's thread_ts names the root; the clicked message is not the card.
+    expect(
+      slackDecisionAnswerOpenFromEnvelope(
+        responderEnvelope({ ts: "1713000050.000100", threadTs: "1713000000.000100" }) as never,
+      ),
+    ).toBeNull();
+    // The root card itself may carry its own ts as thread_ts once the thread has replies.
+    expect(
+      slackDecisionAnswerOpenFromEnvelope(responderEnvelope({ threadTs: "1713000000.000100" }) as never)?.form.threadTs,
+    ).toBe("1713000000.000100");
+  });
+
+  it("offers the audience only to the installation owner", async () => {
+    const scopeBlock = (view: Record<string, unknown>) =>
+      (view.blocks as Array<Record<string, unknown>>).some((b) => b.block_id === SLACK_DECISION_ANSWER_SCOPE_BLOCK);
+    const owner = await open(responderEnvelope(), formDeps({ installationOwner: true }).deps);
+    expect(scopeBlock(owner.opened[0]!.view)).toBe(true);
+    const other = formDeps({ installationOwner: false });
+    const plain = await open(responderEnvelope(), other.deps);
+    expect(plain.opened[0]!.view.callback_id).toBe(SLACK_DECISION_ANSWER_SUBMIT_CALLBACK_ID);
+    expect(scopeBlock(plain.opened[0]!.view)).toBe(false);
+    expect(other.recorded).toHaveLength(1);
+  });
+
+  it("opens the form from any of the card's Responder buttons", async () => {
+    const { deps, recorded } = formDeps();
+    await open(responderEnvelope({ actionId: "ravi_decision_answer_2" }), deps);
+    expect(recorded).toHaveLength(1);
+    expect(
+      slackDecisionAnswerOpenFromEnvelope(responderEnvelope({ actionId: "ravi_decision_answer_x" }) as never),
+    ).toBeNull();
   });
 
   it("reads nothing from a button value that is not a decision", () => {
