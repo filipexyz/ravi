@@ -138486,6 +138486,48 @@ export const VideoAnalyzeReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `voice.calls.activity`. */
+export const VoiceCallsActivityInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "call": {
+      "description": "Call id",
+      "type": "string"
+    },
+    "state": {
+      "description": "speaking or quiet",
+      "enum": [
+        "speaking",
+        "quiet"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "call",
+    "state"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `voice.calls.activity`. */
+export const VoiceCallsActivityReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "callId": {
+      "type": "string"
+    },
+    "speaking": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "callId",
+    "speaking"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `voice.calls.approve`. */
 export const VoiceCallsApproveInputSchema = {
   "additionalProperties": false,

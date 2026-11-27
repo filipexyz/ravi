@@ -27084,6 +27084,18 @@ export type VideoAnalyzeReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `voice.calls.activity`. */
+export type VoiceCallsActivityInput = {
+  call: string;
+  state: "speaking" | "quiet";
+};
+
+/** Return shape for `voice.calls.activity`. */
+export type VoiceCallsActivityReturn = {
+  callId: string;
+  speaking: boolean;
+};
+
 /** Input shape for `voice.calls.approve`. */
 export type VoiceCallsApproveInput = {
   approval: string;

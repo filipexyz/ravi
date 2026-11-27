@@ -49,6 +49,13 @@ normative: false
   counts against its profile, and a call ends with `limit: max_daily_cost` when its own profile
   reaches the limit; `voice.test.ts` shows `calls start` refuses only the profile that spent its day.
   Both tests fail when the check reads another profile's meter.
+- `when_idle` (`door.test.ts`, "when_idle delivery"): the reply is held while the person talks and
+  spoken when they stop; spoken at the ceiling when the stop never comes; spoken at once with nobody
+  talking, and `speak` never waits; ending the call drops the held reply and frees the session for
+  the next call. The ceiling is not reached early, and a person who starts talking while the clip
+  is synthesized still holds it. Mutants that skip the hold, keep waiters on "quiet", keep them on
+  end, hold for every delivery, or drop the wait after synthesis each fail one of them. `voice.test.ts`: `calls activity` sends the control and
+  refuses a state other than speaking or quiet.
 - Configuration through the SDK (`voice.test.ts`, "configuration through the SDK"): an issued key
   without `mutate:voice:profiles.*` is refused and one with it updates; a device key is refused update
   and bind but lists profiles; STT provider, model and language are stored, `auto` and empty clear,

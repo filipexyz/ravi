@@ -97,6 +97,7 @@ export interface VoiceDoorDeps {
   transcriptWaitMs?: number;
   sleep?: (ms: number) => Promise<void>;
   env?: NodeJS.ProcessEnv;
+  whenIdleMaxWaitMs?: number;
 }
 
 interface RunningTurn {
@@ -117,7 +118,14 @@ interface CallRuntime {
   sideband?: SidebandLike;
   providerSessionId?: string;
   lastLiveSeconds: number;
+  /** When the person started talking, from `calls activity`; unset while they are quiet. */
+  userSpeakingSince?: number;
+  /** `when_idle` speech waiting for the person to stop talking. */
+  idleWaiters: Array<() => void>;
 }
+
+/** `when_idle` never holds speech longer than this, even if the "stopped talking" signal never comes. */
+export const WHEN_IDLE_MAX_WAIT_MS = 20_000;
 
 export class VoiceDoorService {
   private readonly calls = new Map<string, CallRuntime>();
@@ -225,6 +233,9 @@ export class VoiceDoorService {
         // Always emitted (even when already listening) so players stop at once.
         updateVoiceCall(call.id, { agentState: "listening" }, this.now());
         await this.emitOpen(call.id, "agent.state", { state: "listening", reason: "silenced" }, this.sink);
+        return;
+      case "activity":
+        this.noteActivity(call.id, message.speaking === true);
         return;
       case "end":
         await this.endCall(call.id, message.reason || "ended");
@@ -565,6 +576,11 @@ export class VoiceDoorService {
       await this.setAgentState(call.id, "listening");
       return;
     }
+    // `when_idle`: wait until the person stops talking. Live is exempt: the live model owns turn-taking.
+    if (profile.delivery === "when_idle" && call.engine !== "live") {
+      await this.waitUntilIdle(call.id);
+      if (!this.isOpen(call.id)) return;
+    }
     if (call.engine === "live") {
       runtime.sideband?.commentary(spokenText, running.delegationId ?? null);
       if (liveContext && liveContext !== spokenText)
@@ -596,6 +612,11 @@ export class VoiceDoorService {
       }
     }
     if (!this.isOpen(call.id)) return;
+    // The person may have started talking while the clip was synthesized: wait again before it can play.
+    if (profile.delivery === "when_idle") {
+      await this.waitUntilIdle(call.id);
+      if (!this.isOpen(call.id)) return;
+    }
     await this.emitOpen(
       call.id,
       "agent.transcript",
@@ -772,6 +793,7 @@ export class VoiceDoorService {
     deleteVoiceAudioForCall(callId);
     await emitVoiceEvent(callId, "call.state", { state: "ended" }, this.sink);
     await emitVoiceEvent(callId, "call.ended", { reason, usage: ended?.usage ?? call.usage }, this.sink);
+    this.releaseIdleWaiters(this.calls.get(callId));
     this.calls.delete(callId);
   }
 
@@ -901,10 +923,54 @@ export class VoiceDoorService {
   private runtime(callId: string): CallRuntime {
     let runtime = this.calls.get(callId);
     if (!runtime) {
-      runtime = { callId, queue: [], running: null, draining: false, lastLiveSeconds: 0 };
+      runtime = { callId, queue: [], running: null, draining: false, lastLiveSeconds: 0, idleWaiters: [] };
       this.calls.set(callId, runtime);
     }
     return runtime;
+  }
+
+  /** The person started or stopped talking (`calls activity`). Stopping releases held `when_idle` speech. */
+  private noteActivity(callId: string, speaking: boolean): void {
+    const runtime = this.runtime(callId);
+    if (speaking) {
+      runtime.userSpeakingSince ??= this.now();
+      return;
+    }
+    runtime.userSpeakingSince = undefined;
+    this.releaseIdleWaiters(runtime);
+  }
+
+  private releaseIdleWaiters(runtime: CallRuntime | undefined): void {
+    if (!runtime) return;
+    const waiters = runtime.idleWaiters.splice(0);
+    for (const release of waiters) release();
+  }
+
+  /** Resolve once the person is quiet, the call ends, or the hold reaches its ceiling. */
+  private async waitUntilIdle(callId: string): Promise<void> {
+    const runtime = this.runtime(callId);
+    const maxWait = this.deps.whenIdleMaxWaitMs ?? WHEN_IDLE_MAX_WAIT_MS;
+    const since = runtime.userSpeakingSince;
+    if (since === undefined) return;
+    const remaining = since + maxWait - this.now();
+    if (remaining <= 0) {
+      // A "speaking" signal older than the ceiling is stale: the stop never arrived.
+      runtime.userSpeakingSince = undefined;
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        const index = runtime.idleWaiters.indexOf(finish);
+        if (index >= 0) runtime.idleWaiters.splice(index, 1);
+        resolve();
+      };
+      const timer = setTimeout(finish, remaining);
+      runtime.idleWaiters.push(finish);
+    });
   }
 
   private profileFor(call: VoiceCall): VoiceProfile {

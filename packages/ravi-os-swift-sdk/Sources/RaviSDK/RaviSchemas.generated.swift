@@ -140157,6 +140157,50 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let VoiceCallsActivityInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "call": {
+        "description": "Call id",
+        "type": "string"
+      },
+      "state": {
+        "description": "speaking or quiet",
+        "enum": [
+          "speaking",
+          "quiet"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "call",
+      "state"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceCallsActivityReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "callId": {
+        "type": "string"
+      },
+      "speaking": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "callId",
+      "speaking"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let VoiceCallsApproveInputSchema = #"""
   {
     "additionalProperties": false,
