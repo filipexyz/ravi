@@ -7,7 +7,7 @@ import { createSlackThreadLifecycle, markSlackThreadRootDelivered } from "../cha
 import { finalizeSlackThreadCreation } from "../channels/slack/thread-lifecycle.js";
 import { createContact } from "../contacts.js";
 import { askDecision, resolveDecisionOrigin } from "./service.js";
-import { getDecision } from "./store.js";
+import { findDecisionCardForm, getDecision, recordDecisionCardForm } from "./store.js";
 import { answerDecisionFromOwnerCard, type OwnerCardAnswerInput } from "./owner-card.js";
 import type { Decision, DecisionOrigin } from "./types.js";
 
@@ -222,5 +222,21 @@ describe("owner answers a decision on its card", () => {
       reason: "not_found",
     });
     expect(getDecision(decision.id)!.status).toBe("open");
+  });
+
+  it("finds a card form only by the decision and the form the channel recorded", async () => {
+    const decision = await ask(await thread(), OWNER);
+    const form = {
+      formId: "V-real",
+      revision: decision.revision,
+      senderId: "UOWNER",
+      channel: "slack",
+      chatId: "C123",
+      threadId: "1713000000.000100",
+    };
+    recordDecisionCardForm(decision, form);
+    expect(findDecisionCardForm(decision.id, "V-real")).toEqual(form);
+    expect(findDecisionCardForm(decision.id, "V-other")).toBeNull();
+    expect(findDecisionCardForm("dec_other", "V-real")).toBeNull();
   });
 });

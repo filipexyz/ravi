@@ -102,7 +102,12 @@ import {
   isCredentialIntakeEnvelope,
   type CredentialIntakeDependencies,
 } from "./credential-intake.js";
-import { isSlackDecisionAnswerOpenEnvelope, openSlackDecisionAnswerForm } from "./decision-answer.js";
+import {
+  isSlackDecisionAnswerOpenEnvelope,
+  isSlackDecisionAnswerSubmitEnvelope,
+  openSlackDecisionAnswerForm,
+  slackDecisionAnswerFormErrors,
+} from "./decision-answer.js";
 import { extractSlackMessageText } from "./message-content.js";
 import { slackInboundReactionFromEnvelope } from "./reactions.js";
 import {
@@ -936,8 +941,23 @@ export class SlackSocketModeService {
     }
     // Responder on a card waiting for a decision: Slack's trigger lasts three seconds, so the form opens here.
     if (isSlackDecisionAnswerOpenEnvelope(envelope)) {
-      await openSlackDecisionAnswerForm({ envelope, client: this.webClient, ack });
+      await openSlackDecisionAnswerForm({
+        envelope,
+        client: this.webClient,
+        ack,
+        accountId: this.options.accountId,
+        instanceId: this.options.instanceId ?? this.options.accountId,
+      });
       return "processed";
+    }
+    // A decision form whose answer the core would refuse for its shape stays open with the draft.
+    if (isSlackDecisionAnswerSubmitEnvelope(envelope)) {
+      const errors = slackDecisionAnswerFormErrors(envelope);
+      const formEnvelopeId = cleanSlackId(envelope.envelope_id);
+      if (errors && formEnvelopeId) {
+        await ack(formEnvelopeId, { response_action: "errors", errors });
+        return "processed";
+      }
     }
     const envelopeId = cleanSlackId(envelope.envelope_id);
     const messageEvent = envelopeEvent(envelope);
