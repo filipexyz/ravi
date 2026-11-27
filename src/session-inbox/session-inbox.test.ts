@@ -678,6 +678,32 @@ describe("a returned item never revives stale progress (Devin review of 5406f26)
     expect(getInboxItem(newer.id)?.state).toBe("pending");
   });
 
+  it("in the same millisecond, the item written later is the newer one (CodeRabbit review of 73d26f8)", () => {
+    // The ids are random: repeat so an id-ordered tie-break would fail almost surely.
+    for (let round = 0; round < 20; round++) {
+      const key = `thread:same-ms-${round}`;
+      const old = add(`passo 1 ${round}`, { createdAt: 5, supersedeKey: key });
+      const turn = prepareInboxTurnBlock({
+        sessionName: SESSION,
+        messages: [human],
+        ...drain({ drainOnHeartbeat: false }),
+      });
+      const newer = add(`passo 2 ${round}`, { createdAt: 5, supersedeKey: key });
+      turn?.release("aborted");
+      expect(getInboxItem(old.id)?.state).toBe("superseded");
+      expect(getInboxItem(old.id)?.supersededBy).toBe(newer.id);
+      expect(getInboxItem(newer.id)?.state).toBe("pending");
+      // Clear the round: deliver what is pending so the next reservation starts empty.
+      const drainTurn = prepareInboxTurnBlock({
+        sessionName: SESSION,
+        messages: [human],
+        ...drain({ drainOnHeartbeat: false }),
+      });
+      drainTurn?.commit();
+      drainTurn?.finish("completed");
+    }
+  });
+
   it("without a newer item, or with another key, the released item returns to pending", () => {
     const a = add("a", { createdAt: 1, supersedeKey: "thread:r1" });
     const turn = prepareInboxTurnBlock({

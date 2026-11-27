@@ -295,23 +295,32 @@ export function commitInboxReservation(turnKey: string, now = Date.now()): numbe
  * superseded by the newest one, so a turn that did not deliver never brings back stale progress.
  */
 function supersedeReturnedRows(db: ReturnType<typeof getDb>, ids: string[]): void {
+  // Same millisecond: the insertion order (rowid; rows are never deleted) breaks the tie, never the
+  // random id, so a notice written later always counts as newer.
   const newest = db.prepare(
     `SELECT id FROM session_inbox
      WHERE target_session_name = ? AND supersede_key = ? AND id <> ?
-       AND (created_at > ? OR (created_at = ? AND id > ?))
-     ORDER BY created_at DESC, id DESC LIMIT 1`,
+       AND (created_at > ? OR (created_at = ? AND rowid > ?))
+     ORDER BY created_at DESC, rowid DESC LIMIT 1`,
   );
   const supersede = db.prepare(
     "UPDATE session_inbox SET state = 'superseded', superseded_by = ? WHERE id = ? AND state = 'pending'",
   );
   for (const id of ids) {
     const row = db
-      .prepare("SELECT target_session_name, supersede_key, created_at FROM session_inbox WHERE id = ?")
-      .get(id) as { target_session_name: string; supersede_key: string | null; created_at: number } | undefined;
-    if (!row?.supersede_key) continue;
-    const newer = newest.get(row.target_session_name, row.supersede_key, id, row.created_at, row.created_at, id) as
-      | { id: string }
+      .prepare("SELECT rowid, target_session_name, supersede_key, created_at FROM session_inbox WHERE id = ?")
+      .get(id) as
+      | { rowid: number; target_session_name: string; supersede_key: string | null; created_at: number }
       | undefined;
+    if (!row?.supersede_key) continue;
+    const newer = newest.get(
+      row.target_session_name,
+      row.supersede_key,
+      id,
+      row.created_at,
+      row.created_at,
+      row.rowid,
+    ) as { id: string } | undefined;
     if (newer) supersede.run(newer.id, id);
   }
 }
