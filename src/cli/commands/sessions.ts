@@ -124,7 +124,7 @@ import { DEFAULT_RUNTIME_PROBE_TIMEOUT_MS } from "../../runtime/runtime-probe.js
 import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
 import { enforceCliCommandAccess, listCliCommandAccessCandidates } from "../command-access.js";
 import { canWithCapabilities } from "../../permissions/capability-snapshot.js";
-import { formatDecisionQuestion, resolveDecisionQuestion } from "../../decisions/question.js";
+import { decisionHeadline, formatDecisionQuestion, resolveDecisionQuestion } from "../../decisions/question.js";
 import { askDecisionForWait } from "../../decisions/service.js";
 import { retireDecisionIfWaitFails } from "../../decisions/store.js";
 import { redactText } from "../../session-trace/session-trace-db.js";
@@ -8588,7 +8588,8 @@ export class SessionCommands {
         kind: awaitingKind,
         // With --pr the ref names the PR too, so the wait closes when the PR is merged or closed.
         ref: reviewTarget ? formatPullRequestHandoffRef(reviewTarget) : ref?.trim() || null,
-        note: reportText.split("\n")[0]?.trim() || null,
+        // A decision wait's reminder to the owner shows the question, not the report the parent reads.
+        note: decisionQuestion ? decisionHeadline(decisionQuestion) : reportText.split("\n")[0]?.trim() || null,
         callerContextId: getContext({ localOnly: true })?.contextId ?? null,
         now,
       };

@@ -490,10 +490,22 @@ describe("identity chat schema", () => {
         actorType: "contact",
         contactId: "owner",
       }).message;
+    const orphanDmThread = dbUpsertChat({
+      channel: "slack",
+      instanceId: "i1",
+      platformChatId: "D-unseen#1795807146.082739",
+      chatType: "thread",
+      metadata: { parentChatType: "dm" },
+    });
     const inDmThread = write(dmThread.id, "D-owner#1795807146.082739");
+    const inOrphanDmThread = write(orphanDmThread.id, "D-unseen#1795807146.082739");
     write(groupThread.id, "C-team#1795807146.082739");
     const filter = { contactId: "owner", since: 0, chatId: null };
-    expect(dbListChatMessagesByProviderId("1795807404.718439", filter).map((m) => m.id)).toEqual([inDmThread.id]);
+    expect(
+      dbListChatMessagesByProviderId("1795807404.718439", filter)
+        .map((m) => m.id)
+        .sort(),
+    ).toEqual([inDmThread.id, inOrphanDmThread.id].sort());
   });
 
   it("ensures one durable chat per actor and agent across retries and restarts", () => {

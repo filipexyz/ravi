@@ -8442,6 +8442,7 @@ export function dbListChatMessagesByProviderId(
          AND COALESCE(CASE WHEN m.provider_timestamp < 1000000000000 THEN m.provider_timestamp * 1000
                            ELSE m.provider_timestamp END, m.created_at) >= ?
          AND (m.chat_id = ? OR c.chat_type = 'dm'
+              OR (c.chat_type = 'thread' AND json_extract(c.metadata_json, '$.parentChatType') = 'dm')
               OR (c.chat_type = 'thread' AND EXISTS (
                     SELECT 1 FROM chats p
                     WHERE p.channel = c.channel AND p.instance_id = c.instance_id AND p.chat_type = 'dm'

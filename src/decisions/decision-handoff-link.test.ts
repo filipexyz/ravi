@@ -335,7 +335,7 @@ describe("the source is tied to the question's time and chat", () => {
       expect.objectContaining({ code: "DECISION_SOURCE_BEFORE_QUESTION" }),
     );
     expect(() => resolveDecisionAnswerSource(decision, inGroup.id, "ok")).toThrow(
-      expect.objectContaining({ code: "DECISION_SOURCE_WRONG_CHAT" }),
+      expect.objectContaining({ code: "DECISION_SOURCE_NOT_OWNER" }),
     );
   });
 
@@ -398,6 +398,22 @@ describe("the source is tied to the question's time and chat", () => {
       text: "2 vinculado",
     });
     expect(resolveDecisionAnswerSource(decision, "repeat-ts", "2 vinculado").messageId).toBe(late.id);
+    // A DM thread stored before its root DM row is known as one by the parent kind the channel adapter records.
+    const orphanThread = dbUpsertChat({
+      channel: "slack",
+      instanceId: "fixture-slack",
+      platformChatId: "D-new#1795807999.000001",
+      chatType: "thread",
+      metadata: { parentChatType: "dm" },
+    });
+    const orphanAnswer = message({
+      providerMessageId: "m-orphan-thread",
+      actorType: "contact",
+      contactId: OWNER,
+      chatId: orphanThread.id,
+      text: "2 vinculado",
+    });
+    expect(resolveDecisionAnswerSource(decision, "m-orphan-thread", "2 vinculado").messageId).toBe(orphanAnswer.id);
     // A thread of a group is not a direct chat.
     dbUpsertChat({ channel: "slack", instanceId: "fixture-slack", platformChatId: "C-team", chatType: "group" });
     const groupThread = dbUpsertChat({
@@ -413,7 +429,7 @@ describe("the source is tied to the question's time and chat", () => {
       chatId: groupThread.id,
     });
     expect(() => resolveDecisionAnswerSource(decision, inGroupThread.id, "ok")).toThrow(
-      expect.objectContaining({ code: "DECISION_SOURCE_WRONG_CHAT" }),
+      expect.objectContaining({ code: "DECISION_SOURCE_NOT_OWNER" }),
     );
   });
 });

@@ -3229,6 +3229,30 @@ describe("SessionCommands attach hints", () => {
     toolContext = { sessionKey: parentKey, sessionName: "dev-slack" };
     await new SessionCommands().threadSend("handoff-child", "vai pelo caminho A", undefined, true);
     expect(listOpenHandoffs(parentKey)).toHaveLength(0);
+
+    // A decision wait's note (what the owner's reminder shows) is the short question, not the report.
+    resolvedSession = {
+      sessionKey: childKey,
+      name: "dev-slack-t-1713000000000100",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+    };
+    toolContext = { sessionKey: childKey, sessionName: "dev-slack-t-1713000000000100" };
+    const decisionWait = (await new SessionCommands().report(
+      `Desenho pronto. ${"contexto longo ".repeat(40)}`,
+      undefined,
+      true,
+      "decision",
+      undefined,
+      undefined,
+      "Qual modo é o padrão?",
+      ["vinculado", "conversa"],
+      "vinculado",
+    )) as Record<string, any>;
+    expect(decisionWait.handoff).toMatchObject({ kind: "decision" });
+    expect(listOpenHandoffs(parentKey).find((h) => h.id === decisionWait.handoff.id)?.note).toBe(
+      "Qual modo é o padrão?",
+    );
   });
 
   it("report --awaiting review --pr opens the review only for the PR head with a green gate", async () => {

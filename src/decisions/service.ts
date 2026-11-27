@@ -252,6 +252,8 @@ function isDirectChat(chatId: string): boolean {
   if (chat.chatType !== "thread") return false;
   const hash = chat.platformChatId.lastIndexOf("#");
   if (hash <= 0) return false;
+  // The channel adapter records the parent's kind on the thread chat; older thread chats rely on the parent row.
+  if (chat.metadata?.parentChatType === "dm") return true;
   const parent = dbFindChat({
     channel: chat.channel,
     instanceId: chat.instanceId,
@@ -277,11 +279,7 @@ export function resolveDecisionAnswerSource(
     );
   };
   const refuseOwn = (
-    code:
-      | "DECISION_SOURCE_BEFORE_QUESTION"
-      | "DECISION_SOURCE_WRONG_CHAT"
-      | "DECISION_SOURCE_AMBIGUOUS"
-      | "DECISION_SOURCE_NO_MATCH",
+    code: "DECISION_SOURCE_BEFORE_QUESTION" | "DECISION_SOURCE_AMBIGUOUS" | "DECISION_SOURCE_NO_MATCH",
     message: string,
   ): never => {
     throw new DecisionError(code, message, { exitCode: 2, suggestedAction: howTo });
@@ -305,17 +303,15 @@ export function resolveDecisionAnswerSource(
   // Nothing eligible: say why only when the message is the owner's own (the wider read is just for that).
   const owned = eligible.length ? eligible : (direct ? [direct] : dbListChatMessagesByProviderId(ref)).filter(byOwner);
   if (!owned.length) return refuse();
-  const current = owned.filter((message) => chatMessageTime(message) >= sourceSince);
-  if (!current.length)
+  // A message of the owner in another chat gets the generic refusal too: a finer code would tell the caller that
+  // the owner wrote there, in a chat the caller may not read. Finer codes are only for the chats that may answer.
+  const reachable = owned.filter(inAllowedChat);
+  if (!reachable.length) return refuse();
+  const candidates = reachable.filter((message) => chatMessageTime(message) >= sourceSince);
+  if (!candidates.length)
     return refuseOwn(
       "DECISION_SOURCE_BEFORE_QUESTION",
       "That message of the owner was written before the question (or before its last revision), so it does not answer it.",
-    );
-  const candidates = current.filter(inAllowedChat);
-  if (!candidates.length)
-    return refuseOwn(
-      "DECISION_SOURCE_WRONG_CHAT",
-      "That message of the owner is in a chat that is neither the decision's chat nor a direct chat with them (a DM or a thread inside it).",
     );
   if (candidates.length > 1)
     return refuseOwn(

@@ -4401,6 +4401,9 @@ describe("Slack Socket Mode foreign bot intake", () => {
     const source = published[0]!.payload.source as MessageTarget;
     expect(source.threadId).toBe(ts);
     expect(dbGetChat(source.canonicalChatId!)).toMatchObject({ platformChatId: `C123#${ts}`, chatType: "thread" });
+    // The thread chat records its parent's kind, so a DM thread is known as one even without the DM row.
+    expect(dbGetChat(source.canonicalChatId!)?.metadata?.parentChatType).not.toBe("dm");
+    expect(dbGetChat(source.canonicalChatId!)?.metadata?.parentChatType).toBeTruthy();
     expect(getSessionByName(published[0]!.sessionName)?.sessionKey).toContain(`:thread:${ts}`);
     expect(
       dbFindChatMessage({ channel: "slack", instanceId: UUID, chatId: source.canonicalChatId!, providerMessageId: ts }),
