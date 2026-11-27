@@ -23,6 +23,9 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/channels/runner.ts": ["src/channels/runner.test.ts", "src/db/schema-owner.test.ts"],
   "src/channels/slack/socket-mode.ts": ["src/channels/slack/socket-mode.test.ts"],
   "src/channels/": [
+    // Owner DM guard: no one else's DM lands in an agent's shared DM session, on the key the commit lands in.
+    "src/channels/owner-dm-guard.test.ts",
+    "src/channels/owner-dm-guard.routing.test.ts",
     // Grant requests: the Slack adapter (reach approvers, private card, click handled by the core).
     "src/channels/slack/grant-request-adapter.test.ts",
     "src/channels/whatsapp/grant-request-adapter.test.ts",
@@ -119,6 +122,9 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/db/runtime-state.ts": ["src/db/schema-owner.test.ts"],
   "src/db/state-boundary.ts": ["src/router/state-boundary.test.ts"],
   "src/router/": [
+    // session_asks: an open Ask lets the asked session answer the asker, and only answer.
+    "src/sessions/ask-grants.test.ts",
+    "src/cli/commands/sessions-ask-answer.test.ts",
     // Daemon/consumer initialization exercises the router's journal/schema boundary.
     "src/db/schema-owner.test.ts",
     "src/db/journal-mode-retry.test.ts",
@@ -208,6 +214,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/session-goals.test.ts",
     "src/runtime/session-resolver.test.ts",
     "src/runtime/session-trace.test.ts",
+    // Turn provenance: the origin, the automation id and the fired event topic every trigger wake carries.
+    "src/runtime/turn-provenance.test.ts",
     "src/runtime/daemon-restart-resume.test.ts",
     "src/runtime/compaction-announcement.test.ts",
     "src/runtime/codex-transport.test.ts",

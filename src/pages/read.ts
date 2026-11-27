@@ -182,10 +182,10 @@ export function normalizePageReadNumber(
  * Whether this call may only read public Pages: every turn that is not the
  * operator's own, as the connector classifier decides it.
  *
- * A group is the owner's call: the same consent that lets their connectors
- * answer there lets a private Page be read there. Open follow-up: when the room
- * holds people outside the page's organization, nothing yet checks that
- * everyone who will read it may read it.
+ * The owner's own message counts in any chat, a group included: sharing
+ * there is the owner's choice (owner decision, 26/11). What the read returns
+ * stays in that session's transcript, where another participant can ask
+ * about it later; that is part of the same choice (spec cli/connectors).
  */
 export function pageReadIsPublicOnly(deps: PageReadDeps = {}): boolean {
   if (deps.publicOnly !== undefined) return deps.publicOnly;
@@ -213,13 +213,7 @@ export function resolveTurnForActiveLogin(
 }
 
 /** Which rule kept this turn from being the operator's own (for a `public_only` refusal). */
-export type PageReadTurnBlock =
-  | "shared_session"
-  | "relay_answer_chat"
-  | "owner_outside_dm"
-  | "group"
-  | "not_owner"
-  | "unknown";
+export type PageReadTurnBlock = "relay_answer_chat" | "owner_outside_dm" | "group" | "not_owner" | "unknown";
 
 /**
  * Why the classifier did not count this turn as the operator's own, in words
@@ -235,12 +229,6 @@ export function pageReadTurnBlock(deps: PageReadDeps = {}): { turn: PageReadTurn
     return { turn: "unknown", why: "Ravi could not classify who is asking in this turn." };
   }
   if (result.ok) return null;
-  if (result.sharedSession) {
-    return {
-      turn: "shared_session",
-      why: "the owner's direct chat runs in a session other people's chats share (dmScope main, a route that names the session, or another chat attached to it)",
-    };
-  }
   if (result.relay) {
     return {
       turn: "relay_answer_chat",

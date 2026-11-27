@@ -1716,7 +1716,7 @@ export type AppsGuideReturn = {
         };
         failClosed: true;
         id: string;
-        interface: "builtin" | "cli";
+        interface: "builtin" | "cli" | "script";
         operation: string;
         requestSchema: {
           kind: "ref" | "inline" | "unknown";
@@ -1861,7 +1861,7 @@ export type AppsListReturn = {
         };
         failClosed: true;
         id: string;
-        interface: "builtin" | "cli";
+        interface: "builtin" | "cli" | "script";
         operation: string;
         requestSchema: {
           kind: "ref" | "inline" | "unknown";
@@ -1903,7 +1903,7 @@ export type AppsListReturn = {
         };
         failClosed: true;
         id: string;
-        interface: "builtin" | "cli";
+        interface: "builtin" | "cli" | "script";
         operation: string;
         requestSchema: {
           kind: "ref" | "inline" | "unknown";
@@ -1965,7 +1965,7 @@ export type AppsPromptsReturn = {
         };
         failClosed: true;
         id: string;
-        interface: "builtin" | "cli";
+        interface: "builtin" | "cli" | "script";
         operation: string;
         requestSchema: {
           kind: "ref" | "inline" | "unknown";
@@ -2008,6 +2008,20 @@ export type AppsPromptsReturn = {
   };
 };
 
+/** Input shape for `apps.refresh`. */
+export type AppsRefreshInput = Record<string, never>;
+
+/** Return shape for `apps.refresh`. */
+export type AppsRefreshReturn = {
+  apps: number;
+  blockSerial: number;
+  changed: boolean;
+  indexSerial: number;
+  keysSerial: number;
+  refreshedAt: string | null;
+  source: string;
+};
+
 /** Input shape for `apps.run`. */
 export type AppsRunInput = {
   args?: string[];
@@ -2029,7 +2043,7 @@ export type AppsRunReturn = {
   errorCode?: string;
   exitCode?: number | null;
   handler?: string;
-  interface: ("builtin" | "cli") | null;
+  interface: ("builtin" | "cli" | "script") | null;
   mutating: boolean;
   ok: boolean;
   operation: string | null;
@@ -2059,7 +2073,7 @@ export type AppsRunReturn = {
       };
       ttlSec?: number;
     };
-    interface: "builtin" | "cli";
+    interface: "builtin" | "cli" | "script";
     providerId: string;
     providerOperationId: string;
     providerVersion: string;
@@ -2071,7 +2085,7 @@ export type AppsRunReturn = {
   plan?: {
     appId: string;
     argumentCount: number;
-    interface: "builtin" | "cli";
+    interface: "builtin" | "cli" | "script";
     mutating: true;
     operationId: string;
   };
@@ -2122,6 +2136,29 @@ export type AppsScaffoldReturn = {
   specPath: string | null;
 };
 
+/** Input shape for `apps.search`. */
+export type AppsSearchInput = {
+  query?: string;
+  refresh?: boolean;
+};
+
+/** Return shape for `apps.search`. */
+export type AppsSearchReturn = {
+  apps: Array<{
+    blocked: boolean;
+    class: ("compose" | "connector" | "code") | null;
+    description: string;
+    id: string;
+    installed: string | null;
+    latest: string | null;
+    name: string;
+    publisher: string;
+  }>;
+  indexSerial: number;
+  refreshedAt: string | null;
+  source: string;
+};
+
 /** Input shape for `apps.show`. */
 export type AppsShowInput = {
   id: string;
@@ -2150,7 +2187,7 @@ export type AppsShowReturn = {
         };
         failClosed: true;
         id: string;
-        interface: "builtin" | "cli";
+        interface: "builtin" | "cli" | "script";
         operation: string;
         requestSchema: {
           kind: "ref" | "inline" | "unknown";
@@ -2172,6 +2209,25 @@ export type AppsShowReturn = {
     version: string | null;
     warnings: string[];
   };
+};
+
+/** Input shape for `apps.verify`. */
+export type AppsVerifyInput = {
+  id?: string;
+};
+
+/** Return shape for `apps.verify`. */
+export type AppsVerifyReturn = {
+  apps: Array<{
+    exposedTo: string[];
+    id: string;
+    ok: boolean;
+    problems: string[];
+    source: "official" | "local";
+    state: "active" | "quarantined";
+    version: string;
+  }>;
+  ok: boolean;
 };
 
 /** Input shape for `artifacts.archive`. */
@@ -12891,6 +12947,10 @@ export type DecisionsAnswerInput = {
   by?: string;
   execute?: boolean;
   id: string;
+  scope?: string;
+  sourceMessage?: string;
+  sourceQuote?: string;
+  supersedes?: string;
   text?: string;
 };
 
@@ -12916,8 +12976,16 @@ export type DecisionsAnswerReturn = {
     };
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
+    revisedAt: number;
     revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
     status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
     updatedAt: number;
   };
   deliveries: Array<{
@@ -12940,6 +13008,7 @@ export type DecisionsAskInput = {
   execute?: boolean;
   key?: string;
   owner?: string;
+  scope?: string;
   task?: string;
   thread?: string;
 };
@@ -12966,8 +13035,16 @@ export type DecisionsAskReturn = {
     };
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
+    revisedAt: number;
     revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
     status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
     updatedAt: number;
   };
   deliveries: Array<{
@@ -12986,8 +13063,10 @@ export type DecisionsAskReturn = {
 /** Input shape for `decisions.list`. */
 export type DecisionsListInput = {
   all?: boolean;
+  answeredSince?: string;
   limit?: string;
   offset?: string;
+  scope?: string;
   task?: string;
   thread?: string;
 };
@@ -13013,8 +13092,16 @@ export type DecisionsListReturn = {
     };
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
+    revisedAt: number;
     revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
     status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
     updatedAt: number;
   }>;
   pagination: {
@@ -13058,8 +13145,16 @@ export type DecisionsResolveDeliveryReturn = {
     };
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
+    revisedAt: number;
     revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
     status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
     updatedAt: number;
   };
   deliveries: Array<{
@@ -13103,8 +13198,16 @@ export type DecisionsRetryReturn = {
     };
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
+    revisedAt: number;
     revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
     status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
     updatedAt: number;
   };
   deliveries: Array<{
@@ -13147,8 +13250,16 @@ export type DecisionsShowReturn = {
     };
     ownerId: string | null;
     ownerType: "human" | "agent" | "unassigned";
+    revisedAt: number;
     revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
     status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
     updatedAt: number;
   };
   deliveries: Array<{
@@ -13169,6 +13280,53 @@ export type DecisionsShowReturn = {
     snapshot: string;
     type: string;
   }>;
+};
+
+/** Input shape for `decisions.supersede`. */
+export type DecisionsSupersedeInput = {
+  by?: string;
+  execute?: boolean;
+  id: string;
+};
+
+/** Return shape for `decisions.supersede`. */
+export type DecisionsSupersedeReturn = {
+  replaced: {
+    id: string;
+    status: "superseded";
+    supersededBy: string;
+  };
+  replacement: {
+    answer: string | null;
+    answeredAt: number | null;
+    answeredBy: string | null;
+    ask: string;
+    askedAt: number;
+    askedBy: string | null;
+    blocks: boolean;
+    createdAt: number;
+    id: string;
+    key: string;
+    origin: {
+      chatId: string | null;
+      id: string;
+      sessionKey: string | null;
+      type: "task" | "thread";
+    };
+    ownerId: string | null;
+    ownerType: "human" | "agent" | "unassigned";
+    revisedAt: number;
+    revision: number;
+    scope: {
+      id: string | null;
+      type: "origin" | "agent" | "project" | "org";
+    };
+    sourceExcerpt: string | null;
+    sourceMessageId: string | null;
+    status: "open" | "answered" | "superseded";
+    supersededBy: string | null;
+    updatedAt: number;
+  };
 };
 
 /** Input shape for `devin.auth.check`. */
@@ -20913,7 +21071,9 @@ export type SessionsReportInput = {
 /** Return shape for `sessions.report`. */
 export type SessionsReportReturn = ({
   actionId: "thread.report";
+  decisionError?: string;
   handoff?: {
+    decisionId?: string;
     id: string;
     kind: "review" | "decision" | "merge" | "dispatch" | "instruction";
     ref: string | null;
@@ -21574,6 +21734,10 @@ export type SessionsThreadSendReturn = {
     barrierSource: "explicit" | "default" | "inferred";
   };
   messageId: string;
+  openDecisionWaits?: Array<{
+    decisionId: string;
+    handoffId: string;
+  }>;
   reopened: boolean;
   requestId: string;
   status: "published";

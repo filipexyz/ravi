@@ -71,7 +71,7 @@ import {
   type CloseSlackThreadLifecycleResult,
   type SlackThreadLifecycleRecord,
 } from "./thread-lifecycle-store.js";
-import type { SlackThreadCardState } from "./thread-card.js";
+import { slackThreadCardDecisions, type SlackThreadCardState } from "./thread-card.js";
 import { getLatestSessionTurn } from "../../session-trace/session-trace-db.js";
 import { observeThreadTurn } from "./thread-turn-health.js";
 import {
@@ -79,12 +79,15 @@ import {
   decideThreadParentReturn,
   getThreadReturnWatch,
   markThreadParentReturn,
+  CI_WAKE_NUDGE_EVENT_PREFIX,
+  readThreadTurnGhFollowWake,
   readThreadTurnOrigin,
   readThreadTurnReplyPreview,
   releaseThreadReturnNudge,
   reopenThreadReturnWatch,
   resolveThreadReturnWatch,
   threadHasOpenDecision,
+  threadHasOpenHandoff,
   threadReturnedSince,
   THREAD_RETURN_NUDGES_PER_TICK,
 } from "./thread-parent-return.js";
@@ -451,6 +454,9 @@ async function reconcileThreadParentReturn(
     watch,
     openDecision: threadHasOpenDecision(record.requestId),
     returnedSince: (since) => threadReturnedSince(record.requestId, watch, since),
+    turnCiWake: turn?.outputState === "silent" && readThreadTurnGhFollowWake(turn.turnId),
+    openHandoff: threadHasOpenHandoff(childSessionKey),
+    watchedTurnCiWake: watch?.stage === "nudged" && watch.nudgeEventId?.startsWith(CI_WAKE_NUDGE_EVENT_PREFIX) === true,
   });
 
   if (action.kind === "none") return;
@@ -470,7 +476,7 @@ async function reconcileThreadParentReturn(
     const child = getSession(childSessionKey);
     const parent = getSession(record.parentSessionKey);
     if (!child || !parent) return;
-    const eventId = `slack-thread-return-nudge:${record.requestId}:${action.turnId}`;
+    const eventId = `${action.silentCiWake ? CI_WAKE_NUDGE_EVENT_PREFIX : "slack-thread-return-nudge:"}${record.requestId}:${action.turnId}`;
     if (
       !claimThreadReturnNudge({
         requestId: record.requestId,
@@ -487,7 +493,9 @@ async function reconcileThreadParentReturn(
       await dependencies.publishPrompt(
         child.name ?? child.sessionKey,
         {
-          prompt: buildThreadReturnNudgePrompt(parent.name ?? parent.sessionKey),
+          prompt: action.silentCiWake
+            ? buildCiWakeNudgePrompt(parent.name ?? parent.sessionKey)
+            : buildThreadReturnNudgePrompt(parent.name ?? parent.sessionKey),
           source: buildSlackThreadChildSource(record, record.threadCanonicalChatId, child.agentId),
           context: buildSlackThreadMessageContext(record, record.threadCanonicalChatId, child.agentId),
           // Never interrupt: the follow-up waits for the thread to be idle.
@@ -534,10 +542,13 @@ async function reconcileThreadParentReturn(
   try {
     const parent = getSession(record.parentSessionKey);
     if (!parent) throw new Error(`Slack thread parent session not found: ${record.parentSessionKey}`);
+    const ciWakeSilent = action.reason === "ci_wake_silent";
     const lastMessage =
       (action.followupTurnId ? readThreadTurnReplyPreview(action.followupTurnId) : null) ??
       readThreadTurnReplyPreview(action.turnId) ??
-      "(nenhum texto de resposta registrado)";
+      (ciWakeSilent
+        ? "(a thread não escreveu nada; a PR pode estar parada esperando alguém)"
+        : "(nenhum texto de resposta registrado)");
     const eventId = `slack-thread-unreturned:${record.requestId}:${action.turnId}`;
     await publishChannelSessionPrompt(
       {
@@ -548,8 +559,10 @@ async function reconcileThreadParentReturn(
         payload: {
           prompt: buildSlackThreadParentNotice(
             record,
-            "terminou um turno sem retornar ao pai.",
-            "Última mensagem da thread",
+            ciWakeSilent
+              ? "foi acordada por um evento de PR/CI, terminou calada e, cobrada uma vez, calou de novo."
+              : "terminou um turno sem retornar ao pai.",
+            ciWakeSilent ? "Estado" : "Última mensagem da thread",
             lastMessage,
           ),
           source: buildSlackThreadParentSource(record, providerThreadId),
@@ -585,6 +598,19 @@ function buildThreadReturnNudgePrompt(parentSessionName: string): string {
     'If it continues or is blocked, run `ravi sessions report "<state in one or two lines>"`; if it waits on that session (a review, a decision, a merge, a dispatch or an instruction), end that report with `--awaiting <kind>` and `--ref <sha or id>` when there is one.',
     "If you are waiting for a reply from a person in this thread, do nothing.",
     "In every case, end this turn with @@SILENT@@ so nothing new is posted in the thread.",
+  ].join("\n");
+}
+
+/**
+ * A PR follow wake (CI/review event) ended silent with nothing sent to the parent. Unlike the generic
+ * return nudge, "do nothing, a person is replying" is not offered: no person is on the other side.
+ */
+function buildCiWakeNudgePrompt(parentSessionName: string): string {
+  return [
+    `[System] Execute: [from: ravi runtime] A PR/CI event woke you in this thread and your turn ended without telling ${parentSessionName}, the session that owns this thread. The PR does not move on its own.`,
+    'Decide now and say it in one line with `ravi sessions report "<state>"`: what the event was and what happens next (for example "CI verde, abro a revisão" or "CI ainda rodando, volto no próximo evento").',
+    'If the PR waits on that session (a review, a decision, a merge, a dispatch or an instruction), end the report with `--awaiting <kind>` and `--ref <sha or id>`. If the work is done, run `ravi sessions close-thread --return "<result>"`.',
+    "End this turn with @@SILENT@@ so nothing new is posted in the thread.",
   ].join("\n");
 }
 
@@ -1302,6 +1328,10 @@ export async function updateSlackThreadCard(
         updatedAt: Date.now(),
         ...(record.requestedBy ? { requestedBy: record.requestedBy } : {}),
         ...(slackThreadRuntimeLabel(record) ? { runtime: slackThreadRuntimeLabel(record) } : {}),
+        // Responder is for a person; a question for an agent or with no owner is answered elsewhere.
+        ...(pending.some((decision) => decision.ownerType === "human")
+          ? { decisions: slackThreadCardDecisions(pending) }
+          : {}),
       },
     },
   });

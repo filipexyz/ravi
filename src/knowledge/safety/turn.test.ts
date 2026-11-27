@@ -138,7 +138,7 @@ describe("classifyKnowledgeTurn", () => {
     expect(classify(shared)).toMatchObject({ ok: false, reason: "shared_session" });
   });
 
-  it("refuses the owner in a group with reason group", () => {
+  it("lets the owner in from a group: sharing there is the owner's choice", () => {
     const context = turnContext({
       actorPrincipal: "contact:c_luis",
       consoleUserId: "user_luis",
@@ -146,12 +146,56 @@ describe("classifyKnowledgeTurn", () => {
       agentIdentityCompartment: "chat:120363012345678901@g.us",
     });
 
-    expect(classify(context)).toEqual({
-      ok: false,
-      code: "KNOWLEDGE_TURN_NOT_OPERATOR",
-      reason: "group",
-      actorPrincipal: "contact:c_luis",
+    const verdict = classify(context);
+    expect(verdict.ok).toBe(true);
+    if (verdict.ok) expect(verdict.turn.execContext.conversation).toBe("group");
+  });
+
+  it("lets the owner's own direct chat in from the agent's shared session", () => {
+    const context = turnContext(
+      {
+        actorPrincipal: "contact:c_luis",
+        consoleUserId: "user_luis",
+        consoleOrgId: "org_1",
+        agentIdentityCompartment: "dm:5511999999999@s.whatsapp.net",
+      },
+      { sessionKey: "agent:main:main", sessionName: "main" },
+    );
+    expect(classify(context).ok).toBe(true);
+  });
+
+  it("lets the owner in from a thread of their DM", () => {
+    const context = turnContext(
+      {
+        actorPrincipal: "contact:c_luis",
+        consoleUserId: "user_luis",
+        consoleOrgId: "org_1",
+        agentIdentityCompartment: "dm:chat_09f6e6ef7a0d28fc0bcca02f",
+      },
+      { sessionKey: "agent:main:main:thread:1795096374.846999", sessionName: "main-t-1795096374846999" },
+    );
+    expect(classify(context).ok).toBe(true);
+  });
+
+  it("refuses a contact other than the owner in a group and in the shared session", () => {
+    const group = turnContext({
+      actorPrincipal: "contact:c_ana",
+      consoleUserId: "user_ana",
+      consoleOrgId: "org_1",
+      agentIdentityCompartment: "chat:120363012345678901@g.us",
     });
+    expect(classify(group)).toMatchObject({ ok: false, code: "KNOWLEDGE_TURN_NOT_OPERATOR", reason: "group" });
+
+    const shared = turnContext(
+      {
+        actorPrincipal: "contact:c_ana",
+        consoleUserId: "user_ana",
+        consoleOrgId: "org_1",
+        agentIdentityCompartment: "dm:5511988887777@s.whatsapp.net",
+      },
+      { sessionKey: "agent:main:main", sessionName: "main" },
+    );
+    expect(classify(shared).ok).toBe(false);
   });
 
   it("refuses the heartbeat with reason routine", () => {

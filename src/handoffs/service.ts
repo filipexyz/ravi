@@ -30,6 +30,7 @@ export async function declareHandoff(input: {
   ref?: string | null;
   note?: string | null;
   callerContextId?: string | null;
+  decisionId?: string | null;
   closedReason?: string | null;
   now?: number;
 }): Promise<Handoff> {

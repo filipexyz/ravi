@@ -159,7 +159,16 @@ This baseline is not enough for message edits or arbitrary prompt-history forks.
   it, in queue order, so the restart around the retry reads the whole queue: a
   `thread-send` instruction or an `after_response` follow-up that was already
   waiting is not lost. A superseded turn, and a turn that cannot be re-run,
-  stash only their successors. The re-run turn's own messages MUST keep a
+  stash only their successors, with one exception: on the restart after a
+  recoverable interrupt, a superseded turn that left no effect (session under
+  the `host_write_ahead` tool fence, `replayable` replay safety, no tool
+  started, no materialized output, no input mutation, not completed) MUST keep
+  its own messages, ahead of its successors and with `retainsInputCohort`. Its
+  prompt may have been stopped before the provider checked it, and then it
+  exists nowhere else; re-sending a prompt the provider did see is a duplicate,
+  losing one it did not see is not recoverable. Without the fence (Codex, Pi)
+  or without a durable binding, the absence of an effect marker is not proof,
+  and the turn is dropped as before. The re-run turn's own messages MUST keep a
   cohort of their own (`retainsInputCohort`; a reconciled turn keeps it through
   `replay`): restored into an idle session, a successor is releasable at once,
   and without the marker an `after_response` follow-up from the same sender on

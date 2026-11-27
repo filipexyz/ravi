@@ -6416,6 +6416,7 @@ describe("Slack owner DM guard", () => {
     options: {
       events?: Array<{ topic: string; payload: Record<string, unknown> }>;
       postMessage?: (input: Record<string, unknown>) => Promise<unknown>;
+      authTest?: () => Promise<{ ok: boolean; bot_id?: string; user_id?: string; team_id?: string }>;
     } = {},
   ): SlackSocketModeService {
     return new SlackSocketModeService({
@@ -6433,19 +6434,24 @@ describe("Slack owner DM guard", () => {
       webClient: {
         usersInfo: mock(async () => ({ ok: true, user: { id: peerUser } })),
         ...(options.postMessage ? { postMessage: options.postMessage } : {}),
+        ...(options.authTest ? { authTest: options.authTest } : {}),
       } as never,
     });
   }
 
   function attachPeerChatBySystem(): void {
+    attachPeerChat("system");
+  }
+
+  function attachPeerChat(attachedByType: "system" | "agent" | "user"): void {
     const chat = dbUpsertChat({ channel: "slack", instanceId: accountId, platformChatId: "D0PEER", chatType: "dm" });
     getOrCreateSession("agent:main:main", "main", "/tmp/main");
     attachChatToSession({
       sessionKey: "agent:main:main",
       chatId: chat.id,
       role: "primary",
-      attachedByType: "system",
-      attachedReason: "inbound-route",
+      attachedByType,
+      attachedReason: attachedByType === "system" ? "inbound-route" : "test-explicit-attach",
     });
   }
 
@@ -6488,6 +6494,73 @@ describe("Slack owner DM guard", () => {
     await service(routerConfig(), published).handleEnvelope(dm("Ev-peer-sub", "D0PEER", peerUser, "1713000000.000250"));
 
     expect(published).toHaveLength(0);
+  });
+
+  it("holds another app's bot that DMs the bot, so it never receives the owner's session's answers", async () => {
+    seedContacts({ tagOwner: true });
+    const published: Array<{ sessionName: string }> = [];
+    const authTest = mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T123" }));
+
+    await service(routerConfig(), published, { authTest }).handleEnvelope({
+      envelope_id: "Ev-foreign-bot",
+      type: "events_api",
+      payload: {
+        type: "event_callback",
+        team_id: "T123",
+        event_id: "Ev-foreign-bot",
+        event_time: 1_713_000_000,
+        event: {
+          type: "message",
+          subtype: "bot_message",
+          channel: "D0BOTDM",
+          channel_type: "im",
+          bot_id: "BFOREIGN",
+          user: "UFOREIGNBOT",
+          text: "what did the owner read today?",
+          ts: "1713000000.000280",
+        },
+      },
+    });
+
+    expect(authTest).toHaveBeenCalled();
+    expect(published).toHaveLength(0);
+  });
+
+  it("holds a colleague whose chat a person or an agent attached to the owner's session", async () => {
+    for (const attachedByType of ["agent", "user"] as const) {
+      await cleanupIsolatedRaviState(stateDir);
+      stateDir = await createIsolatedRaviState("ravi-slack-owner-dm-attach-");
+      seedAgent("main", "/tmp/main");
+      seedAgent("ponte", "/tmp/ponte");
+      configStore.refresh();
+      dbUpsertInstance({ name: accountId, instanceId: accountId, channel: "slack", dmPolicy: "open" });
+      seedContacts({ tagOwner: true });
+      attachPeerChat(attachedByType);
+      expect(listSessionSubscriptions("agent:main:main").map((subscription) => subscription.attachedByType)).toEqual([
+        attachedByType,
+      ]);
+      const published: Array<{ sessionName: string }> = [];
+
+      await service(routerConfig(), published).handleEnvelope(
+        dm(`Ev-peer-explicit-${attachedByType}`, "D0PEER", peerUser, "1713000000.000260"),
+      );
+
+      expect(published).toHaveLength(0);
+    }
+  });
+
+  it("holds a colleague even when a literal route names them and forces the owner's session", async () => {
+    seedContacts({ tagOwner: true });
+    getOrCreateSession("agent:main:main", "main", "/tmp/main", { name: "main" });
+    const published: Array<{ sessionName: string }> = [];
+    const config = routerConfig([{ pattern: peerUser, accountId, agent: "main", channel: "slack", session: "main" }]);
+
+    await service(config, published).handleEnvelope(
+      dm("Ev-peer-literal-main", "D0PEER", peerUser, "1713000000.000270"),
+    );
+
+    expect(published).toHaveLength(0);
+    expect(listAccountPendingContacts(accountId)).toMatchObject([{ accountId, phone: peerUser }]);
   });
 
   it("routes a colleague with an explicit route to that route's agent", async () => {
@@ -7200,5 +7273,160 @@ describe("Slack slash commands (/ravi)", () => {
     await service.handleEnvelope(commandEnvelope("env-cmd-stamp"), slowAck);
 
     expect(published[0]?.payload.receivedAt).toBe(1_800_000_000_000);
+  });
+});
+
+describe("Responder on a decision card", () => {
+  let decisionState: string | null = null;
+  beforeEach(async () => {
+    decisionState = await createIsolatedRaviState("ravi-socket-decision-");
+  });
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(decisionState);
+    decisionState = null;
+  });
+
+  function decisionService(opened: unknown[], published: unknown[]) {
+    return new SlackSocketModeService({
+      accountId: "slack-decision-answer",
+      appToken: "xapp-fixture",
+      botToken: "xoxb-fixture",
+      webClient: {
+        viewsOpen: async (input: unknown) => {
+          opened.push(input);
+          return { ok: true, view: { id: "V-opened" } };
+        },
+      } as unknown as SlackWebApiClient,
+      publishInteraction: async (...args) => {
+        published.push(args);
+      },
+      publishPrompt: async (...args) => {
+        published.push(args);
+      },
+      getRouterConfig: () => {
+        throw new Error("A decision form must not enter routing");
+      },
+    });
+  }
+
+  it("handles Responder in the runner and publishes nothing; a card that is not a real decision opens no form", async () => {
+    const opened: unknown[] = [];
+    const published: unknown[] = [];
+    const acks: string[] = [];
+    const result = await decisionService(opened, published).handleEnvelope(
+      {
+        type: "interactive",
+        envelope_id: "env-decision-open",
+        payload: {
+          type: "block_actions",
+          trigger_id: "trigger-decision",
+          user: { id: "UOWNER" },
+          channel: { id: "C123" },
+          container: { type: "message", channel_id: "C123", message_ts: "1713000000.000100" },
+          message: { ts: "1713000000.000100" },
+          actions: [{ type: "button", action_id: "ravi_decision_answer", value: "dec_abc123:2" }],
+        },
+      },
+      (id) => {
+        acks.push(id);
+      },
+    );
+    expect(result).toBe("processed");
+    expect(acks).toEqual(["env-decision-open"]);
+    expect(published).toEqual([]);
+    const view = (opened[0] as { triggerId: string; view: Record<string, unknown> }).view;
+    expect((opened[0] as { triggerId: string }).triggerId).toBe("trigger-decision");
+    // No such decision here: an explanation, never the answer form.
+    expect(view.callback_id).toBeUndefined();
+    expect(view.submit).toBeUndefined();
+  });
+
+  it("keeps an empty answer's form open with an error and publishes nothing", async () => {
+    const published: unknown[] = [];
+    const acks: Array<{ id: string; payload?: Record<string, unknown> }> = [];
+    await decisionService([], published).handleEnvelope(
+      {
+        type: "interactive",
+        envelope_id: "env-decision-empty",
+        payload: {
+          type: "view_submission",
+          user: { id: "UOWNER" },
+          view: {
+            id: "V-opened",
+            callback_id: "ravi_decision_answer_submit",
+            private_metadata: '{"d":"dec_abc123","r":2,"c":"C123","t":"1713000000.000100"}',
+            state: { values: { ravi_decision_answer_text: { answer: { value: "  " } } } },
+          },
+        },
+      },
+      (id, payload) => {
+        acks.push({ id, payload });
+      },
+    );
+    expect(published).toEqual([]);
+    expect(acks).toEqual([
+      {
+        id: "env-decision-empty",
+        payload: { response_action: "errors", errors: { ravi_decision_answer_text: "Escreva a resposta." } },
+      },
+    ]);
+  });
+
+  it("never publishes another form's private metadata", async () => {
+    const published: unknown[] = [];
+    await decisionService([], published).handleEnvelope(
+      {
+        type: "interactive",
+        envelope_id: "env-other-form",
+        payload: {
+          type: "view_submission",
+          user: { id: "UOWNER" },
+          view: {
+            id: "V-other",
+            callback_id: "some_other_form",
+            private_metadata: "secret-pointer",
+            state: { values: {} },
+          },
+        },
+      },
+      () => {},
+    );
+    const payload = (published[0] as [string, Record<string, unknown>])[1];
+    expect(payload.viewCallbackId).toBe("some_other_form");
+    expect("viewPrivateMetadata" in payload).toBe(false);
+    expect(JSON.stringify(payload)).not.toContain("secret-pointer");
+  });
+
+  it("publishes a well-formed submission with its pointer for the daemon to check", async () => {
+    const opened: unknown[] = [];
+    const published: unknown[] = [];
+    await decisionService(opened, published).handleEnvelope(
+      {
+        type: "interactive",
+        envelope_id: "env-decision-submit",
+        payload: {
+          type: "view_submission",
+          user: { id: "UOWNER" },
+          view: {
+            id: "V-opened",
+            callback_id: "ravi_decision_answer_submit",
+            private_metadata: '{"d":"dec_abc123","r":2,"c":"C123","t":"1713000000.000100"}',
+            state: { values: { ravi_decision_answer_text: { answer: { value: "sonnet" } } } },
+          },
+        },
+      },
+      () => {},
+    );
+    expect(opened).toEqual([]);
+    expect(published[0]).toEqual([
+      "ravi.inbound.interaction",
+      expect.objectContaining({
+        interactionType: "view_submission",
+        userId: "UOWNER",
+        viewId: "V-opened",
+        viewCallbackId: "ravi_decision_answer_submit",
+        viewPrivateMetadata: '{"d":"dec_abc123","r":2,"c":"C123","t":"1713000000.000100"}',
+      }),
+    ]);
   });
 });

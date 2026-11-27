@@ -1653,6 +1653,36 @@ class AppsPromptsReturn {
 
 AppsPromptsReturn appsPromptsReturnFromJson(Object? json) => AppsPromptsReturn.fromJsonValue(json);
 
+class AppsRefreshReturn {
+  const AppsRefreshReturn({required this.apps, required this.blockSerial, required this.changed, required this.indexSerial, required this.keysSerial, required this.refreshedAt, required this.source});
+
+  final double apps;
+  final double blockSerial;
+  final bool changed;
+  final double indexSerial;
+  final double keysSerial;
+  final RaviJson refreshedAt;
+  final String source;
+
+  factory AppsRefreshReturn.fromJson(Map<String, Object?> json) {
+    return AppsRefreshReturn(
+      apps: raviJsonAsDouble(json["apps"]),
+      blockSerial: raviJsonAsDouble(json["blockSerial"]),
+      changed: raviJsonAsBool(json["changed"]),
+      indexSerial: raviJsonAsDouble(json["indexSerial"]),
+      keysSerial: raviJsonAsDouble(json["keysSerial"]),
+      refreshedAt: RaviJson.from(json["refreshedAt"]),
+      source: raviJsonAsString(json["source"]),
+    );
+  }
+
+  static AppsRefreshReturn fromJsonValue(Object? json) {
+    return AppsRefreshReturn.fromJson(raviJsonObject(json, "AppsRefreshReturn"));
+  }
+}
+
+AppsRefreshReturn appsRefreshReturnFromJson(Object? json) => AppsRefreshReturn.fromJsonValue(json);
+
 class AppsRunOptions {
   const AppsRunOptions({this.execute});
 
@@ -1811,6 +1841,42 @@ class AppsScaffoldReturn {
 
 AppsScaffoldReturn appsScaffoldReturnFromJson(Object? json) => AppsScaffoldReturn.fromJsonValue(json);
 
+class AppsSearchOptions {
+  const AppsSearchOptions({this.refresh});
+
+  final bool? refresh;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (refresh != null) {
+      into["refresh"] = RaviJson.from(refresh);
+    }
+  }
+}
+
+class AppsSearchReturn {
+  const AppsSearchReturn({required this.apps, required this.indexSerial, required this.refreshedAt, required this.source});
+
+  final List<RaviJson> apps;
+  final double indexSerial;
+  final RaviJson refreshedAt;
+  final String source;
+
+  factory AppsSearchReturn.fromJson(Map<String, Object?> json) {
+    return AppsSearchReturn(
+      apps: raviJsonAsList(json["apps"], RaviJson.from),
+      indexSerial: raviJsonAsDouble(json["indexSerial"]),
+      refreshedAt: RaviJson.from(json["refreshedAt"]),
+      source: raviJsonAsString(json["source"]),
+    );
+  }
+
+  static AppsSearchReturn fromJsonValue(Object? json) {
+    return AppsSearchReturn.fromJson(raviJsonObject(json, "AppsSearchReturn"));
+  }
+}
+
+AppsSearchReturn appsSearchReturnFromJson(Object? json) => AppsSearchReturn.fromJsonValue(json);
+
 class AppsShowReturn {
   const AppsShowReturn({required this.app});
 
@@ -1828,6 +1894,26 @@ class AppsShowReturn {
 }
 
 AppsShowReturn appsShowReturnFromJson(Object? json) => AppsShowReturn.fromJsonValue(json);
+
+class AppsVerifyReturn {
+  const AppsVerifyReturn({required this.apps, required this.ok});
+
+  final List<RaviJson> apps;
+  final bool ok;
+
+  factory AppsVerifyReturn.fromJson(Map<String, Object?> json) {
+    return AppsVerifyReturn(
+      apps: raviJsonAsList(json["apps"], RaviJson.from),
+      ok: raviJsonAsBool(json["ok"]),
+    );
+  }
+
+  static AppsVerifyReturn fromJsonValue(Object? json) {
+    return AppsVerifyReturn.fromJson(raviJsonObject(json, "AppsVerifyReturn"));
+  }
+}
+
+AppsVerifyReturn appsVerifyReturnFromJson(Object? json) => AppsVerifyReturn.fromJsonValue(json);
 
 class ArtifactsArchiveReturn {
   const ArtifactsArchiveReturn({required this.success});
@@ -13820,10 +13906,14 @@ class DaemonUninstallReturn {
 DaemonUninstallReturn daemonUninstallReturnFromJson(Object? json) => DaemonUninstallReturn.fromJsonValue(json);
 
 class DecisionsAnswerOptions {
-  const DecisionsAnswerOptions({this.by, this.execute, this.text});
+  const DecisionsAnswerOptions({this.by, this.execute, this.scope, this.sourceMessage, this.sourceQuote, this.supersedes, this.text});
 
   final String? by;
   final bool? execute;
+  final String? scope;
+  final String? sourceMessage;
+  final String? sourceQuote;
+  final String? supersedes;
   final String? text;
 
   void encodeBody(Map<String, RaviJson> into) {
@@ -13832,6 +13922,18 @@ class DecisionsAnswerOptions {
     }
     if (execute != null) {
       into["execute"] = RaviJson.from(execute);
+    }
+    if (scope != null) {
+      into["scope"] = RaviJson.from(scope);
+    }
+    if (sourceMessage != null) {
+      into["sourceMessage"] = RaviJson.from(sourceMessage);
+    }
+    if (sourceQuote != null) {
+      into["sourceQuote"] = RaviJson.from(sourceQuote);
+    }
+    if (supersedes != null) {
+      into["supersedes"] = RaviJson.from(supersedes);
     }
     if (text != null) {
       into["text"] = RaviJson.from(text);
@@ -13862,13 +13964,14 @@ class DecisionsAnswerReturn {
 DecisionsAnswerReturn decisionsAnswerReturnFromJson(Object? json) => DecisionsAnswerReturn.fromJsonValue(json);
 
 class DecisionsAskOptions {
-  const DecisionsAskOptions({this.ask, this.blocks, this.execute, this.key, this.owner, this.task, this.thread});
+  const DecisionsAskOptions({this.ask, this.blocks, this.execute, this.key, this.owner, this.scope, this.task, this.thread});
 
   final String? ask;
   final bool? blocks;
   final bool? execute;
   final String? key;
   final String? owner;
+  final String? scope;
   final String? task;
   final String? thread;
 
@@ -13887,6 +13990,9 @@ class DecisionsAskOptions {
     }
     if (owner != null) {
       into["owner"] = RaviJson.from(owner);
+    }
+    if (scope != null) {
+      into["scope"] = RaviJson.from(scope);
     }
     if (task != null) {
       into["task"] = RaviJson.from(task);
@@ -13920,11 +14026,13 @@ class DecisionsAskReturn {
 DecisionsAskReturn decisionsAskReturnFromJson(Object? json) => DecisionsAskReturn.fromJsonValue(json);
 
 class DecisionsListOptions {
-  const DecisionsListOptions({this.all, this.limit, this.offset, this.task, this.thread});
+  const DecisionsListOptions({this.all, this.answeredSince, this.limit, this.offset, this.scope, this.task, this.thread});
 
   final bool? all;
+  final String? answeredSince;
   final String? limit;
   final String? offset;
+  final String? scope;
   final String? task;
   final String? thread;
 
@@ -13932,11 +14040,17 @@ class DecisionsListOptions {
     if (all != null) {
       into["all"] = RaviJson.from(all);
     }
+    if (answeredSince != null) {
+      into["answeredSince"] = RaviJson.from(answeredSince);
+    }
     if (limit != null) {
       into["limit"] = RaviJson.from(limit);
     }
     if (offset != null) {
       into["offset"] = RaviJson.from(offset);
+    }
+    if (scope != null) {
+      into["scope"] = RaviJson.from(scope);
     }
     if (task != null) {
       into["task"] = RaviJson.from(task);
@@ -14066,6 +14180,42 @@ class DecisionsShowReturn {
 }
 
 DecisionsShowReturn decisionsShowReturnFromJson(Object? json) => DecisionsShowReturn.fromJsonValue(json);
+
+class DecisionsSupersedeOptions {
+  const DecisionsSupersedeOptions({this.by, this.execute});
+
+  final String? by;
+  final bool? execute;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (by != null) {
+      into["by"] = RaviJson.from(by);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+  }
+}
+
+class DecisionsSupersedeReturn {
+  const DecisionsSupersedeReturn({required this.replaced, required this.replacement});
+
+  final RaviJson replaced;
+  final RaviJson replacement;
+
+  factory DecisionsSupersedeReturn.fromJson(Map<String, Object?> json) {
+    return DecisionsSupersedeReturn(
+      replaced: RaviJson.from(json["replaced"]),
+      replacement: RaviJson.from(json["replacement"]),
+    );
+  }
+
+  static DecisionsSupersedeReturn fromJsonValue(Object? json) {
+    return DecisionsSupersedeReturn.fromJson(raviJsonObject(json, "DecisionsSupersedeReturn"));
+  }
+}
+
+DecisionsSupersedeReturn decisionsSupersedeReturnFromJson(Object? json) => DecisionsSupersedeReturn.fromJsonValue(json);
 
 class DevinAuthCheckReturn {
   const DevinAuthCheckReturn({required this.baseUrl, this.configuredOrgId, required this.ok, required this.self});
@@ -25846,11 +25996,12 @@ class SessionsThreadSendOptions {
 }
 
 class SessionsThreadSendReturn {
-  const SessionsThreadSendReturn({required this.actionId, this.delivery, required this.messageId, required this.reopened, required this.requestId, required this.status, required this.thread});
+  const SessionsThreadSendReturn({required this.actionId, this.delivery, required this.messageId, this.openDecisionWaits, required this.reopened, required this.requestId, required this.status, required this.thread});
 
   final String actionId;
   final RaviJson? delivery;
   final String messageId;
+  final List<RaviJson>? openDecisionWaits;
   final bool reopened;
   final String requestId;
   final String status;
@@ -25861,6 +26012,7 @@ class SessionsThreadSendReturn {
       actionId: raviJsonAsString(json["actionId"]),
       delivery: json["delivery"] == null ? null : RaviJson.from(json["delivery"]),
       messageId: raviJsonAsString(json["messageId"]),
+      openDecisionWaits: json["openDecisionWaits"] == null ? null : raviJsonAsList(json["openDecisionWaits"], RaviJson.from),
       reopened: raviJsonAsBool(json["reopened"]),
       requestId: raviJsonAsString(json["requestId"]),
       status: raviJsonAsString(json["status"]),

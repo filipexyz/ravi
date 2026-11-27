@@ -52,7 +52,7 @@ const appPermissionProviderSchemaSummarySchema = z.object({
 const appPermissionProviderSchema = z.object({
   id: z.string(),
   version: z.string(),
-  interface: z.enum(["builtin", "cli"]),
+  interface: z.enum(["builtin", "cli", "script"]),
   operation: z.string(),
   decisionSchema: appPermissionProviderSchemaSummarySchema,
   requestSchema: appPermissionProviderSchemaSummarySchema,
@@ -220,7 +220,7 @@ const appsRunReturnSchema = z.object({
   appId: z.string().nullable(),
   operation: z.string().nullable(),
   operationId: z.string().nullable(),
-  interface: z.enum(["builtin", "cli"]).nullable(),
+  interface: z.enum(["builtin", "cli", "script"]).nullable(),
   mutating: z.boolean(),
   status: z.enum(["completed", "blocked", "failed"]),
   durationMs: z.number(),
@@ -232,7 +232,7 @@ const appsRunReturnSchema = z.object({
     .object({
       appId: z.string(),
       operationId: z.string(),
-      interface: z.enum(["builtin", "cli"]),
+      interface: z.enum(["builtin", "cli", "script"]),
       mutating: z.literal(true),
       argumentCount: z.number(),
     })
@@ -250,7 +250,7 @@ const appsRunReturnSchema = z.object({
       providerId: z.string(),
       providerVersion: z.string(),
       providerOperationId: z.string(),
-      interface: z.enum(["builtin", "cli"]),
+      interface: z.enum(["builtin", "cli", "script"]),
       requestId: z.string(),
       decision: z.enum(["allow", "deny", "needs_grant", "not_applicable", "error", "invalid"]),
       reasonCode: z.string().nullable(),

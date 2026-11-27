@@ -137,10 +137,34 @@ export function providerConfigWriteDenial(input: {
       return `Permission denied: agent:${input.agentId ?? "unknown"} cannot write outside the session workspace for the person who asked (${outside.join(", ")}); writing there needs execute:executable:* or admin:system:*`;
     }
   }
+  const appTargets = input.targets.filter((target) => isAppStatePath(target, input.cwd));
+  if (appTargets.length > 0 && !breakGlass) {
+    return `Permission denied: agent:${input.agentId ?? "unknown"} cannot write installed Ravi apps (${appTargets.join(", ")}); apps are installed by the operator with ravi apps install`;
+  }
   const protectedTargets = input.targets.filter((target) => isProviderConfigPath(target, input.cwd));
   if (protectedTargets.length === 0) return undefined;
   if (breakGlass) return undefined;
   return `Permission denied: agent:${input.agentId ?? "unknown"} cannot write runtime provider settings (${protectedTargets.join(", ")}); they can run host commands and need execute:executable:* or admin:system:*`;
+}
+
+/**
+ * `$RAVI_STATE_DIR/apps` and `$RAVI_STATE_DIR/app-store`: discovery runs what is
+ * there and the store's receipts decide which agent sees it, so a tool write
+ * there would install an app without the operator (spec apps/store).
+ */
+export function isAppStatePath(path: string, cwd?: string): boolean {
+  if (!path) return false;
+  const expanded = path.replace(/^~(?=\/|$)/, homedir());
+  const resolved = physicalPathForPermissionCheck(expanded, cwd);
+  if (!resolved) return true;
+  const physical = canonicalCase(resolved);
+  const roots = [getRaviStateDir(), join(homedir(), ".ravi")].flatMap((base) =>
+    ["apps", "app-store"].flatMap((name) => {
+      const root = physicalPathForPermissionCheck(join(base, name));
+      return root ? [canonicalCase(root)] : [];
+    }),
+  );
+  return roots.some((root) => isUnder(physical, root) || isUnder(physical.toLowerCase(), root.toLowerCase()));
 }
 
 /**

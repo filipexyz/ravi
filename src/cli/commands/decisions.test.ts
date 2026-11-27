@@ -35,6 +35,7 @@ describe("decisions CLI contract", () => {
         "Which window?",
         "human:contact-fixture",
         true,
+        undefined,
         true,
       );
       expect(decisionSchema.parse(result.decision).origin).toEqual({
@@ -44,10 +45,21 @@ describe("decisions CLI contract", () => {
         sessionKey: null,
       });
       expect(result.decision.key).toBe("window");
-      const answered = await command.answer(result.decision.id, "After 18h", "Display label", true);
+      const answered = await command.answer(
+        result.decision.id,
+        "After 18h",
+        "Display label",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
       expect(answered.decision.answeredBy).toBe("operator (for Display label)");
       expect(answered.deliveries).toEqual([]);
-      await expect(command.answer(result.decision.id, "Replace", undefined, true)).rejects.toMatchObject({
+      await expect(
+        command.answer(result.decision.id, "Replace", undefined, undefined, undefined, undefined, undefined, true),
+      ).rejects.toMatchObject({
         code: "DECISION_NOT_OPEN",
         exitCode: 1,
       });
@@ -70,7 +82,7 @@ describe("decisions CLI contract", () => {
     await runWithContext({ suppressCliOutput: true }, async () => {
       await command.ask(task.id, undefined, "a", "A?");
       await command.ask(task.id, undefined, "b", "B?");
-      const page = await command.list(task.id, undefined, false, true, "1", "0");
+      const page = await command.list(task.id, undefined, false, undefined, undefined, true, "1", "0");
       expect(page.decisions).toHaveLength(1);
       expect(page.pagination).toMatchObject({ total: 2, hasMore: true, nextOffset: 1 });
       expect(page.pagination.nextCommand).toContain(task.id);
@@ -81,7 +93,9 @@ describe("decisions CLI contract", () => {
     dbDispatchTask(task.id, { agentId: "main", sessionName: "worker" });
     await runWithContext({ suppressCliOutput: true, sessionName: "worker" }, async () => {
       const result = await command.ask(task.id, undefined, "k", "Question");
-      await expect(command.answer(result.decision.id, "Yes", "human:owner", true)).rejects.toMatchObject({
+      await expect(
+        command.answer(result.decision.id, "Yes", "human:owner", undefined, undefined, undefined, undefined, true),
+      ).rejects.toMatchObject({
         code: "DECISION_SELF_ANSWER",
       });
     });
@@ -117,7 +131,7 @@ describe("decisions CLI contract", () => {
       });
       let error: unknown;
       try {
-        await command.ask(undefined, child.childSessionName, "k", "Question", undefined, false, true);
+        await command.ask(undefined, child.childSessionName, "k", "Question", undefined, false, undefined, true);
       } catch (e) {
         error = e;
       }

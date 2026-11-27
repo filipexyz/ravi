@@ -13,6 +13,7 @@ import {
   resolveSession,
   findSessionByChatId,
 } from "../session-targets.js";
+import { findOpenAskGrant, recordAskGrant, revokeAskGrant } from "../../sessions/ask-grants.js";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { Group, Command, CommandAccess, CliOnly, Arg, Option } from "../decorators.js";
@@ -123,6 +124,9 @@ import { DEFAULT_RUNTIME_PROBE_TIMEOUT_MS } from "../../runtime/runtime-probe.js
 import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
 import { enforceCliCommandAccess, listCliCommandAccessCandidates } from "../command-access.js";
 import { canWithCapabilities } from "../../permissions/capability-snapshot.js";
+import { askDecisionForWait } from "../../decisions/service.js";
+import { retireDecisionIfWaitFails } from "../../decisions/store.js";
+import { redactText } from "../../session-trace/session-trace-db.js";
 import { CliExpectedError } from "../expected-error.js";
 import { resolveEffectiveSessionRuntime } from "../../runtime/runtime-selection.js";
 import type {
@@ -696,11 +700,15 @@ const slackThreadReportReturnSchema = z
         kind: z.enum(HANDOFF_KINDS),
         ref: z.string().nullable(),
         status: z.enum(["open", "acknowledged", "superseded"]),
+        // A decision wait records its question as a decision; answer it with `ravi decisions answer <id>`.
+        decisionId: z.string().optional(),
       })
       .strict()
       .optional(),
     // The report was delivered but its wait could not be written: do not send the report again.
     handoffError: z.string().optional(),
+    // The decision could not be recorded: the wait opened without one (redacted text).
+    decisionError: z.string().optional(),
     reviewDispatch: z
       .discriminatedUnion("status", [
         z
@@ -797,6 +805,8 @@ export const sessionThreadSendReturnSchema = z
       })
       .strict()
       .optional(),
+    // Recorded decision waits this message did not close: only `decisions answer` closes them.
+    openDecisionWaits: z.array(z.object({ handoffId: z.string(), decisionId: z.string() }).strict()).optional(),
   })
   .strict();
 const threadRuntimeOverridesSchema = z
@@ -4188,15 +4198,14 @@ export class SessionCommands {
       return;
     }
 
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = buildSessionMutationJson("rename", result.before, result.after, result.changed, {
         oldName: result.oldName,
         newName: result.newName,
         routeReferencesUpdated: result.routeReferencesUpdated,
         sessionKeyChanged: false,
       });
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
 
     if (!result.changed) {
@@ -5076,7 +5085,7 @@ export class SessionCommands {
       revokedContexts: revokedContexts.length,
       durationMs: Date.now() - startedAt,
     });
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = buildSessionMutationJson("reset", s, afterSession, changed, {
         nextMessageStartsFreshConversation: true,
         audit: {
@@ -5086,8 +5095,7 @@ export class SessionCommands {
         },
         revokedContexts: revokedContexts.length,
       });
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
     console.log(`Session reset: ${s.name ?? s.sessionKey}`);
     console.log("Next message will start a fresh conversation.");
@@ -5170,7 +5178,7 @@ export class SessionCommands {
       revokedContexts: revokedContexts.length,
       durationMs: Date.now() - startedAt,
     });
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = buildSessionMutationJson("delete", s, null, changed, {
         audit: {
           requested: true,
@@ -5179,8 +5187,7 @@ export class SessionCommands {
         },
         revokedContexts: revokedContexts.length,
       });
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
     console.log(`🗑️ Session deleted: ${s.name ?? s.sessionKey}`);
     if (revokedContexts.length > 0) {
@@ -5421,14 +5428,13 @@ export class SessionCommands {
         ephemeral: true,
         expiresAt: expiresAt.getTime(),
       } as SessionEntry);
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = buildSessionMutationJson("set-ttl", s, after, true, {
         duration,
         ttlMs,
         expiresAt: expiresAt.getTime(),
       });
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
     console.log(`⏳ Session "${s.name ?? s.sessionKey}" is now ephemeral.`);
     console.log(`   Expires: ${formatDate(expiresAt.getTime())}`);
@@ -5485,14 +5491,13 @@ export class SessionCommands {
         ephemeral: true,
         expiresAt: newExpiry,
       } as SessionEntry);
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = buildSessionMutationJson("extend", s, after, true, {
         duration: effectiveDuration,
         ttlMs,
         expiresAt: newExpiry,
       });
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
     console.log(`⏳ Extended "${s.name ?? s.sessionKey}" by ${duration ?? "5h"}.`);
     console.log(`   New expiry: ${formatDate(newExpiry)}`);
@@ -5524,12 +5529,11 @@ export class SessionCommands {
     }
 
     if (!s.ephemeral) {
-      if (asJson) {
+      if (shouldReturnStructuredResult(asJson)) {
         const payload = buildSessionMutationJson("keep", s, s, false, {
           reason: "already_permanent",
         });
-        printJson(payload);
-        return payload;
+        return returnStructuredResult(payload, asJson);
       }
       console.log(`Session "${s.name ?? s.sessionKey}" is already permanent.`);
       return;
@@ -5543,10 +5547,9 @@ export class SessionCommands {
         ephemeral: false,
         expiresAt: undefined,
       } as SessionEntry);
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = buildSessionMutationJson("keep", s, after, true);
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
     console.log(`✅ Session "${s.name ?? s.sessionKey}" is now permanent.`);
   }
@@ -5956,20 +5959,35 @@ export class SessionCommands {
     const deliveryBarrier = delivery.barrier;
     const { source, context } = this.resolveSource(session, channel, to);
 
-    await this.emitToSession(
-      "ask",
-      session.name ?? target,
-      prompt,
-      session,
-      channel,
-      to,
-      deliveryBarrier,
-      delivery.source,
-      undefined,
-      false,
-      asJson,
-    );
-    if (asJson) {
+    // The Ask is what lets the asked session answer back, and only that: record it before
+    // the prompt exists, so an answer can never arrive before its authorization. A trigger's
+    // own session takes no prompts, so it cannot be answered and gets no grant.
+    this.assertSessionTakesPrompts(session);
+    const grant =
+      origin !== "unknown" && origin !== session.sessionKey && !isTriggerOwnSessionKey(origin)
+        ? recordAskGrant({ originSessionKey: origin, targetSessionKey: session.sessionKey, sender: sender ?? null })
+        : null;
+
+    try {
+      await this.emitToSession(
+        "ask",
+        session.name ?? target,
+        prompt,
+        session,
+        channel,
+        to,
+        deliveryBarrier,
+        delivery.source,
+        undefined,
+        false,
+        asJson,
+      );
+    } catch (error) {
+      // An Ask that was never delivered authorizes no answer.
+      if (grant) revokeAskGrant(grant.id);
+      throw error;
+    }
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = {
         action: "ask",
         published: true,
@@ -5978,8 +5996,7 @@ export class SessionCommands {
         sender: sender ?? null,
         delivery: buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context),
       };
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
     console.log(`✓ [ask] sent to ${session.name ?? target}`);
   }
@@ -6028,8 +6045,9 @@ export class SessionCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
   ) {
-    const session = this.resolveTarget(target);
-    if (!session) return;
+    const resolved = this.resolveAnswerTarget(target, { channel, to, barrier, steer, immediate });
+    if (!resolved) return;
+    const { session, throughAsk } = resolved;
 
     const origin = getContext()?.sessionKey ?? "unknown";
     const senderTag = sender ? `, sender: ${sender}` : "";
@@ -6055,18 +6073,24 @@ export class SessionCommands {
       undefined,
       false,
       asJson,
+      // The answerer's chat is not where the asker's turn asks for approval or input: through an
+      // Ask the answer carries no approval source, so the asker's own source (or none) applies.
+      { withoutApprovalSource: throughAsk },
     );
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
+      // An answer sent through an Ask grants no view of the asker: the receipt names only the
+      // key the Ask already gave, never its record, workspace or chat.
       const payload = {
         action: "answer",
         published: true,
-        session: buildSessionJson(session),
+        session: throughAsk ? { sessionKey: session.sessionKey } : buildSessionJson(session),
         messageLength: message.length,
         sender: sender ?? null,
-        delivery: buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context),
+        delivery: throughAsk
+          ? { barrier: deliveryBarrier, barrierSource: delivery.source }
+          : buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context),
       };
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
     console.log(`✓ [answer] sent to ${session.name ?? target}`);
   }
@@ -6135,7 +6159,7 @@ export class SessionCommands {
       false,
       asJson,
     );
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = {
         action: "execute",
         published: true,
@@ -6143,8 +6167,7 @@ export class SessionCommands {
         messageLength: message.length,
         delivery: buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context),
       };
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
     console.log(`✓ [execute] sent to ${session.name ?? target}`);
   }
@@ -6445,7 +6468,7 @@ export class SessionCommands {
       false,
       asJson,
     );
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = {
         action: "inform",
         published: true,
@@ -6453,8 +6476,7 @@ export class SessionCommands {
         messageLength: message.length,
         delivery: buildDeliveryJson(session, deliveryBarrier, delivery.source, source, context),
       };
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
     console.log(`✓ [inform] sent to ${session.name ?? target}`);
   }
@@ -7111,6 +7133,61 @@ export class SessionCommands {
     return { session };
   }
 
+  /**
+   * The target of `sessions answer`. Access to the session answers as before. Without it, an
+   * open Ask from that session to the caller authorizes this delivery and nothing more: the
+   * caller still cannot read, recap or prompt the asker, and cannot redirect the delivery.
+   */
+  private resolveAnswerTarget(
+    nameOrKey: string,
+    overrides: { channel?: string; to?: string; barrier?: string; steer?: boolean; immediate?: boolean } = {},
+  ): { session: SessionEntry; throughAsk: boolean } | null {
+    const { channel, to } = overrides;
+    const direct = (): { session: SessionEntry; throughAsk: boolean } | null => {
+      const session = this.resolveTarget(nameOrKey);
+      return session ? { session, throughAsk: false } : null;
+    };
+    const scopeCtx = getScopeContext();
+    if (!isScopeEnforced(scopeCtx)) return direct();
+    if (isBridgeSessionTarget(nameOrKey)) {
+      fail(`Session not found: ${nameOrKey}`);
+      return null;
+    }
+    const known = resolveSession(nameOrKey) ?? findSessionByChatId(nameOrKey);
+    if (known && canAccessSession(scopeCtx, known.name ?? known.sessionKey)) return direct();
+
+    // Through an Ask the target is named the way the Ask names it, by key or name; the hook
+    // resolves it the same way, so both layers agree on which session is answered.
+    const session = resolveSession(nameOrKey);
+    const grant = session ? findOpenAskGrant(session.sessionKey, getContext()?.sessionKey) : null;
+    if (!session || !grant) {
+      // Same answer as an unknown session: an Ask grant does not reveal which sessions exist.
+      fail(`Session not found: ${nameOrKey}`);
+      return null;
+    }
+    // The caller was asked, so the session is no secret here: these refusals are permission
+    // denials with their own code, unlike the "not found" given to a caller never asked.
+    if (channel || to) {
+      throw new CliExpectedError(
+        "An answer sent through an open Ask goes back where the Ask came from: --channel and --to are refused.",
+        "PERMISSION_DENIED",
+        1,
+        "Run the answer without --channel and --to.",
+      );
+    }
+    // Delivering an answer is not choosing when to cut into the asker's turn: it waits for the
+    // asker's response like any answer.
+    if (overrides.barrier || overrides.steer || overrides.immediate) {
+      throw new CliExpectedError(
+        "An answer sent through an open Ask waits for the asker's current response: --barrier, --steer and --immediate are refused.",
+        "PERMISSION_DENIED",
+        1,
+        "Run the answer without --barrier, --steer and --immediate.",
+      );
+    }
+    return { session, throughAsk: true };
+  }
+
   private resolveTarget(
     nameOrKey: string,
     createWithAgent?: string,
@@ -7305,19 +7382,20 @@ export class SessionCommands {
     promptPayload?: Record<string, unknown>,
     cliDestination = false,
     asJson?: boolean,
+    options: { withoutApprovalSource?: boolean } = {},
   ): Promise<void> {
     this.assertSessionTakesPrompts(session);
     const { source, context } = this.resolveSource(session, channelOverride, toOverride);
 
     // Resolve caller's source for approval delegation (cascading approvals)
-    const _approvalSource = this.resolveCallerApprovalSource();
+    const _approvalSource = options.withoutApprovalSource ? undefined : this.resolveCallerApprovalSource();
 
     try {
       await publishSessionPrompt(sessionName, {
         prompt,
         source,
         context,
-        _approvalSource,
+        ...(_approvalSource ? { _approvalSource } : {}),
         deliveryBarrier,
         deliveryBarrierSource,
         ...(promptPayload ?? {}),
@@ -7644,6 +7722,7 @@ export class SessionCommands {
       return;
     }
     const callerAgentId = getContext()?.agentId;
+    let conflict: Record<string, unknown> | undefined;
     try {
       const result = attachChatToSession({
         sessionKey: session.sessionKey,
@@ -7657,23 +7736,25 @@ export class SessionCommands {
       const sessionRef = session.name ?? session.sessionKey;
       const detachCommand = buildSessionDetachCommand(sessionRef, chat.id);
       const state = describeSessionChatAssociation(session.sessionKey, chat.id, session.name);
-      if (asJson) {
-        printJson({
-          ...state,
-          created: result.created,
-          outputAttached: result.outputAttached,
-          subscription: result.subscription,
-          chat: {
-            id: chat.id,
-            title: chat.title,
-            channel: chat.channel,
-            instanceId: chat.instanceId,
+      if (shouldReturnStructuredResult(asJson)) {
+        return returnStructuredResult(
+          {
+            ...state,
+            created: result.created,
+            outputAttached: result.outputAttached,
+            subscription: result.subscription,
+            chat: {
+              id: chat.id,
+              title: chat.title,
+              channel: chat.channel,
+              instanceId: chat.instanceId,
+            },
+            hints: {
+              detach: detachCommand,
+            },
           },
-          hints: {
-            detach: detachCommand,
-          },
-        });
-        return;
+          asJson,
+        );
       }
       const verb = result.created ? "Attached" : "Already attached";
       console.log(`${verb} chat ${chat.id} (${chat.title ?? "no title"}) to session ${sessionRef}`);
@@ -7681,19 +7762,26 @@ export class SessionCommands {
       console.log(`Detach hint: ${detachCommand}`);
     } catch (err) {
       if (err instanceof SessionAttachConflictError) {
+        // Only an explicit --json takes the conflict as data. A gateway call without it keeps failing, so a caller
+        // that did not ask for the structured form never reads a conflict as a successful attach.
         if (asJson) {
-          printJson({
+          conflict = {
             error: err.code,
             message: err.message,
             currentOwner: err.currentSessionKey,
             chatId: err.chatId,
-          });
+          };
+        } else {
+          fail(err.message);
           return;
         }
-        fail(err.message);
-        return;
+      } else {
+        throw err;
       }
-      throw err;
+    }
+    if (conflict) {
+      printJson(conflict);
+      return conflict;
     }
   }
 
@@ -7733,9 +7821,8 @@ export class SessionCommands {
       return;
     }
     const result = detachChatFromSession(session.sessionKey, chat.id, session.name);
-    if (asJson) {
-      printJson(result);
-      return;
+    if (shouldReturnStructuredResult(asJson)) {
+      return returnStructuredResult(result, asJson);
     }
     if (result.detached) {
       const suffix = result.outputDetached ? " and cleared it as default output" : "";
@@ -8469,6 +8556,7 @@ export class SessionCommands {
         ownerEscalatedAt: null,
         acknowledgedAt: null,
         ackReason: null,
+        decisionId: null,
       };
       reportText = `${reportText}\nAguarda o pai: ${describeHandoff(preview, sessionDisplayName(session.sessionKey), now).replace(/^- /, "")}`;
     }
@@ -8507,18 +8595,38 @@ export class SessionCommands {
     // The report is out: a failed write of the wait must not turn into an error that makes the caller send it
     // again. It is returned instead, and the parent still has the report text.
     let handoffError: string | undefined;
+    let decisionError: string | undefined;
+    if (pendingHandoff?.kind === "decision") {
+      // A decision wait records its question as a decision, so the answer is recorded (not just a message) and
+      // closes the wait. A decision that cannot be recorded leaves an ordinary wait, as before.
+      try {
+        // The question is the decoded report, as the parent read it, without the appended wait line.
+        pendingHandoff.decisionId = (
+          await askDecisionForWait(session.sessionKey, pendingHandoff.ref, decodeLiteralLineBreaks(message))
+        ).id;
+      } catch (error) {
+        logger.child("cli:sessions").warn("Decision wait not recorded as a decision; the wait opens without one", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        decisionError = redactText(error instanceof Error ? error.message : String(error)).value;
+      }
+    }
     if (pendingHandoff) {
       try {
         // A dispatched review leaves nothing for the parent: the wait is recorded already closed, so observers
         // never see a wait that did not exist.
-        handoff = await declareHandoff({
-          ...pendingHandoff,
-          ...(reviewDispatch?.status === "dispatched"
-            ? { closedReason: `review dispatched: ${reviewDispatch.requestId}` }
-            : prClosure
-              ? { closedReason: prClosure.merged ? "PR merged" : "PR closed" }
-              : {}),
-        });
+        // A decision recorded without its wait would block the thread on its own: it is retired if this fails.
+        const wait = pendingHandoff;
+        handoff = await retireDecisionIfWaitFails(wait.decisionId, () =>
+          declareHandoff({
+            ...wait,
+            ...(reviewDispatch?.status === "dispatched"
+              ? { closedReason: `review dispatched: ${reviewDispatch.requestId}` }
+              : prClosure
+                ? { closedReason: prClosure.merged ? "PR merged" : "PR closed" }
+                : {}),
+          }),
+        );
       } catch (error) {
         handoffError = error instanceof Error ? error.message : String(error);
       }
@@ -8532,14 +8640,27 @@ export class SessionCommands {
         sessionKey: result.record.parentSessionKey,
         sessionName: result.record.parentSessionName,
       },
-      ...(handoff ? { handoff: { id: handoff.id, kind: handoff.kind, ref: handoff.ref, status: handoff.status } } : {}),
+      ...(handoff
+        ? {
+            handoff: {
+              id: handoff.id,
+              kind: handoff.kind,
+              ref: handoff.ref,
+              status: handoff.status,
+              ...(handoff.decisionId ? { decisionId: handoff.decisionId } : {}),
+            },
+          }
+        : {}),
       ...(handoffError ? { handoffError } : {}),
+      ...(decisionError ? { decisionError } : {}),
       ...(reviewDispatch ? { reviewDispatch } : {}),
     };
     if (asJson) printJson(payload);
     else {
       console.log(`Reported to ${result.record.parentSessionName}`);
       if (handoffError) console.log(`The wait was not recorded: ${handoffError}`);
+      if (decisionError) console.log(`The decision was not recorded (ordinary wait): ${decisionError}`);
+      else if (handoff?.decisionId) console.log(`Decision ${handoff.decisionId}: answer with ravi decisions answer`);
     }
     return payload;
   }
@@ -8850,6 +8971,12 @@ export class SessionCommands {
         HANDOFF_KINDS_ANSWERED_BY_MESSAGE,
       );
     }
+    // A message does not answer a recorded decision: say so, instead of letting its wait remind everyone later.
+    const openDecisionWaits = result.record.childSessionKey
+      ? listHandoffs({ childSessionKey: result.record.childSessionKey })
+          .filter((h) => h.kind === "decision" && h.decisionId)
+          .map((h) => ({ handoffId: h.id, decisionId: h.decisionId! }))
+      : [];
     const payload = {
       status: "published" as const,
       actionId: "thread.send" as const,
@@ -8858,12 +8985,17 @@ export class SessionCommands {
       reopened: result.reopened,
       thread: summarizeSlackThread(result.record),
       delivery: { barrier: delivery.barrier, barrierSource: delivery.source },
+      ...(openDecisionWaits.length ? { openDecisionWaits } : {}),
     };
     if (asJson) printJson(payload);
     else {
       const name = result.record.childSessionName ?? result.record.requestId;
       const explicitBarrier = delivery.source === "explicit" ? ` (${delivery.barrier})` : "";
       console.log(`Sent to ${name}${result.reopened ? " (reopened)" : ""}${explicitBarrier}`);
+      for (const wait of openDecisionWaits)
+        console.log(
+          `Decision ${wait.decisionId} is still open: a message does not answer it. Record the answer with ravi decisions answer ${wait.decisionId} --text "..." --execute`,
+        );
     }
     return payload;
   }
@@ -9314,7 +9446,7 @@ export class SessionCommands {
       return;
     }
     const subs = listSessionSubscriptions(session.sessionKey);
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const enriched = subs.map((s) => {
         const chat = dbGetChat(s.chatId);
         return {
@@ -9329,12 +9461,14 @@ export class SessionCommands {
             : null,
         };
       });
-      printJson({
-        sessionKey: session.sessionKey,
-        sessionName: session.name,
-        subscriptions: enriched,
-      });
-      return;
+      return returnStructuredResult(
+        {
+          sessionKey: session.sessionKey,
+          sessionName: session.name,
+          subscriptions: enriched,
+        },
+        asJson,
+      );
     }
     if (subs.length === 0) {
       console.log(`No subscriptions for session ${session.name ?? session.sessionKey}`);

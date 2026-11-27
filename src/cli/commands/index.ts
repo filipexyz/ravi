@@ -10,6 +10,7 @@ export * from "./adapters.js";
 export * from "./agenda.js";
 export * from "./agents-library.js";
 export * from "./agents.js";
+export * from "./apps-store.js";
 export * from "./apps.js";
 export * from "./artifacts.js";
 export * from "./audio.js";

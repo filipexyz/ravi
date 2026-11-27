@@ -113,10 +113,14 @@ invariant stronger than most: context keys (`rctx_*`) ARE credentials.
 
 ## The daemon does not trust the agent's workspace
 
-- The daemon MUST NOT run tools inside an agent's workspace. A `git status`
-  there honours repository config the agent writes (`core.fsmonitor`, clean
-  filters, submodules); the message-edit notice tells the agent to check its
-  workspace itself.
+- The daemon MUST NOT run, in an agent's workspace, a command that reads the
+  index or the work tree or runs repository hooks or filters (`git status`,
+  `git diff`, `git add`, checkout). Those honour repository config the agent
+  writes (`core.fsmonitor`, clean filters, submodules); the message-edit notice
+  tells the agent to check its workspace itself. Resolving the repository from
+  its remote (`gh repo view` in `gh-watch`, `gh pr view` in `gh-follow-sweep`)
+  reads only `.git/config` and `HEAD` and stays allowed. `ravi doctor` runs git
+  in the operator's terminal directory, not in an agent's.
 - Writes the daemon makes in a workspace (`AGENTS.md`, `CLAUDE.md`, imported
   rules) MUST NOT follow a symlink at the target, and an imported rule MUST NOT
   land (or create directories) outside the workspace through a symlinked
@@ -128,7 +132,27 @@ invariant stronger than most: context keys (`rctx_*`) ARE credentials.
 - CLAUDE.md becomes a pointer to AGENTS.md only when AGENTS.md holds real
   instructions; a skipped (symlinked) legacy bridge leaves CLAUDE.md intact.
 - File arguments the daemon reads for a person held below break-glass stay in
-  the session workspace and the temp directory, like their writes.
+  the session workspace and the temp directory, like their writes. The temp
+  directory is shared by every session on the host, so such a person who names
+  a path there can read another session's temp files through a command that
+  reads files (`pages ship --html`). This is an accepted limit until the OS
+  sandbox; a per-session temp directory is the follow-up.
+- A Codex turn of a person held below the agent (no grant in an ungoverned
+  chat, a held relay, or a contact narrowed to a governed chat's grants that do
+  not run every executable) runs in Codex's `read-only` sandbox, sent on every
+  `turn/start` and on the thread it opens, never in `danger-full-access`. The
+  Bash hook gates `shell`, but `apply_patch` and the sandbox are Codex's own, so
+  the sandbox is what stops that person from writing files or reaching the
+  network from the shell. Codex's native `web_search` and `view_image` run
+  outside that sandbox, so the thread a held turn opens also turns them off
+  (the restricted switches); the next turn without the mark reopens the thread
+  with the agent's own config (a restricted agent profile keeps them off). Only a grant of `execute:executable:*` (or break-glass) keeps the
+  agent's sandbox: a grant for named executables is still held, failing closed.
+  The daemon marks such a turn with `RAVI_TURN_HELD_BELOW_AGENT` in the runtime
+  env it refreshes before the turn; the provider reads it in the daemon, and a
+  change of the mark respawns the app-server, so each thread opens with its
+  turn's config. A person granted full access in the chat is not held and
+  keeps the agent's sandbox. Reads stay possible until the OS sandbox.
 - Shell cron and shell triggers run as the operator. `ravi doctor` warns
   (`permissions.shell_automation_in_agent_workspace`) when one runs code from
   an agent's workspace, because that agent can change what the operator runs.

@@ -76,6 +76,7 @@ import {
   notifyUndeliveredRunReturn,
   prepareCronFailureReport,
   recordUnreadableCronFailure,
+  resolveCronFailureAlerts,
   type CronFailureJob,
   type CronFailureReport,
 } from "./failure-notification.js";
@@ -533,6 +534,8 @@ export class CronRunner {
     if (state.lastStatus === "error") {
       if (await notifyCronFailure(cronRunNotification(settled), state.lastError ?? "Agent turn failed"))
         markCronRunReported(settled.id);
+    } else if (state.lastStatus === "ok") {
+      resolveCronFailureAlerts(settled.job_id, settled.admitted_at);
     }
     // After the owner's notice: a parent that cannot be reached never delays it.
     try {

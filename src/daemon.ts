@@ -75,12 +75,14 @@ import { startSignalsRunner, stopSignalsRunner } from "./signals/index.js";
 import { startKnowledgeLeaderRunners, stopKnowledgeLeaderRunners } from "./knowledge/runners.js";
 import { startSyncRunner, stopSyncRunner } from "./sync/index.js";
 import { startLibraryPinRunner, stopLibraryPinRunner } from "./library/pin-runner.js";
+import { startAppStoreRunner, stopAppStoreRunner } from "./apps/store/runner.js";
 import { startLibraryRequestRunner, stopLibraryRequestRunner } from "./library/request-runner.js";
 import { startCloudTaskWatcher, stopCloudTaskWatcher } from "./cloud-agents/task-watcher.js";
 import { startCloudWorkerRunner, stopCloudWorkerRunner } from "./cloud-agents/worker-runner.js";
 import { startCloudApprovalClicks, stopCloudApprovalClicks } from "./cloud-agents/chat-routing.js";
 import { startSlackCommandConsumer, stopSlackCommandConsumer } from "./channels/slack/slash-command-handler.js";
 import { startSlackThreadControls, stopSlackThreadControls } from "./channels/slack/thread-controls.js";
+import { startSlackDecisionAnswers, stopSlackDecisionAnswers } from "./channels/slack/decision-answer.js";
 import { startSlackThreadShortcuts, stopSlackThreadShortcuts } from "./channels/slack/thread-shortcuts.js";
 import { startVoiceDoor, stopVoiceDoor } from "./voice/door.js";
 import { startCloudDeliveryRunner, stopCloudDeliveryRunner } from "./cloud-agents/delivery-runner.js";
@@ -339,6 +341,7 @@ async function shutdown(signal: string, exitCode = 0) {
       { name: "whatsapp-grant-request", stop: stopWhatsAppGrantRequestRunner },
       { name: "sync", stop: stopSyncRunner },
       { name: "library-pin", stop: stopLibraryPinRunner },
+      { name: "app-store", stop: stopAppStoreRunner },
       { name: "library-request", stop: stopLibraryRequestRunner },
       { name: "cloud-task", stop: stopCloudTaskWatcher },
       { name: "cloud-worker", stop: stopCloudWorkerRunner },
@@ -346,6 +349,7 @@ async function shutdown(signal: string, exitCode = 0) {
       { name: "cloud-approval", stop: stopCloudApprovalClicks },
       { name: "slack-commands", stop: stopSlackCommandConsumer },
       { name: "slack-thread-controls", stop: stopSlackThreadControls },
+      { name: "slack-decision-answers", stop: stopSlackDecisionAnswers },
       { name: "slack-thread-shortcuts", stop: stopSlackThreadShortcuts },
       { name: "voice-door", stop: stopVoiceDoor },
       { name: "calendar-assistant", stop: stopCalendarAssistantRunner },
@@ -686,6 +690,9 @@ export async function startDaemon() {
   await startLibraryPinRunner();
   log.info("Library pin runner started");
 
+  await startAppStoreRunner();
+  log.info("App store runner started");
+
   await startLibraryRequestRunner();
   log.info("Library request runner started");
 
@@ -701,6 +708,7 @@ export async function startDaemon() {
   await startSlackCommandConsumer();
   log.info("Slack command consumer started");
   await startSlackThreadControls();
+  await startSlackDecisionAnswers();
   log.info("Slack thread controls started");
   await startSlackThreadShortcuts();
   log.info("Slack thread shortcuts started");

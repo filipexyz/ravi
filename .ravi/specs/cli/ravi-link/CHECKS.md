@@ -67,6 +67,15 @@ title: "ravi link checks"
   hour after they expire.
 - Revalidation MUST drop cached bindings the Console no longer reports and
   MUST NOT touch bindings of another installation.
+- Revalidation MUST cache every binding of the login owner on this
+  installation that is not cached for it (an entry of another installation
+  does not count), reading the plural answer of
+  `GET /api/cli/link?consoleUserId=` (`bindings: [...]`), only after the
+  Console confirms each one again by contact, and MUST NOT look up anyone
+  else. Tests MUST fake that query with the plural payload the Console sends.
+- With nothing cached, owner discovery MUST NOT refresh, hydrate or delete
+  the stored credentials, and MUST NOT call the Console with an expired
+  session.
 - `approved` with no binding (revoked right after approval) MUST close the
   request without caching or confirming.
 - An unlink MUST win over a poll or a revalidation already in flight: the

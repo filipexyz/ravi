@@ -1,8 +1,11 @@
 import { executeWrite } from "../../db/write-retry.js";
 import { listDecisions } from "../../decisions/store.js";
+import { listHandoffs } from "../../handoffs/store.js";
 import { getDb } from "../../router/router-db.js";
 import type { TurnOrigin } from "../../runtime/turn-provenance.js";
 import type { SessionTurnRecord } from "../../session-trace/types.js";
+import { isGhFollowTriggerName } from "../../triggers/follow-trigger-names.js";
+import { dbGetTrigger } from "../../triggers/triggers-db.js";
 
 /**
  * Thread → parent return rule.
@@ -14,6 +17,14 @@ import type { SessionTurnRecord } from "../../session-trace/types.js";
  * still sends none, the parent gets an automatic Inform with the thread's last
  * message. At most one follow-up and one Inform per turn, never a follow-up of
  * a follow-up.
+ *
+ * A PR follow wake on a CI result or a PR ending (`gh-follow:*` trigger, topics in
+ * `PR_FOLLOW_REPORT_TOPIC`) is the exception to "silent is fine": that event is what moves
+ * the PR, so a wake that ends silent with no report, no decision and no open handoff
+ * (`--awaiting`) stalls it. That turn is asked once for a return, and a second silent turn
+ * goes to the parent instead of being read as "waiting on a person in the thread" (nobody is:
+ * the wake was a machine). Comments and reviews on the PR keep silence valid: the follow's own
+ * prompt tells the thread to stay silent on a bot comment that asks nothing.
  *
  * Every input comes from Ravi's own records: the turn index (`session_turns`),
  * the turn's `adapter.request` provenance and `response.emitted` events, the
@@ -74,16 +85,22 @@ export interface ThreadReturnInput {
   openDecision: boolean;
   /** The thread sent its parent a return (report, close --return or a decision) at or after `since`. */
   returnedSince: (since: number) => boolean;
+  /** The latest turn was woken by a `gh-follow:*` event that demands a return (see `PR_FOLLOW_REPORT_TOPIC`). */
+  turnCiWake?: boolean;
+  /** The thread has an open handoff (`report --awaiting`): its parent already owns the next step. */
+  openHandoff?: boolean;
+  /** The nudge on the watch was the CI-wake one (see `CI_WAKE_NUDGE_EVENT_PREFIX`): a silent follow-up is not "waiting on a person". */
+  watchedTurnCiWake?: boolean;
 }
 
 export type ThreadReturnAction =
   | { kind: "none" }
-  | { kind: "nudge"; turnId: string; turnStartedAt: number }
+  | { kind: "nudge"; turnId: string; turnStartedAt: number; silentCiWake?: true }
   | {
       kind: "inform";
       turnId: string;
       followupTurnId: string | null;
-      reason: "followup_without_return" | "followup_failed" | "nudge_unanswered";
+      reason: "followup_without_return" | "followup_failed" | "nudge_unanswered" | "ci_wake_silent";
     }
   | { kind: "settle"; turnId: string; stage: "returned" | "skipped"; followupTurnId: string | null };
 
@@ -109,10 +126,17 @@ export function decideThreadParentReturn(input: ThreadReturnInput): ThreadReturn
     }
     // Closing without a result is an explicit end of the work; nothing more to ask.
     if (!input.threadOpen) return { kind: "settle", turnId: watch.turnId, stage: "skipped", followupTurnId: null };
-    const followup = turn && turn.turnId !== watch.turnId && turn.startedAt >= watch.nudgedAt ? turn : null;
+    // A PR event that started its own turn is not the answer to the ask: the ask is a relayed turn, never a trigger one.
+    const otherWake = input.watchedTurnCiWake === true && input.turnOrigin === "trigger";
+    const followup =
+      turn && turn.turnId !== watch.turnId && turn.startedAt >= watch.nudgedAt && !otherWake ? turn : null;
     if (followup) {
       if (followup.completedAt === null) return NONE;
       if (followup.status === "complete" && followup.outputState === "silent") {
+        // A CI wake has no person to wait on: twice silent means the PR is stalled, tell the parent.
+        if (input.watchedTurnCiWake) {
+          return { kind: "inform", turnId: watch.turnId, followupTurnId: followup.turnId, reason: "ci_wake_silent" };
+        }
         // Asked for a return, the thread chose silence: it is waiting on a person in the thread.
         return { kind: "settle", turnId: watch.turnId, stage: "skipped", followupTurnId: followup.turnId };
       }
@@ -132,12 +156,21 @@ export function decideThreadParentReturn(input: ThreadReturnInput): ThreadReturn
   if (!input.threadOpen || !turn || turn.completedAt === null || turn.status !== "complete") return NONE;
   // Already handled: the watched turn itself, or the follow-up turn that answered it (no follow-up of a follow-up).
   if (watch && (watch.turnId === turn.turnId || watch.followupTurnId === turn.turnId)) return NONE;
+  // A silent PR follow wake is the one silence that must be asked about (see the header).
+  const silentCiWake = input.turnCiWake === true && turn.outputState === "silent";
   // No reply means the turn-health observer already raises `no_reply` to the parent.
-  if (turn.outputState === "silent" || !input.turnReplied) return NONE;
+  if (!silentCiWake && (turn.outputState === "silent" || !input.turnReplied)) return NONE;
   if (!isDelegatedOrigin(input.turnOrigin)) return NONE;
   if (now - turn.completedAt > THREAD_RETURN_WATCH_WINDOW_MS) return NONE;
   if (input.openDecision || input.returnedSince(turn.startedAt)) return NONE;
-  return { kind: "nudge", turnId: turn.turnId, turnStartedAt: turn.startedAt };
+  // An open `--awaiting` is the thread saying who it waits for: silence on a CI wake is then deliberate.
+  if (silentCiWake && input.openHandoff === true) return NONE;
+  return {
+    kind: "nudge",
+    turnId: turn.turnId,
+    turnStartedAt: turn.startedAt,
+    ...(silentCiWake ? { silentCiWake: true as const } : {}),
+  };
 }
 
 function rowToWatch(row: WatchRow): ThreadReturnWatch {
@@ -295,4 +328,43 @@ export function threadReturnedSince(requestId: string, watch: ThreadReturnWatch 
 
 export function threadHasOpenDecision(requestId: string): boolean {
   return listDecisions({ type: "thread", id: requestId }, true).length > 0;
+}
+
+/** The thread has an open `report --awaiting` handoff: the parent already knows what it is waiting for. */
+export function threadHasOpenHandoff(childSessionKey: string): boolean {
+  return listHandoffs({ childSessionKey, limit: 1 }).length > 0;
+}
+
+/**
+ * PR events a follow thread must answer with a return: a CI result and a PR ending. Comments and
+ * reviews are not here: the follow prompt tells the thread to stay silent on a bot comment that asks nothing.
+ * Topics are `ravi.watch.github.<eventType>`; a run that has not concluded never wakes a follow. A run `cancelled`
+ * (a newer push replaced it by `concurrency`) or `skipped` says nothing about the PR: the run of the new head follows.
+ */
+export const PR_FOLLOW_REPORT_TOPIC =
+  /^ravi\.watch\.github\.(?:workflow_run\.(?!requested$|in_progress$|cancelled$|skipped$)[a-z_]+|pull_request\.(?:merged|closed))$/;
+
+/** Event id prefix of the nudge sent for a silent CI wake; the watch stores the id, so it records the nudge's kind. */
+export const CI_WAKE_NUDGE_EVENT_PREFIX = "slack-thread-return-nudge-ci:";
+
+/**
+ * The turn was woken by a PR follow trigger (`gh-follow:<repo>#<n>`) on an event that demands a return.
+ * Read from the turn's recorded provenance (`automationId = trigger:<id>`, `triggerTopic`), then the
+ * trigger's name; a deleted trigger, a missing topic or a comment event is not such a wake (fail closed).
+ */
+export function readThreadTurnGhFollowWake(turnId: string): boolean {
+  const row = getDb()
+    .prepare(`
+    SELECT json_extract(payload_json, '$.turn_provenance.origin') AS origin,
+           json_extract(payload_json, '$.turn_provenance.automationId') AS automation_id,
+           json_extract(payload_json, '$.turn_provenance.triggerTopic') AS topic
+    FROM session_events WHERE turn_id = ? AND event_type = 'adapter.request'
+    ORDER BY seq ASC, id ASC LIMIT 1
+  `)
+    .get(turnId) as { origin: unknown; automation_id: unknown; topic: unknown } | undefined;
+  if (row?.origin !== "trigger" || typeof row.automation_id !== "string") return false;
+  if (typeof row.topic !== "string" || !PR_FOLLOW_REPORT_TOPIC.test(row.topic)) return false;
+  const triggerId = row.automation_id.startsWith("trigger:") ? row.automation_id.slice("trigger:".length) : "";
+  const trigger = triggerId ? dbGetTrigger(triggerId) : null;
+  return trigger !== null && isGhFollowTriggerName(trigger.name);
 }

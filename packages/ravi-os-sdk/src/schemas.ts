@@ -9527,7 +9527,8 @@ export const AppsGuideReturnSchema = {
                         "interface": {
                           "enum": [
                             "builtin",
-                            "cli"
+                            "cli",
+                            "script"
                           ],
                           "type": "string"
                         },
@@ -10375,7 +10376,8 @@ export const AppsListReturnSchema = {
                       "interface": {
                         "enum": [
                           "builtin",
-                          "cli"
+                          "cli",
+                          "script"
                         ],
                         "type": "string"
                       },
@@ -10665,7 +10667,8 @@ export const AppsListReturnSchema = {
                       "interface": {
                         "enum": [
                           "builtin",
-                          "cli"
+                          "cli",
+                          "script"
                         ],
                         "type": "string"
                       },
@@ -11043,7 +11046,8 @@ export const AppsPromptsReturnSchema = {
                         "interface": {
                           "enum": [
                             "builtin",
-                            "cli"
+                            "cli",
+                            "script"
                           ],
                           "type": "string"
                         },
@@ -11317,6 +11321,58 @@ export const AppsPromptsReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `apps.refresh`. */
+export const AppsRefreshInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `apps.refresh`. */
+export const AppsRefreshReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "apps": {
+      "type": "number"
+    },
+    "blockSerial": {
+      "type": "number"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "indexSerial": {
+      "type": "number"
+    },
+    "keysSerial": {
+      "type": "number"
+    },
+    "refreshedAt": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "source",
+    "changed",
+    "keysSerial",
+    "indexSerial",
+    "blockSerial",
+    "apps",
+    "refreshedAt"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `apps.run`. */
 export const AppsRunInputSchema = {
   "additionalProperties": false,
@@ -11404,7 +11460,8 @@ export const AppsRunReturnSchema = {
         {
           "enum": [
             "builtin",
-            "cli"
+            "cli",
+            "script"
           ],
           "type": "string"
         },
@@ -11544,7 +11601,8 @@ export const AppsRunReturnSchema = {
         "interface": {
           "enum": [
             "builtin",
-            "cli"
+            "cli",
+            "script"
           ],
           "type": "string"
         },
@@ -11602,7 +11660,8 @@ export const AppsRunReturnSchema = {
         "interface": {
           "enum": [
             "builtin",
-            "cli"
+            "cli",
+            "script"
           ],
           "type": "string"
         },
@@ -11895,6 +11954,121 @@ export const AppsScaffoldReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `apps.search`. */
+export const AppsSearchInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "query": {
+      "description": "Text to match in id, name or description",
+      "type": "string"
+    },
+    "refresh": {
+      "description": "Fetch the signed index before searching",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `apps.search`. */
+export const AppsSearchReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "apps": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "blocked": {
+            "type": "boolean"
+          },
+          "class": {
+            "anyOf": [
+              {
+                "enum": [
+                  "compose",
+                  "connector",
+                  "code"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "installed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "publisher": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "publisher",
+          "latest",
+          "class",
+          "installed",
+          "blocked"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "indexSerial": {
+      "type": "number"
+    },
+    "refreshedAt": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "source",
+    "indexSerial",
+    "refreshedAt",
+    "apps"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `apps.show`. */
 export const AppsShowInputSchema = {
   "additionalProperties": false,
@@ -12046,7 +12220,8 @@ export const AppsShowReturnSchema = {
                     "interface": {
                       "enum": [
                         "builtin",
-                        "cli"
+                        "cli",
+                        "script"
                       ],
                       "type": "string"
                     },
@@ -12213,6 +12388,86 @@ export const AppsShowReturnSchema = {
   },
   "required": [
     "app"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `apps.verify`. */
+export const AppsVerifyInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Installed app id. Omit to verify every store app.",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `apps.verify`. */
+export const AppsVerifyReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "apps": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "exposedTo": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "problems": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "source": {
+            "enum": [
+              "official",
+              "local"
+            ],
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "active",
+              "quarantined"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "source",
+          "state",
+          "ok",
+          "problems",
+          "exposedTo"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "ok",
+    "apps"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -68145,6 +68400,22 @@ export const DecisionsAnswerInputSchema = {
       "description": "Decision id from ask/list",
       "type": "string"
     },
+    "scope": {
+      "description": "Where the answer applies: thread (default), agent:<id>, project:<id> or org; wider than the thread needs --source-message or the local operator",
+      "type": "string"
+    },
+    "sourceMessage": {
+      "description": "The owner's message that holds this answer (internal or provider message id), written after the question in its chat or a direct chat. Recorded as provenance; required to widen the scope",
+      "type": "string"
+    },
+    "sourceQuote": {
+      "description": "A passage of the source message that holds the answer; needed unless the message names the decision id",
+      "type": "string"
+    },
+    "supersedes": {
+      "description": "An answered decision this answer replaces",
+      "type": "string"
+    },
     "text": {
       "description": "Explicit outcome",
       "type": "string"
@@ -68284,8 +68555,60 @@ export const DecisionsAnswerReturnSchema = {
           ],
           "type": "string"
         },
+        "revisedAt": {
+          "type": "number"
+        },
         "revision": {
           "type": "number"
+        },
+        "scope": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "origin",
+                "agent",
+                "project",
+                "org"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ],
+          "type": "object"
+        },
+        "sourceExcerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceMessageId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "status": {
           "enum": [
@@ -68295,6 +68618,16 @@ export const DecisionsAnswerReturnSchema = {
           ],
           "type": "string"
         },
+        "supersededBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "updatedAt": {
           "type": "number"
         }
@@ -68303,16 +68636,21 @@ export const DecisionsAnswerReturnSchema = {
         "id",
         "origin",
         "key",
+        "scope",
         "status",
         "ownerType",
         "ownerId",
         "ask",
         "askedBy",
         "askedAt",
+        "revisedAt",
         "answer",
         "answeredBy",
         "answeredAt",
         "blocks",
+        "sourceMessageId",
+        "sourceExcerpt",
+        "supersededBy",
         "revision",
         "createdAt",
         "updatedAt"
@@ -68424,6 +68762,10 @@ export const DecisionsAskInputSchema = {
     },
     "owner": {
       "description": "human:<contact>|agent:<id>|unassigned; ownership is not approval authority",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Proposed scope once answered: thread (default), agent:<id>, project:<id> or org; the answer settles it",
       "type": "string"
     },
     "task": {
@@ -68566,8 +68908,60 @@ export const DecisionsAskReturnSchema = {
           ],
           "type": "string"
         },
+        "revisedAt": {
+          "type": "number"
+        },
         "revision": {
           "type": "number"
+        },
+        "scope": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "origin",
+                "agent",
+                "project",
+                "org"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ],
+          "type": "object"
+        },
+        "sourceExcerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceMessageId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "status": {
           "enum": [
@@ -68577,6 +68971,16 @@ export const DecisionsAskReturnSchema = {
           ],
           "type": "string"
         },
+        "supersededBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "updatedAt": {
           "type": "number"
         }
@@ -68585,16 +68989,21 @@ export const DecisionsAskReturnSchema = {
         "id",
         "origin",
         "key",
+        "scope",
         "status",
         "ownerType",
         "ownerId",
         "ask",
         "askedBy",
         "askedAt",
+        "revisedAt",
         "answer",
         "answeredBy",
         "answeredAt",
         "blocks",
+        "sourceMessageId",
+        "sourceExcerpt",
+        "supersededBy",
         "revision",
         "createdAt",
         "updatedAt"
@@ -68692,12 +69101,20 @@ export const DecisionsListInputSchema = {
       "description": "Include answered history",
       "type": "boolean"
     },
+    "answeredSince": {
+      "description": "Only decisions answered at or after this ISO time or epoch ms (implies --all)",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default 50, maximum 500)",
       "type": "string"
     },
     "offset": {
       "description": "Page offset",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Only decisions with this scope: thread, task, agent:<id>, project:<id> or org",
       "type": "string"
     },
     "task": {
@@ -68838,8 +69255,60 @@ export const DecisionsListReturnSchema = {
             ],
             "type": "string"
           },
+          "revisedAt": {
+            "type": "number"
+          },
           "revision": {
             "type": "number"
+          },
+          "scope": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": {
+                "enum": [
+                  "origin",
+                  "agent",
+                  "project",
+                  "org"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ],
+            "type": "object"
+          },
+          "sourceExcerpt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sourceMessageId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "status": {
             "enum": [
@@ -68849,6 +69318,16 @@ export const DecisionsListReturnSchema = {
             ],
             "type": "string"
           },
+          "supersededBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "updatedAt": {
             "type": "number"
           }
@@ -68857,16 +69336,21 @@ export const DecisionsListReturnSchema = {
           "id",
           "origin",
           "key",
+          "scope",
           "status",
           "ownerType",
           "ownerId",
           "ask",
           "askedBy",
           "askedAt",
+          "revisedAt",
           "answer",
           "answeredBy",
           "answeredAt",
           "blocks",
+          "sourceMessageId",
+          "sourceExcerpt",
+          "supersededBy",
           "revision",
           "createdAt",
           "updatedAt"
@@ -69085,8 +69569,60 @@ export const DecisionsResolveDeliveryReturnSchema = {
           ],
           "type": "string"
         },
+        "revisedAt": {
+          "type": "number"
+        },
         "revision": {
           "type": "number"
+        },
+        "scope": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "origin",
+                "agent",
+                "project",
+                "org"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ],
+          "type": "object"
+        },
+        "sourceExcerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceMessageId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "status": {
           "enum": [
@@ -69096,6 +69632,16 @@ export const DecisionsResolveDeliveryReturnSchema = {
           ],
           "type": "string"
         },
+        "supersededBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "updatedAt": {
           "type": "number"
         }
@@ -69104,16 +69650,21 @@ export const DecisionsResolveDeliveryReturnSchema = {
         "id",
         "origin",
         "key",
+        "scope",
         "status",
         "ownerType",
         "ownerId",
         "ask",
         "askedBy",
         "askedAt",
+        "revisedAt",
         "answer",
         "answeredBy",
         "answeredAt",
         "blocks",
+        "sourceMessageId",
+        "sourceExcerpt",
+        "supersededBy",
         "revision",
         "createdAt",
         "updatedAt"
@@ -69350,8 +69901,60 @@ export const DecisionsRetryReturnSchema = {
           ],
           "type": "string"
         },
+        "revisedAt": {
+          "type": "number"
+        },
         "revision": {
           "type": "number"
+        },
+        "scope": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "origin",
+                "agent",
+                "project",
+                "org"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ],
+          "type": "object"
+        },
+        "sourceExcerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceMessageId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "status": {
           "enum": [
@@ -69361,6 +69964,16 @@ export const DecisionsRetryReturnSchema = {
           ],
           "type": "string"
         },
+        "supersededBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "updatedAt": {
           "type": "number"
         }
@@ -69369,16 +69982,21 @@ export const DecisionsRetryReturnSchema = {
         "id",
         "origin",
         "key",
+        "scope",
         "status",
         "ownerType",
         "ownerId",
         "ask",
         "askedBy",
         "askedAt",
+        "revisedAt",
         "answer",
         "answeredBy",
         "answeredAt",
         "blocks",
+        "sourceMessageId",
+        "sourceExcerpt",
+        "supersededBy",
         "revision",
         "createdAt",
         "updatedAt"
@@ -69611,8 +70229,60 @@ export const DecisionsShowReturnSchema = {
           ],
           "type": "string"
         },
+        "revisedAt": {
+          "type": "number"
+        },
         "revision": {
           "type": "number"
+        },
+        "scope": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "origin",
+                "agent",
+                "project",
+                "org"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ],
+          "type": "object"
+        },
+        "sourceExcerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceMessageId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "status": {
           "enum": [
@@ -69622,6 +70292,16 @@ export const DecisionsShowReturnSchema = {
           ],
           "type": "string"
         },
+        "supersededBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "updatedAt": {
           "type": "number"
         }
@@ -69630,16 +70310,21 @@ export const DecisionsShowReturnSchema = {
         "id",
         "origin",
         "key",
+        "scope",
         "status",
         "ownerType",
         "ownerId",
         "ask",
         "askedBy",
         "askedAt",
+        "revisedAt",
         "answer",
         "answeredBy",
         "answeredAt",
         "blocks",
+        "sourceMessageId",
+        "sourceExcerpt",
+        "supersededBy",
         "revision",
         "createdAt",
         "updatedAt"
@@ -69764,6 +70449,285 @@ export const DecisionsShowReturnSchema = {
     "decision",
     "deliveries",
     "history"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `decisions.supersede`. */
+export const DecisionsSupersedeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "by": {
+      "description": "Answered decision that replaces it",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Record the replacement",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Answered decision to replace",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `decisions.supersede`. */
+export const DecisionsSupersedeReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "replaced": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "const": "superseded",
+          "type": "string"
+        },
+        "supersededBy": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "supersededBy"
+      ],
+      "type": "object"
+    },
+    "replacement": {
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ask": {
+          "type": "string"
+        },
+        "askedAt": {
+          "type": "number"
+        },
+        "askedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blocks": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "origin": {
+          "additionalProperties": false,
+          "properties": {
+            "chatId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "sessionKey": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "task",
+                "thread"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "chatId",
+            "sessionKey"
+          ],
+          "type": "object"
+        },
+        "ownerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ownerType": {
+          "enum": [
+            "human",
+            "agent",
+            "unassigned"
+          ],
+          "type": "string"
+        },
+        "revisedAt": {
+          "type": "number"
+        },
+        "revision": {
+          "type": "number"
+        },
+        "scope": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "origin",
+                "agent",
+                "project",
+                "org"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ],
+          "type": "object"
+        },
+        "sourceExcerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceMessageId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "open",
+            "answered",
+            "superseded"
+          ],
+          "type": "string"
+        },
+        "supersededBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "origin",
+        "key",
+        "scope",
+        "status",
+        "ownerType",
+        "ownerId",
+        "ask",
+        "askedBy",
+        "askedAt",
+        "revisedAt",
+        "answer",
+        "answeredBy",
+        "answeredAt",
+        "blocks",
+        "sourceMessageId",
+        "sourceExcerpt",
+        "supersededBy",
+        "revision",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "replaced",
+    "replacement"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -107596,9 +108560,15 @@ export const SessionsReportReturnSchema = {
           "const": "thread.report",
           "type": "string"
         },
+        "decisionError": {
+          "type": "string"
+        },
         "handoff": {
           "additionalProperties": false,
           "properties": {
+            "decisionId": {
+              "type": "string"
+            },
             "id": {
               "type": "string"
             },
@@ -111120,6 +112090,25 @@ export const SessionsThreadSendReturnSchema = {
     },
     "messageId": {
       "type": "string"
+    },
+    "openDecisionWaits": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "decisionId": {
+            "type": "string"
+          },
+          "handoffId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "handoffId",
+          "decisionId"
+        ],
+        "type": "object"
+      },
+      "type": "array"
     },
     "reopened": {
       "type": "boolean"

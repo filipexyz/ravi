@@ -32,7 +32,7 @@ import type { ClipSpeechEngine } from "./engines/types.js";
 import { emitVoiceEvent, type VoiceControlMessage, type VoiceEventSink } from "./events.js";
 import { revokeVoiceDeviceContext } from "./authority.js";
 import { createVoiceTurnOwnership, noteVoiceTurnRuntimeEvent, type VoiceTurnOwnership } from "./turn-ownership.js";
-import { buildVoicePrompt, classifySpokenControl, extractSpokenLead } from "./speech.js";
+import { buildVoicePrompt, classifySpokenControl, extractSpokenLead, sanitizeForSpeech } from "./speech.js";
 import {
   addVoiceDailyUsage,
   deleteVoiceAudioForCall,
@@ -76,6 +76,8 @@ interface SidebandLike {
   connect(): void;
   commentary(text: string, delegationId: string | null): void;
   thinking(text: string, delegationId: string | null): void;
+  /** Publish pending speech while the call still accepts transcripts. */
+  drain?(): void;
   close(): void;
 }
 
@@ -248,6 +250,12 @@ export class VoiceDoorService {
     call: VoiceCall,
     message: Extract<VoiceControlMessage, { op: "utterance" }>,
     delegationId?: string,
+    /** Live: the part of `text` not already on screen; "" shows nothing new. */
+    displayText?: string,
+    /** Live: the last utterance; spoken cancel and deny are read from it, not from the whole request. */
+    controlText?: string,
+    /** Live: false once the sideband that delegated was replaced; checked again after every await. */
+    stillCurrent?: () => boolean,
   ): Promise<void> {
     const text = message.text.trim();
     const speaker = normalizeSpeaker(message.speaker, call.speaker);
@@ -258,7 +266,12 @@ export class VoiceDoorService {
       });
     }
     if (!text) return;
-    await this.emitOpen(call.id, "user.transcript", { text, speaker, turnId: message.turnId }, this.sink);
+    const shown = displayText === undefined ? text : displayText.trim();
+    if (shown)
+      await this.emitOpen(call.id, "user.transcript", { text: shown, speaker, turnId: message.turnId }, this.sink);
+    // The sideband may have been replaced while the transcript was published:
+    // a retired sideband neither cancels nor starts work.
+    if (stillCurrent && !stillCurrent()) return;
 
     const profile = this.profileFor(call);
     if (speaker.kind === "guest" && !profile.allowGuests) {
@@ -273,7 +286,7 @@ export class VoiceDoorService {
 
     // Spoken cancel and deny are allowed (never a spoken approval), only from the person.
     if (speaker.kind !== "guest") {
-      const control = classifySpokenControl(text);
+      const control = classifySpokenControl(controlText?.trim() || text);
       const runtime = this.runtime(call.id);
       if (control === "cancel" && (runtime.running || runtime.queue.length > 0)) {
         const target = runtime.running?.turn.id ?? runtime.queue[runtime.queue.length - 1]?.turn.id;
@@ -288,6 +301,7 @@ export class VoiceDoorService {
       }
     }
 
+    if (stillCurrent && !stillCurrent()) return;
     const turn = insertVoiceTurn({
       id: message.turnId || newTurnId(),
       callId: call.id,
@@ -377,7 +391,14 @@ export class VoiceDoorService {
     running.release = (kind) => resolveTerminal(kind);
     runtime.running = running;
     updateVoiceTurnState(turn.id, "running", this.now());
-    await this.emitOpen(call.id, "turn.accepted", { turnId: turn.id, sessionName: call.sessionName }, this.sink);
+    // The full request text rides on turn.accepted, so a turn can be matched to
+    // what was said even when the live transcript was already on screen.
+    await this.emitOpen(
+      call.id,
+      "turn.accepted",
+      { turnId: turn.id, sessionName: call.sessionName, text: turn.text },
+      this.sink,
+    );
     await this.setAgentState(call.id, "thinking");
 
     const sessionName = call.sessionName;
@@ -537,14 +558,17 @@ export class VoiceDoorService {
   ): Promise<void> {
     if (!this.isOpen(call.id)) return;
     const runtime = this.runtime(call.id);
+    // The live model is a third party: it gets the sanitized text, never the raw screen text.
+    const liveContext = call.engine === "live" ? sanitizeForSpeech(fullText) : "";
     if (!spokenText || profile.delivery === "silent") {
-      if (call.engine === "live" && fullText) runtime.sideband?.thinking(fullText, running.delegationId ?? null);
+      if (liveContext) runtime.sideband?.thinking(liveContext, running.delegationId ?? null);
       await this.setAgentState(call.id, "listening");
       return;
     }
     if (call.engine === "live") {
       runtime.sideband?.commentary(spokenText, running.delegationId ?? null);
-      if (fullText && fullText !== spokenText) runtime.sideband?.thinking(fullText, running.delegationId ?? null);
+      if (liveContext && liveContext !== spokenText)
+        runtime.sideband?.thinking(liveContext, running.delegationId ?? null);
       await this.emitOpen(call.id, "agent.transcript", { text: spokenText, turnId: running.turn.id }, this.sink);
       await this.setAgentState(call.id, "listening");
       return;
@@ -641,9 +665,11 @@ export class VoiceDoorService {
     runtime.providerSessionId = providerSessionId;
     const self: { sideband: SidebandLike | null } = { sideband: null };
     const handlers: LiveSidebandHandlers = {
-      onDelegation: ({ delegationId, text }) => {
+      onDelegation: ({ delegationId, text, displayText, lastUtterance }) => {
+        // A sideband that was replaced, or a call that is ending, starts no work.
+        if (!self.sideband || runtime.sideband !== self.sideband) return;
         const current = getVoiceCall(call.id);
-        if (!current || current.state === "ended") return;
+        if (!current || current.state === "ended" || current.state === "ending") return;
         if (!text) {
           runtime.sideband?.thinking("The request was not heard clearly. Ask the person to repeat it.", delegationId);
           return;
@@ -652,6 +678,12 @@ export class VoiceDoorService {
           current,
           { op: "utterance", callId: call.id, turnId: newTurnId(), text, speaker: current.speaker as never },
           delegationId,
+          displayText,
+          lastUtterance,
+          () => {
+            const state = getVoiceCall(call.id)?.state;
+            return !!self.sideband && runtime.sideband === self.sideband && state !== "ending" && state !== "ended";
+          },
         );
       },
       onUserTranscript: (text) => {
@@ -675,7 +707,18 @@ export class VoiceDoorService {
         void this.endCall(call.id, reason === "closed_by_door" ? "ended" : reason);
       },
       onError: (error) => {
-        void this.emitOpen(call.id, "error", { code: "VOICE_LIVE_ERROR", message: error.message }, this.sink);
+        void this.emitOpen(
+          call.id,
+          "error",
+          {
+            code: "VOICE_LIVE_ERROR",
+            message: error.message,
+            ...(error.providerCode ? { providerCode: error.providerCode } : {}),
+            ...(error.providerType ? { providerType: error.providerType } : {}),
+            ...(error.param ? { param: error.param } : {}),
+          },
+          this.sink,
+        );
       },
     };
     const sideband = this.deps.createSideband
@@ -697,6 +740,8 @@ export class VoiceDoorService {
   async endCall(callId: string, reason: string): Promise<void> {
     const call = getVoiceCall(callId);
     if (!call || call.state === "ended") return;
+    // Words said right before hanging up are stored before the call stops accepting them.
+    this.calls.get(callId)?.sideband?.drain?.();
     updateVoiceCall(callId, { state: "ending" }, this.now());
     const runtime = this.calls.get(callId);
     if (runtime) {

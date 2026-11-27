@@ -6,6 +6,7 @@ import { discoverPlugins } from "../plugins/index.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import { parseRaviAppCapability, parseRaviAppCommand, tokenizeRaviAppCommand } from "./command.js";
 import { markCompositionCycles, markUnavailableDependencies, validateComposition } from "./composition.js";
+import { markStoreOwnership } from "./store/discovery-guard.js";
 import {
   RaviAppError,
   type RaviAppCheckResult,
@@ -38,7 +39,7 @@ export const RAVI_APP_BUILTIN_OPERATION_HANDLERS = new Set([
   "apps.omie-orders.read",
 ]);
 
-const VALID_OPERATION_INTERFACES = new Set(["builtin", "cli"]);
+const VALID_OPERATION_INTERFACES = new Set(["builtin", "cli", "script"]);
 const VALID_PERMISSION_PROVIDER_INTERFACES = new Set(["builtin", "cli"]);
 const VALID_STORAGE_KINDS = new Set(["state", "cache", "artifact-index", "config", "ledger"]);
 const VALID_EVENT_DURABILITY = new Set(["ephemeral", "logged", "replayable"]);
@@ -81,7 +82,7 @@ const SECRET_VALUE_PATTERNS = [
   /\bsk-[A-Za-z0-9_-]{16,}/,
 ];
 
-const DIRECTORY_SKIPLIST = new Set([".git", "node_modules", "dist", "coverage", ".next"]);
+export const DIRECTORY_SKIPLIST = new Set([".git", "node_modules", "dist", "coverage", ".next"]);
 const STATIC_APP_ROOT_EXCEPTIONS = new Set(["apps"]);
 
 export function normalizeAppId(value: string): string {
@@ -127,6 +128,8 @@ export function discoverAppManifests(options: RaviAppListOptions = {}): RaviAppM
     .sort((left, right) => left.id.localeCompare(right.id) || left.path.localeCompare(right.path));
   const records = options.source ? everything.filter((record) => record.source === options.source) : everything;
 
+  // Store-managed state apps: a folder nobody installed is not an app (spec apps/store).
+  markStoreOwnership(everything, options.env ?? process.env);
   // Over every source too: an id declared in another source is a conflict whichever source a listing shows.
   markDuplicateIds(everything);
   // Composition is a property of the set, not of one file: a circle of `requires` and a missing provider only show
@@ -263,6 +266,11 @@ function findManifestFiles(rootPath: string): string[] {
 
   visit(rootPath, 0);
   return found.sort();
+}
+
+/** Read and validate one manifest file as if it were discovered under `rootPath` (the store checks staged packages). */
+export function readAppManifestFile(path: string, rootPath: string): RaviAppManifestRecord {
+  return readManifestRecord(path, { source: "state", rootPath });
 }
 
 function readManifestRecord(path: string, root: RaviAppDiscoveryRoot): RaviAppManifestRecord {
@@ -504,7 +512,7 @@ function validateOperations(
     const interfaceName = operation.interface;
     if (typeof interfaceName !== "string" || !VALID_OPERATION_INTERFACES.has(interfaceName)) {
       errors.push(`${path}.interface must be one of ${Array.from(VALID_OPERATION_INTERFACES).join("|")}.`);
-    } else if (interfaceName !== "builtin" && !isObject(declaredInterfaces[interfaceName])) {
+    } else if (interfaceName === "cli" && !isObject(declaredInterfaces[interfaceName])) {
       errors.push(`${path}.interface references undeclared interfaces.${interfaceName}.`);
     }
 
@@ -599,6 +607,11 @@ function validateOperationTarget(
     return;
   }
 
+  if (interfaceName === "script") {
+    validateScriptOperation(operation, path, appId, errors);
+    return;
+  }
+
   if (interfaceName === "cli") {
     if (typeof operation.command !== "string" || !operation.command.trim()) {
       errors.push(`${path}.command is required for cli operations.`);
@@ -612,6 +625,53 @@ function validateOperationTarget(
       warnings.push(`${path}.command should support --json for Web OS snapshots and actions.`);
     }
     return;
+  }
+}
+
+const SCRIPT_FLAG_PATTERN = /^--[a-z][a-z0-9-]*$/;
+const SCRIPT_PATH_PATTERN = /^(?:[A-Za-z0-9_][A-Za-z0-9._-]*\/)*[A-Za-z0-9_][A-Za-z0-9._-]*\.js$/;
+
+function validateScriptOperation(
+  operation: Record<string, unknown>,
+  path: string,
+  appId: string,
+  errors: string[],
+): void {
+  if (typeof operation.script !== "string" || !SCRIPT_PATH_PATTERN.test(operation.script)) {
+    errors.push(`${path}.script must be a relative .js path inside the app package.`);
+  }
+  if (operation.command !== undefined) errors.push(`${path}.command is not allowed on script operations; use handoff.`);
+  if (operation.input !== undefined) {
+    if (!isObject(operation.input)) errors.push(`${path}.input must be an object when present.`);
+    else if (
+      operation.input.dir !== undefined &&
+      !(typeof operation.input.dir === "string" && SCRIPT_FLAG_PATTERN.test(operation.input.dir))
+    ) {
+      errors.push(`${path}.input.dir must be a long flag such as --posts.`);
+    }
+  }
+  if (operation.handoff === undefined) return;
+  if (!isObject(operation.handoff)) {
+    errors.push(`${path}.handoff must be an object when present.`);
+    return;
+  }
+  const handoff = operation.handoff;
+  if (typeof handoff.command !== "string" || !handoff.command.trim()) {
+    errors.push(`${path}.handoff.command is required.`);
+  } else if (validateCliCommand(handoff.command, `${path}.handoff.command`, errors)) {
+    if (isRecursiveDynamicAppCommand(appId, handoff.command)) {
+      errors.push(`${path}.handoff.command must not recursively invoke ravi ${appId.split("/").join(" ")}.`);
+    }
+  }
+  if (typeof handoff.outputFlag !== "string" || !SCRIPT_FLAG_PATTERN.test(handoff.outputFlag)) {
+    errors.push(`${path}.handoff.outputFlag must be a long flag such as --dir.`);
+  }
+  if (handoff.flags !== undefined) {
+    if (!isStringArray(handoff.flags) || !handoff.flags.every((flag) => SCRIPT_FLAG_PATTERN.test(flag))) {
+      errors.push(`${path}.handoff.flags must be long flags such as --title.`);
+    } else if (typeof handoff.outputFlag === "string" && handoff.flags.includes(handoff.outputFlag)) {
+      errors.push(`${path}.handoff.flags must not include the output flag.`);
+    }
   }
 }
 

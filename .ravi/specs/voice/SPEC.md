@@ -61,7 +61,29 @@ entered the session, and the feature spec `runtime/providers/realtime-voice` (ar
   discard them, never log them and never publish them on NATS.
 - In `live`, the voice model may converse and may be wrong. Anything about the workspace or the work
   MUST be delegated to the session; the session's answers reach the voice model only through
-  `session.commentary.append` (speak) or `session.thinking.append` (silent).
+  `session.commentary.append` (speak) or `session.thinking.append` (silent). Appends carry their text
+  in `content` (an append with any other field is rejected, and the voice model then never hears the
+  result). Provider `error` events nest their details under `error`; the door MUST publish the
+  provider's `code` and `message`, never a generic text.
+- GPT-Live transcripts stream as deltas with no done event. A pause longer than 1.2 s between user
+  deltas, or the voice model starting to answer, ends an utterance. A delegation takes the last
+  utterance said before its `offset_ms`, plus the utterances right before it that belong to it: no
+  model reply started in between and the pause was at most 15 s (`REQUEST_GAP_MS`). Speech the model
+  already answered, or older than that, was conversation: it is shown once and never sent. Words
+  after the offset wait for the next delegation. No wall clock decides any of this; only the
+  provider's timeline and reply starts do. Spoken cancel and deny are read from the last utterance,
+  not from the whole request. Speech is shown on screen once; `turn.accepted` carries the full
+  request text so a turn can be matched to what was said. A sideband that was closed or replaced, or
+  a call that is ending, starts no work: a request said in the instant before hanging up is shown on
+  screen and does not become a turn.
+- Appends are capped at 500 tokens; the sideband splits text into chunks of at most 900 characters.
+  This is an estimate for Portuguese text (about 2 characters per token): text dense in symbols,
+  long links or base64 can pass the cap, and the provider then answers with a `VOICE_LIVE_ERROR`.
+- Open point (unverified): the docs show an empty `session.thinking.append` cancelling the automatic
+  acknowledgement, but do not state that `content: ""` is accepted. If the first delegation of a
+  call produces a `VOICE_LIVE_ERROR`, this is the place to look.
+- GPT-Live usage reports billable seconds only. In `live`, `audioInSeconds`, `audioOutSeconds` and
+  `charactersSpoken` stay 0 by design; cost comes from `engineSeconds`.
 - The `handsfree` worker is a stateless media worker. It has no database access, joins rooms with a
   token the daemon mints, and talks to the daemon only through the gateway with the call's device
   credential.
