@@ -217,7 +217,12 @@ values, never code.
 - The same engine decides, so the freshness window, the authority (`modify` on the
   session and the CLI's capability) and the audit are a typed command's; the
   audit row MUST record `surface: "button"`. The answer MUST be ephemeral,
-  through the click's `response_url`. A click Slack delivers twice (same envelope
+  through the click's `response_url`, and MUST say `replace_original: false`: on a
+  button's `response_url` Slack replaces the message the button is on when the
+  field is missing, and a close has already refreshed the card to "closed", so an
+  answer that does not say it overwrites the card with one line. Only the
+  confirmation card of a message shortcut (its own ephemeral message) is answered
+  with `replace_original: true`. A click Slack delivers twice (same envelope
   id) MUST be answered once.
 
 ### Message shortcuts
