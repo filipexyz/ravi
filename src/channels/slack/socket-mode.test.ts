@@ -7372,6 +7372,31 @@ describe("Responder on a decision card", () => {
     ]);
   });
 
+  it("never publishes another form's private metadata", async () => {
+    const published: unknown[] = [];
+    await decisionService([], published).handleEnvelope(
+      {
+        type: "interactive",
+        envelope_id: "env-other-form",
+        payload: {
+          type: "view_submission",
+          user: { id: "UOWNER" },
+          view: {
+            id: "V-other",
+            callback_id: "some_other_form",
+            private_metadata: "secret-pointer",
+            state: { values: {} },
+          },
+        },
+      },
+      () => {},
+    );
+    const payload = (published[0] as [string, Record<string, unknown>])[1];
+    expect(payload.viewCallbackId).toBe("some_other_form");
+    expect("viewPrivateMetadata" in payload).toBe(false);
+    expect(JSON.stringify(payload)).not.toContain("secret-pointer");
+  });
+
   it("publishes a well-formed submission with its pointer for the daemon to check", async () => {
     const opened: unknown[] = [];
     const published: unknown[] = [];

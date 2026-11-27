@@ -106,6 +106,7 @@ import {
   isSlackDecisionAnswerOpenEnvelope,
   isSlackDecisionAnswerSubmitEnvelope,
   openSlackDecisionAnswerForm,
+  SLACK_DECISION_ANSWER_SUBMIT_CALLBACK_ID,
   slackDecisionAnswerFormErrors,
 } from "./decision-answer.js";
 import { extractSlackMessageText } from "./message-content.js";
@@ -1828,8 +1829,11 @@ export class SlackSocketModeService {
       containerType: stringField(container, "type"),
       viewId: stringField(view, "id"),
       viewCallbackId: stringField(view, "callback_id"),
-      // The pointer a Ravi form keeps (decision answer); the consumer rechecks everything it names.
-      viewPrivateMetadata: stringField(view, "private_metadata"),
+      // The pointer a decision answer form keeps; the consumer rechecks everything it names. No other form's
+      // metadata leaves the runner.
+      ...(stringField(view, "callback_id") === SLACK_DECISION_ANSWER_SUBMIT_CALLBACK_ID
+        ? { viewPrivateMetadata: stringField(view, "private_metadata") }
+        : {}),
       actionId: stringField(firstAction, "action_id"),
       blockId: stringField(firstAction, "block_id"),
       actionType: stringField(firstAction, "type"),

@@ -65,7 +65,7 @@ import {
   type CloseSlackThreadLifecycleResult,
   type SlackThreadLifecycleRecord,
 } from "./thread-lifecycle-store.js";
-import type { SlackThreadCardState } from "./thread-card.js";
+import { slackThreadCardDecisions, type SlackThreadCardState } from "./thread-card.js";
 import { getLatestSessionTurn } from "../../session-trace/session-trace-db.js";
 import { observeThreadTurn } from "./thread-turn-health.js";
 import {
@@ -1275,8 +1275,8 @@ export async function updateSlackThreadCard(
         ...(record.requestedBy ? { requestedBy: record.requestedBy } : {}),
         ...(slackThreadRuntimeLabel(record) ? { runtime: slackThreadRuntimeLabel(record) } : {}),
         // Responder is for a person; a question for an agent or with no owner is answered elsewhere.
-        ...(pending[0]?.ownerType === "human"
-          ? { decision: { id: pending[0].id, revision: pending[0].revision } }
+        ...(pending.some((decision) => decision.ownerType === "human")
+          ? { decisions: slackThreadCardDecisions(pending) }
           : {}),
       },
     },

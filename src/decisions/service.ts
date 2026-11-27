@@ -537,7 +537,10 @@ export async function answerDecision(
   options: DecisionAnswerOptions = {},
 ) {
   const decision = requireVisibleDecision(id);
-  const who = actor();
+  // A card answer is the owner's own: named by the verified contact, never as whoever runs the consumer.
+  const who = options.verifiedOwner
+    ? { actor: `card:${options.verifiedOwner.contactId}`, agentId: undefined, sessionName: undefined }
+    : actor();
   checkDecisionAnswer(decision, sourceMessage, options, text);
   const label = answerLabel(by);
   let closedWaits: Handoff[] = [];
@@ -656,11 +659,30 @@ export function supersedeDecision(oldId: string, replacementId: string): Decisio
 
 export function decisionHistory(id: string) {
   requireVisibleDecision(id);
-  return getDb()
+  const rows = getDb()
     .query(
       "SELECT id,type,actor,snapshot_json AS snapshot,created_at AS createdAt FROM decision_history WHERE decision_id=? ORDER BY id",
     )
     .all(id) as Array<{ id: number; type: string; actor: string | null; snapshot: string; createdAt: number }>;
+  // A card form's binding (its platform id and who it was opened for) answers a submission; it is never shown.
+  return rows.map((row) =>
+    row.type === "card-form-opened"
+      ? { ...row, actor: null, snapshot: JSON.stringify(cardFormSummary(row.snapshot)) }
+      : row,
+  );
+}
+
+function cardFormSummary(snapshot: string): { revision: number | null; channel: string | null } {
+  try {
+    const form = JSON.parse(snapshot) as { revision?: unknown; channel?: unknown };
+    return {
+      revision: typeof form.revision === "number" ? form.revision : null,
+      channel: typeof form.channel === "string" ? form.channel : null,
+    };
+  } catch {
+    // no-cause: An unreadable card form row shows nothing of it.
+    return { revision: null, channel: null };
+  }
 }
 
 /** A stable decision key from a wait's ref: lowercase slug, or `default` when the wait names nothing. */
