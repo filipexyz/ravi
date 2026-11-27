@@ -409,9 +409,11 @@ describe("Slack thread lifecycle", () => {
       },
     );
     jobs.length = 0;
-    await updateSlackThreadCard(record, { status: "running" }, deps);
-    const card = jobs.find((job) => job.request.content.type === "chat_action")?.request.content;
-    expect(card?.type === "chat_action" ? card.threadCard : undefined).toMatchObject({
+    await updateSlackThreadCard(record, { status: "open" }, deps);
+    const content = jobs.find((job) => job.request.content.type === "chat_action")?.request.content;
+    const card =
+      content?.type === "chat_action" && content.actionId === "message.edit" ? content.threadCard : undefined;
+    expect(card).toMatchObject({
       status: "waiting",
       note: "Qual modo é o padrão?",
     });

@@ -8441,7 +8441,11 @@ export function dbListChatMessagesByProviderId(
        WHERE m.provider_message_id = ? AND m.actor_type = 'contact' AND m.contact_id = ?
          AND COALESCE(CASE WHEN m.provider_timestamp < 1000000000000 THEN m.provider_timestamp * 1000
                            ELSE m.provider_timestamp END, m.created_at) >= ?
-         AND (m.chat_id = ? OR c.chat_type = 'dm')
+         AND (m.chat_id = ? OR c.chat_type = 'dm'
+              OR (c.chat_type = 'thread' AND EXISTS (
+                    SELECT 1 FROM chats p
+                    WHERE p.channel = c.channel AND p.instance_id = c.instance_id AND p.chat_type = 'dm'
+                      AND c.platform_chat_id = p.platform_chat_id || '#' || substr(c.platform_chat_id, length(p.platform_chat_id) + 2))))
        LIMIT 20`,
     )
     .all(providerMessageId, writtenBy.contactId, writtenBy.since, writtenBy.chatId) as ChatMessageRow[];
