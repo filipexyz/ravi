@@ -8,6 +8,7 @@
  */
 
 import { connect, type Msg, type NatsConnection, type Subscription, StringCodec } from "nats";
+import { natsConnectAuth, type NatsRole } from "./nats-auth.js";
 import { redactNatsUrl } from "./security/nats-exposure.js";
 import { logger } from "./utils/logger.js";
 
@@ -28,10 +29,14 @@ let explicitConnect = false;
  */
 export async function connectNats(
   url = DEFAULT_URL,
-  opts?: { explicit?: boolean; retry?: boolean; quiet?: boolean },
+  opts?: { explicit?: boolean; retry?: boolean; quiet?: boolean; role?: NatsRole },
 ): Promise<void> {
   const maxRetries = opts?.retry !== false && opts?.explicit ? 30 : 1;
   const retryInterval = 2000;
+
+  // This process's role credential, when the host has one. A credential file
+  // that is unsafe or malformed fails the connection instead of being skipped.
+  const auth = natsConnectAuth(opts?.role ?? "cli");
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -39,11 +44,17 @@ export async function connectNats(
         servers: url,
         reconnect: true,
         maxReconnectAttempts: -1,
+        ...(auth.user ? { user: auth.user, pass: auth.pass } : {}),
       });
 
       if (opts?.explicit) explicitConnect = true;
 
-      log.info("Connected to NATS", { server: redactNatsUrl(url), attempt });
+      log.info("Connected to NATS", {
+        server: redactNatsUrl(url),
+        attempt,
+        role: auth.role,
+        authenticated: Boolean(auth.user),
+      });
 
       // Log status changes (only for long-lived daemon connections)
       if (opts?.explicit) {

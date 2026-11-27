@@ -1724,6 +1724,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | meetings | src/meetings/read.ts | triaged-follow-up | catch-without-binding | src/meetings/read.ts:37b1efc7f0095d3016c688d1 |
 | meetings | src/meetings/read.ts | triaged-follow-up | catch-without-binding | src/meetings/read.ts:d792f49ccd45e27810c5985f |
 | metrics | src/metrics/rollup.ts | fixed | binding retained / no recognized error surface | src/metrics/rollup.ts:d5567ef2e14ba1e6a4f6e9e4 |
+| nats-auth.ts | src/nats-auth.ts | fixed | binding retained / no recognized error surface | src/nats-auth.ts:541edba86a1b9dff3604d7b9 |
 | nats.ts | src/nats.ts | fixed | binding retained / no recognized error surface | src/nats.ts:07b434b1768cacd2083b36fa |
 | nats.ts | src/nats.ts | fixed | binding retained / no recognized error surface | src/nats.ts:19063334113b5757af276d24 |
 | nats.ts | src/nats.ts | fixed | binding retained / no recognized error surface | src/nats.ts:1f281e767daff5714a3ae52c |
