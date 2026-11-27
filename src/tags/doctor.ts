@@ -10,13 +10,24 @@
  *   filters;
  * - which contacts get capabilities from their tags (registry bindings or the
  *   contact policy), and which of those are break-glass;
+ * - which chat-scoped grants (one chat or a chat tag) carry capabilities, and
+ *   which of those are break-glass;
  * - which bindings come from legacy mirrors, and how much rewrite churn each
  *   source produces.
  *
  * It never writes tag definitions, bindings or events. Opening the Ravi DB runs
  * the same schema bootstrap as any other CLI command.
+ *
+ * The two power sections name who holds which capabilities. The caller decides
+ * whether to include them (`includePower`); when it does not, both sections are
+ * empty and their counts are null, so a reader without that right cannot tell
+ * "nobody has power" from "you may not see it".
  */
-import { breakGlassCapabilities, isPermissionProfileDefinition } from "../permissions/break-glass.js";
+import {
+  breakGlassCapabilities,
+  isPermissionProfileDefinition,
+  profileBreakGlassReasons,
+} from "../permissions/break-glass.js";
 import { isPermissionPolicyTag } from "../permissions/permission-tags.js";
 import { getDb } from "../router/router-db.js";
 import { dbListObserverRules } from "../runtime/observation-plane.js";
@@ -35,6 +46,8 @@ export const TAG_DOCTOR_ASSET_CHECKS: ReadonlyArray<{ assetType: string; table: 
 
 /** Binding sources that mirror another store instead of being written as tags. */
 export const TAG_DOCTOR_LEGACY_MIRROR_SOURCES: readonly string[] = [
+  // No producer left in src/: only bindings already stored in existing
+  // databases carry this source. Listed so the cleanup can find and remove them.
   "contacts_v2.tags",
   "contact_policies.tags_json",
   "artifacts.tags_json",
@@ -52,10 +65,15 @@ export interface TagDoctorReport {
     unboundDefinitions: number;
     orphanBindings: number;
     boundTagsWithoutConsumer: number;
-    contactsWithCapabilities: number;
-    contactsWithBreakGlass: number;
+    /** Null when the power sections were withheld from the caller. */
+    contactsWithCapabilities: number | null;
+    contactsWithBreakGlass: number | null;
+    chatGrantsWithCapabilities: number | null;
+    chatGrantsWithBreakGlass: number | null;
     legacyMirrorBindings: number;
   };
+  /** Whether the power sections (`powerTags`, `chatGrantPower`) were computed for this caller. */
+  power: "included" | "withheld";
   bindingsByAssetType: Array<{ assetType: string; bindings: number; assets: number; tags: number }>;
   unboundDefinitions: Array<{ slug: string; kind: string; source: string; createdAt: number }>;
   orphanBindings: {
@@ -65,6 +83,14 @@ export interface TagDoctorReport {
   consumers: Array<{ slug: string; kinds: TagDoctorConsumerKind[]; enabled: boolean }>;
   tagsWithoutConsumer: Array<{ slug: string; bindings: number; assetTypes: string[] }>;
   powerTags: Array<{ contactId: string; capabilities: string[]; breakGlass: string[]; sources: string[] }>;
+  /** Chat-scoped grants: `scope` is `chat:<id>` or `chat-tag:<slug>`. */
+  chatGrantPower: Array<{
+    contactId: string;
+    profile: string;
+    scope: string;
+    capabilities: string[];
+    breakGlass: string[];
+  }>;
   legacyMirrors: Array<{ source: string; bindings: number; rewrites: number }>;
   tagRuleErrors: Array<{ source: string; error: string }>;
   limit: number;
@@ -88,6 +114,16 @@ export interface TagDoctorOptions {
    * no binding still shows its power.
    */
   listPolicyContactIds?: () => string[];
+  /**
+   * Every stored chat-scoped grant with the capabilities its profile carries
+   * (`perm:type:id` strings). Injected for the same reason as `materializeContact`.
+   */
+  listChatGrants?: () => Array<{ contactId: string; profile: string; scope: string; capabilities: string[] }>;
+  /**
+   * Compute the power sections. Defaults to true; the CLI passes false when the
+   * caller cannot see who holds power (see `ravi tags doctor`).
+   */
+  includePower?: boolean;
   /** Test seam: tag rules (defaults to the state-dir rule files). */
   loadTagRules?: () => {
     rules: Array<{ rule: unknown }>;
@@ -127,6 +163,18 @@ function collectRuleTagSlugs(value: unknown, out: Set<string>, keyIsTag = false)
 
 function capabilityString(cap: { permission: string; objectType: string; objectId: string }): string {
   return `${cap.permission}:${cap.objectType}:${cap.objectId}`;
+}
+
+/** `perm:type:id` back to its parts; the object id may itself contain colons. */
+function parseCapabilityString(value: string): { permission: string; objectType: string; objectId: string } | null {
+  const first = value.indexOf(":");
+  const second = first < 0 ? -1 : value.indexOf(":", first + 1);
+  if (first <= 0 || second <= first + 1 || second === value.length - 1) return null;
+  return {
+    permission: value.slice(0, first),
+    objectType: value.slice(first + 1, second),
+    objectId: value.slice(second + 1),
+  };
 }
 
 export function buildTagDoctorReport(options: TagDoctorOptions): TagDoctorReport {
@@ -257,17 +305,20 @@ export function buildTagDoctorReport(options: TagDoctorOptions): TagDoctorReport
     .sort((a, b) => b.bindings - a.bindings || a.slug.localeCompare(b.slug));
 
   // Contacts whose tags materialize capabilities.
+  const includePower = options.includePower !== false;
   const materialize = options.materializeContact;
-  const contactIds = [
-    ...new Set([
-      ...(
-        db.prepare("SELECT DISTINCT asset_id AS id FROM tag_bindings WHERE asset_type = 'contact'").all() as Array<{
-          id: string;
-        }>
-      ).map((row) => row.id),
-      ...(options.listPolicyContactIds?.() ?? []),
-    ]),
-  ].sort();
+  const contactIds = !includePower
+    ? []
+    : [
+        ...new Set([
+          ...(
+            db.prepare("SELECT DISTINCT asset_id AS id FROM tag_bindings WHERE asset_type = 'contact'").all() as Array<{
+              id: string;
+            }>
+          ).map((row) => row.id),
+          ...(options.listPolicyContactIds?.() ?? []),
+        ]),
+      ].sort();
   const powerTags: TagDoctorReport["powerTags"] = [];
   for (const contactId of contactIds) {
     const capabilities = materialize(contactId);
@@ -280,6 +331,29 @@ export function buildTagDoctorReport(options: TagDoctorOptions): TagDoctorReport
     });
   }
   powerTags.sort((a, b) => b.breakGlass.length - a.breakGlass.length || a.contactId.localeCompare(b.contactId));
+
+  // Chat-scoped grants that carry capabilities.
+  const chatGrantPower: TagDoctorReport["chatGrantPower"] = [];
+  for (const grant of includePower ? (options.listChatGrants?.() ?? []) : []) {
+    if (grant.capabilities.length === 0) continue;
+    const parsed = grant.capabilities
+      .map(parseCapabilityString)
+      .filter((cap): cap is NonNullable<typeof cap> => cap !== null);
+    chatGrantPower.push({
+      contactId: grant.contactId,
+      profile: grant.profile,
+      scope: grant.scope,
+      capabilities: [...grant.capabilities].sort(),
+      breakGlass: profileBreakGlassReasons(grant.profile, parsed).sort(),
+    });
+  }
+  chatGrantPower.sort(
+    (a, b) =>
+      b.breakGlass.length - a.breakGlass.length ||
+      a.contactId.localeCompare(b.contactId) ||
+      a.scope.localeCompare(b.scope) ||
+      a.profile.localeCompare(b.profile),
+  );
 
   // Legacy mirrors and rewrite churn.
   const bySource = new Map(
@@ -314,8 +388,10 @@ export function buildTagDoctorReport(options: TagDoctorOptions): TagDoctorReport
       unboundDefinitions: unused.length,
       orphanBindings: orphanTotal,
       boundTagsWithoutConsumer: withoutConsumer.length,
-      contactsWithCapabilities: powerTags.length,
-      contactsWithBreakGlass: powerTags.filter((row) => row.breakGlass.length > 0).length,
+      contactsWithCapabilities: includePower ? powerTags.length : null,
+      contactsWithBreakGlass: includePower ? powerTags.filter((row) => row.breakGlass.length > 0).length : null,
+      chatGrantsWithCapabilities: includePower ? chatGrantPower.length : null,
+      chatGrantsWithBreakGlass: includePower ? chatGrantPower.filter((row) => row.breakGlass.length > 0).length : null,
       legacyMirrorBindings: legacyMirrors.reduce((sum, row) => sum + row.bindings, 0),
     },
     bindingsByAssetType: byAssetType.slice(0, limit),
@@ -323,7 +399,9 @@ export function buildTagDoctorReport(options: TagDoctorOptions): TagDoctorReport
     orphanBindings: { checked: checked.slice(0, limit), uncheckedAssetTypes: uncheckedAssetTypes.slice(0, limit) },
     consumers: consumers.slice(0, limit),
     tagsWithoutConsumer: withoutConsumer.slice(0, limit),
+    power: includePower ? "included" : "withheld",
     powerTags: powerTags.slice(0, limit),
+    chatGrantPower: chatGrantPower.slice(0, limit),
     legacyMirrors: legacyMirrors.slice(0, limit),
     tagRuleErrors: tagRules.errors.slice(0, limit),
     limit,
