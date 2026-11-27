@@ -123,7 +123,7 @@ const { issueShellCronContext, CRON_SHELL_ALLOWED_COMMANDS, revokeOrphanedShellC
 );
 const { getRegistry } = await import("../cli/registry-snapshot.js");
 const { createRuntimeContext } = await import("../runtime/context-registry.js");
-const { dbListContexts } = await import("../router/router-db.js");
+const { dbGetContextByKey, dbListContexts } = await import("../router/router-db.js");
 
 let stateDir: string | null = null;
 
@@ -779,7 +779,9 @@ describe("CronRunner shell jobs and personal connectors", () => {
     const operatorJob = await runShellJobEnv("operator");
     const key = operatorJob.env.RAVI_CONTEXT_KEY;
     expect(key).toBeTruthy();
-    const context = dbListContexts({ includeInactive: true, kind: "cron-shell" }).find((c) => c.contextKey === key);
+    // The registry keeps only key hashes; the context is found by the key the run received.
+    const context = dbGetContextByKey(key!);
+    expect(context?.kind).toBe("cron-shell");
     expect(context?.metadata).toMatchObject({
       actorPrincipal: `automation:cron:${operatorJob.jobId}`,
       cronRunAuthority: { jobId: operatorJob.jobId, ownerPrincipal: "operator", ownerIsOperator: true },
@@ -816,18 +818,21 @@ describe("CronRunner shell jobs and personal connectors", () => {
   });
 
   it("never stores or notifies the run's context key, even when the command prints it", async () => {
+    const keyOut = join(stateDir!, "leaked-key.txt");
     const job = dbCreateCronJob({
       name: "shell-leak",
       schedule: { type: "every", every: 60_000 },
       message: "",
       executionType: "shell",
-      shellCommand: 'echo "out:$RAVI_CONTEXT_KEY"; echo "err:$RAVI_CONTEXT_KEY" >&2; exit 3',
+      shellCommand: `printf %s "$RAVI_CONTEXT_KEY" > '${keyOut}'; echo "out:$RAVI_CONTEXT_KEY"; echo "err:$RAVI_CONTEXT_KEY" >&2; exit 3`,
       ownerPrincipal: "operator",
       onError: "notify-session:shell-leak-session",
     });
     await new CronRunner().triggerJob(job.id);
-    const key = dbListContexts({ includeInactive: true, kind: "cron-shell" }).at(-1)?.contextKey;
-    expect(key).toBeTruthy();
+    // The registry keeps only key hashes; the key is the one the command saw.
+    const key = readFileSync(keyOut, "utf8");
+    expect(key.startsWith("rctx_")).toBe(true);
+    expect(dbGetContextByKey(key)?.kind).toBe("cron-shell");
     const after = dbGetCronJob(job.id)!;
     expect(after.lastStatus).toBe("error");
     expect(after.lastError).toContain("[REDACTED:context-key]");
