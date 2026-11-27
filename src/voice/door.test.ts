@@ -8,9 +8,11 @@ import { VOICE_DEVICE_CAPABILITIES, VOICE_DEVICE_CONTEXT_KIND } from "./authorit
 import { VoiceDoorService, type VoiceDoorDeps } from "./door.js";
 import type { ClipSpeechEngine } from "./engines/types.js";
 import {
+  addVoiceDailyUsage,
   appendVoiceEvent,
   getVoiceCall,
   getVoiceDailyUsage,
+  getVoiceProfileDailyUsage,
   insertVoiceCall,
   listVoiceEvents,
   listVoiceTurns,
@@ -605,6 +607,42 @@ describe("voice door", () => {
     await until(() => getVoiceCall(call.id)?.state === "ended", "ended by limit");
     expect(getVoiceCall(call.id)?.endedReason).toBe("limit");
     expect(getVoiceDailyUsage().costUsd).toBeGreaterThan(0);
+  });
+
+  it("meters the daily limit per profile: another profile's spend neither blocks nor ends a call", async () => {
+    addVoiceDailyUsage("busy", 5, 60);
+    saveVoiceProfile({ ...defaultVoiceProfile(), id: "quiet", maxDailyCostUsd: 1 });
+    const { door } = harness();
+    const call = makeCall("push", { profileId: "quiet" });
+    await door.handleControl({
+      op: "utterance",
+      callId: call.id,
+      turnId: "vt_q",
+      text: "oi",
+      speaker: { kind: "operator", id: "operator" },
+    });
+    await until(() => listVoiceTurns(call.id)[0]?.state === "done", "turn done");
+    await until(() => getVoiceProfileDailyUsage("quiet").costUsd > 0, "quiet metered");
+    expect(getVoiceCall(call.id)?.state).not.toBe("ended");
+    expect(listVoiceEvents(call.id).some((event) => event.data.limit === "max_daily_cost")).toBe(false);
+    expect(getVoiceProfileDailyUsage("busy").costUsd).toBe(5);
+    expect(getVoiceDailyUsage().costUsd).toBeCloseTo(5 + getVoiceProfileDailyUsage("quiet").costUsd, 5);
+  });
+
+  it("ends the call when its own profile reaches the daily limit", async () => {
+    saveVoiceProfile({ ...defaultVoiceProfile(), id: "tight", maxCallCostUsd: 100, maxDailyCostUsd: 0.005 });
+    const { door } = harness();
+    const call = makeCall("push", { profileId: "tight" });
+    await door.handleControl({
+      op: "utterance",
+      callId: call.id,
+      turnId: "vt_t",
+      text: "oi",
+      speaker: { kind: "operator", id: "operator" },
+    });
+    await until(() => getVoiceCall(call.id)?.state === "ended", "ended by daily limit");
+    expect(getVoiceCall(call.id)?.endedReason).toBe("limit");
+    expect(listVoiceEvents(call.id).some((event) => event.data.limit === "max_daily_cost")).toBe(true);
   });
 
   it("live calls end on restart; other calls survive and in-flight turns fail", async () => {

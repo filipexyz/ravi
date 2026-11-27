@@ -37,9 +37,9 @@ import {
   addVoiceDailyUsage,
   deleteVoiceAudioForCall,
   getVoiceCall,
-  getVoiceDailyUsage,
   getVoiceDevice,
   getVoiceProfile,
+  getVoiceProfileDailyUsage,
   getVoiceTurn,
   insertVoiceTurn,
   listVoiceCalls,
@@ -787,6 +787,7 @@ export class VoiceDoorService {
     };
     updateVoiceCall(callId, { usage }, this.now());
     addVoiceDailyUsage(
+      call.profileId,
       delta.estimatedCostUsd ?? 0,
       (delta.engineSeconds ?? 0) + (delta.audioInSeconds ?? 0) + (delta.audioOutSeconds ?? 0),
       this.now(),
@@ -800,7 +801,7 @@ export class VoiceDoorService {
     if (!call || call.state === "ended") return;
     const profile = this.profileFor(call);
     const minutes = (this.now() - call.createdAt) / 60_000;
-    const daily = getVoiceDailyUsage(this.now());
+    const daily = getVoiceProfileDailyUsage(call.profileId, this.now());
     const exceeded =
       minutes >= profile.maxCallMinutes
         ? "max_call_minutes"

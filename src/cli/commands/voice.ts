@@ -55,9 +55,9 @@ import {
   endOpenVoiceCall,
   getVoiceAudio,
   getVoiceCall,
-  getVoiceDailyUsage,
   getVoiceDevice,
   getVoiceProfile,
+  getVoiceProfileDailyUsage,
   insertVoiceCall,
   insertVoiceDevice,
   lastVoiceEventSeq,
@@ -539,9 +539,15 @@ export class VoiceCallsCommands {
       if (!check.ready) {
         fail(op, "VOICE_ENGINE_NOT_READY", `Engine ${mode} is missing: ${check.missing.join(", ")}.`, asJson);
       }
-      const daily = getVoiceDailyUsage();
+      const daily = getVoiceProfileDailyUsage(profile.id);
       if (daily.costUsd >= profile.maxDailyCostUsd) {
-        fail(op, "VOICE_LIMIT_REACHED", "Today's voice spend limit is reached.", asJson, CONTRACT_EXIT_POLICY);
+        fail(
+          op,
+          "VOICE_LIMIT_REACHED",
+          `Today's voice spend limit of profile ${profile.id} is reached.`,
+          asJson,
+          CONTRACT_EXIT_POLICY,
+        );
       }
       const existing = findActiveVoiceCall(session.sessionKey, caller.speaker.id);
       if (existing) {
