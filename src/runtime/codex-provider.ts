@@ -79,6 +79,8 @@ import type {
   SessionRuntimeProvider,
 } from "./types.js";
 import { toCodexRuntimeEffort } from "./effort.js";
+import { authorizeRestrictedAppCommand, hasCallableRestrictedApp } from "../apps/restricted-turn.js";
+import { resolveRuntimeContext } from "./context-registry.js";
 import { RAVI_TURN_HELD_BELOW_AGENT_ENV, RAVI_TURN_OWNER_AUTHORITY_ENV } from "../permissions/actor-limit.js";
 import { createRuntimeTerminalEventTracker, type RuntimeFailedTerminalInput } from "./terminality.js";
 import { materializeRuntimeModelBroker } from "./model-broker-materializer.js";
@@ -1301,6 +1303,9 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     lastUsageTotal?: CodexCliUsage;
     turnId?: string;
     threadId?: string;
+    heldBelowAgent?: boolean;
+    heldEnv?: NodeJS.ProcessEnv;
+    cwd?: string;
     approveRuntimeRequest?: RuntimeApprovalHandler;
     handleRuntimeToolCall?: RuntimeDynamicToolCallHandler;
     settled: boolean;
@@ -1651,7 +1656,18 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       activeTurn?.queue.push(buildApprovalTraceEvent("approval.requested", request));
 
       let approvalResult: RuntimeApprovalResult;
-      if (!activeTurn?.approveRuntimeRequest) {
+      if (activeTurn?.heldBelowAgent) {
+        // Resolve the credential of THIS held turn anew for every approval. Never use the agent's ceiling.
+        const key = activeTurn.heldEnv?.RAVI_CONTEXT_KEY;
+        const context = key ? resolveRuntimeContext(key, { touch: false }) : null;
+        const command = restrictedCodexApprovalCommand(params.command);
+        const sameTurn = params.threadId === activeTurn.threadId && params.turnId === activeTurn.turnId;
+        const sameCwd = params.cwd === undefined || params.cwd === activeTurn.cwd;
+        approvalResult =
+          sameTurn && sameCwd && request.kind === "command_execution" && command
+            ? authorizeRestrictedAppCommand(command, context, { cwd: activeTurn.cwd, env: activeTurn.heldEnv })
+            : { approved: false, reason: "Only a trusted app command may leave a restricted turn's sandbox." };
+      } else if (!activeTurn?.approveRuntimeRequest) {
         approvalResult = {
           approved: false,
           reason: "No Ravi approval handler is available for this Codex request.",
@@ -1668,7 +1684,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       }
 
       activeTurn?.queue.push(buildApprovalTraceEvent("approval.resolved", request, approvalResult));
-      await writeJsonRpc({ jsonrpc: "2.0", id, result: buildCodexApprovalResponse(method, params, approvalResult) });
+      await writeJsonRpc({
+        jsonrpc: "2.0",
+        id,
+        result: buildCodexApprovalResponse(method, params, approvalResult, activeTurn?.heldBelowAgent === true),
+      });
       return;
     }
 
@@ -2383,6 +2403,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     currentSecurity = security;
     // A thread opened by a held turn never starts in full access, not even before turn/start.
     const threadSandbox = resolveCodexTurnSandbox(security, input.heldBelowAgent);
+    const approvalPolicy = restrictedCodexApprovalPolicy(input.heldBelowAgent, input.env, input.cwd);
     // Codex's native web_search and view_image run outside its sandbox: a held turn gets the
     // restricted switches too. A change of the held mark respawns the app-server
     // (`RAVI_*` is in the env signature), so the thread reopens here with the turn's config.
@@ -2414,7 +2435,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           modelProvider: null,
           serviceTier: null,
           cwd: input.cwd,
-          approvalPolicy: "never",
+          approvalPolicy,
           approvalsReviewer: null,
           sandbox: threadSandbox,
           config,
@@ -2429,7 +2450,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             model: input.model ?? null,
             modelProvider: null,
             cwd: input.cwd,
-            approvalPolicy: "never",
+            approvalPolicy,
             sandbox: threadSandbox,
             config,
             baseInstructions: null,
@@ -2442,7 +2463,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             model: input.model ?? null,
             modelProvider: null,
             cwd: input.cwd,
-            approvalPolicy: "never",
+            approvalPolicy,
             sandbox: threadSandbox,
             config,
             serviceName: null,
@@ -2610,6 +2631,9 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         }),
         resolveResult,
         stderrOffset: getStderrLength(),
+        heldBelowAgent: input.heldBelowAgent,
+        heldEnv: { ...input.env },
+        cwd: input.cwd,
         approveRuntimeRequest: input.approveRuntimeRequest,
         handleRuntimeToolCall: input.handleRuntimeToolCall,
         settled: false,
@@ -2734,7 +2758,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
                   },
                 ],
                 cwd: null,
-                approvalPolicy: null,
+                approvalPolicy: restrictedCodexApprovalPolicy(input.heldBelowAgent, input.env, input.cwd),
                 sandboxPolicy: toCodexSandboxPolicy(resolveCodexTurnSandbox(input.security, input.heldBelowAgent)),
                 model: switchesModel ? turnModel : null,
                 effort: input.effort ?? null,
@@ -4044,6 +4068,7 @@ function buildCodexApprovalResponse(
   method: string,
   params: Record<string, unknown>,
   result: RuntimeApprovalResult,
+  once = false,
 ): Record<string, unknown> {
   if (method === "item/tool/requestUserInput") {
     return {
@@ -4066,7 +4091,7 @@ function buildCodexApprovalResponse(
   }
 
   if (result.approved) {
-    return { decision: "acceptForSession" };
+    return { decision: once ? "accept" : "acceptForSession" };
   }
 
   return {
@@ -4367,4 +4392,22 @@ function normalizeCodexGoal(value: unknown): RuntimeGoal | null {
     createdAt: toNumber(goal.createdAt) * 1000,
     updatedAt: toNumber(goal.updatedAt) * 1000,
   };
+}
+
+/** Accept only the native command string or an exact system-shell -c/-lc argv envelope. */
+export function restrictedCodexApprovalCommand(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (!Array.isArray(value) || value.length !== 3 || !value.every((v) => typeof v === "string")) return null;
+  if (!["/bin/bash", "/bin/sh", "/bin/zsh", "/usr/bin/bash", "/usr/bin/zsh"].includes(value[0])) return null;
+  return ["-c", "-lc"].includes(value[1]) ? value[2] : null;
+}
+
+export function restrictedCodexApprovalPolicy(
+  held: boolean | undefined,
+  env: NodeJS.ProcessEnv,
+  cwd: string,
+): "never" | "on-request" {
+  if (!held || !env.RAVI_CONTEXT_KEY) return "never";
+  const context = resolveRuntimeContext(env.RAVI_CONTEXT_KEY, { touch: false });
+  return hasCallableRestrictedApp(context, { env, cwd }) ? "on-request" : "never";
 }

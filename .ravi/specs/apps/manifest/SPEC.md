@@ -589,3 +589,12 @@ the router, with its own child context (spec `apps/router`, "Composition").
   consumer grows with every provider upgrade and its manifest never shows it.
 - Making a missing provider invalidate the consumer's manifest, which forces an
   install order on the ecosystem instead of holding the run back.
+
+## Restricted Turn Calls
+
+- `sandbox` MAY contain only `callableFromRestrictedTurns`, a boolean. Unknown keys or invalid types MUST fail validation. It is a request, never a grant.
+- Only the local operator terminal may run `ravi apps trust <id> --execute` or `untrust`. Gateway, tool and agent invocations MUST be refused even with broad grants. Both commands preview without `--execute`.
+- Trust pins the manifest path and SHA-256 bytes in private host state. Missing, invalid, changed or removed manifests MUST NOT be callable through this exception. Untrust and uninstall revoke the record.
+- A held turn may take only one literal `ravi apps run|show <id>` command outside the sandbox, with the host's exact Ravi executable. Assignment prefixes, operators, redirects, expansions, subshells, alternate executables and dynamic aliases MUST NOT qualify. Quoted literal arguments remain data.
+- The matcher MUST require the live turn's `use app:<id>` and store exposure, and recheck trust for every approval. Trust never grants app access, child capabilities or executable power. Human-bridge turns keep their own protocol.
+- The call keeps the held turn's credential. The existing router remains responsible for operation authorization, least-privilege child issuance, closed environment and shell-free argv. Protected executors still require their verified human and conversation authority.

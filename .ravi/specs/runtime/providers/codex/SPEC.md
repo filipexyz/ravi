@@ -148,3 +148,9 @@ Stored goal control initializes an experimental app-server connection without `t
 - If a shell command cannot see `RAVI_CONTEXT_KEY`, treat it as a runtime/tool-boundary bug. Do not compensate by re-enabling Codex native dynamic tools.
 - Runtime control/capability metadata regressions can break dispatcher decisions; `RuntimeCapabilities` coverage must stay aligned with provider behavior.
 - Skill sync can be mistaken for loaded state. The adapter MUST not populate `loadedSkills` from `syncCodexSkills` or prompt catalog text alone.
+
+## Restricted app exception
+
+- A held turn with a callable operator-trusted app uses `approvalPolicy: on-request`; otherwise it uses `never`. Every turn writes its policy explicitly so an earlier exception cannot persist. Read-only sandbox and disabled native network/image tools stay unchanged.
+- The daemon resolves that held turn's context key again for each native command approval and applies the shared restricted-app matcher. It responds `accept` for that invocation only, never `acceptForSession`. Every file, permission or other request is denied on this path.
+- Native shell argv MUST be decoded only as an exact system-shell `-c`/`-lc` envelope; flattening arbitrary argv into a shell string is forbidden. Ordinary turns retain their existing approval handler.

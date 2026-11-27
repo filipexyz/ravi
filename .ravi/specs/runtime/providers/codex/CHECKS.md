@@ -55,3 +55,6 @@ Protocol reference: https://learn.chatgpt.com/docs/app-server (thread goals and 
 - `bun test src/runtime/codex-provider.test.ts -t "held|sandbox"`
 - Assert a held turn sends `sandboxPolicy: {type: "readOnly"}` and an operator turn after it `dangerFullAccess`.
 - Assert the thread a held turn opens or resumes has `sandbox: "read-only"` and the restricted native switches, and the operator's next thread has the agent's own config.
+
+- `bun test src/apps/restricted-turn.test.ts`: fake native transport proves one-shot accept, retained read-only sandbox and denial of compound commands, other executables, file changes and generic permission requests.
+- `bun test src/runtime/codex-provider.test.ts`: held/unheld turn transitions and unchanged ordinary approval routing.

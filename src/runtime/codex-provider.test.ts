@@ -1139,6 +1139,8 @@ rl.on("line", (line) => {
       "tools.view_image": false,
     });
     expect(requests[1]?.params.sandboxPolicy).toEqual({ type: "readOnly" });
+    expect(requests[0]?.params.approvalPolicy).toBe("never");
+    expect(requests[1]?.params.approvalPolicy).toBe("never");
   }, 20_000);
 
   it("keeps multi-agent child notifications from replacing the top-level thread", async () => {

@@ -354,6 +354,20 @@ function validateManifest(
     validateInterfaceBlocks(manifest, operationIds, errors, warnings);
   }
 
+  if (manifest.sandbox !== undefined) {
+    if (!isObject(manifest.sandbox)) errors.push("sandbox must be an object.");
+    else {
+      for (const key of Object.keys(manifest.sandbox)) {
+        if (key !== "callableFromRestrictedTurns") errors.push(`Unknown sandbox key: ${key}.`);
+      }
+      if (
+        manifest.sandbox.callableFromRestrictedTurns !== undefined &&
+        typeof manifest.sandbox.callableFromRestrictedTurns !== "boolean"
+      ) {
+        errors.push("sandbox.callableFromRestrictedTurns must be a boolean.");
+      }
+    }
+  }
   validateContext(manifest.context, errors);
   validateOperations(manifest.operations, manifest.interfaces, manifest.id, errors, warnings);
   validateComposition(manifest, operationIds, errors);

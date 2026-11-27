@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import { z } from "zod";
-import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
-import { fail, getContext } from "../context.js";
+import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
+import { fail, getContext, hasRuntimeInvocationContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { enforceRaviAppRunResult, throwRaviAppContractError } from "../../apps/error-contract.js";
 import {
@@ -21,6 +21,19 @@ import {
   filterVisibleAppManifests,
   type RaviAppManifestRecord,
 } from "../../apps/index.js";
+
+import { contractDryRun, contractFail, errorDiagnostic } from "../agent-contract.js";
+import { trustApp, untrustApp } from "../../apps/trust.js";
+
+function requireTrustOperator(op: string, asJson?: boolean): void {
+  if (hasRuntimeInvocationContext()) {
+    contractFail(op, "APP_TRUST_OPERATOR_ONLY", "App trust is managed only in the operator's local terminal.", {
+      asJson,
+      exitCode: 3,
+      diagnostic: errorDiagnostic("Runtime invocations cannot manage app trust", { operation: op }),
+    });
+  }
+}
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -346,6 +359,56 @@ function printAppLine(record: z.infer<typeof appSummarySchema>): void {
   scope: "open",
 })
 export class AppsCommands {
+  @Command({
+    name: "trust",
+    description: "Trust this exact app manifest for restricted turns (operator terminal only)",
+  })
+  @CliOnly()
+  @CommandAccess({ kind: "mutate", resource: "apps", action: "trust", risk: "high" })
+  @Returns(z.object({ id: z.string(), trusted: z.boolean(), changed: z.boolean() }))
+  trust(
+    @Arg("id", { description: "App id" }) id: string,
+    @Option({ flags: "--execute", description: "Confirm trust in the current manifest" }) execute?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    requireTrustOperator("apps trust", asJson);
+    const record = getAppManifest(id);
+    if (!record.valid || record.manifest?.sandbox?.callableFromRestrictedTurns !== true) {
+      contractFail(
+        "apps trust",
+        "APP_TRUST_NOT_REQUESTED",
+        "A valid manifest must request sandbox.callableFromRestrictedTurns.",
+        {
+          asJson,
+          exitCode: 3,
+          diagnostic: errorDiagnostic("Manifest did not request restricted-turn calls", { appId: id }),
+        },
+      );
+    }
+    if (execute !== true) contractDryRun("apps trust", { id: record.id, manifest: record.path }, { asJson });
+    const result = { id: record.id, trusted: true, changed: trustApp(record).changed };
+    if (asJson) printJson(result);
+    else console.log(`Trusted ${record.id}. Changing its manifest revokes this trust.`);
+    return result;
+  }
+
+  @Command({ name: "untrust", description: "Revoke restricted-turn app trust (operator terminal only)" })
+  @CliOnly()
+  @CommandAccess({ kind: "mutate", resource: "apps", action: "untrust", risk: "high" })
+  @Returns(z.object({ id: z.string(), trusted: z.boolean(), changed: z.boolean() }))
+  untrust(
+    @Arg("id", { description: "App id" }) id: string,
+    @Option({ flags: "--execute", description: "Confirm revocation" }) execute?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    requireTrustOperator("apps untrust", asJson);
+    if (execute !== true) contractDryRun("apps untrust", { id }, { asJson });
+    const result = { id, trusted: false, changed: untrustApp(id).changed };
+    if (asJson) printJson(result);
+    else console.log(`Revoked trust for ${id}.`);
+    return result;
+  }
+
   @Command({ name: "list", description: "List discovered Ravi apps" })
   @CommandAccess({ kind: "read", resource: "apps", action: "list", risk: "low" })
   @Returns(appsListReturnSchema)

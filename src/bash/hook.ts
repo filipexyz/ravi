@@ -32,6 +32,7 @@ import {
   canWithCapabilityContext,
   materializeSubjectCapabilities,
 } from "../permissions/provider-runtime.js";
+import { authorizeRestrictedAppCommand } from "../apps/restricted-turn.js";
 import { isWithheldByDeny } from "../permissions/capability-snapshot.js";
 import { emitPermissionDeniedAudit, recordAndEmitPermissionDenial } from "../permissions/denials.js";
 import { buildAuditContextProvenance, type AuditContextProvenance } from "../permissions/audit-provenance.js";
@@ -1229,8 +1230,15 @@ export function createToolPermissionHook(options: BashHookOptions): HookCallback
       metadata: scopeCtx.context?.metadata,
     };
 
+    // This is an exception for this invocation, never a Bash grant.
+    const trustedAppCall =
+      toolName === "Bash" &&
+      typeof input.tool_input?.command === "string" &&
+      authorizeRestrictedAppCommand(input.tool_input.command, scopeCtx.context, {
+        cwd: typeof input.cwd === "string" ? input.cwd : undefined,
+      }).approved;
     // Check whether the agent can use this tool.
-    if (!canWithBashContext(bashContext, "use", "tool", toolName)) {
+    if (!trustedAppCall && !canWithBashContext(bashContext, "use", "tool", toolName)) {
       const provenance = buildAuditContextProvenance(scopeCtx);
       const mcpServer = describeMcpServer(input.mcp_server);
       const unattributedHostTool = isUnattributedHostMcpName(input, toolName, options.hostMcpServers);

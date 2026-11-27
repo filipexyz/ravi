@@ -86,3 +86,5 @@ bun run build
   holds more than the one above it.
 - A composed app's child context is revoked when its process ends.
 - A cycle of `requires` fails manifest validation.
+
+- `bun test src/apps/restricted-turn.test.ts src/cli/commands/apps.test.ts`: operator trust and documented command contract.

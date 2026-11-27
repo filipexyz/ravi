@@ -362,6 +362,7 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/context-liveness.test.ts",
   ],
   "src/apps/": [
+    "src/apps/restricted-turn.test.ts",
     "src/apps/router.test.ts",
     "src/apps/youtube/client.test.ts",
     "src/apps/youtube/credential-authority.test.ts",
