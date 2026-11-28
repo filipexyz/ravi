@@ -57,7 +57,9 @@ nudges that send agents to the command.
      or in a thread of one (other participants could ask the agent to repeat
      the Page), a routine or a thread working for a contact, an agent
      relaying, an unresolved speaker, a turn that cannot be classified:
-     `publicOnly: true`. A classification failure is logged at debug.
+     `publicOnly: true`, with no `x-ravi-actor-contact`, so reading a public
+     Page never needs or starts anyone's link. A classification failure is
+     logged at debug.
    The operator's session never returns a private Page to another person's
    turn with the operator's own access.
 3. Without `--custom-domain`, only `*.ravi.page` hosts are sent to Console and

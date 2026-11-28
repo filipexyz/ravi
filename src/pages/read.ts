@@ -354,11 +354,17 @@ export async function readPage(options: PageReadOptions, deps: PageReadDeps = {}
   }
   const reader = resolvePageReader(deps);
   const publicOnly = reader.kind === "public_only";
-  // A person's read always names that person, from this same decision, so a
-  // private read can never go out as the operator for someone else's turn.
+  // The contact sent with the read comes from this same decision: a person's
+  // read always names that person, so a private read never goes out as the
+  // operator for someone else's turn; a public-only read names nobody, so
+  // reading a public Page never needs (or starts) anyone's link.
   const context = await createAuthenticatedPagesContext(
     options,
-    reader.kind === "person" ? { ...deps, actorContact: () => reader.contactId } : deps,
+    reader.kind === "person"
+      ? { ...deps, actorContact: () => reader.contactId }
+      : reader.kind === "public_only"
+        ? { ...deps, actorContact: () => null }
+        : deps,
   );
   const body = {
     url,
