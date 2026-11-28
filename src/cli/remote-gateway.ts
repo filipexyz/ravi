@@ -190,13 +190,18 @@ export async function resolveRemoteGatewayConfig(
  * is a short-lived process, so one slot is enough; `gatewayRequiredError` reads
  * it to tell "socket missing" from "socket there, daemon not answering".
  */
-let lastHostGatewayFailure: { reason: UnixSocketProbeFailure; socketPath: string; code?: string } | null = null;
-
-export function getLastHostGatewayFailure(): {
+type HostGatewayFailure = {
   reason: UnixSocketProbeFailure;
   socketPath: string;
   code?: string;
-} | null {
+  attempts?: number;
+  elapsedMs?: number;
+  attemptMs?: number[];
+};
+
+let lastHostGatewayFailure: HostGatewayFailure | null = null;
+
+export function getLastHostGatewayFailure(): HostGatewayFailure | null {
   return lastHostGatewayFailure;
 }
 
@@ -232,7 +237,14 @@ export async function resolveAutoHostCliGateway(
     // Only for a runtime context key, which has no local fallback. An operator
     // CLI (credential recovery, a stopped daemon) keeps its local path.
     if (result.reason === "timeout" && requiresRemoteGateway(env)) return config;
-    lastHostGatewayFailure = { reason: result.reason, socketPath, ...(result.code ? { code: result.code } : {}) };
+    lastHostGatewayFailure = {
+      reason: result.reason,
+      socketPath,
+      ...(result.code ? { code: result.code } : {}),
+      ...(result.attempts !== undefined ? { attempts: result.attempts } : {}),
+      ...(result.elapsedMs !== undefined ? { elapsedMs: result.elapsedMs } : {}),
+      ...(result.attemptMs ? { attemptMs: result.attemptMs } : {}),
+    };
   }
   return null;
 }
@@ -271,13 +283,20 @@ export function requiresRemoteGateway(env: NodeJS.ProcessEnv = process.env): boo
 
 export function gatewayRequiredError(op: string, installedOperator = false): ContractError {
   const failure = getLastHostGatewayFailure();
-  const detail = failure
-    ? failure.reason === "missing"
-      ? ` (socket ausente: ${failure.socketPath})`
-      : failure.reason === "refused"
-        ? ` (socket presente, conexão recusada: ${failure.socketPath}; daemon parado ou reiniciando)`
-        : ` (socket presente, falha ao conectar${failure.code ? ` ${failure.code}` : ""}: ${failure.socketPath})`
-    : "";
+  let detail = "";
+  if (failure) {
+    const what =
+      failure.reason === "missing"
+        ? `socket ausente: ${failure.socketPath}`
+        : failure.reason === "refused"
+          ? `socket presente, conexão recusada: ${failure.socketPath}; daemon parado ou reiniciando`
+          : `socket presente, falha ao conectar${failure.code ? ` ${failure.code}` : ""}: ${failure.socketPath}`;
+    const timing =
+      failure.attempts !== undefined && failure.reason !== "missing"
+        ? `; ${failure.attempts} tentativa(s) em ${failure.elapsedMs ?? 0} ms${failure.attemptMs?.length ? ` (cada uma: ${failure.attemptMs.join(", ")} ms)` : ""}`
+        : "";
+    detail = ` (${what}${timing})`;
+  }
   const message = installedOperator
     ? `This command requires the installed Ravi gateway, and none is reachable${detail}.`
     : `Commands running with RAVI_CONTEXT_KEY must go through the Ravi gateway, and none is reachable${detail}.`;
