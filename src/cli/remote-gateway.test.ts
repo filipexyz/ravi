@@ -196,12 +196,19 @@ describe("remote gateway configuration", () => {
 
     const refused = await resolveRemoteGatewayConfig(env, "pages published", {
       stateDir: "/home/user/.ravi",
-      probeSocketDetailed: async () => ({ ok: false, reason: "refused", code: "ECONNREFUSED" }),
+      probeSocketDetailed: async () => ({
+        ok: false,
+        reason: "refused",
+        code: "ECONNREFUSED",
+        attempts: 3,
+        elapsedMs: 312,
+      }),
     });
     expect(refused).toBeNull();
     const error = gatewayRequiredError("pages published");
     expect(error.code).toBe("GATEWAY_REQUIRED");
     expect(error.message).toContain("conexão recusada");
+    expect(error.message).toContain("3 tentativa(s) em 312 ms");
     expect(requiresRemoteGateway(env)).toBe(true);
   });
 

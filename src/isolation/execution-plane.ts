@@ -124,7 +124,9 @@ export function inspectExecutionPlane(input: InspectExecutionPlaneInput = {}): E
  */
 export type UnixSocketProbeFailure = "missing" | "refused" | "timeout" | "error";
 
-export type UnixSocketProbeResult = { ok: true } | { ok: false; reason: UnixSocketProbeFailure; code?: string };
+export type UnixSocketProbeResult =
+  | { ok: true }
+  | { ok: false; reason: UnixSocketProbeFailure; code?: string; attempts?: number; elapsedMs?: number };
 
 export interface UnixSocketProbeOptions {
   /** Per-attempt connect timeout. */
@@ -162,11 +164,18 @@ function probeUnixSocketOnce(
     const timer = setTimeout(() => finish({ ok: false, reason: "timeout" }), timeoutMs);
     socket.once("error", (error: NodeJS.ErrnoException) => {
       const code = error.code;
-      finish({
-        ok: false,
-        reason: code === "ECONNREFUSED" ? "refused" : code === "ENOENT" ? "missing" : "error",
-        ...(code ? { code } : {}),
-      });
+      // Linux answers a non-blocking connect on a unix socket whose listen queue
+      // is full with EAGAIN: the daemon is alive and loaded, which is the same
+      // situation as a connect that did not complete in time.
+      const reason: UnixSocketProbeFailure =
+        code === "ECONNREFUSED"
+          ? "refused"
+          : code === "ENOENT"
+            ? "missing"
+            : code === "EAGAIN" || code === "EWOULDBLOCK"
+              ? "timeout"
+              : "error";
+      finish({ ok: false, reason, ...(code ? { code } : {}) });
     });
     socket.once("connect", () => finish({ ok: true }));
     try {
@@ -193,9 +202,14 @@ export async function probeUnixSocketDetailed(
   const attempts = Math.max(1, options.attempts ?? PROBE_ATTEMPTS);
   const backoff = options.backoffMs ?? PROBE_BACKOFF_MS;
   let last: UnixSocketProbeResult = { ok: false, reason: "error" };
+  const startedAt = Date.now();
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     last = await probeUnixSocketOnce(socketPath, timeoutMs, options.createSocket ?? (() => new Socket()));
-    if (last.ok || last.reason === "missing") return last;
+    if (last.ok) return last;
+    // Attempts and elapsed time let a later report separate "the daemon never
+    // accepted" from "this process was too busy to notice the connect".
+    last = { ...last, attempts: attempt + 1, elapsedMs: Date.now() - startedAt };
+    if (last.reason === "missing") return last;
     if (attempt < attempts - 1 && backoff.length > 0) {
       const wait = backoff[Math.min(attempt, backoff.length - 1)] ?? 0;
       await new Promise((resolve) => setTimeout(resolve, wait));

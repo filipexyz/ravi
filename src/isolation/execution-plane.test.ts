@@ -126,7 +126,7 @@ describe("probeUnixSocket", () => {
   });
 });
 
-type FakeConnect = "hang" | "connect" | "refuse" | "vanish";
+type FakeConnect = "hang" | "connect" | "refuse" | "vanish" | "eagain";
 
 /** A socket whose `connect()` follows a script, one entry per attempt. */
 function scriptedSockets(script: FakeConnect[]): { createSocket: () => Socket; count: () => number } {
@@ -141,6 +141,9 @@ function scriptedSockets(script: FakeConnect[]): { createSocket: () => Socket; c
         if (behaviour === "connect") queueMicrotask(() => fake.emit("connect"));
         if (behaviour === "refuse") {
           queueMicrotask(() => fake.emit("error", Object.assign(new Error("refused"), { code: "ECONNREFUSED" })));
+        }
+        if (behaviour === "eagain") {
+          queueMicrotask(() => fake.emit("error", Object.assign(new Error("full"), { code: "EAGAIN" })));
         }
         if (behaviour === "vanish") {
           queueMicrotask(() => fake.emit("error", Object.assign(new Error("gone"), { code: "ENOENT" })));
@@ -160,7 +163,7 @@ describe("probeUnixSocket retry", () => {
   it("a single short attempt reads a slow connect as unreachable (the old behaviour)", async () => {
     const sockets = scriptedSockets(["hang"]);
     const result = await probeUnixSocketDetailed(existing, { timeoutMs: 20, attempts: 1, ...sockets });
-    expect(result).toEqual({ ok: false, reason: "timeout" });
+    expect(result).toMatchObject({ ok: false, reason: "timeout", attempts: 1 });
     expect(sockets.count()).toBe(1);
   });
 
@@ -193,6 +196,23 @@ describe("probeUnixSocket retry", () => {
     });
     expect(hung).toMatchObject({ ok: false, reason: "timeout" });
     expect(refused).toMatchObject({ ok: false, reason: "refused", code: "ECONNREFUSED" });
+  });
+
+  it("reads EAGAIN (Linux, listen queue full) as a loaded daemon, not a dead one", async () => {
+    const sockets = scriptedSockets(["eagain"]);
+    const result = await probeUnixSocketDetailed(existing, { timeoutMs: 10, backoffMs: [1], ...sockets });
+    expect(result).toMatchObject({ ok: false, reason: "timeout", code: "EAGAIN" });
+    expect(sockets.count()).toBe(3);
+  });
+
+  it("records attempts and elapsed time on a failure so the cause can be told apart later", async () => {
+    const result = await probeUnixSocketDetailed(existing, {
+      timeoutMs: 10,
+      backoffMs: [1],
+      ...scriptedSockets(["hang"]),
+    });
+    expect(result).toMatchObject({ ok: false, reason: "timeout", attempts: 3 });
+    expect((result as { elapsedMs: number }).elapsedMs).toBeGreaterThanOrEqual(25);
   });
 
   it("does not retry a socket that vanishes between the existence check and connect", async () => {
