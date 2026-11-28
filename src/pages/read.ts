@@ -354,35 +354,26 @@ export interface PageReadFailure {
 
 /**
  * Why Console would not read for the person of the turn (`x-ravi-actor-contact`):
- * each is that person's case, never a reason to read as the operator.
+ * each is that person's case, never a reason to read as the operator. The case
+ * travels in `details.turn`, which the CLI envelope and the gateway relay keep.
+ * No link (`ACTOR_NOT_LINKED`) is not mapped here: it keeps its own refusal,
+ * which carries the link flow Ravi started (`turnLinkContract`).
  */
-const PERSON_REFUSALS: Record<string, { person: string; message: (url: string) => string; next: string }> = {
-  not_linked: {
-    person: "not_linked",
-    message: (url) =>
-      `${url} is private and the person asking has no \`ravi link\` to a Console account of this organization, so Ravi cannot read it for them.`,
-    next: "Ask the person to finish the link Ravi just sent them (`ravi link`), then read the Page again.",
-  },
-  not_approved_by_person: {
-    person: "not_linked",
-    message: (url) =>
-      `${url} is private and the person asking has not approved their \`ravi link\` yet, so Ravi cannot read it for them.`,
-    next: "Ask the person to approve their link (`ravi link`), then read the Page again.",
-  },
+const PERSON_REFUSALS: Record<string, { turn: string; message: (url: string) => string; next: string }> = {
   not_member: {
-    person: "not_member",
+    turn: "not_member",
     message: (url) =>
       `${url} is private and the person asking is not an active member of the organization that owns it.`,
     next: "Tell the person you cannot open this private Page for them; an organization admin can invite them.",
   },
   executor_project_scoped: {
-    person: "executor_scoped",
+    turn: "executor_scoped",
     message: (url) =>
       `${url} is private and this installation's login reaches only some projects, so Ravi does not read for another person from it.`,
     next: "Tell the person you cannot open this private Page here; the operator can read it.",
   },
   role_incomparable: {
-    person: "role_incomparable",
+    turn: "role_incomparable",
     message: (url) =>
       `${url} is private and the person's role and this installation's role each open features the other does not, so Ravi does not read for them.`,
     next: "Tell the person you cannot open this private Page here; the operator can read it.",
@@ -392,6 +383,8 @@ const PERSON_REFUSALS: Record<string, { person: string; message: (url: string) =
 /** Console refusals of a read, as the agent-facing failure for `ravi pages read`. */
 export function describePageReadFailure(error: unknown, url: string, reader?: PageReader): PageReadFailure | null {
   if (!(error instanceof CloudAuthError)) return null;
+  // The person has no link: their own refusal says what Ravi set in motion.
+  if (error.code === "ACTOR_NOT_LINKED") return null;
   const reason = typeof error.details?.reason === "string" ? error.details.reason : null;
   const personRefusal = reason && error.status === 403 ? PERSON_REFUSALS[reason] : undefined;
   if (personRefusal) {
@@ -399,12 +392,7 @@ export function describePageReadFailure(error: unknown, url: string, reader?: Pa
       code: "PAGE_ACCESS_DENIED",
       message: personRefusal.message(url),
       exitCode: 1,
-      details: {
-        reason,
-        person: personRefusal.person,
-        ...(error.details?.linkFlow !== undefined ? { linkFlow: error.details.linkFlow } : {}),
-        suggestedAction: personRefusal.next,
-      },
+      details: { reason, turn: personRefusal.turn, suggestedAction: personRefusal.next },
     };
   }
   if (
@@ -421,7 +409,7 @@ export function describePageReadFailure(error: unknown, url: string, reader?: Pa
       exitCode: 1,
       details: {
         reason,
-        person: "no_page_access",
+        turn: "no_page_access",
         suggestedAction: `The person can ask the page's managers for access: ravi access request ${url} --execute`,
       },
     };

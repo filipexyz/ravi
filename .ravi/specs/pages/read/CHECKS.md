@@ -15,9 +15,10 @@
   group (the contact who wrote, never the group), with `publicOnly: false` and
   `x-ravi-actor-contact` set to that contact on `POST /api/cli/pages/read`; an
   unresolved speaker and an agent relay read public-only.
-- A refused `person` read names the case: `not_linked` (with `linkFlow`),
-  `not_member`, `no_page_access`; the operator's own refusal keeps the
-  `ravi login` wording.
+- A refused `person` read names the case in `details.turn` (`not_member`,
+  `no_page_access`), and the gateway relay keeps it; `ACTOR_NOT_LINKED` is
+  not remapped (its own refusal carries `linkFlow`); the operator's own
+  refusal keeps the `ravi login` wording.
 - A 403 with reason `public_only` maps to `PAGE_ACCESS_DENIED` exit 3; other
   reasons exit 1; 404 maps to `PAGE_NOT_FOUND`; 413/415 to
   `PAGE_CONTENT_UNSUPPORTED`.

@@ -2615,6 +2615,32 @@ describe("pages read refusals over the gateway", () => {
   });
 });
 
+describe("pages read refusals for the person of the turn over the gateway", () => {
+  it("keeps the person's case (turn) and the next step on an exit 1 refusal", async () => {
+    const message =
+      "The person asking has no access to https://acme.ravi.page/weekly (their own Console access, through their `ravi link`).";
+    const local = new ContractError("pages read", "PAGE_ACCESS_DENIED", message, 1, {
+      ...errorDiagnostic(message, { operation: "pages read" }),
+      ...{
+        reason: "project_forbidden",
+        turn: "no_page_access",
+        suggestedAction: "The person can ask the page's managers for access: ravi access request <url> --execute",
+      },
+    });
+    const response = contractErrorResponse(local);
+    const remote = remoteGatewayErrorToContractError(
+      "pages read",
+      result({ status: response.status, body: await response.text() }),
+    );
+    expect(remote).toMatchObject({
+      code: "PAGE_ACCESS_DENIED",
+      exitCode: 1,
+      details: { turn: "no_page_access" },
+    });
+    expect(String(remote?.details.suggestedAction)).toContain("ravi access request");
+  });
+});
+
 describe("operator-only refusals over the gateway", () => {
   const chatLine = "Ask me in our private chat and I'll check the calendar there.";
 

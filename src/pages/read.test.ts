@@ -387,33 +387,29 @@ describe("describePageReadFailure", () => {
   it("says which case refused a read for the person of the turn", () => {
     const url = "https://convit-apresentacoes.ravi.page/release-imprensa";
     const person = { kind: "person", contactId: "c_mario" } as const;
-    const notLinked = describePageReadFailure(
-      new CloudAuthError("ACTOR_NOT_LINKED", "x", {
-        status: 403,
-        details: { reason: "not_linked", linkFlow: "sent" },
-      }),
-      url,
-      person,
-    );
-    expect(notLinked).toMatchObject({
-      code: "PAGE_ACCESS_DENIED",
-      exitCode: 1,
-      details: { reason: "not_linked", person: "not_linked", linkFlow: "sent" },
-    });
-    expect(notLinked?.message).toContain("ravi link");
+    // No link keeps its own refusal: the cloud error contract carries the link flow Ravi started.
     expect(
       describePageReadFailure(
-        new CloudAuthError("PROJECT_ACCESS_DENIED", "x", { status: 403, details: { reason: "not_member" } }),
+        new CloudAuthError("ACTOR_NOT_LINKED", "x", {
+          status: 403,
+          details: { reason: "not_linked", linkFlow: "awaiting_dm" },
+        }),
         url,
         person,
       ),
-    ).toMatchObject({ details: { person: "not_member" } });
+    ).toBeNull();
+    const notMember = describePageReadFailure(
+      new CloudAuthError("PROJECT_ACCESS_DENIED", "x", { status: 403, details: { reason: "not_member" } }),
+      url,
+      person,
+    );
+    expect(notMember).toMatchObject({ code: "PAGE_ACCESS_DENIED", exitCode: 1, details: { turn: "not_member" } });
     const noAccess = describePageReadFailure(
       new CloudAuthError("PROJECT_ACCESS_DENIED", "x", { status: 403, details: { reason: "project_forbidden" } }),
       url,
       person,
     );
-    expect(noAccess).toMatchObject({ code: "PAGE_ACCESS_DENIED", exitCode: 1, details: { person: "no_page_access" } });
+    expect(noAccess).toMatchObject({ code: "PAGE_ACCESS_DENIED", exitCode: 1, details: { turn: "no_page_access" } });
     expect(noAccess?.message).toContain("person asking");
     // The operator's own refusal keeps the login wording.
     expect(

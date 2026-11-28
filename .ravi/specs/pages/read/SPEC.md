@@ -68,10 +68,11 @@ nudges that send agents to the command.
    reads private routes in any chat, a group or the agent's shared session
    included (`cli/connectors`, "The owner's own turn"). That
    explanation never changes the classification. A refusal of a `person`
-   read MUST say which case it was (`details.person`: `not_linked`,
-   `not_member`, `no_page_access`, `executor_scoped` or `role_incomparable`)
-   and exit 1; a link flow Ravi started for the person stays in
-   `details.linkFlow`. Through the daemon gateway
+   read MUST exit 1 and say which case it was in `details.turn`
+   (`not_member`, `no_page_access`, `executor_scoped` or
+   `role_incomparable`), a field the CLI envelope and the gateway relay keep.
+   No link stays `ACTOR_NOT_LINKED`, whose own refusal carries the link flow
+   Ravi started (`linkFlow`, `turnLinkContract`). Through the daemon gateway
    the message, `turn` and `suggestedAction` reach the agent (`cli`). Not found is `PAGE_NOT_FOUND`; non-text
    routes are `PAGE_CONTENT_UNSUPPORTED`.
 5. Human output MUST fence the page text between matching nonce markers that

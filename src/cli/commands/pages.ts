@@ -235,8 +235,8 @@ Who may read what:
   (terminal, their direct chat, their routines) when the ravi login can read
   the page's project, and on a turn of another person (their chat, a group
   they wrote in, a thread working for them) with that person's own access
-  through their ravi link. No link, not a member or no access to the page:
-  exit 1, and details.person says which. A turn with no person (an agent
+  through their ravi link. No link: ACTOR_NOT_LINKED (Ravi starts the link).
+  Not a member or no access to the page: exit 1, and details.turn says which. A turn with no person (an agent
   relaying, an unknown speaker): public routes only, exit 3.
 
 Formats (pick what the task needs):
