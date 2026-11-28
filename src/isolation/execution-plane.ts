@@ -117,28 +117,95 @@ export function inspectExecutionPlane(input: InspectExecutionPlaneInput = {}): E
   };
 }
 
-export async function probeUnixSocket(socketPath: string, timeoutMs = 250): Promise<boolean> {
-  if (!socketPath || !existsSync(socketPath)) return false;
+/**
+ * Why a unix socket did not answer. `missing` is definite (no socket file);
+ * `timeout` is NOT proof the daemon is gone: a daemon whose event loop stalls
+ * for a moment simply has not accepted yet.
+ */
+export type UnixSocketProbeFailure = "missing" | "refused" | "timeout" | "error";
+
+export type UnixSocketProbeResult = { ok: true } | { ok: false; reason: UnixSocketProbeFailure; code?: string };
+
+export interface UnixSocketProbeOptions {
+  /** Per-attempt connect timeout. */
+  timeoutMs?: number;
+  /** Connect attempts before giving up (>= 1). */
+  attempts?: number;
+  /** Waits between attempts; the last entry repeats. */
+  backoffMs?: readonly number[];
+  /** Test seam: builds the socket used for each attempt. */
+  createSocket?: () => Socket;
+}
+
+const PROBE_ATTEMPT_TIMEOUT_MS = 500;
+const PROBE_ATTEMPTS = 3;
+const PROBE_BACKOFF_MS = [100, 200] as const;
+
+function probeUnixSocketOnce(
+  socketPath: string,
+  timeoutMs: number,
+  createSocket: () => Socket,
+): Promise<UnixSocketProbeResult> {
   return new Promise((resolve) => {
     let settled = false;
-    const socket = new Socket();
-    const finish = (ok: boolean) => {
+    const socket = createSocket();
+    const finish = (result: UnixSocketProbeResult) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       socket.removeAllListeners();
+      // A late error after destroy() must not crash the process.
+      socket.on("error", () => {});
       socket.destroy();
-      resolve(ok);
+      resolve(result);
     };
-    const timer = setTimeout(() => finish(false), timeoutMs);
-    socket.once("error", () => finish(false));
-    socket.once("connect", () => finish(true));
+    const timer = setTimeout(() => finish({ ok: false, reason: "timeout" }), timeoutMs);
+    socket.once("error", (error: NodeJS.ErrnoException) => {
+      const code = error.code;
+      finish({
+        ok: false,
+        reason: code === "ECONNREFUSED" ? "refused" : code === "ENOENT" ? "missing" : "error",
+        ...(code ? { code } : {}),
+      });
+    });
+    socket.once("connect", () => finish({ ok: true }));
     try {
       socket.connect({ path: socketPath });
-    } catch {
-      finish(false);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException | null)?.code;
+      finish({ ok: false, reason: "error", ...(code ? { code } : {}) });
     }
   });
+}
+
+/**
+ * Probe a unix socket with retries. One short attempt misreads a daemon that is
+ * momentarily busy as "not running", and callers that carry a runtime context
+ * key fail closed on that answer. A missing socket file is definite and is not
+ * retried; everything else is retried with backoff.
+ */
+export async function probeUnixSocketDetailed(
+  socketPath: string,
+  options: UnixSocketProbeOptions = {},
+): Promise<UnixSocketProbeResult> {
+  if (!socketPath || !existsSync(socketPath)) return { ok: false, reason: "missing" };
+  const timeoutMs = options.timeoutMs ?? PROBE_ATTEMPT_TIMEOUT_MS;
+  const attempts = Math.max(1, options.attempts ?? PROBE_ATTEMPTS);
+  const backoff = options.backoffMs ?? PROBE_BACKOFF_MS;
+  let last: UnixSocketProbeResult = { ok: false, reason: "error" };
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    last = await probeUnixSocketOnce(socketPath, timeoutMs, options.createSocket ?? (() => new Socket()));
+    if (last.ok || last.reason === "missing") return last;
+    if (attempt < attempts - 1 && backoff.length > 0) {
+      const wait = backoff[Math.min(attempt, backoff.length - 1)] ?? 0;
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
+  }
+  return last;
+}
+
+export async function probeUnixSocket(socketPath: string, timeoutMs = PROBE_ATTEMPT_TIMEOUT_MS): Promise<boolean> {
+  return (await probeUnixSocketDetailed(socketPath, { timeoutMs })).ok;
 }
 
 function resolvePlane(input: {
