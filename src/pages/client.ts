@@ -62,6 +62,12 @@ export interface PagesClientDeps {
   readCredentials?: typeof readCloudCredentials;
   writeCredentials?: typeof writeCloudCredentials;
   deleteCredentials?: typeof deleteCloudCredentials;
+  /**
+   * Names the person the Console calls act for (`x-ravi-actor-contact`),
+   * fixed by the caller's own turn decision instead of recomputed by the
+   * client. Only used when no `client` is given.
+   */
+  actorContact?: () => string | null;
 }
 
 export interface AuthenticatedPagesContext {
@@ -335,7 +341,12 @@ export async function createAuthenticatedPagesContext(
   deps: PagesClientDeps = {},
 ): Promise<AuthenticatedPagesContext> {
   const credentials = requireStoredCredentials((deps.readCredentials ?? readCloudCredentials)(), options.console);
-  const client = deps.client ?? new ConsoleApiClient({ consoleUrl: credentials.consoleUrl });
+  const client =
+    deps.client ??
+    new ConsoleApiClient({
+      consoleUrl: credentials.consoleUrl,
+      ...(deps.actorContact ? { actorContact: deps.actorContact } : {}),
+    });
   const auth = await getMeWithAutoRefresh({
     client,
     credentials,

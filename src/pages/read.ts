@@ -4,6 +4,7 @@ import { resolveCallerPath } from "../cli/caller-cwd.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import { readActiveCloudAuthUserId, readCloudCredentials } from "../cloud-auth/storage.js";
 import { LEGACY_CLOUD_AUTH_USER_ID } from "../cloud-auth/types.js";
+import { accessActorFromTurn } from "../access/actor.js";
 import { resolveConnectorTurn, type ConnectorTurnDeps, type ConnectorTurnResult } from "../link/connector-turn.js";
 import { createAuthenticatedPagesContext, type PagesClientDeps, type PagesClientOptions } from "./client.js";
 import {
@@ -179,17 +180,54 @@ export function normalizePageReadNumber(
 }
 
 /**
- * Whether this call may only read public Pages: every turn that is not the
- * operator's own, as the connector classifier decides it.
+ * Who a `ravi pages read` reads as, from the same turn classification the
+ * connector and access calls use:
  *
- * The owner's own message counts in any chat, a group included: sharing
- * there is the owner's choice (owner decision, 26/11). What the read returns
- * stays in that session's transcript, where another participant can ask
- * about it later; that is part of the same choice (spec cli/connectors).
+ * - `operator`: the operator's own turn (the terminal, the linked owner's
+ *   message in any chat, routines the operator owns). Reads with the
+ *   `ravi login` session.
+ * - `person`: a turn Ravi attributes to someone else (`resolveAccessActor`:
+ *   the person who wrote, in a direct chat or a group, the person a thread
+ *   works for, the contact who owns the cron job). The read names that
+ *   contact (`x-ravi-actor-contact`) and Console answers with that person's
+ *   own access through this installation's `ravi link`: no link, not a member
+ *   or no access to the Page is a refusal, never the operator's access.
+ * - `public_only`: anything else (an agent relaying, a routine nobody owns, a
+ *   turn that cannot be attributed). Private Pages are refused.
+ *
+ * In a group the person who wrote reads with their own access, and what the
+ * read returns stays in that session's transcript, where other participants
+ * can ask about it later: sharing there is that person's choice, as it is for
+ * the owner (owner decision, 26/11; spec pages/read).
  */
+export type PageReader = { kind: "operator" } | { kind: "person"; contactId: string } | { kind: "public_only" };
+
+export function resolvePageReader(deps: PageReadDeps = {}): PageReader {
+  if (deps.publicOnly !== undefined) return deps.publicOnly ? { kind: "public_only" } : { kind: "operator" };
+  let result: ConnectorTurnResult;
+  try {
+    result = resolveTurnForActiveLogin(deps);
+  } catch {
+    // no-cause: a turn that cannot be classified reads public Pages only, never as the operator
+    return { kind: "public_only" };
+  }
+  if (result.ok) return { kind: "operator" };
+  let decision: ReturnType<typeof accessActorFromTurn>;
+  try {
+    decision = accessActorFromTurn(result);
+  } catch {
+    // no-cause: an actor that cannot be named reads public Pages only
+    return { kind: "public_only" };
+  }
+  if (decision.kind === "contact" && decision.contactId.trim()) {
+    return { kind: "person", contactId: decision.contactId.trim() };
+  }
+  return { kind: "public_only" };
+}
+
+/** Whether this call may only read public Pages (see `resolvePageReader`). */
 export function pageReadIsPublicOnly(deps: PageReadDeps = {}): boolean {
-  if (deps.publicOnly !== undefined) return deps.publicOnly;
-  return !resolveTurnForActiveLogin(deps).ok;
+  return resolvePageReader(deps).kind === "public_only";
 }
 
 /**
@@ -264,8 +302,14 @@ export async function readPage(options: PageReadOptions, deps: PageReadDeps = {}
   if (!downloads && out) {
     throw new CloudAuthError("PAYLOAD_INVALID", "--out is only used with --format files or zip.");
   }
-  const publicOnly = pageReadIsPublicOnly(deps);
-  const context = await createAuthenticatedPagesContext(options, deps);
+  const reader = resolvePageReader(deps);
+  const publicOnly = reader.kind === "public_only";
+  // A person's read always names that person, from this same decision, so a
+  // private read can never go out as the operator for someone else's turn.
+  const context = await createAuthenticatedPagesContext(
+    options,
+    reader.kind === "person" ? { ...deps, actorContact: () => reader.contactId } : deps,
+  );
   const body = {
     url,
     publicOnly,
@@ -308,15 +352,73 @@ export interface PageReadFailure {
   details: Record<string, unknown>;
 }
 
+/**
+ * Why Console would not read for the person of the turn (`x-ravi-actor-contact`):
+ * each is that person's case, never a reason to read as the operator. The case
+ * travels in `details.turn`, which the CLI envelope and the gateway relay keep.
+ * No link (`ACTOR_NOT_LINKED`) is not mapped here: it keeps its own refusal,
+ * which carries the link flow Ravi started (`turnLinkContract`).
+ */
+const PERSON_REFUSALS: Record<string, { turn: string; message: (url: string) => string; next: string }> = {
+  not_member: {
+    turn: "not_member",
+    message: (url) =>
+      `${url} is private and the person asking is not an active member of the organization that owns it.`,
+    next: "Tell the person you cannot open this private Page for them; an organization admin can invite them.",
+  },
+  executor_project_scoped: {
+    turn: "executor_scoped",
+    message: (url) =>
+      `${url} is private and this installation's login reaches only some projects, so Ravi does not read for another person from it.`,
+    next: "Tell the person you cannot open this private Page here; the operator can read it.",
+  },
+  role_incomparable: {
+    turn: "role_incomparable",
+    message: (url) =>
+      `${url} is private and the person's role and this installation's role each open features the other does not, so Ravi does not read for them.`,
+    next: "Tell the person you cannot open this private Page here; the operator can read it.",
+  },
+};
+
 /** Console refusals of a read, as the agent-facing failure for `ravi pages read`. */
-export function describePageReadFailure(error: unknown, url: string): PageReadFailure | null {
+export function describePageReadFailure(error: unknown, url: string, reader?: PageReader): PageReadFailure | null {
   if (!(error instanceof CloudAuthError)) return null;
+  // The person has no link: their own refusal says what Ravi set in motion.
+  if (error.code === "ACTOR_NOT_LINKED") return null;
   const reason = typeof error.details?.reason === "string" ? error.details.reason : null;
+  const personRefusal = reason && error.status === 403 ? PERSON_REFUSALS[reason] : undefined;
+  if (personRefusal) {
+    return {
+      code: "PAGE_ACCESS_DENIED",
+      message: personRefusal.message(url),
+      exitCode: 1,
+      details: { reason, turn: personRefusal.turn, suggestedAction: personRefusal.next },
+    };
+  }
+  if (
+    error.status === 403 &&
+    reader?.kind === "person" &&
+    (reason === "project_forbidden" || reason === "org_forbidden")
+  ) {
+    return {
+      code: "PAGE_ACCESS_DENIED",
+      message:
+        reason === "org_forbidden"
+          ? `${url} belongs to an organization the person asking is not a member of.`
+          : `The person asking has no access to ${url} (their own Console access, through their \`ravi link\`).`,
+      exitCode: 1,
+      details: {
+        reason,
+        turn: "no_page_access",
+        suggestedAction: `The person can ask the page's managers for access: ravi access request ${url} --execute`,
+      },
+    };
+  }
   if (error.status === 403 && reason) {
     if (reason === "public_only") {
       return {
         code: "PAGE_ACCESS_DENIED",
-        message: `${url} is not public. Private Ravi Pages are read only on the operator's own turns (terminal, their direct chat, their routines).`,
+        message: `${url} is not public. Private Ravi Pages are read only on the operator's own turns (terminal, their direct chat, their routines) or for a person this turn is attributed to, with their own access through \`ravi link\`.`,
         exitCode: 3,
         details: {
           reason,

@@ -38,11 +38,25 @@ nudges that send agents to the command.
 1. `ravi pages read` MUST call `POST /api/cli/pages/read` with `{ url,
    publicOnly, format, cursor?, maxChars? }` and the active `ravi login`
    session. It MUST NOT fetch the Page itself.
-2. `publicOnly` MUST be `true` for every turn the connector classifier
-   (`resolveConnectorTurn`) does not accept as the operator's own: anything but
-   the terminal, the operator's linked direct chat and routines the operator
-   owns. The operator's session never returns a private Page to another
-   person's turn.
+2. The read MUST decide one reader (`resolvePageReader`) from the connector
+   classifier (`resolveConnectorTurn`) and the access actor
+   (`resolveAccessActor`):
+   - `operator`: a turn the classifier accepts as the operator's own (the
+     terminal, the linked owner's message, routines the operator owns):
+     `publicOnly: false` with the `ravi login` session alone.
+   - `person`: a turn attributed to another contact (the person who wrote, in
+     a direct chat or a group, never the group; the person a thread works
+     for; the contact who owns the cron job): `publicOnly: false`, and the
+     request MUST name that contact in `x-ravi-actor-contact`, fixed from this
+     same decision, so Console answers with that person's own access through
+     this installation's `ravi link` (Console spec `cli/actor`). No link, not
+     a member or no access to the Page is a refusal; Console never falls back
+     to the operator's access for a named person.
+   - `public_only`: anything else (an agent relaying, a routine nobody owns,
+     an unresolved speaker, a turn that cannot be classified):
+     `publicOnly: true`.
+   The operator's session never returns a private Page to another person's
+   turn with the operator's own access.
 3. Without `--custom-domain`, only `*.ravi.page` hosts are sent to Console and
    any other host is a usage error. With `--custom-domain`, the given URL is
    sent to Console, so Console sees only the URLs an agent explicitly reads.
@@ -53,7 +67,12 @@ nudges that send agents to the command.
    `unknown`, and the same sentence in the message). The owner's own message
    reads private routes in any chat, a group or the agent's shared session
    included (`cli/connectors`, "The owner's own turn"). That
-   explanation never changes the classification. Through the daemon gateway
+   explanation never changes the classification. A refusal of a `person`
+   read MUST exit 1 and say which case it was in `details.turn`
+   (`not_member`, `no_page_access`, `executor_scoped` or
+   `role_incomparable`), a field the CLI envelope and the gateway relay keep.
+   No link stays `ACTOR_NOT_LINKED`, whose own refusal carries the link flow
+   Ravi started (`linkFlow`, `turnLinkContract`). Through the daemon gateway
    the message, `turn` and `suggestedAction` reach the agent (`cli`). Not found is `PAGE_NOT_FOUND`; non-text
    routes are `PAGE_CONTENT_UNSUPPORTED`.
 5. Human output MUST fence the page text between matching nonce markers that

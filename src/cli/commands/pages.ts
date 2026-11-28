@@ -71,6 +71,7 @@ import {
   PAGE_READ_MAX_CHARS,
   PAGE_READ_MIN_CHARS,
   pageReadTurnBlock,
+  resolvePageReader,
   readPage,
   type PageReadResult,
 } from "../../pages/read.js";
@@ -230,9 +231,13 @@ Private Pages need no browser login: Console checks the current ravi login.
 
 Who may read what:
   Public routes: always.
-  Private, protected_link and password routes: only on the operator's own
-  turns (terminal, their direct chat, their routines), and only when the ravi
-  login can read the page's project. Any other turn gets exit 3.
+  Private, protected_link and password routes: on the operator's own turns
+  (terminal, their direct chat, their routines) when the ravi login can read
+  the page's project, and on a turn of another person (their chat, a group
+  they wrote in, a thread working for them) with that person's own access
+  through their ravi link. No link: ACTOR_NOT_LINKED (Ravi starts the link).
+  Not a member or no access to the page: exit 1, and details.turn says which. A turn with no person (an agent
+  relaying, an unknown speaker): public routes only, exit 3.
 
 Formats (pick what the task needs):
   markdown  Default. Text extracted from the page: headings, lists, tables,
@@ -516,7 +521,7 @@ export class PagesCommands {
       try {
         result = await readPage(options, this.deps);
       } catch (error) {
-        const failure = describePageReadFailure(error, url);
+        const failure = describePageReadFailure(error, url, resolvePageReader(this.deps));
         if (failure) {
           // A private Page refused on a turn that is not the operator's own: say which rule decided it.
           const block = failure.details.reason === "public_only" ? pageReadTurnBlock(this.deps) : null;
