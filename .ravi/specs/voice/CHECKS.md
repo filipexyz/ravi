@@ -84,3 +84,7 @@ normative: false
   push-to-talk press its own recorder and chunks and sends "quiet" without delaying the clip;
   `connectLive` forwards overrides; hands-free passes `ttsModel` to the worker; the start answer's
   `overrides` is optional for SDKs talking to older daemons.
+- Review of #1064: a hold that reaches its ceiling with no "quiet" drops the stale "speaking", so
+  the next reply is spoken at once (`door.test.ts`; keeping the signal fails it); a `language`
+  override also clears the profile's `sttLanguage` (removing that fails the unit test). The kit
+  sends "quiet" only after its press's "speaking" settles.

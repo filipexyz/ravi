@@ -6,7 +6,8 @@ import type { RaviVoiceCall, StartCallOptions, VoiceMode, createRaviVoice } from
  */
 export function pushToTalk(call: RaviVoiceCall, options: { mimeType?: string } = {}) {
   // Each press owns its recorder, stream and chunks, so a new press never touches a clip still being sent.
-  let current: { recorder: MediaRecorder; stream: MediaStream; chunks: Blob[] } | null = null;
+  let current: { recorder: MediaRecorder; stream: MediaStream; chunks: Blob[]; speaking: Promise<unknown> } | null =
+    null;
 
   return {
     async start(): Promise<void> {
@@ -19,10 +20,10 @@ export function pushToTalk(call: RaviVoiceCall, options: { mimeType?: string } =
       recorder.ondataavailable = (event) => {
         if (event.data.size) chunks.push(event.data);
       };
-      current = { recorder, stream, chunks };
-      recorder.start();
       // `when_idle` replies wait while the person talks. A failed signal never blocks recording.
-      call.activity("speaking").catch(() => {});
+      const speaking = call.activity("speaking").catch(() => null);
+      current = { recorder, stream, chunks, speaking };
+      recorder.start();
     },
     async stop() {
       const press = current;
@@ -35,8 +36,9 @@ export function pushToTalk(call: RaviVoiceCall, options: { mimeType?: string } =
       await done;
       for (const track of press.stream.getTracks()) track.stop();
       const clip = new Blob(press.chunks, { type: (press.recorder.mimeType || "audio/webm").split(";")[0] });
-      // Best effort and not awaited before the clip is built: it never delays or drops the clip.
-      call.activity("quiet").catch(() => null);
+      // "quiet" goes after this press's "speaking" settles, so the two never cross on the wire. Best
+      // effort and not awaited: it never delays or drops the clip.
+      press.speaking.then(() => call.activity("quiet")).catch(() => null);
       if (!clip.size) return null;
       return call.push(clip);
     },
