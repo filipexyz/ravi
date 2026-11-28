@@ -141602,6 +141602,12 @@ public enum RaviSchemas {
                 "lastSeenAt": {
                   "type": "string"
                 },
+                "profiles": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
                 "revoked": {
                   "type": "boolean"
                 },
@@ -141617,6 +141623,7 @@ public enum RaviSchemas {
                 "label",
                 "contactId",
                 "sessions",
+                "profiles",
                 "createdAt",
                 "expiresAt",
                 "revoked"
@@ -141706,6 +141713,10 @@ public enum RaviSchemas {
         "description": "Device name, e.g. 'iPhone'",
         "type": "string"
       },
+      "profiles": {
+        "description": "Voice profiles it may start calls with (comma-separated; default '*', any)",
+        "type": "string"
+      },
       "session": {
         "description": "Sessions it may call (comma-separated; '*' only for the owner)",
         "type": "string"
@@ -141749,6 +141760,12 @@ public enum RaviSchemas {
               "lastSeenAt": {
                 "type": "string"
               },
+              "profiles": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
               "revoked": {
                 "type": "boolean"
               },
@@ -141764,6 +141781,7 @@ public enum RaviSchemas {
               "label",
               "contactId",
               "sessions",
+              "profiles",
               "createdAt",
               "expiresAt",
               "revoked"
@@ -141832,6 +141850,12 @@ public enum RaviSchemas {
               "lastSeenAt": {
                 "type": "string"
               },
+              "profiles": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
               "revoked": {
                 "type": "boolean"
               },
@@ -141847,6 +141871,7 @@ public enum RaviSchemas {
               "label",
               "contactId",
               "sessions",
+              "profiles",
               "createdAt",
               "expiresAt",
               "revoked"
@@ -142090,6 +142115,50 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let VoiceProfilesBindInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Profile id",
+        "type": "string"
+      },
+      "session": {
+        "description": "Session name or key",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "session"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceProfilesBindReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "profileId": {
+        "type": "string"
+      },
+      "sessionKey": {
+        "type": "string"
+      },
+      "sessionName": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "profileId",
+      "sessionKey",
+      "sessionName"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let VoiceProfilesCreateInputSchema = #"""
   {
     "additionalProperties": false,
@@ -142136,6 +142205,18 @@ public enum RaviSchemas {
       },
       "mode": {
         "description": "push|live|handsfree|mock",
+        "type": "string"
+      },
+      "sttLanguage": {
+        "description": "Transcription language when not --language (empty clears)",
+        "type": "string"
+      },
+      "sttModel": {
+        "description": "Transcription model (empty clears)",
+        "type": "string"
+      },
+      "sttProvider": {
+        "description": "Push transcription provider: auto|groq|openai",
         "type": "string"
       },
       "ttsModel": {
@@ -142205,6 +142286,19 @@ public enum RaviSchemas {
               "live",
               "handsfree",
               "mock"
+            ],
+            "type": "string"
+          },
+          "sttLanguage": {
+            "type": "string"
+          },
+          "sttModel": {
+            "type": "string"
+          },
+          "sttProvider": {
+            "enum": [
+              "groq",
+              "openai"
             ],
             "type": "string"
           },
@@ -142396,6 +142490,19 @@ public enum RaviSchemas {
               ],
               "type": "string"
             },
+            "sttLanguage": {
+              "type": "string"
+            },
+            "sttModel": {
+              "type": "string"
+            },
+            "sttProvider": {
+              "enum": [
+                "groq",
+                "openai"
+              ],
+              "type": "string"
+            },
             "ttsModel": {
               "type": "string"
             },
@@ -142506,6 +142613,19 @@ public enum RaviSchemas {
             ],
             "type": "string"
           },
+          "sttLanguage": {
+            "type": "string"
+          },
+          "sttModel": {
+            "type": "string"
+          },
+          "sttProvider": {
+            "enum": [
+              "groq",
+              "openai"
+            ],
+            "type": "string"
+          },
           "ttsModel": {
             "type": "string"
           },
@@ -142534,6 +142654,41 @@ public enum RaviSchemas {
     },
     "required": [
       "profile"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceProfilesUnbindInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "session": {
+        "description": "Session name or key",
+        "type": "string"
+      }
+    },
+    "required": [
+      "session"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceProfilesUnbindReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "sessionKey": {
+        "type": "string"
+      },
+      "unbound": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "sessionKey",
+      "unbound"
     ],
     "type": "object"
   }
@@ -142591,6 +142746,18 @@ public enum RaviSchemas {
         "default": false,
         "description": "Stop accepting third-party speakers",
         "type": "boolean"
+      },
+      "sttLanguage": {
+        "description": "Transcription language when not --language (empty clears)",
+        "type": "string"
+      },
+      "sttModel": {
+        "description": "Transcription model (empty clears)",
+        "type": "string"
+      },
+      "sttProvider": {
+        "description": "Push transcription provider: auto|groq|openai",
+        "type": "string"
       },
       "ttsModel": {
         "description": "ElevenLabs model id",
@@ -142659,6 +142826,19 @@ public enum RaviSchemas {
               "live",
               "handsfree",
               "mock"
+            ],
+            "type": "string"
+          },
+          "sttLanguage": {
+            "type": "string"
+          },
+          "sttModel": {
+            "type": "string"
+          },
+          "sttProvider": {
+            "enum": [
+              "groq",
+              "openai"
             ],
             "type": "string"
           },

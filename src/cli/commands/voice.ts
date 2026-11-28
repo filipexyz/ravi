@@ -35,6 +35,7 @@ import {
 import {
   assertCallerControlsCall,
   assertCallerMayCallSession,
+  callerMayManageVoiceProfiles,
   resolveVoiceCaller,
   revokeVoiceDeviceContext,
   VOICE_DEVICE_CAPABILITIES,
@@ -58,6 +59,7 @@ import {
   getVoiceDevice,
   getVoiceProfile,
   getVoiceProfileDailyUsage,
+  getVoiceSessionProfile,
   insertVoiceCall,
   insertVoiceDevice,
   lastVoiceEventSeq,
@@ -71,6 +73,7 @@ import {
   newVoiceDeviceId,
   findActiveVoiceCall,
   saveVoiceProfile,
+  setVoiceSessionProfile,
   updateOpenVoiceCall,
 } from "../../voice/store.js";
 import {
@@ -82,6 +85,7 @@ import {
   VOICE_DELIVERY_CLASSES,
   VOICE_EVENT_TYPES,
   VOICE_MODES,
+  VOICE_STT_PROVIDERS,
   type VoiceCall,
   type VoiceConnectionKind,
   type VoiceDeliveryClass,
@@ -89,6 +93,7 @@ import {
   type VoiceMode,
   type VoiceProfile,
   type VoiceSpeaker,
+  type VoiceSttProvider,
 } from "../../voice/types.js";
 import {
   CONTRACT_EXIT_POLICY,
@@ -159,6 +164,21 @@ function requireActiveCall(op: string, callId: string, asJson?: boolean): VoiceC
 function requireOperator(op: string, caller: VoiceCaller, asJson?: boolean): void {
   if (caller.kind !== "operator") {
     fail(op, "VOICE_OPERATOR_ONLY", `${op} is for the local operator.`, asJson, CONTRACT_EXIT_POLICY);
+  }
+}
+
+const STT_PROVIDER_KEYS: Record<VoiceSttProvider, string> = { groq: "GROQ_API_KEY", openai: "OPENAI_API_KEY" };
+
+/** Profile management: the operator, or a key the operator issued with `mutate:voice:profiles.*`. */
+function requireProfileManager(op: string, caller: VoiceCaller, asJson?: boolean): void {
+  if (!callerMayManageVoiceProfiles(caller)) {
+    fail(
+      op,
+      "VOICE_OPERATOR_ONLY",
+      `${op} needs the operator, or a key issued with mutate:voice:profiles.*. Device keys only read profiles.`,
+      asJson,
+      CONTRACT_EXIT_POLICY,
+    );
   }
 }
 
@@ -311,7 +331,12 @@ async function openConnection(
       ...(call.speaker.label ? { name: call.speaker.label } : {}),
       dispatchAgent: {
         agentName: HANDSFREE_AGENT_NAME,
-        metadata: JSON.stringify({ callId: call.id, language: profile.language, voice: profile.voice ?? null }),
+        metadata: JSON.stringify({
+          callId: call.id,
+          language: profile.sttLanguage ?? profile.language,
+          voice: profile.voice ?? null,
+          sttModel: profile.sttModel ?? null,
+        }),
       },
     });
     return {
@@ -532,12 +557,36 @@ export class VoiceCallsCommands {
         fail(op, "VOICE_SESSION_NOT_CALLABLE", "A trigger's own session only runs that trigger.", asJson);
       }
       assertCallerMayCallSession(caller, session);
-      const profile = getVoiceProfile(profileId ?? DEFAULT_VOICE_PROFILE_ID);
-      if (!profile) fail(op, "VOICE_PROFILE_NOT_FOUND", `Profile ${profileId} not found.`, asJson);
+      // Named profile, else the session's bound profile, else the device's only profile, else the default.
+      const deviceProfiles = caller.device?.profiles ?? ["*"];
+      const chosenId =
+        profileId ??
+        getVoiceSessionProfile(session.sessionKey) ??
+        (deviceProfiles.length === 1 && deviceProfiles[0] !== "*" ? deviceProfiles[0] : DEFAULT_VOICE_PROFILE_ID);
+      if (caller.device && !deviceProfiles.includes("*") && !deviceProfiles.includes(chosenId)) {
+        fail(
+          op,
+          "VOICE_PROFILE_FORBIDDEN",
+          `This device was not paired for profile ${chosenId}.`,
+          asJson,
+          CONTRACT_EXIT_POLICY,
+        );
+      }
+      const profile = getVoiceProfile(chosenId);
+      if (!profile) fail(op, "VOICE_PROFILE_NOT_FOUND", `Profile ${chosenId} not found.`, asJson);
       const mode = parseMode(op, modeValue, asJson) ?? profile.mode;
       const check = getVoiceEngine(mode).check();
       if (!check.ready) {
         fail(op, "VOICE_ENGINE_NOT_READY", `Engine ${mode} is missing: ${check.missing.join(", ")}.`, asJson);
+      }
+      const sttKey = mode === "push" && profile.sttProvider ? STT_PROVIDER_KEYS[profile.sttProvider] : null;
+      if (sttKey && !process.env[sttKey]?.trim()) {
+        fail(
+          op,
+          "VOICE_ENGINE_NOT_READY",
+          `Profile ${profile.id} transcribes with ${profile.sttProvider}, which needs ${sttKey}.`,
+          asJson,
+        );
       }
       const daily = getVoiceProfileDailyUsage(profile.id);
       if (daily.costUsd >= profile.maxDailyCostUsd) {
@@ -790,7 +839,15 @@ export class VoiceCallsCommands {
       const clip = readClip(op, { audioPath, audioBase64, mime }, asJson);
       const profile = getVoiceProfile(call.profileId) ?? (getVoiceProfile(DEFAULT_VOICE_PROFILE_ID) as VoiceProfile);
       const engine = call.engine === "push" ? pushEngine : mockEngine;
-      const heard = await engine.transcribe({ bytes: clip.bytes, mime: clip.mime, language: profile.language });
+      const heard = await engine.transcribe({
+        bytes: clip.bytes,
+        mime: clip.mime,
+        language: profile.sttLanguage ?? profile.language,
+        stt: {
+          ...(profile.sttProvider ? { provider: profile.sttProvider } : {}),
+          ...(profile.sttModel ? { model: profile.sttModel } : {}),
+        },
+      });
       const turnId = newTurnId();
       await sendVoiceControl({
         op: "utterance",
@@ -799,7 +856,7 @@ export class VoiceCallsCommands {
         text: heard.text,
         speaker: { ...call.speaker },
         audioInSeconds: heard.durationSec,
-        sttCostUsd: call.engine === "push" ? estimateSttCostUsd(heard.provider, heard.durationSec) : 0,
+        sttCostUsd: call.engine === "push" ? estimateSttCostUsd(heard.provider, heard.durationSec, heard.model) : 0,
       });
       return emit({ callId: call.id, turnId: heard.text ? turnId : null, text: heard.text }, asJson, () =>
         console.log(heard.text ? `🗣 ${heard.text}` : "Nothing was heard."),
@@ -1037,6 +1094,9 @@ interface ProfileFlags {
   maxCallMinutes?: string;
   maxCallCost?: string;
   maxDailyCost?: string;
+  sttProvider?: string;
+  sttModel?: string;
+  sttLanguage?: string;
 }
 
 function applyProfileFlags(op: string, base: VoiceProfile, flags: ProfileFlags, asJson?: boolean): VoiceProfile {
@@ -1050,7 +1110,21 @@ function applyProfileFlags(op: string, base: VoiceProfile, flags: ProfileFlags, 
       CONTRACT_EXIT_USAGE,
     );
   }
-  return {
+  const sttProvider = flags.sttProvider;
+  if (
+    sttProvider !== undefined &&
+    sttProvider !== "auto" &&
+    !(VOICE_STT_PROVIDERS as readonly string[]).includes(sttProvider)
+  ) {
+    fail(
+      op,
+      "USAGE_ERROR",
+      `--stt-provider must be auto or one of ${VOICE_STT_PROVIDERS.join(", ")}.`,
+      asJson,
+      CONTRACT_EXIT_USAGE,
+    );
+  }
+  const next: VoiceProfile = {
     ...base,
     ...(flags.label !== undefined ? { label: flags.label } : {}),
     ...(flags.mode !== undefined ? { mode: parseMode(op, flags.mode, asJson) as VoiceMode } : {}),
@@ -1071,8 +1145,16 @@ function applyProfileFlags(op: string, base: VoiceProfile, flags: ProfileFlags, 
     ...(flags.maxDailyCost !== undefined
       ? { maxDailyCostUsd: parseNumber(op, "--max-daily-cost", flags.maxDailyCost, asJson) as number }
       : {}),
+    ...(sttProvider !== undefined && sttProvider !== "auto" ? { sttProvider: sttProvider as VoiceSttProvider } : {}),
+    ...(flags.sttModel ? { sttModel: flags.sttModel } : {}),
+    ...(flags.sttLanguage ? { sttLanguage: flags.sttLanguage } : {}),
     updatedAt: Date.now(),
   };
+  // `auto` and empty values clear the field: the daemon picks again.
+  if (sttProvider === "auto") delete next.sttProvider;
+  if (flags.sttModel === "") delete next.sttModel;
+  if (flags.sttLanguage === "") delete next.sttLanguage;
+  return next;
 }
 
 @Group({ name: "voice.profiles", description: "Voice profiles: mode, voice, language and spend limits", scope: "open" })
@@ -1130,11 +1212,19 @@ export class VoiceProfilesCommands {
     @Option({ flags: "--max-call-cost <usd>", description: "End a call at this estimated cost" }) maxCallCost?: string,
     @Option({ flags: "--max-daily-cost <usd>", description: "Refuse and end calls past this daily cost" })
     maxDailyCost?: string,
+    @Option({ flags: "--stt-provider <name>", description: "Push transcription provider: auto|groq|openai" })
+    sttProvider?: string,
+    @Option({ flags: "--stt-model <id>", description: "Transcription model (empty clears)" }) sttModel?: string,
+    @Option({
+      flags: "--stt-language <code>",
+      description: "Transcription language when not --language (empty clears)",
+    })
+    sttLanguage?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const op = "voice profiles create";
     return run(op, asJson, () => {
-      requireOperator(op, resolveVoiceCaller(op), asJson);
+      requireProfileManager(op, resolveVoiceCaller(op), asJson);
       if (!/^[A-Za-z0-9_-]{1,40}$/.test(id)) {
         fail(op, "USAGE_ERROR", "Profile ids use letters, digits, - and _.", asJson, CONTRACT_EXIT_USAGE);
       }
@@ -1160,6 +1250,9 @@ export class VoiceProfilesCommands {
             maxCallMinutes,
             maxCallCost,
             maxDailyCost,
+            sttProvider,
+            sttModel,
+            sttLanguage,
           },
           asJson,
         ),
@@ -1187,11 +1280,19 @@ export class VoiceProfilesCommands {
     @Option({ flags: "--max-call-cost <usd>", description: "End a call at this estimated cost" }) maxCallCost?: string,
     @Option({ flags: "--max-daily-cost <usd>", description: "Refuse and end calls past this daily cost" })
     maxDailyCost?: string,
+    @Option({ flags: "--stt-provider <name>", description: "Push transcription provider: auto|groq|openai" })
+    sttProvider?: string,
+    @Option({ flags: "--stt-model <id>", description: "Transcription model (empty clears)" }) sttModel?: string,
+    @Option({
+      flags: "--stt-language <code>",
+      description: "Transcription language when not --language (empty clears)",
+    })
+    sttLanguage?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const op = "voice profiles update";
     return run(op, asJson, () => {
-      requireOperator(op, resolveVoiceCaller(op), asJson);
+      requireProfileManager(op, resolveVoiceCaller(op), asJson);
       const current = getVoiceProfile(id);
       if (!current) fail(op, "VOICE_PROFILE_NOT_FOUND", `Profile ${id} not found.`, asJson);
       const profile = saveVoiceProfile(
@@ -1212,6 +1313,9 @@ export class VoiceProfilesCommands {
             maxCallMinutes,
             maxCallCost,
             maxDailyCost,
+            sttProvider,
+            sttModel,
+            sttLanguage,
           },
           asJson,
         ),
@@ -1228,10 +1332,51 @@ export class VoiceProfilesCommands {
   ) {
     const op = "voice profiles delete";
     return run(op, asJson, () => {
-      requireOperator(op, resolveVoiceCaller(op), asJson);
+      requireProfileManager(op, resolveVoiceCaller(op), asJson);
       const deleted = deleteVoiceProfile(id);
       if (!deleted) fail(op, "VOICE_PROFILE_NOT_FOUND", `Profile ${id} not found.`, asJson);
       return emit({ id, deleted: true }, asJson, () => console.log(`Profile ${id} deleted.`));
+    });
+  }
+
+  @Command({ name: "bind", description: "Make a profile the default for one session's calls" })
+  @CommandAccess({ kind: "mutate", resource: "voice", action: "profiles.bind", risk: "low" })
+  async bind(
+    @Arg("id", { description: "Profile id" }) id: string,
+    @Arg("session", { required: true, description: "Session name or key" }) sessionRef: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const op = "voice profiles bind";
+    return run(op, asJson, () => {
+      requireProfileManager(op, resolveVoiceCaller(op), asJson);
+      if (!sessionRef) fail(op, "USAGE_ERROR", "<session> is required.", asJson, CONTRACT_EXIT_USAGE);
+      if (!getVoiceProfile(id)) fail(op, "VOICE_PROFILE_NOT_FOUND", `Profile ${id} not found.`, asJson);
+      const session = resolveSession(sessionRef);
+      if (!session) fail(op, "VOICE_SESSION_NOT_FOUND", `Session ${sessionRef} not found.`, asJson);
+      setVoiceSessionProfile(session.sessionKey, id);
+      const sessionName = session.name ?? session.sessionKey;
+      return emit({ profileId: id, sessionKey: session.sessionKey, sessionName }, asJson, () =>
+        console.log(`Calls on ${sessionName} use profile ${id} unless they name another.`),
+      );
+    });
+  }
+
+  @Command({ name: "unbind", description: "Remove a session's default profile" })
+  @CommandAccess({ kind: "mutate", resource: "voice", action: "profiles.unbind", risk: "low" })
+  async unbind(
+    @Arg("session", { required: true, description: "Session name or key" }) sessionRef: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const op = "voice profiles unbind";
+    return run(op, asJson, () => {
+      requireProfileManager(op, resolveVoiceCaller(op), asJson);
+      if (!sessionRef) fail(op, "USAGE_ERROR", "<session> is required.", asJson, CONTRACT_EXIT_USAGE);
+      const session = resolveSession(sessionRef);
+      if (!session) fail(op, "VOICE_SESSION_NOT_FOUND", `Session ${sessionRef} not found.`, asJson);
+      const unbound = setVoiceSessionProfile(session.sessionKey, null);
+      return emit({ sessionKey: session.sessionKey, unbound }, asJson, () =>
+        console.log(unbound ? "Unbound." : "No profile was bound."),
+      );
     });
   }
 }
@@ -1283,6 +1428,7 @@ function publicDevice(device: ReturnType<typeof getVoiceDevice>) {
     label: device.label,
     contactId: device.contactId,
     sessions: device.sessions,
+    profiles: device.profiles ?? ["*"],
     createdAt: new Date(device.createdAt).toISOString(),
     expiresAt: new Date(device.expiresAt).toISOString(),
     revoked: Boolean(device.revokedAt),
@@ -1314,6 +1460,11 @@ export class VoiceDevicesCommands {
     @Option({ flags: "--worker", description: "Issue a hands-free worker key instead of a person's device key" })
     worker?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--profiles <ids>",
+      description: "Voice profiles it may start calls with (comma-separated; default '*', any)",
+    })
+    profilesValue?: string | string[],
     @Option({
       flags: "--execute",
       description: "Actually pair and print the key once; default is a dry-run that only shows the plan (exit 3)",
@@ -1354,10 +1505,25 @@ export class VoiceDevicesCommands {
         if (!session) fail(op, "VOICE_SESSION_NOT_FOUND", `Session ${name} not found.`, asJson);
         return session.sessionKey;
       });
+      const profiles = splitList(profilesValue);
+      if (profilesValue !== undefined && profiles.length === 0) {
+        // An empty list must not silently become '*': omit --profiles for every profile.
+        fail(
+          op,
+          "USAGE_ERROR",
+          "--profiles needs at least one profile id (omit it for any).",
+          asJson,
+          CONTRACT_EXIT_USAGE,
+        );
+      }
+      for (const id of profiles) {
+        if (id !== "*" && !getVoiceProfile(id)) fail(op, "VOICE_PROFILE_NOT_FOUND", `Profile ${id} not found.`, asJson);
+      }
       const plan = {
         contactId,
         label: label ?? (worker ? "voice worker" : "device"),
         sessions: sessionKeys,
+        profiles: profiles.length > 0 ? profiles : ["*"],
         kind: worker ? VOICE_WORKER_CONTEXT_KIND : VOICE_DEVICE_CONTEXT_KIND,
         ttlDays: DEVICE_TTL_MS / 86_400_000,
       };
@@ -1383,6 +1549,7 @@ export class VoiceDevicesCommands {
         label: plan.label,
         contactId,
         sessions: sessionKeys,
+        profiles: plan.profiles,
         contextId: context.contextId,
         createdAt: context.createdAt,
         expiresAt: context.expiresAt ?? Date.now() + DEVICE_TTL_MS,
@@ -1567,6 +1734,9 @@ const profileSchema = z.object({
   ttsModel: z.string().optional(),
   liveVoice: z.string().optional(),
   liveModel: z.string().optional(),
+  sttProvider: z.enum(VOICE_STT_PROVIDERS).optional(),
+  sttModel: z.string().optional(),
+  sttLanguage: z.string().optional(),
   delivery: z.enum(VOICE_DELIVERY_CLASSES),
   allowGuests: z.boolean(),
   maxCallMinutes: z.number(),
@@ -1580,6 +1750,7 @@ const deviceSchema = z.object({
   label: z.string(),
   contactId: z.string(),
   sessions: z.array(z.string()),
+  profiles: z.array(z.string()),
   createdAt: z.string(),
   expiresAt: z.string(),
   revoked: z.boolean(),
@@ -1660,6 +1831,8 @@ declareCommandReturns(VoiceProfilesCommands, {
   create: z.object({ profile: profileSchema }),
   update: z.object({ profile: profileSchema }),
   delete: z.object({ id: z.string(), deleted: z.literal(true) }),
+  bind: z.object({ profileId: z.string(), sessionKey: z.string(), sessionName: z.string() }),
+  unbind: z.object({ sessionKey: z.string(), unbound: z.boolean() }),
 });
 
 declareCommandReturns(VoiceVoicesCommands, {

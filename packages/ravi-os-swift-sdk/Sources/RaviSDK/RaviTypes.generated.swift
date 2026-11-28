@@ -40564,13 +40564,15 @@ public struct VoiceDevicesPairOptions: Codable, Sendable {
   public var contact: String?
   public var execute: Bool?
   public var label: String?
+  public var profiles: String?
   public var session: String?
   public var worker: Bool?
 
-  public init(contact: String? = nil, execute: Bool? = nil, label: String? = nil, session: String? = nil, worker: Bool? = nil) {
+  public init(contact: String? = nil, execute: Bool? = nil, label: String? = nil, profiles: String? = nil, session: String? = nil, worker: Bool? = nil) {
     self.contact = contact
     self.execute = execute
     self.label = label
+    self.profiles = profiles
     self.session = session
     self.worker = worker
   }
@@ -40579,6 +40581,7 @@ public struct VoiceDevicesPairOptions: Codable, Sendable {
     case contact = "contact"
     case execute = "execute"
     case label = "label"
+    case profiles = "profiles"
     case session = "session"
     case worker = "worker"
   }
@@ -40592,6 +40595,9 @@ public struct VoiceDevicesPairOptions: Codable, Sendable {
     }
     if let value = self.label {
       body["label"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.profiles {
+      body["profiles"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.session {
       body["session"] = try RaviJSON.fromEncodable(value)
@@ -40692,6 +40698,24 @@ public struct VoiceEnginesListReturn: Codable, Sendable {
   }
 }
 
+public struct VoiceProfilesBindReturn: Codable, Sendable {
+  public var profileId: String
+  public var sessionKey: String
+  public var sessionName: String
+
+  public init(profileId: String, sessionKey: String, sessionName: String) {
+    self.profileId = profileId
+    self.sessionKey = sessionKey
+    self.sessionName = sessionName
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case profileId = "profileId"
+    case sessionKey = "sessionKey"
+    case sessionName = "sessionName"
+  }
+}
+
 public struct VoiceProfilesCreateOptions: Codable, Sendable {
   public var allowGuests: Bool?
   public var delivery: String?
@@ -40703,10 +40727,13 @@ public struct VoiceProfilesCreateOptions: Codable, Sendable {
   public var maxCallMinutes: String?
   public var maxDailyCost: String?
   public var mode: String?
+  public var sttLanguage: String?
+  public var sttModel: String?
+  public var sttProvider: String?
   public var ttsModel: String?
   public var voice: String?
 
-  public init(allowGuests: Bool? = nil, delivery: String? = nil, label: String? = nil, language: String? = nil, liveModel: String? = nil, liveVoice: String? = nil, maxCallCost: String? = nil, maxCallMinutes: String? = nil, maxDailyCost: String? = nil, mode: String? = nil, ttsModel: String? = nil, voice: String? = nil) {
+  public init(allowGuests: Bool? = nil, delivery: String? = nil, label: String? = nil, language: String? = nil, liveModel: String? = nil, liveVoice: String? = nil, maxCallCost: String? = nil, maxCallMinutes: String? = nil, maxDailyCost: String? = nil, mode: String? = nil, sttLanguage: String? = nil, sttModel: String? = nil, sttProvider: String? = nil, ttsModel: String? = nil, voice: String? = nil) {
     self.allowGuests = allowGuests
     self.delivery = delivery
     self.label = label
@@ -40717,6 +40744,9 @@ public struct VoiceProfilesCreateOptions: Codable, Sendable {
     self.maxCallMinutes = maxCallMinutes
     self.maxDailyCost = maxDailyCost
     self.mode = mode
+    self.sttLanguage = sttLanguage
+    self.sttModel = sttModel
+    self.sttProvider = sttProvider
     self.ttsModel = ttsModel
     self.voice = voice
   }
@@ -40732,6 +40762,9 @@ public struct VoiceProfilesCreateOptions: Codable, Sendable {
     case maxCallMinutes = "maxCallMinutes"
     case maxDailyCost = "maxDailyCost"
     case mode = "mode"
+    case sttLanguage = "sttLanguage"
+    case sttModel = "sttModel"
+    case sttProvider = "sttProvider"
     case ttsModel = "ttsModel"
     case voice = "voice"
   }
@@ -40766,6 +40799,15 @@ public struct VoiceProfilesCreateOptions: Codable, Sendable {
     }
     if let value = self.mode {
       body["mode"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.sttLanguage {
+      body["sttLanguage"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.sttModel {
+      body["sttModel"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.sttProvider {
+      body["sttProvider"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.ttsModel {
       body["ttsModel"] = try RaviJSON.fromEncodable(value)
@@ -40857,6 +40899,21 @@ public struct VoiceProfilesShowReturn: Codable, Sendable {
   }
 }
 
+public struct VoiceProfilesUnbindReturn: Codable, Sendable {
+  public var sessionKey: String
+  public var unbound: Bool
+
+  public init(sessionKey: String, unbound: Bool) {
+    self.sessionKey = sessionKey
+    self.unbound = unbound
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case sessionKey = "sessionKey"
+    case unbound = "unbound"
+  }
+}
+
 public struct VoiceProfilesUpdateOptions: Codable, Sendable {
   public var allowGuests: Bool?
   public var delivery: String?
@@ -40869,10 +40926,13 @@ public struct VoiceProfilesUpdateOptions: Codable, Sendable {
   public var maxDailyCost: String?
   public var mode: String?
   public var noGuests: Bool?
+  public var sttLanguage: String?
+  public var sttModel: String?
+  public var sttProvider: String?
   public var ttsModel: String?
   public var voice: String?
 
-  public init(allowGuests: Bool? = nil, delivery: String? = nil, label: String? = nil, language: String? = nil, liveModel: String? = nil, liveVoice: String? = nil, maxCallCost: String? = nil, maxCallMinutes: String? = nil, maxDailyCost: String? = nil, mode: String? = nil, noGuests: Bool? = nil, ttsModel: String? = nil, voice: String? = nil) {
+  public init(allowGuests: Bool? = nil, delivery: String? = nil, label: String? = nil, language: String? = nil, liveModel: String? = nil, liveVoice: String? = nil, maxCallCost: String? = nil, maxCallMinutes: String? = nil, maxDailyCost: String? = nil, mode: String? = nil, noGuests: Bool? = nil, sttLanguage: String? = nil, sttModel: String? = nil, sttProvider: String? = nil, ttsModel: String? = nil, voice: String? = nil) {
     self.allowGuests = allowGuests
     self.delivery = delivery
     self.label = label
@@ -40884,6 +40944,9 @@ public struct VoiceProfilesUpdateOptions: Codable, Sendable {
     self.maxDailyCost = maxDailyCost
     self.mode = mode
     self.noGuests = noGuests
+    self.sttLanguage = sttLanguage
+    self.sttModel = sttModel
+    self.sttProvider = sttProvider
     self.ttsModel = ttsModel
     self.voice = voice
   }
@@ -40900,6 +40963,9 @@ public struct VoiceProfilesUpdateOptions: Codable, Sendable {
     case maxDailyCost = "maxDailyCost"
     case mode = "mode"
     case noGuests = "noGuests"
+    case sttLanguage = "sttLanguage"
+    case sttModel = "sttModel"
+    case sttProvider = "sttProvider"
     case ttsModel = "ttsModel"
     case voice = "voice"
   }
@@ -40937,6 +41003,15 @@ public struct VoiceProfilesUpdateOptions: Codable, Sendable {
     }
     if let value = self.noGuests {
       body["noGuests"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.sttLanguage {
+      body["sttLanguage"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.sttModel {
+      body["sttModel"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.sttProvider {
+      body["sttProvider"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.ttsModel {
       body["ttsModel"] = try RaviJSON.fromEncodable(value)

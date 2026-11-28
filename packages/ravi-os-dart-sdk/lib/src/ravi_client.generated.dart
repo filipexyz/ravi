@@ -11440,6 +11440,18 @@ class VoiceProfilesNamespace {
 
   final RaviTransport _transport;
 
+  Future<VoiceProfilesBindReturn> bind(String id, String session) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    requestBody["session"] = RaviJson.from(session);
+    return _transport.callJson(
+      groupSegments: const ["voice", "profiles"],
+      command: "bind",
+      body: requestBody,
+      decode: voiceProfilesBindReturnFromJson,
+    );
+  }
+
   Future<VoiceProfilesCreateReturn> create(String id, [VoiceProfilesCreateOptions options = const VoiceProfilesCreateOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["id"] = RaviJson.from(id);
@@ -11482,6 +11494,17 @@ class VoiceProfilesNamespace {
       command: "show",
       body: requestBody,
       decode: voiceProfilesShowReturnFromJson,
+    );
+  }
+
+  Future<VoiceProfilesUnbindReturn> unbind(String session) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["session"] = RaviJson.from(session);
+    return _transport.callJson(
+      groupSegments: const ["voice", "profiles"],
+      command: "unbind",
+      body: requestBody,
+      decode: voiceProfilesUnbindReturnFromJson,
     );
   }
 

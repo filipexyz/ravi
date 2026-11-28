@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "ee83864929f1bdca"
+    "version": "73b032f48866902c"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -160225,6 +160225,12 @@
                               "lastSeenAt": {
                                 "type": "string"
                               },
+                              "profiles": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              },
                               "revoked": {
                                 "type": "boolean"
                               },
@@ -160240,6 +160246,7 @@
                               "label",
                               "contactId",
                               "sessions",
+                              "profiles",
                               "createdAt",
                               "expiresAt",
                               "revoked"
@@ -160350,6 +160357,10 @@
                     "description": "Device name, e.g. 'iPhone'",
                     "type": "string"
                   },
+                  "profiles": {
+                    "description": "Voice profiles it may start calls with (comma-separated; default '*', any)",
+                    "type": "string"
+                  },
                   "session": {
                     "description": "Sessions it may call (comma-separated; '*' only for the owner)",
                     "type": "string"
@@ -160398,6 +160409,12 @@
                             "lastSeenAt": {
                               "type": "string"
                             },
+                            "profiles": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
                             "revoked": {
                               "type": "boolean"
                             },
@@ -160413,6 +160430,7 @@
                             "label",
                             "contactId",
                             "sessions",
+                            "profiles",
                             "createdAt",
                             "expiresAt",
                             "revoked"
@@ -160507,6 +160525,12 @@
                             "lastSeenAt": {
                               "type": "string"
                             },
+                            "profiles": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
                             "revoked": {
                               "type": "boolean"
                             },
@@ -160522,6 +160546,7 @@
                             "label",
                             "contactId",
                             "sessions",
+                            "profiles",
                             "createdAt",
                             "expiresAt",
                             "revoked"
@@ -160821,6 +160846,76 @@
         ]
       }
     },
+    "/api/v1/voice/profiles/bind": {
+      "post": {
+        "operationId": "voice.profiles.bind",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "description": "Profile id",
+                    "type": "string"
+                  },
+                  "session": {
+                    "description": "Session name or key",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "session"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "profileId": {
+                      "type": "string"
+                    },
+                    "sessionKey": {
+                      "type": "string"
+                    },
+                    "sessionName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "profileId",
+                    "sessionKey",
+                    "sessionName"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Make a profile the default for one session's calls",
+        "tags": [
+          "voice"
+        ]
+      }
+    },
     "/api/v1/voice/profiles/create": {
       "post": {
         "operationId": "voice.profiles.create",
@@ -160872,6 +160967,18 @@
                   },
                   "mode": {
                     "description": "push|live|handsfree|mock",
+                    "type": "string"
+                  },
+                  "sttLanguage": {
+                    "description": "Transcription language when not --language (empty clears)",
+                    "type": "string"
+                  },
+                  "sttModel": {
+                    "description": "Transcription model (empty clears)",
+                    "type": "string"
+                  },
+                  "sttProvider": {
+                    "description": "Push transcription provider: auto|groq|openai",
                     "type": "string"
                   },
                   "ttsModel": {
@@ -160946,6 +161053,19 @@
                             "live",
                             "handsfree",
                             "mock"
+                          ],
+                          "type": "string"
+                        },
+                        "sttLanguage": {
+                          "type": "string"
+                        },
+                        "sttModel": {
+                          "type": "string"
+                        },
+                        "sttProvider": {
+                          "enum": [
+                            "groq",
+                            "openai"
                           ],
                           "type": "string"
                         },
@@ -161189,6 +161309,19 @@
                             ],
                             "type": "string"
                           },
+                          "sttLanguage": {
+                            "type": "string"
+                          },
+                          "sttModel": {
+                            "type": "string"
+                          },
+                          "sttProvider": {
+                            "enum": [
+                              "groq",
+                              "openai"
+                            ],
+                            "type": "string"
+                          },
                           "ttsModel": {
                             "type": "string"
                           },
@@ -161325,6 +161458,19 @@
                           ],
                           "type": "string"
                         },
+                        "sttLanguage": {
+                          "type": "string"
+                        },
+                        "sttModel": {
+                          "type": "string"
+                        },
+                        "sttProvider": {
+                          "enum": [
+                            "groq",
+                            "openai"
+                          ],
+                          "type": "string"
+                        },
                         "ttsModel": {
                           "type": "string"
                         },
@@ -161369,6 +161515,67 @@
         },
         "security": [],
         "summary": "Show one voice profile",
+        "tags": [
+          "voice"
+        ]
+      }
+    },
+    "/api/v1/voice/profiles/unbind": {
+      "post": {
+        "operationId": "voice.profiles.unbind",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "session": {
+                    "description": "Session name or key",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "session"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "sessionKey": {
+                      "type": "string"
+                    },
+                    "unbound": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "sessionKey",
+                    "unbound"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Remove a session's default profile",
         "tags": [
           "voice"
         ]
@@ -161431,6 +161638,18 @@
                     "default": false,
                     "description": "Stop accepting third-party speakers",
                     "type": "boolean"
+                  },
+                  "sttLanguage": {
+                    "description": "Transcription language when not --language (empty clears)",
+                    "type": "string"
+                  },
+                  "sttModel": {
+                    "description": "Transcription model (empty clears)",
+                    "type": "string"
+                  },
+                  "sttProvider": {
+                    "description": "Push transcription provider: auto|groq|openai",
+                    "type": "string"
                   },
                   "ttsModel": {
                     "description": "ElevenLabs model id",
@@ -161504,6 +161723,19 @@
                             "live",
                             "handsfree",
                             "mock"
+                          ],
+                          "type": "string"
+                        },
+                        "sttLanguage": {
+                          "type": "string"
+                        },
+                        "sttModel": {
+                          "type": "string"
+                        },
+                        "sttProvider": {
+                          "enum": [
+                            "groq",
+                            "openai"
                           ],
                           "type": "string"
                         },

@@ -7886,6 +7886,13 @@ public struct VoiceProfilesNamespace: Sendable {
     self.transport = transport
   }
 
+  public func bind(_ id: String, _ session: String) async throws -> VoiceProfilesBindReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    requestBody["session"] = try RaviJSON.fromEncodable(session)
+    return try await transport.call(groupSegments: ["voice","profiles"], command: "bind", body: requestBody, as: VoiceProfilesBindReturn.self)
+  }
+
   public func create(_ id: String, _ options: VoiceProfilesCreateOptions = .init()) async throws -> VoiceProfilesCreateReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["id"] = try RaviJSON.fromEncodable(id)
@@ -7909,6 +7916,12 @@ public struct VoiceProfilesNamespace: Sendable {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["id"] = try RaviJSON.fromEncodable(id)
     return try await transport.call(groupSegments: ["voice","profiles"], command: "show", body: requestBody, as: VoiceProfilesShowReturn.self)
+  }
+
+  public func unbind(_ session: String) async throws -> VoiceProfilesUnbindReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["session"] = try RaviJSON.fromEncodable(session)
+    return try await transport.call(groupSegments: ["voice","profiles"], command: "unbind", body: requestBody, as: VoiceProfilesUnbindReturn.self)
   }
 
   public func update(_ id: String, _ options: VoiceProfilesUpdateOptions = .init()) async throws -> VoiceProfilesUpdateReturn {

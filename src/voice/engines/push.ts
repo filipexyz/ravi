@@ -9,8 +9,23 @@ const DEFAULT_TTS_MODEL = "eleven_multilingual_v2";
 
 /** ElevenLabs `eleven_multilingual_v2`: about US$ 0.08 per 1,000 characters. */
 const TTS_USD_PER_CHAR = 0.08 / 1000;
-/** Groq whisper-large-v3-turbo: US$ 0.04/hour; OpenAI whisper-1: US$ 0.006/minute. */
-const STT_USD_PER_SECOND = { groq: 0.04 / 3600, openai: 0.006 / 60 } as const;
+/**
+ * Transcription prices per second of audio, by provider and model. A model missing from the table is
+ * priced at its provider's most expensive known model, so a spend cap never relies on a cheaper rate.
+ */
+const STT_USD_PER_SECOND: Record<string, Record<string, number>> = {
+  groq: {
+    "whisper-large-v3-turbo": 0.04 / 3600,
+    "whisper-large-v3": 0.111 / 3600,
+    "distil-whisper-large-v3-en": 0.02 / 3600,
+  },
+  openai: {
+    "whisper-1": 0.006 / 60,
+    "gpt-4o-transcribe": 0.006 / 60,
+    "gpt-4o-mini-transcribe": 0.003 / 60,
+  },
+};
+const STT_DEFAULT_MODEL: Record<string, string> = { groq: "whisper-large-v3-turbo", openai: "whisper-1" };
 
 export interface PushEngineDeps {
   transcribe?: typeof transcribeAudio;
@@ -44,12 +59,17 @@ export function createPushEngine(deps: PushEngineDeps = {}): VoiceEngineDescript
       }
       return { engine: "push", ready: missing.length === 0, missing, notes };
     },
-    async transcribe({ bytes, mime, language }) {
+    async transcribe({ bytes, mime, language, stt }) {
       const env = deps.env ?? process.env;
-      const result = await transcribe(Buffer.from(bytes), mime, { language: language.split("-")[0] });
+      const result = await transcribe(Buffer.from(bytes), mime, {
+        language: language.split("-")[0],
+        ...(stt?.provider ? { provider: stt.provider } : {}),
+        ...(stt?.model ? { model: stt.model } : {}),
+      });
       const provider = result.provider ?? (envHas(env, "GROQ_API_KEY") ? "groq" : "openai");
       const durationSec = result.duration ?? estimateSpokenSeconds(result.text);
-      return { text: result.text.trim(), durationSec, provider };
+      const model = result.model ?? stt?.model;
+      return { text: result.text.trim(), durationSec, provider, ...(model ? { model } : {}) };
     },
     async synthesize({ text, profile }) {
       if (!text.trim()) return null;
@@ -75,8 +95,10 @@ export function createPushEngine(deps: PushEngineDeps = {}): VoiceEngineDescript
   };
 }
 
-export function estimateSttCostUsd(provider: string, seconds: number): number {
-  const rate = provider === "groq" ? STT_USD_PER_SECOND.groq : STT_USD_PER_SECOND.openai;
+export function estimateSttCostUsd(provider: string, seconds: number, model?: string): number {
+  const rates = STT_USD_PER_SECOND[provider] ?? STT_USD_PER_SECOND.openai;
+  const known = rates[model ?? STT_DEFAULT_MODEL[provider] ?? "whisper-1"];
+  const rate = known ?? Math.max(...Object.values(rates));
   return Math.max(0, seconds) * rate;
 }
 

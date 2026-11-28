@@ -41,8 +41,13 @@ const { addVoiceDailyUsage, defaultVoiceProfile, getVoiceCall, listVoiceEvents, 
   "../../voice/store.js"
 );
 const { ContractError } = await import("../agent-contract.js");
-const { VoiceCallsCommands, VoiceDevicesCommands, VoiceEnginesCommands, setVoiceApprovalDecisionWaitForTests } =
-  await import("./voice.js");
+const {
+  VoiceCallsCommands,
+  VoiceDevicesCommands,
+  VoiceEnginesCommands,
+  VoiceProfilesCommands,
+  setVoiceApprovalDecisionWaitForTests,
+} = await import("./voice.js");
 
 let stateDir: string | null = null;
 
@@ -209,7 +214,7 @@ describe("ravi voice commands", () => {
 
   it("pairing is braked, needs a contact and limits the wildcard to the owner", async () => {
     const devices = new VoiceDevicesCommands();
-    const missing = await contractError(() => devices.pair(undefined, undefined, "main", false, true, true));
+    const missing = await contractError(() => devices.pair(undefined, undefined, "main", false, true, undefined, true));
     expect(missing.code).toBe("USAGE_ERROR");
   });
 
@@ -220,17 +225,234 @@ describe("ravi voice commands", () => {
     const { personCredentialContactId } = await import("../../runtime/person-credential.js");
     const person = createContact({ phone: "5511900000995", name: "Person" });
     const devices = new VoiceDevicesCommands();
-    const paired = (await quiet(() => devices.pair(person.id, "phone", "main", false, true, true))) as {
+    const paired = (await quiet(() => devices.pair(person.id, "phone", "main", false, true, undefined, true))) as {
       device: { id: string };
     };
     const device = getVoiceDevice(paired.device.id);
     expect(personCredentialContactId(dbGetContext(device?.contextId ?? ""))).toBe(person.id);
 
-    const worker = (await quiet(() => devices.pair(person.id, "worker", undefined, true, true, true))) as {
+    const worker = (await quiet(() => devices.pair(person.id, "worker", undefined, true, true, undefined, true))) as {
       device: { id: string };
     };
     const workerDevice = getVoiceDevice(worker.device.id);
     expect(personCredentialContactId(dbGetContext(workerDevice?.contextId ?? ""))).toBeNull();
+  });
+
+  describe("configuration through the SDK", () => {
+    type ProfileArgs = Partial<{
+      label: string;
+      mode: string;
+      language: string;
+      voice: string;
+      sttProvider: string;
+      sttModel: string;
+      sttLanguage: string;
+    }>;
+    const create = (id: string, a: ProfileArgs = {}) =>
+      new VoiceProfilesCommands().create(
+        id,
+        a.label,
+        a.mode,
+        a.language,
+        a.voice,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        a.sttProvider,
+        a.sttModel,
+        a.sttLanguage,
+        true,
+      );
+    const update = (id: string, a: ProfileArgs = {}) =>
+      new VoiceProfilesCommands().update(
+        id,
+        a.label,
+        a.mode,
+        a.language,
+        a.voice,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        a.sttProvider,
+        a.sttModel,
+        a.sttLanguage,
+        true,
+      );
+    const issuedKey = (capabilities: Array<{ permission: string; objectType: string; objectId: string }>) =>
+      ({
+        contextId: "ctx_issued",
+        context: { contextId: "ctx_issued", kind: "cli", capabilities, createdAt: Date.now() },
+      }) as unknown as ToolContext;
+    async function pairedDevice(profiles?: string) {
+      const { createContact } = await import("../../contacts.js");
+      const { dbGetContext } = await import("../../router/router-db.js");
+      const { getVoiceDevice } = await import("../../voice/store.js");
+      const person = createContact({ phone: `55119${Math.floor(Math.random() * 1e8)}`, name: "Person" });
+      const paired = (await quiet(() =>
+        new VoiceDevicesCommands().pair(person.id, "phone", "main", false, true, profiles, true),
+      )) as { device: { id: string; profiles: string[] } };
+      const device = getVoiceDevice(paired.device.id);
+      return {
+        device: paired.device,
+        as: { contextId: device?.contextId, context: dbGetContext(device?.contextId ?? "") } as ToolContext,
+      };
+    }
+
+    it("profiles are managed by the operator or a key issued with mutate:voice:profiles.*, never a device key", async () => {
+      await quiet(() => create("calm", { mode: "mock" }));
+      currentContext = issuedKey([]);
+      expect((await contractError(() => create("other", { mode: "mock" }))).code).toBe("VOICE_OPERATOR_ONLY");
+      currentContext = issuedKey([{ permission: "mutate", objectType: "voice", objectId: "profiles.*" }]);
+      const updated = (await quiet(() => update("calm", { language: "en" }))) as { profile: { language: string } };
+      expect(updated.profile.language).toBe("en");
+      currentContext = undefined;
+      const { as } = await pairedDevice();
+      currentContext = as;
+      expect((await contractError(() => update("calm", { language: "pt" }))).code).toBe("VOICE_OPERATOR_ONLY");
+      expect((await contractError(() => new VoiceProfilesCommands().bind("calm", "main", true))).code).toBe(
+        "VOICE_OPERATOR_ONLY",
+      );
+      const listed = (await quiet(() => new VoiceProfilesCommands().list(undefined, undefined, true))) as {
+        profiles: Array<{ id: string }>;
+      };
+      expect(listed.profiles.some((profile) => profile.id === "calm")).toBe(true);
+    });
+
+    it("the gateway's own check lets a key with only mutate:voice:profiles.* run every profile write", async () => {
+      const { getCommandAccessMetadata } = await import("../decorators.js");
+      const { listCliCommandAccessCandidates } = await import("../command-access.js");
+      const { canWithCapabilities } = await import("../../permissions/capability-snapshot.js");
+      const access = getCommandAccessMetadata(VoiceProfilesCommands);
+      const grant = [{ permission: "mutate", objectType: "voice", objectId: "profiles.*" }];
+      for (const command of ["create", "update", "delete", "bind", "unbind"]) {
+        const options = access.get(command);
+        expect(options).toBeDefined();
+        const candidates = listCliCommandAccessCandidates({
+          group: "voice.profiles",
+          command,
+          access: options!,
+          source: "gateway",
+        } as Parameters<typeof listCliCommandAccessCandidates>[0]);
+        const passes = candidates.some((c) => canWithCapabilities(grant, c.permission, c.objectType, c.objectId));
+        expect({ command, passes }).toEqual({ command, passes: true });
+      }
+      // The grant reaches profile writes only, never other voice writes such as pairing a device.
+      const devicesAccess = getCommandAccessMetadata(VoiceDevicesCommands).get("pair");
+      const pairCandidates = listCliCommandAccessCandidates({
+        group: "voice.devices",
+        command: "pair",
+        access: devicesAccess!,
+        source: "gateway",
+      } as Parameters<typeof listCliCommandAccessCandidates>[0]);
+      expect(pairCandidates.some((c) => canWithCapabilities(grant, c.permission, c.objectType, c.objectId))).toBe(
+        false,
+      );
+    });
+
+    it("pairing with an empty profile list is refused instead of becoming any profile", async () => {
+      const { createContact } = await import("../../contacts.js");
+      const person = createContact({ phone: "5511900000777", name: "Person" });
+      const error = await contractError(() =>
+        new VoiceDevicesCommands().pair(person.id, "phone", "main", false, true, " , ", true),
+      );
+      expect(error.code).toBe("USAGE_ERROR");
+    });
+
+    it("transcription is set on the profile: provider, model and language; auto clears the provider", async () => {
+      const created = (await quiet(() =>
+        create("stt", { mode: "push", sttProvider: "openai", sttModel: "whisper-1", sttLanguage: "en" }),
+      )) as { profile: Record<string, unknown> };
+      expect(created.profile).toMatchObject({ sttProvider: "openai", sttModel: "whisper-1", sttLanguage: "en" });
+      const cleared = (await quiet(() => update("stt", { sttProvider: "auto", sttModel: "" }))) as {
+        profile: Record<string, unknown>;
+      };
+      expect(cleared.profile.sttProvider).toBeUndefined();
+      expect(cleared.profile.sttModel).toBeUndefined();
+      expect(cleared.profile.sttLanguage).toBe("en");
+      expect((await contractError(() => update("stt", { sttProvider: "whisper" }))).code).toBe("USAGE_ERROR");
+
+      const saved = { ...process.env };
+      process.env.ELEVENLABS_API_KEY = "x";
+      process.env.OPENAI_API_KEY = "x";
+      delete process.env.GROQ_API_KEY;
+      try {
+        await quiet(() => update("stt", { sttProvider: "groq" }));
+        const refused = await contractError(() =>
+          new VoiceCallsCommands().start("main", "stt", undefined, undefined, true),
+        );
+        expect(refused.code).toBe("VOICE_ENGINE_NOT_READY");
+        expect(refused.message).toContain("GROQ_API_KEY");
+      } finally {
+        process.env = saved;
+      }
+
+      const { createPushEngine } = await import("../../voice/engines/push.js");
+      const seen: Array<Record<string, unknown>> = [];
+      const engine = createPushEngine({
+        env: { GROQ_API_KEY: "x" },
+        transcribe: async (_buffer, _mime, options) => {
+          seen.push({ ...options });
+          return { text: "oi" };
+        },
+      });
+      await engine.transcribe({
+        bytes: new Uint8Array([1]),
+        mime: "audio/webm",
+        language: "en-US",
+        stt: { provider: "openai", model: "m" },
+      });
+      expect(seen[0]).toEqual({ language: "en", provider: "openai", model: "m" });
+    });
+
+    it("a device starts calls only with the profiles it was paired for", async () => {
+      await quiet(() => create("calm", { mode: "mock" }));
+      const { device, as } = await pairedDevice("calm");
+      expect(device.profiles).toEqual(["calm"]);
+      currentContext = as;
+      const calls = new VoiceCallsCommands();
+      const refused = await contractError(() => calls.start("main", "default", undefined, undefined, true));
+      expect(refused.code).toBe("VOICE_PROFILE_FORBIDDEN");
+      const started = (await quiet(() => calls.start("main", undefined, undefined, undefined, true))) as Record<
+        string,
+        unknown
+      >;
+      expect(getVoiceCall(String(started.callId))?.profileId).toBe("calm");
+    });
+
+    it("a session's bound profile is used when the call names none, until unbound or deleted", async () => {
+      await quiet(() => create("calm", { mode: "mock" }));
+      const profiles = new VoiceProfilesCommands();
+      const bound = (await quiet(() => profiles.bind("calm", "main", true))) as Record<string, unknown>;
+      expect(bound).toMatchObject({ profileId: "calm", sessionName: "main" });
+      const calls = new VoiceCallsCommands();
+      const first = (await quiet(() => calls.start("main", undefined, undefined, undefined, true))) as Record<
+        string,
+        unknown
+      >;
+      expect(getVoiceCall(String(first.callId))?.profileId).toBe("calm");
+      // No door runs here: close the call in the store, as the door would.
+      const { updateVoiceCall } = await import("../../voice/store.js");
+      updateVoiceCall(String(first.callId), { state: "ended", endedAt: Date.now(), endedReason: "ended" });
+      expect(((await quiet(() => profiles.unbind("main", true))) as { unbound: boolean }).unbound).toBe(true);
+      await quiet(() => profiles.bind("calm", "main", true));
+      await quiet(() => profiles.delete("calm", true));
+      const second = (await quiet(() => calls.start("main", undefined, "mock", undefined, true))) as Record<
+        string,
+        unknown
+      >;
+      expect(getVoiceCall(String(second.callId))?.profileId).toBe("default");
+    });
   });
 
   it("engines check never needs a vendor", async () => {

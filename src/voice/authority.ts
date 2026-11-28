@@ -9,6 +9,9 @@
  * - A paired device (context kind `voice-device`) may call only the sessions
  *   listed at pairing and only control its own calls.
  * - The speaker never adds authority: the session turn runs with the caller's.
+ * - Voice profiles (voices, models, limits) are managed by the operator, or by a key the operator
+ *   issued with `mutate:voice:profiles.*`. Device and worker keys only read them, even though they
+ *   carry `mutate voice *` for their own calls.
  */
 import { getContext, type ToolContext } from "../cli/context.js";
 import { canAccessSession, getScopeContext } from "../permissions/scope.js";
@@ -48,6 +51,31 @@ export interface VoiceCaller {
   speaker: VoiceSpeaker;
   contextId?: string;
   device?: VoiceDevice;
+  /** For `context` callers: the capabilities the operator issued to that key. */
+  capabilities?: ReadonlyArray<{ permission: string; objectType: string; objectId: string }>;
+}
+
+/**
+ * The capability an operator issues for managing voice profiles through the gateway or SDK. The
+ * gateway checks each write as `mutate:voice:profiles.<action>`, which this pattern covers.
+ */
+export const VOICE_PROFILES_MANAGE_CAPABILITY = {
+  permission: "mutate",
+  objectType: "voice",
+  objectId: "profiles.*",
+} as const;
+
+/** May this caller create, change, bind or delete voice profiles? Never a device or worker key. */
+export function callerMayManageVoiceProfiles(caller: VoiceCaller): boolean {
+  if (caller.kind === "operator") return true;
+  if (caller.kind !== "context") return false;
+  return (caller.capabilities ?? []).some(
+    (capability) =>
+      (capability.permission === "admin" && capability.objectType === "system" && capability.objectId === "*") ||
+      (capability.permission === VOICE_PROFILES_MANAGE_CAPABILITY.permission &&
+        capability.objectType === VOICE_PROFILES_MANAGE_CAPABILITY.objectType &&
+        capability.objectId === VOICE_PROFILES_MANAGE_CAPABILITY.objectId),
+  );
 }
 
 /** The operator's own key: the local default credential, or the admin-bootstrap key it is. */
@@ -101,6 +129,7 @@ export function resolveVoiceCaller(op: string): VoiceCaller {
       kind: "context",
       speaker: { kind: "operator", id: `context:${record.contextId}` },
       contextId: record.contextId,
+      capabilities: record.capabilities ?? [],
     };
   }
   return { kind: "operator", speaker: { kind: "operator", id: "operator" } };

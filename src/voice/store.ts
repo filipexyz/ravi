@@ -148,7 +148,18 @@ function migrateVoiceSchema(): void {
       created_at INTEGER NOT NULL,
       PRIMARY KEY (call_id, item_id)
     );
+    -- The profile a session's calls use when the caller names none.
+    CREATE TABLE IF NOT EXISTS voice_session_profiles (
+      session_key TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
   `);
+  const deviceColumns = getVoiceDb().prepare("PRAGMA table_info(voice_devices)").all() as Array<{ name: string }>;
+  if (!deviceColumns.some((column) => column.name === "profiles_json")) {
+    // Devices paired before profile lists keep every profile (`["*"]`), as they had.
+    getVoiceDb().exec("ALTER TABLE voice_devices ADD COLUMN profiles_json TEXT");
+  }
 }
 
 function store(): Database {
@@ -593,9 +604,44 @@ export function saveVoiceProfile(profile: VoiceProfile): VoiceProfile {
 
 export function deleteVoiceProfile(id: string): boolean {
   const database = store();
-  return executeWrite(database, () => database.prepare("DELETE FROM voice_profiles WHERE id = ?").run(id).changes > 0, {
-    label: "voice:deleteProfile",
-  });
+  return executeWrite(
+    database,
+    () => {
+      database.prepare("DELETE FROM voice_session_profiles WHERE profile_id = ?").run(id);
+      return database.prepare("DELETE FROM voice_profiles WHERE id = ?").run(id).changes > 0;
+    },
+    { label: "voice:deleteProfile" },
+  );
+}
+
+/** The profile bound to a session, used when a call names none. */
+export function getVoiceSessionProfile(sessionKey: string): string | null {
+  const row = store()
+    .prepare("SELECT profile_id FROM voice_session_profiles WHERE session_key = ?")
+    .get(sessionKey) as { profile_id: string } | null;
+  return row?.profile_id ?? null;
+}
+
+/** Bind a profile to a session (`null` unbinds). Returns whether anything changed. */
+export function setVoiceSessionProfile(sessionKey: string, profileId: string | null, now = Date.now()): boolean {
+  const database = store();
+  return executeWrite(
+    database,
+    () => {
+      if (profileId === null) {
+        return database.prepare("DELETE FROM voice_session_profiles WHERE session_key = ?").run(sessionKey).changes > 0;
+      }
+      return (
+        database
+          .prepare(
+            `INSERT INTO voice_session_profiles (session_key, profile_id, updated_at) VALUES (?, ?, ?)
+             ON CONFLICT(session_key) DO UPDATE SET profile_id = excluded.profile_id, updated_at = excluded.updated_at`,
+          )
+          .run(sessionKey, profileId, now).changes > 0
+      );
+    },
+    { label: "voice:setSessionProfile" },
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -607,6 +653,7 @@ interface DeviceRow {
   label: string;
   contact_id: string;
   sessions_json: string;
+  profiles_json: string | null;
   context_id: string;
   created_at: number;
   expires_at: number;
@@ -620,6 +667,7 @@ function rowToDevice(row: DeviceRow): VoiceDevice {
     label: row.label,
     contactId: row.contact_id,
     sessions: parseJson<string[]>(row.sessions_json, []),
+    profiles: row.profiles_json ? parseJson<string[]>(row.profiles_json, ["*"]) : ["*"],
     contextId: row.context_id,
     createdAt: row.created_at,
     expiresAt: row.expires_at,
@@ -639,14 +687,15 @@ export function insertVoiceDevice(device: VoiceDevice): VoiceDevice {
     () => {
       database
         .prepare(
-          `INSERT INTO voice_devices (id, label, contact_id, sessions_json, context_id, created_at, expires_at, revoked_at, last_seen_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO voice_devices (id, label, contact_id, sessions_json, profiles_json, context_id, created_at, expires_at, revoked_at, last_seen_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           device.id,
           device.label,
           device.contactId,
           JSON.stringify(device.sessions),
+          JSON.stringify(device.profiles ?? ["*"]),
           device.contextId,
           device.createdAt,
           device.expiresAt,

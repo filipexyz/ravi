@@ -56,3 +56,16 @@ normative: false
   is synthesized still holds it. Mutants that skip the hold, keep waiters on "quiet", keep them on
   end, hold for every delivery, or drop the wait after synthesis each fail one of them. `voice.test.ts`: `calls activity` sends the control and
   refuses a state other than speaking or quiet.
+- Configuration through the SDK (`voice.test.ts`, "configuration through the SDK"): an issued key
+  without `mutate:voice:profiles.*` is refused and one with it updates; a device key is refused update
+  and bind but lists profiles; STT provider, model and language are stored, `auto` and empty clear,
+  an unknown provider is a usage error, a pinned provider without its key refuses `calls start`, and
+  the push engine forwards provider and model; a device paired for one profile starts with it and is
+  refused another; a session's bound profile is used until unbound, and deleting the profile drops
+  the binding. Six mutants (issued-key path off, device accepted, device check off, session default
+  off, delete keeps bindings, push drops the provider) each fail one test.
+- Review of #1063 (Devin): the gateway's own candidate check lets a key holding only
+  `mutate:voice:profiles.*` run create, update, delete, bind and unbind, and not `devices pair`;
+  pairing with an empty `--profiles` list is a usage error, never `*`; GPT transcription models get
+  `response_format: json` and Whisper keeps `verbose_json` with segments; transcription is priced by
+  model, and an unknown model at its provider's highest known rate (`engines.test.ts`).
