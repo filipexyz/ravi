@@ -9,7 +9,15 @@
 - The linked owner's own message reads with `publicOnly: false` in any
   session, the agent's shared session (`agent:<id>:main`) included, and in a
   group, with no confirmation; an owner account not linked to the login
-  reads public-only (`details.turn: not_owner`).
+  reads as that contact (`person`), so Console decides with that account's own
+  link; `pageReadTurnBlock` still explains `not_owner`.
+- Another contact's message reads as that person in a direct chat and in a
+  group (the contact who wrote, never the group), with `publicOnly: false` and
+  `x-ravi-actor-contact` set to that contact on `POST /api/cli/pages/read`; an
+  unresolved speaker and an agent relay read public-only.
+- A refused `person` read names the case: `not_linked` (with `linkFlow`),
+  `not_member`, `no_page_access`; the operator's own refusal keeps the
+  `ravi login` wording.
 - A 403 with reason `public_only` maps to `PAGE_ACCESS_DENIED` exit 3; other
   reasons exit 1; 404 maps to `PAGE_NOT_FOUND`; 413/415 to
   `PAGE_CONTENT_UNSUPPORTED`.

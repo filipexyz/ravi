@@ -71,6 +71,7 @@ import {
   PAGE_READ_MAX_CHARS,
   PAGE_READ_MIN_CHARS,
   pageReadTurnBlock,
+  resolvePageReader,
   readPage,
   type PageReadResult,
 } from "../../pages/read.js";
@@ -516,7 +517,7 @@ export class PagesCommands {
       try {
         result = await readPage(options, this.deps);
       } catch (error) {
-        const failure = describePageReadFailure(error, url);
+        const failure = describePageReadFailure(error, url, resolvePageReader(this.deps));
         if (failure) {
           // A private Page refused on a turn that is not the operator's own: say which rule decided it.
           const block = failure.details.reason === "public_only" ? pageReadTurnBlock(this.deps) : null;

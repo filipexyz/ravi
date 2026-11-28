@@ -580,7 +580,10 @@ ser a minha escolha". The owner's own verified message (a resolved contact
 linked to the login's Console user) is the operator's turn in any chat: their
 direct chat in any session, shared (`agent:<id>:main`) or not, a thread inside
 it (`agent:<id>:main:thread:<ts>`), and a group.
-No confirmation is asked. Anyone else's message never starts a private read.
+No confirmation is asked. Anyone else's message never starts a private read
+with the operator's login; `pages read` reads a private route for that person
+only with their own Console access through their `ravi link` (spec
+`pages/read`).
 
 - Residual risk, accepted by the owner: what a read returns stays in that
   session's context, so anyone who can write into that session (another

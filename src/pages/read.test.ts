@@ -16,6 +16,7 @@ import {
   pageReadIsPublicOnly,
   pageReadTurnBlock,
   readPage,
+  resolvePageReader,
 } from "./read.js";
 import type { ContextRecord } from "../router/router-db.js";
 import { getOrCreateSession } from "../router/sessions.js";
@@ -150,12 +151,73 @@ describe("pageReadTurnBlock on real turn contexts", () => {
     expect(pageReadTurnBlock(deps(group))).toBeNull();
   });
 
-  it("names the link rule when the owner writes from an account not linked to this login", () => {
+  it("reads for an account not linked to this login as that person, and explains the owner rule", () => {
     const unlinked = turnContext({ ...ownerDm, consoleUserId: undefined }, OWNER_DM, "luis-dm");
-    expect(pageReadIsPublicOnly(deps(unlinked))).toBe(true);
+    // Not the operator's own turn: Console decides with that person's own link.
+    expect(resolvePageReader(deps(unlinked))).toEqual({ kind: "person", contactId: "c_luis" });
+    expect(pageReadIsPublicOnly(deps(unlinked))).toBe(false);
     const block = pageReadTurnBlock(deps(unlinked));
     expect(block).toMatchObject({ turn: "not_owner" });
     expect(block?.why).toContain("ravi link");
+  });
+
+  const memberDm = {
+    actorPrincipal: "contact:c_mario",
+    agentIdentityCompartment: "dm:5511888888888@s.whatsapp.net",
+  };
+
+  it("reads for another person in their direct chat with their own access, never as the operator", () => {
+    const dm = turnContext(memberDm, "agent:cassia:whatsapp:wa-main:dm:5511888888888", "cassia-dm-086");
+    expect(resolvePageReader(deps(dm))).toEqual({ kind: "person", contactId: "c_mario" });
+    expect(pageReadIsPublicOnly(deps(dm))).toBe(false);
+  });
+
+  it("reads in a group for the person who wrote, never for the group", () => {
+    const group = turnContext(
+      { ...memberDm, agentIdentityCompartment: "chat:120363012345678901@g.us" },
+      "agent:cassia:whatsapp:wa-main:group:120363012345678901",
+      "convit-group",
+    );
+    expect(resolvePageReader(deps(group))).toEqual({ kind: "person", contactId: "c_mario" });
+  });
+
+  it("keeps public-only a turn with no person: an unresolved speaker or another agent relaying", () => {
+    const unresolved = turnContext(
+      { actorResolution: "unresolved", agentIdentityCompartment: "dm:5511777777777@s.whatsapp.net" },
+      "agent:cassia:whatsapp:wa-main:dm:5511777777777",
+      "cassia-dm-unknown",
+    );
+    expect(resolvePageReader(deps(unresolved))).toEqual({ kind: "public_only" });
+    const relay = turnContext({ actorPrincipal: "agent:other" }, "agent:main:main", "main");
+    expect(resolvePageReader(deps(relay))).toEqual({ kind: "public_only" });
+    expect(pageReadIsPublicOnly(deps(relay))).toBe(true);
+  });
+
+  it("sends a person's read with that person's contact on the request, and publicOnly false", async () => {
+    const dm = turnContext(memberDm, "agent:cassia:whatsapp:wa-main:dm:5511888888888", "cassia-dm-086");
+    const seen: Array<{ path: string; actor: string | null; body: unknown }> = [];
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const path = new URL(String(input)).pathname;
+      const headers = new Headers(init?.headers);
+      seen.push({
+        path,
+        actor: headers.get("x-ravi-actor-contact"),
+        body: init?.body ? JSON.parse(String(init.body)) : null,
+      });
+      const body =
+        path === "/api/cli/me" ? { user: { id: "user_luis" }, organization: { id: "org_1" } } : consoleResponse();
+      return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+    try {
+      const result = await readPage({ url: "https://convit-apresentacoes.ravi.page/release-imprensa" }, deps(dm));
+      expect(result.publicOnly).toBe(false);
+    } finally {
+      globalThis.fetch = original;
+    }
+    const read = seen.find((call) => call.path === "/api/cli/pages/read");
+    expect(read?.actor).toBe("c_mario");
+    expect(read?.body).toMatchObject({ publicOnly: false });
   });
 
   it("explains nothing on the terminal or when a test fixes publicOnly", () => {
@@ -320,6 +382,47 @@ describe("describePageReadFailure", () => {
     });
     expect(describePageReadFailure(new CloudAuthError("SERVER_UNAVAILABLE", "x", { status: 503 }), url)).toBeNull();
     expect(describePageReadFailure(new Error("x"), url)).toBeNull();
+  });
+
+  it("says which case refused a read for the person of the turn", () => {
+    const url = "https://convit-apresentacoes.ravi.page/release-imprensa";
+    const person = { kind: "person", contactId: "c_mario" } as const;
+    const notLinked = describePageReadFailure(
+      new CloudAuthError("ACTOR_NOT_LINKED", "x", {
+        status: 403,
+        details: { reason: "not_linked", linkFlow: "sent" },
+      }),
+      url,
+      person,
+    );
+    expect(notLinked).toMatchObject({
+      code: "PAGE_ACCESS_DENIED",
+      exitCode: 1,
+      details: { reason: "not_linked", person: "not_linked", linkFlow: "sent" },
+    });
+    expect(notLinked?.message).toContain("ravi link");
+    expect(
+      describePageReadFailure(
+        new CloudAuthError("PROJECT_ACCESS_DENIED", "x", { status: 403, details: { reason: "not_member" } }),
+        url,
+        person,
+      ),
+    ).toMatchObject({ details: { person: "not_member" } });
+    const noAccess = describePageReadFailure(
+      new CloudAuthError("PROJECT_ACCESS_DENIED", "x", { status: 403, details: { reason: "project_forbidden" } }),
+      url,
+      person,
+    );
+    expect(noAccess).toMatchObject({ code: "PAGE_ACCESS_DENIED", exitCode: 1, details: { person: "no_page_access" } });
+    expect(noAccess?.message).toContain("person asking");
+    // The operator's own refusal keeps the login wording.
+    expect(
+      describePageReadFailure(
+        new CloudAuthError("PROJECT_ACCESS_DENIED", "x", { status: 403, details: { reason: "project_forbidden" } }),
+        url,
+        { kind: "operator" },
+      )?.message,
+    ).toContain("current ravi login");
   });
 });
 
