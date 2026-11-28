@@ -10612,9 +10612,13 @@ export class RaviClient {
       },
       /** Open a voice call on an existing session */
       start: async (session: string, options?: {
+        language?: string;
+        liveVoice?: string;
         mode?: string;
         offer?: string;
         profile?: string;
+        ttsModel?: string;
+        voice?: string;
       }): Promise<VoiceCallsStartReturn> => {
         return this.transport.call({
           groupSegments: ["voice","calls"],
@@ -10701,6 +10705,7 @@ export class RaviClient {
       /** Create a voice profile */
       create: async (id: string, options?: {
         allowGuests?: boolean;
+        allowedVoices?: string;
         delivery?: string;
         label?: string;
         language?: string;
@@ -10710,6 +10715,7 @@ export class RaviClient {
         maxCallMinutes?: string;
         maxDailyCost?: string;
         mode?: string;
+        overridable?: string;
         sttLanguage?: string;
         sttModel?: string;
         sttProvider?: string;
@@ -10760,6 +10766,7 @@ export class RaviClient {
       /** Update a voice profile */
       update: async (id: string, options?: {
         allowGuests?: boolean;
+        allowedVoices?: string;
         delivery?: string;
         label?: string;
         language?: string;
@@ -10770,6 +10777,7 @@ export class RaviClient {
         maxDailyCost?: string;
         mode?: string;
         noGuests?: boolean;
+        overridable?: string;
         sttLanguage?: string;
         sttModel?: string;
         sttProvider?: string;

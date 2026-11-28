@@ -140740,6 +140740,24 @@ class RaviSchemas {
             ],
             "type": "string"
           },
+          "overrides": {
+            "additionalProperties": false,
+            "properties": {
+              "language": {
+                "type": "string"
+              },
+              "liveVoice": {
+                "type": "string"
+              },
+              "ttsModel": {
+                "type": "string"
+              },
+              "voice": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
           "profileId": {
             "type": "string"
           },
@@ -141071,6 +141089,24 @@ class RaviSchemas {
           ],
           "type": "string"
         },
+        "overrides": {
+          "additionalProperties": false,
+          "properties": {
+            "language": {
+              "type": "string"
+            },
+            "liveVoice": {
+              "type": "string"
+            },
+            "ttsModel": {
+              "type": "string"
+            },
+            "voice": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
         "profileId": {
           "type": "string"
         },
@@ -141355,6 +141391,14 @@ class RaviSchemas {
 {
   "additionalProperties": false,
   "properties": {
+    "language": {
+      "description": "This call's language, if the profile allows it",
+      "type": "string"
+    },
+    "liveVoice": {
+      "description": "This call's GPT-Live voice, if the profile allows it",
+      "type": "string"
+    },
     "mode": {
       "description": "push|live|handsfree|mock (default: the profile's)",
       "type": "string"
@@ -141369,6 +141413,14 @@ class RaviSchemas {
     },
     "session": {
       "description": "Session name or key",
+      "type": "string"
+    },
+    "ttsModel": {
+      "description": "This call's ElevenLabs model, if the profile allows it",
+      "type": "string"
+    },
+    "voice": {
+      "description": "This call's ElevenLabs voice, if the profile allows it",
       "type": "string"
     }
   },
@@ -141437,6 +141489,24 @@ class RaviSchemas {
       ],
       "type": "string"
     },
+    "overrides": {
+      "additionalProperties": false,
+      "properties": {
+        "language": {
+          "type": "string"
+        },
+        "liveVoice": {
+          "type": "string"
+        },
+        "ttsModel": {
+          "type": "string"
+        },
+        "voice": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "profileId": {
       "type": "string"
     },
@@ -141487,6 +141557,7 @@ class RaviSchemas {
     "sessionName",
     "mode",
     "profileId",
+    "overrides",
     "state",
     "capabilities"
   ],
@@ -142167,6 +142238,10 @@ class RaviSchemas {
       "description": "Accept third-party speakers (speech only, never control)",
       "type": "boolean"
     },
+    "allowedVoices": {
+      "description": "Voices a call may pick when it overrides one ('*' clears)",
+      "type": "string"
+    },
     "delivery": {
       "description": "speak|when_idle|silent",
       "type": "string"
@@ -142207,6 +142282,10 @@ class RaviSchemas {
       "description": "push|live|handsfree|mock",
       "type": "string"
     },
+    "overridable": {
+      "description": "Fields a call may change at start: voice,language,ttsModel,liveVoice (none clears)",
+      "type": "string"
+    },
     "sttLanguage": {
       "description": "Transcription language when not --language (empty clears)",
       "type": "string"
@@ -142244,6 +142323,12 @@ class RaviSchemas {
       "properties": {
         "allowGuests": {
           "type": "boolean"
+        },
+        "allowedVoices": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "createdAt": {
           "type": "number"
@@ -142288,6 +142373,18 @@ class RaviSchemas {
             "mock"
           ],
           "type": "string"
+        },
+        "overridable": {
+          "items": {
+            "enum": [
+              "voice",
+              "language",
+              "ttsModel",
+              "liveVoice"
+            ],
+            "type": "string"
+          },
+          "type": "array"
         },
         "sttLanguage": {
           "type": "string"
@@ -142446,6 +142543,12 @@ class RaviSchemas {
           "allowGuests": {
             "type": "boolean"
           },
+          "allowedVoices": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "createdAt": {
             "type": "number"
           },
@@ -142489,6 +142592,18 @@ class RaviSchemas {
               "mock"
             ],
             "type": "string"
+          },
+          "overridable": {
+            "items": {
+              "enum": [
+                "voice",
+                "language",
+                "ttsModel",
+                "liveVoice"
+              ],
+              "type": "string"
+            },
+            "type": "array"
           },
           "sttLanguage": {
             "type": "string"
@@ -142569,6 +142684,12 @@ class RaviSchemas {
         "allowGuests": {
           "type": "boolean"
         },
+        "allowedVoices": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "createdAt": {
           "type": "number"
         },
@@ -142612,6 +142733,18 @@ class RaviSchemas {
             "mock"
           ],
           "type": "string"
+        },
+        "overridable": {
+          "items": {
+            "enum": [
+              "voice",
+              "language",
+              "ttsModel",
+              "liveVoice"
+            ],
+            "type": "string"
+          },
+          "type": "array"
         },
         "sttLanguage": {
           "type": "string"
@@ -142702,6 +142835,10 @@ class RaviSchemas {
       "description": "Accept third-party speakers",
       "type": "boolean"
     },
+    "allowedVoices": {
+      "description": "Voices a call may pick when it overrides one ('*' clears)",
+      "type": "string"
+    },
     "delivery": {
       "description": "speak|when_idle|silent",
       "type": "string"
@@ -142747,6 +142884,10 @@ class RaviSchemas {
       "description": "Stop accepting third-party speakers",
       "type": "boolean"
     },
+    "overridable": {
+      "description": "Fields a call may change at start: voice,language,ttsModel,liveVoice (none clears)",
+      "type": "string"
+    },
     "sttLanguage": {
       "description": "Transcription language when not --language (empty clears)",
       "type": "string"
@@ -142784,6 +142925,12 @@ class RaviSchemas {
       "properties": {
         "allowGuests": {
           "type": "boolean"
+        },
+        "allowedVoices": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "createdAt": {
           "type": "number"
@@ -142828,6 +142975,18 @@ class RaviSchemas {
             "mock"
           ],
           "type": "string"
+        },
+        "overridable": {
+          "items": {
+            "enum": [
+              "voice",
+              "language",
+              "ttsModel",
+              "liveVoice"
+            ],
+            "type": "string"
+          },
+          "type": "array"
         },
         "sttLanguage": {
           "type": "string"

@@ -15,6 +15,8 @@ export {
   type OpenApproval,
   RaviVoiceCall,
   type RaviVoiceConfig,
+  type StartCallOptions,
+  type VoiceActivity,
   type VoiceEvent,
   type VoiceEventType,
   type VoiceMode,

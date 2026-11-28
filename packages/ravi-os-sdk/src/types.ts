@@ -27220,6 +27220,12 @@ export type VoiceCallsListReturn = {
     engine: "push" | "live" | "handsfree" | "mock";
     id: string;
     mode: "push" | "live" | "handsfree" | "mock";
+    overrides?: {
+      language?: string;
+      liveVoice?: string;
+      ttsModel?: string;
+      voice?: string;
+    };
     profileId: string;
     sessionName: string;
     speaker: {
@@ -27295,6 +27301,12 @@ export type VoiceCallsShowReturn = {
     engine: "push" | "live" | "handsfree" | "mock";
     id: string;
     mode: "push" | "live" | "handsfree" | "mock";
+    overrides?: {
+      language?: string;
+      liveVoice?: string;
+      ttsModel?: string;
+      voice?: string;
+    };
     profileId: string;
     sessionName: string;
     speaker: {
@@ -27357,10 +27369,14 @@ export type VoiceCallsSilenceReturn = {
 
 /** Input shape for `voice.calls.start`. */
 export type VoiceCallsStartInput = {
+  language?: string;
+  liveVoice?: string;
   mode?: string;
   offer?: string;
   profile?: string;
   session: string;
+  ttsModel?: string;
+  voice?: string;
 };
 
 /** Return shape for `voice.calls.start`. */
@@ -27376,6 +27392,12 @@ export type VoiceCallsStartReturn = {
   connectionKind: "none" | "webrtc" | "room";
   lastSeq: number;
   mode: "push" | "live" | "handsfree" | "mock";
+  overrides: {
+    language?: string;
+    liveVoice?: string;
+    ttsModel?: string;
+    voice?: string;
+  };
   profileId: string;
   roomToken: string | null;
   roomUrl: string | null;
@@ -27542,6 +27564,7 @@ export type VoiceProfilesBindReturn = {
 /** Input shape for `voice.profiles.create`. */
 export type VoiceProfilesCreateInput = {
   allowGuests?: boolean;
+  allowedVoices?: string;
   delivery?: string;
   id: string;
   label?: string;
@@ -27552,6 +27575,7 @@ export type VoiceProfilesCreateInput = {
   maxCallMinutes?: string;
   maxDailyCost?: string;
   mode?: string;
+  overridable?: string;
   sttLanguage?: string;
   sttModel?: string;
   sttProvider?: string;
@@ -27563,6 +27587,7 @@ export type VoiceProfilesCreateInput = {
 export type VoiceProfilesCreateReturn = {
   profile: {
     allowGuests: boolean;
+    allowedVoices?: string[];
     createdAt: number;
     delivery: "speak" | "when_idle" | "silent";
     id: string;
@@ -27574,6 +27599,7 @@ export type VoiceProfilesCreateReturn = {
     maxCallMinutes: number;
     maxDailyCostUsd: number;
     mode: "push" | "live" | "handsfree" | "mock";
+    overridable?: Array<"voice" | "language" | "ttsModel" | "liveVoice">;
     sttLanguage?: string;
     sttModel?: string;
     sttProvider?: "groq" | "openai";
@@ -27613,6 +27639,7 @@ export type VoiceProfilesListReturn = {
   };
   profiles: Array<{
     allowGuests: boolean;
+    allowedVoices?: string[];
     createdAt: number;
     delivery: "speak" | "when_idle" | "silent";
     id: string;
@@ -27624,6 +27651,7 @@ export type VoiceProfilesListReturn = {
     maxCallMinutes: number;
     maxDailyCostUsd: number;
     mode: "push" | "live" | "handsfree" | "mock";
+    overridable?: Array<"voice" | "language" | "ttsModel" | "liveVoice">;
     sttLanguage?: string;
     sttModel?: string;
     sttProvider?: "groq" | "openai";
@@ -27643,6 +27671,7 @@ export type VoiceProfilesShowInput = {
 export type VoiceProfilesShowReturn = {
   profile: {
     allowGuests: boolean;
+    allowedVoices?: string[];
     createdAt: number;
     delivery: "speak" | "when_idle" | "silent";
     id: string;
@@ -27654,6 +27683,7 @@ export type VoiceProfilesShowReturn = {
     maxCallMinutes: number;
     maxDailyCostUsd: number;
     mode: "push" | "live" | "handsfree" | "mock";
+    overridable?: Array<"voice" | "language" | "ttsModel" | "liveVoice">;
     sttLanguage?: string;
     sttModel?: string;
     sttProvider?: "groq" | "openai";
@@ -27677,6 +27707,7 @@ export type VoiceProfilesUnbindReturn = {
 /** Input shape for `voice.profiles.update`. */
 export type VoiceProfilesUpdateInput = {
   allowGuests?: boolean;
+  allowedVoices?: string;
   delivery?: string;
   id: string;
   label?: string;
@@ -27688,6 +27719,7 @@ export type VoiceProfilesUpdateInput = {
   maxDailyCost?: string;
   mode?: string;
   noGuests?: boolean;
+  overridable?: string;
   sttLanguage?: string;
   sttModel?: string;
   sttProvider?: string;
@@ -27699,6 +27731,7 @@ export type VoiceProfilesUpdateInput = {
 export type VoiceProfilesUpdateReturn = {
   profile: {
     allowGuests: boolean;
+    allowedVoices?: string[];
     createdAt: number;
     delivery: "speak" | "when_idle" | "silent";
     id: string;
@@ -27710,6 +27743,7 @@ export type VoiceProfilesUpdateReturn = {
     maxCallMinutes: number;
     maxDailyCostUsd: number;
     mode: "push" | "live" | "handsfree" | "mock";
+    overridable?: Array<"voice" | "language" | "ttsModel" | "liveVoice">;
     sttLanguage?: string;
     sttModel?: string;
     sttProvider?: "groq" | "openai";

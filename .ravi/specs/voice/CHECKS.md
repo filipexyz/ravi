@@ -69,3 +69,11 @@ normative: false
   pairing with an empty `--profiles` list is a usage error, never `*`; GPT transcription models get
   `response_format: json` and Whisper keeps `verbose_json` with segments; transcription is priced by
   model, and an unknown model at its provider's highest known rate (`engines.test.ts`).
+- Per-call overrides and review follow-ups (`voice.test.ts`, "per-call overrides and review
+  follow-ups"): a closed profile refuses an override; an open one refuses fields it does not list and
+  voices outside `allowedVoices`, and stores and applies the allowed ones; a device skips a session
+  profile it was not paired for and its refusal names its profiles; a pinned Groq provider refuses
+  an OpenAI model; a manager key that cannot reach the session is refused bind and unbind.
+  `door.test.ts`: a person who talked longer than the ceiling still holds a new reply, and the call
+  shows `listening` while it is held. Six mutants (override field check, allowed voices, device skip,
+  STT pair, bind reach, listening while held) each fail one test.

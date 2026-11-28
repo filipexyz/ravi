@@ -139052,6 +139052,24 @@ export const VoiceCallsListReturnSchema = {
             ],
             "type": "string"
           },
+          "overrides": {
+            "additionalProperties": false,
+            "properties": {
+              "language": {
+                "type": "string"
+              },
+              "liveVoice": {
+                "type": "string"
+              },
+              "ttsModel": {
+                "type": "string"
+              },
+              "voice": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
           "profileId": {
             "type": "string"
           },
@@ -139377,6 +139395,24 @@ export const VoiceCallsShowReturnSchema = {
           ],
           "type": "string"
         },
+        "overrides": {
+          "additionalProperties": false,
+          "properties": {
+            "language": {
+              "type": "string"
+            },
+            "liveVoice": {
+              "type": "string"
+            },
+            "ttsModel": {
+              "type": "string"
+            },
+            "voice": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
         "profileId": {
           "type": "string"
         },
@@ -139658,6 +139694,14 @@ export const VoiceCallsSilenceReturnSchema = {
 export const VoiceCallsStartInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "language": {
+      "description": "This call's language, if the profile allows it",
+      "type": "string"
+    },
+    "liveVoice": {
+      "description": "This call's GPT-Live voice, if the profile allows it",
+      "type": "string"
+    },
     "mode": {
       "description": "push|live|handsfree|mock (default: the profile's)",
       "type": "string"
@@ -139672,6 +139716,14 @@ export const VoiceCallsStartInputSchema = {
     },
     "session": {
       "description": "Session name or key",
+      "type": "string"
+    },
+    "ttsModel": {
+      "description": "This call's ElevenLabs model, if the profile allows it",
+      "type": "string"
+    },
+    "voice": {
+      "description": "This call's ElevenLabs voice, if the profile allows it",
       "type": "string"
     }
   },
@@ -139739,6 +139791,24 @@ export const VoiceCallsStartReturnSchema = {
       ],
       "type": "string"
     },
+    "overrides": {
+      "additionalProperties": false,
+      "properties": {
+        "language": {
+          "type": "string"
+        },
+        "liveVoice": {
+          "type": "string"
+        },
+        "ttsModel": {
+          "type": "string"
+        },
+        "voice": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "profileId": {
       "type": "string"
     },
@@ -139789,6 +139859,7 @@ export const VoiceCallsStartReturnSchema = {
     "sessionName",
     "mode",
     "profileId",
+    "overrides",
     "state",
     "capabilities"
   ],
@@ -140454,6 +140525,10 @@ export const VoiceProfilesCreateInputSchema = {
       "description": "Accept third-party speakers (speech only, never control)",
       "type": "boolean"
     },
+    "allowedVoices": {
+      "description": "Voices a call may pick when it overrides one ('*' clears)",
+      "type": "string"
+    },
     "delivery": {
       "description": "speak|when_idle|silent",
       "type": "string"
@@ -140494,6 +140569,10 @@ export const VoiceProfilesCreateInputSchema = {
       "description": "push|live|handsfree|mock",
       "type": "string"
     },
+    "overridable": {
+      "description": "Fields a call may change at start: voice,language,ttsModel,liveVoice (none clears)",
+      "type": "string"
+    },
     "sttLanguage": {
       "description": "Transcription language when not --language (empty clears)",
       "type": "string"
@@ -140530,6 +140609,12 @@ export const VoiceProfilesCreateReturnSchema = {
       "properties": {
         "allowGuests": {
           "type": "boolean"
+        },
+        "allowedVoices": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "createdAt": {
           "type": "number"
@@ -140574,6 +140659,18 @@ export const VoiceProfilesCreateReturnSchema = {
             "mock"
           ],
           "type": "string"
+        },
+        "overridable": {
+          "items": {
+            "enum": [
+              "voice",
+              "language",
+              "ttsModel",
+              "liveVoice"
+            ],
+            "type": "string"
+          },
+          "type": "array"
         },
         "sttLanguage": {
           "type": "string"
@@ -140728,6 +140825,12 @@ export const VoiceProfilesListReturnSchema = {
           "allowGuests": {
             "type": "boolean"
           },
+          "allowedVoices": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "createdAt": {
             "type": "number"
           },
@@ -140771,6 +140874,18 @@ export const VoiceProfilesListReturnSchema = {
               "mock"
             ],
             "type": "string"
+          },
+          "overridable": {
+            "items": {
+              "enum": [
+                "voice",
+                "language",
+                "ttsModel",
+                "liveVoice"
+              ],
+              "type": "string"
+            },
+            "type": "array"
           },
           "sttLanguage": {
             "type": "string"
@@ -140849,6 +140964,12 @@ export const VoiceProfilesShowReturnSchema = {
         "allowGuests": {
           "type": "boolean"
         },
+        "allowedVoices": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "createdAt": {
           "type": "number"
         },
@@ -140892,6 +141013,18 @@ export const VoiceProfilesShowReturnSchema = {
             "mock"
           ],
           "type": "string"
+        },
+        "overridable": {
+          "items": {
+            "enum": [
+              "voice",
+              "language",
+              "ttsModel",
+              "liveVoice"
+            ],
+            "type": "string"
+          },
+          "type": "array"
         },
         "sttLanguage": {
           "type": "string"
@@ -140979,6 +141112,10 @@ export const VoiceProfilesUpdateInputSchema = {
       "description": "Accept third-party speakers",
       "type": "boolean"
     },
+    "allowedVoices": {
+      "description": "Voices a call may pick when it overrides one ('*' clears)",
+      "type": "string"
+    },
     "delivery": {
       "description": "speak|when_idle|silent",
       "type": "string"
@@ -141024,6 +141161,10 @@ export const VoiceProfilesUpdateInputSchema = {
       "description": "Stop accepting third-party speakers",
       "type": "boolean"
     },
+    "overridable": {
+      "description": "Fields a call may change at start: voice,language,ttsModel,liveVoice (none clears)",
+      "type": "string"
+    },
     "sttLanguage": {
       "description": "Transcription language when not --language (empty clears)",
       "type": "string"
@@ -141060,6 +141201,12 @@ export const VoiceProfilesUpdateReturnSchema = {
       "properties": {
         "allowGuests": {
           "type": "boolean"
+        },
+        "allowedVoices": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "createdAt": {
           "type": "number"
@@ -141104,6 +141251,18 @@ export const VoiceProfilesUpdateReturnSchema = {
             "mock"
           ],
           "type": "string"
+        },
+        "overridable": {
+          "items": {
+            "enum": [
+              "voice",
+              "language",
+              "ttsModel",
+              "liveVoice"
+            ],
+            "type": "string"
+          },
+          "type": "array"
         },
         "sttLanguage": {
           "type": "string"

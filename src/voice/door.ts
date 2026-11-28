@@ -52,6 +52,7 @@ import {
 } from "./store.js";
 import {
   DEFAULT_VOICE_PROFILE_ID,
+  effectiveVoiceProfile,
   type VoiceAgentState,
   type VoiceCall,
   type VoiceEventType,
@@ -616,6 +617,7 @@ export class VoiceDoorService {
     if (profile.delivery === "when_idle") {
       await this.waitUntilIdle(call.id);
       if (!this.isOpen(call.id)) return;
+      if (audio) await this.setAgentState(call.id, "speaking");
     }
     await this.emitOpen(
       call.id,
@@ -946,18 +948,17 @@ export class VoiceDoorService {
     for (const release of waiters) release();
   }
 
-  /** Resolve once the person is quiet, the call ends, or the hold reaches its ceiling. */
+  /**
+   * Resolve once the person is quiet, the call ends, or the hold reaches its ceiling. The ceiling
+   * counts from when this reply starts waiting, so a person who talks for long is not talked over.
+   */
   private async waitUntilIdle(callId: string): Promise<void> {
     const runtime = this.runtime(callId);
     const maxWait = this.deps.whenIdleMaxWaitMs ?? WHEN_IDLE_MAX_WAIT_MS;
-    const since = runtime.userSpeakingSince;
-    if (since === undefined) return;
-    const remaining = since + maxWait - this.now();
-    if (remaining <= 0) {
-      // A "speaking" signal older than the ceiling is stale: the stop never arrived.
-      runtime.userSpeakingSince = undefined;
-      return;
-    }
+    if (runtime.userSpeakingSince === undefined) return;
+    const remaining = maxWait;
+    // Nothing plays while the reply is held: show the call as listening, not speaking.
+    await this.setAgentState(callId, "listening");
     await new Promise<void>((resolve) => {
       let done = false;
       const finish = () => {
@@ -974,7 +975,8 @@ export class VoiceDoorService {
   }
 
   private profileFor(call: VoiceCall): VoiceProfile {
-    return getVoiceProfile(call.profileId) ?? (getVoiceProfile(DEFAULT_VOICE_PROFILE_ID) as VoiceProfile);
+    const base = getVoiceProfile(call.profileId) ?? (getVoiceProfile(DEFAULT_VOICE_PROFILE_ID) as VoiceProfile);
+    return effectiveVoiceProfile(base, call.overrides);
   }
 }
 

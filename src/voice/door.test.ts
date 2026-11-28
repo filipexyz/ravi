@@ -706,6 +706,20 @@ describe("voice door", () => {
       expect(Date.now() - startedAt).toBeGreaterThanOrEqual(550);
     });
 
+    it("a person who has talked longer than the ceiling still holds a new reply, shown as listening", async () => {
+      saveVoiceProfile({ ...defaultVoiceProfile(), id: "idle", delivery: "when_idle" });
+      const { door } = harness({ whenIdleMaxWaitMs: 300 });
+      const call = makeCall("push", { profileId: "idle" });
+      await door.handleControl({ op: "activity", callId: call.id, speaking: true });
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      await say(door, call.id, "vt_i8");
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(spoke(call.id)).toBe(false);
+      expect(getVoiceCall(call.id)?.agentState).toBe("listening");
+      await door.handleControl({ op: "activity", callId: call.id, speaking: false });
+      await until(() => spoke(call.id), "spoken once the person stopped");
+    });
+
     it("a person who starts talking while the clip is synthesized still holds it", async () => {
       saveVoiceProfile({ ...defaultVoiceProfile(), id: "idle", delivery: "when_idle" });
       let releaseSynthesis: () => void = () => {};

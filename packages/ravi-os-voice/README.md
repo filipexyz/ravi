@@ -31,6 +31,23 @@ autoplayReplies(call);
 | `handsfree` | a LiveKit room with the `ravi-voice` worker (needs `livekit-client`) | `joinRoom(call)` |
 | `mock` | text only, for tests | `call.say(text)` |
 
+## Configuration
+
+Voice, language, models, transcription and spend limits live in **voice profiles** on the daemon.
+`voice.profiles()` and `voice.voices()` list them; an operator, or a key issued with
+`mutate:voice:profiles.*`, manages them through `client.voice.profiles.*`. Device keys only read.
+
+A call may change its profile's `voice`, `language`, `ttsModel` or `liveVoice` when the profile lists
+the field in `overridable` (closed by default), and only with voices in `allowedVoices` when set:
+
+```ts
+const call = await voice.start("main", { profile: "atendimento", voice: "<voice id>", language: "en" });
+```
+
+`pushToTalk` tells the call when the person presses and releases (`call.activity("speaking" | "quiet")`),
+so a profile with `delivery: when_idle` holds its replies until they stop. Use `call.activity` yourself
+with your own voice-activity detection.
+
 Approvals are taps only: `call.approve(id)` sends the version and digest the
 call showed, so a request that changed since is refused. Voice can cancel or
 deny, never approve.

@@ -21,6 +21,8 @@ export function pushToTalk(call: RaviVoiceCall, options: { mimeType?: string } =
         if (event.data.size) chunks.push(event.data);
       };
       recorder.start();
+      // `when_idle` replies wait while the person talks. A failed signal never blocks recording.
+      call.activity("speaking").catch(() => {});
     },
     async stop() {
       const active = recorder;
@@ -33,6 +35,7 @@ export function pushToTalk(call: RaviVoiceCall, options: { mimeType?: string } =
       await done;
       for (const track of stream?.getTracks() ?? []) track.stop();
       stream = null;
+      await call.activity("quiet").catch(() => null);
       const clip = new Blob(chunks, { type: (active.mimeType || "audio/webm").split(";")[0] });
       if (!clip.size) return null;
       return call.push(clip);
