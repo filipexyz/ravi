@@ -215,11 +215,39 @@ describe("probeUnixSocket retry", () => {
     expect((result as { elapsedMs: number }).elapsedMs).toBeGreaterThanOrEqual(25);
   });
 
-  it("does not retry a socket that vanishes between the existence check and connect", async () => {
+  it("does not retry a socket whose path is really gone after ENOENT", async () => {
     const sockets = scriptedSockets(["vanish"]);
-    const result = await probeUnixSocketDetailed(existing, { timeoutMs: 10, backoffMs: [1], ...sockets });
+    const result = await probeUnixSocketDetailed(existing, {
+      timeoutMs: 10,
+      backoffMs: [1],
+      exists: (path) => path !== existing || sockets.count() === 0,
+      ...sockets,
+    });
     expect(result).toMatchObject({ ok: false, reason: "missing", code: "ENOENT" });
     expect(sockets.count()).toBe(1);
+  });
+
+  it("reads ENOENT with the path still present as a full queue (Bun on Linux) and retries", async () => {
+    const sockets = scriptedSockets(["vanish"]);
+    const result = await probeUnixSocketDetailed(existing, {
+      timeoutMs: 10,
+      backoffMs: [1],
+      exists: () => true,
+      ...sockets,
+    });
+    expect(result).toMatchObject({ ok: false, reason: "timeout", code: "ENOENT", attempts: 3 });
+    expect(sockets.count()).toBe(3);
+  });
+
+  it("records how long each attempt took, not only the total", async () => {
+    const result = await probeUnixSocketDetailed(existing, {
+      timeoutMs: 15,
+      backoffMs: [1],
+      ...scriptedSockets(["hang"]),
+    });
+    const attemptMs = (result as { attemptMs: number[] }).attemptMs;
+    expect(attemptMs).toHaveLength(3);
+    for (const ms of attemptMs) expect(ms).toBeGreaterThanOrEqual(10);
   });
 
   it("reports a missing socket as definite, without retrying", async () => {

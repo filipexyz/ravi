@@ -196,6 +196,7 @@ type HostGatewayFailure = {
   code?: string;
   attempts?: number;
   elapsedMs?: number;
+  attemptMs?: number[];
 };
 
 let lastHostGatewayFailure: HostGatewayFailure | null = null;
@@ -242,6 +243,7 @@ export async function resolveAutoHostCliGateway(
       ...(result.code ? { code: result.code } : {}),
       ...(result.attempts !== undefined ? { attempts: result.attempts } : {}),
       ...(result.elapsedMs !== undefined ? { elapsedMs: result.elapsedMs } : {}),
+      ...(result.attemptMs ? { attemptMs: result.attemptMs } : {}),
     };
   }
   return null;
@@ -291,7 +293,7 @@ export function gatewayRequiredError(op: string, installedOperator = false): Con
           : `socket presente, falha ao conectar${failure.code ? ` ${failure.code}` : ""}: ${failure.socketPath}`;
     const timing =
       failure.attempts !== undefined && failure.reason !== "missing"
-        ? `; ${failure.attempts} tentativa(s) em ${failure.elapsedMs ?? 0} ms`
+        ? `; ${failure.attempts} tentativa(s) em ${failure.elapsedMs ?? 0} ms${failure.attemptMs?.length ? ` (cada uma: ${failure.attemptMs.join(", ")} ms)` : ""}`
         : "";
     detail = ` (${what}${timing})`;
   }
