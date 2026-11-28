@@ -44,8 +44,9 @@ entered the session, and the feature spec `runtime/providers/realtime-voice` (ar
    talking), `silent` (screen and context only).
    `when_idle` MUST hold the reply while the person is talking, as reported by `calls activity <call>
    speaking|quiet` (sent by the client, e.g. on push-to-talk press and release), and speak it when
-   they stop, when the call ends (then it is not spoken) or after `WHEN_IDLE_MAX_WAIT_MS` (20 s), so
-   a lost "quiet" never silences the call. With no "speaking" signal it speaks at once. Live calls
+   they stop, when the call ends (then it is not spoken) or after `WHEN_IDLE_MAX_WAIT_MS` (20 s)
+   counted from when that reply starts waiting, so a lost "quiet" never silences the call and a long
+   speaker is not talked over. While a reply is held the call shows `agentState: listening`. With no "speaking" signal it speaks at once. Live calls
    speak as `speak`: the live model owns turn-taking.
 
 ## Modes and engines
@@ -152,7 +153,14 @@ entered the session, and the feature spec `runtime/providers/realtime-voice` (ar
   (ElevenLabs, Groq, OpenAI, LiveKit) stay in the daemon environment and never appear in a profile.
 - **Which profile a call uses.** `calls start` takes the named `--profile`, else the profile bound to
   the session (`voice profiles bind <id> <session>`), else the device's only profile when it was
-  paired for exactly one, else `default`. A device paired with `--profiles <ids>` MUST be refused any
+  paired for exactly one, else `default`. A session's bound profile that a device was not paired
+  for is skipped for that device; a refusal names the profiles the device may use. A manager key
+  binds and unbinds only sessions it can reach (`canAccessSession`), like `sessions send`.
+- **Per-call overrides are closed by default.** `calls start` may set `voice`, `language`,
+  `ttsModel` and `liveVoice` for one call only when the profile lists the field in `overridable`, and
+  a `voice`/`liveVoice` only from `allowedVoices` when the profile sets it; anything else is refused
+  with `VOICE_OVERRIDE_FORBIDDEN`. Overrides are stored on the call and never change limits, delivery
+  or the profile itself. A pinned `sttProvider` refuses another provider's `sttModel`. A device paired with `--profiles <ids>` MUST be refused any
   other profile (`VOICE_PROFILE_FORBIDDEN`); devices paired without the option keep `*`. Deleting a
   profile removes its session bindings.
 
@@ -161,6 +169,7 @@ entered the session, and the feature spec `runtime/providers/realtime-voice` (ar
 ```
 ravi voice targets list
 ravi voice calls start <session> [--profile <id>] [--mode push|live|handsfree|mock] [--offer <sdp>]
+  [--voice <id>] [--language <code>] [--tts-model <id>] [--live-voice <name>]
 ravi voice calls connect <call> [--offer <sdp>]
 ravi voice calls list | show <call> | transcript <call> | events <call> [--after <seq>]
 ravi voice calls push <call> --audio <file> | --audio-data <base64> [--mime <type>]
@@ -173,6 +182,7 @@ ravi voice calls approve <call> <approval> --version <n> --digest <d> --execute
 ravi voice calls deny <call> <approval>
 ravi voice calls end <call>
 ravi voice profiles list|show|create|update|delete [--stt-provider auto|groq|openai] [--stt-model <id>] [--stt-language <code>]
+  [--overridable voice,language,ttsModel,liveVoice|none] [--allowed-voices <ids>|*]
 ravi voice profiles bind <id> <session> | unbind <session>
 ravi voice voices list
 ravi voice devices pair [--profiles <ids>]|list|revoke

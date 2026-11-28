@@ -36,6 +36,7 @@ export default defineAgent({
       callId?: string;
       language?: string;
       voice?: string | null;
+      ttsModel?: string | null;
       sttModel?: string | null;
     };
     if (!meta.callId) throw new Error("job metadata has no callId");
@@ -50,7 +51,10 @@ export default defineAgent({
         model: meta.sttModel || "gpt-4o-transcribe",
         ...(meta.language ? { language: meta.language.split("-")[0] } : {}),
       }),
-      tts: new elevenlabs.TTS({ model: "eleven_multilingual_v2", ...(meta.voice ? { voiceId: meta.voice } : {}) }),
+      tts: new elevenlabs.TTS({
+        model: meta.ttsModel || "eleven_multilingual_v2",
+        ...(meta.voice ? { voiceId: meta.voice } : {}),
+      }),
       // No LLM: the Ravi session is the brain.
     });
     await session.start({

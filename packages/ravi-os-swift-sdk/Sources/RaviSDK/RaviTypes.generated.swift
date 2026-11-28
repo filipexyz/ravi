@@ -40426,23 +40426,41 @@ public struct VoiceCallsSilenceReturn: Codable, Sendable {
 }
 
 public struct VoiceCallsStartOptions: Codable, Sendable {
+  public var language: String?
+  public var liveVoice: String?
   public var mode: String?
   public var offer: String?
   public var profile: String?
+  public var ttsModel: String?
+  public var voice: String?
 
-  public init(mode: String? = nil, offer: String? = nil, profile: String? = nil) {
+  public init(language: String? = nil, liveVoice: String? = nil, mode: String? = nil, offer: String? = nil, profile: String? = nil, ttsModel: String? = nil, voice: String? = nil) {
+    self.language = language
+    self.liveVoice = liveVoice
     self.mode = mode
     self.offer = offer
     self.profile = profile
+    self.ttsModel = ttsModel
+    self.voice = voice
   }
 
   enum CodingKeys: String, CodingKey {
+    case language = "language"
+    case liveVoice = "liveVoice"
     case mode = "mode"
     case offer = "offer"
     case profile = "profile"
+    case ttsModel = "ttsModel"
+    case voice = "voice"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.language {
+      body["language"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.liveVoice {
+      body["liveVoice"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.mode {
       body["mode"] = try RaviJSON.fromEncodable(value)
     }
@@ -40451,6 +40469,12 @@ public struct VoiceCallsStartOptions: Codable, Sendable {
     }
     if let value = self.profile {
       body["profile"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.ttsModel {
+      body["ttsModel"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.voice {
+      body["voice"] = try RaviJSON.fromEncodable(value)
     }
   }
 }
@@ -40461,6 +40485,7 @@ public struct VoiceCallsStartReturn: Codable, Sendable {
   public var connectionKind: String
   public var lastSeq: Double
   public var mode: String
+  public var overrides: RaviJSON?
   public var profileId: String
   public var roomToken: RaviJSON
   public var roomUrl: RaviJSON
@@ -40468,12 +40493,13 @@ public struct VoiceCallsStartReturn: Codable, Sendable {
   public var sessionName: String
   public var state: String
 
-  public init(callId: String, capabilities: RaviJSON, connectionKind: String, lastSeq: Double, mode: String, profileId: String, roomToken: RaviJSON, roomUrl: RaviJSON, sdpAnswer: RaviJSON, sessionName: String, state: String) {
+  public init(callId: String, capabilities: RaviJSON, connectionKind: String, lastSeq: Double, mode: String, overrides: RaviJSON? = nil, profileId: String, roomToken: RaviJSON, roomUrl: RaviJSON, sdpAnswer: RaviJSON, sessionName: String, state: String) {
     self.callId = callId
     self.capabilities = capabilities
     self.connectionKind = connectionKind
     self.lastSeq = lastSeq
     self.mode = mode
+    self.overrides = overrides
     self.profileId = profileId
     self.roomToken = roomToken
     self.roomUrl = roomUrl
@@ -40488,6 +40514,7 @@ public struct VoiceCallsStartReturn: Codable, Sendable {
     case connectionKind = "connectionKind"
     case lastSeq = "lastSeq"
     case mode = "mode"
+    case overrides = "overrides"
     case profileId = "profileId"
     case roomToken = "roomToken"
     case roomUrl = "roomUrl"
@@ -40718,6 +40745,7 @@ public struct VoiceProfilesBindReturn: Codable, Sendable {
 
 public struct VoiceProfilesCreateOptions: Codable, Sendable {
   public var allowGuests: Bool?
+  public var allowedVoices: String?
   public var delivery: String?
   public var label: String?
   public var language: String?
@@ -40727,14 +40755,16 @@ public struct VoiceProfilesCreateOptions: Codable, Sendable {
   public var maxCallMinutes: String?
   public var maxDailyCost: String?
   public var mode: String?
+  public var overridable: String?
   public var sttLanguage: String?
   public var sttModel: String?
   public var sttProvider: String?
   public var ttsModel: String?
   public var voice: String?
 
-  public init(allowGuests: Bool? = nil, delivery: String? = nil, label: String? = nil, language: String? = nil, liveModel: String? = nil, liveVoice: String? = nil, maxCallCost: String? = nil, maxCallMinutes: String? = nil, maxDailyCost: String? = nil, mode: String? = nil, sttLanguage: String? = nil, sttModel: String? = nil, sttProvider: String? = nil, ttsModel: String? = nil, voice: String? = nil) {
+  public init(allowGuests: Bool? = nil, allowedVoices: String? = nil, delivery: String? = nil, label: String? = nil, language: String? = nil, liveModel: String? = nil, liveVoice: String? = nil, maxCallCost: String? = nil, maxCallMinutes: String? = nil, maxDailyCost: String? = nil, mode: String? = nil, overridable: String? = nil, sttLanguage: String? = nil, sttModel: String? = nil, sttProvider: String? = nil, ttsModel: String? = nil, voice: String? = nil) {
     self.allowGuests = allowGuests
+    self.allowedVoices = allowedVoices
     self.delivery = delivery
     self.label = label
     self.language = language
@@ -40744,6 +40774,7 @@ public struct VoiceProfilesCreateOptions: Codable, Sendable {
     self.maxCallMinutes = maxCallMinutes
     self.maxDailyCost = maxDailyCost
     self.mode = mode
+    self.overridable = overridable
     self.sttLanguage = sttLanguage
     self.sttModel = sttModel
     self.sttProvider = sttProvider
@@ -40753,6 +40784,7 @@ public struct VoiceProfilesCreateOptions: Codable, Sendable {
 
   enum CodingKeys: String, CodingKey {
     case allowGuests = "allowGuests"
+    case allowedVoices = "allowedVoices"
     case delivery = "delivery"
     case label = "label"
     case language = "language"
@@ -40762,6 +40794,7 @@ public struct VoiceProfilesCreateOptions: Codable, Sendable {
     case maxCallMinutes = "maxCallMinutes"
     case maxDailyCost = "maxDailyCost"
     case mode = "mode"
+    case overridable = "overridable"
     case sttLanguage = "sttLanguage"
     case sttModel = "sttModel"
     case sttProvider = "sttProvider"
@@ -40772,6 +40805,9 @@ public struct VoiceProfilesCreateOptions: Codable, Sendable {
   func encodeBody(into body: inout [String: RaviJSON]) throws {
     if let value = self.allowGuests {
       body["allowGuests"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.allowedVoices {
+      body["allowedVoices"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.delivery {
       body["delivery"] = try RaviJSON.fromEncodable(value)
@@ -40799,6 +40835,9 @@ public struct VoiceProfilesCreateOptions: Codable, Sendable {
     }
     if let value = self.mode {
       body["mode"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.overridable {
+      body["overridable"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.sttLanguage {
       body["sttLanguage"] = try RaviJSON.fromEncodable(value)
@@ -40916,6 +40955,7 @@ public struct VoiceProfilesUnbindReturn: Codable, Sendable {
 
 public struct VoiceProfilesUpdateOptions: Codable, Sendable {
   public var allowGuests: Bool?
+  public var allowedVoices: String?
   public var delivery: String?
   public var label: String?
   public var language: String?
@@ -40926,14 +40966,16 @@ public struct VoiceProfilesUpdateOptions: Codable, Sendable {
   public var maxDailyCost: String?
   public var mode: String?
   public var noGuests: Bool?
+  public var overridable: String?
   public var sttLanguage: String?
   public var sttModel: String?
   public var sttProvider: String?
   public var ttsModel: String?
   public var voice: String?
 
-  public init(allowGuests: Bool? = nil, delivery: String? = nil, label: String? = nil, language: String? = nil, liveModel: String? = nil, liveVoice: String? = nil, maxCallCost: String? = nil, maxCallMinutes: String? = nil, maxDailyCost: String? = nil, mode: String? = nil, noGuests: Bool? = nil, sttLanguage: String? = nil, sttModel: String? = nil, sttProvider: String? = nil, ttsModel: String? = nil, voice: String? = nil) {
+  public init(allowGuests: Bool? = nil, allowedVoices: String? = nil, delivery: String? = nil, label: String? = nil, language: String? = nil, liveModel: String? = nil, liveVoice: String? = nil, maxCallCost: String? = nil, maxCallMinutes: String? = nil, maxDailyCost: String? = nil, mode: String? = nil, noGuests: Bool? = nil, overridable: String? = nil, sttLanguage: String? = nil, sttModel: String? = nil, sttProvider: String? = nil, ttsModel: String? = nil, voice: String? = nil) {
     self.allowGuests = allowGuests
+    self.allowedVoices = allowedVoices
     self.delivery = delivery
     self.label = label
     self.language = language
@@ -40944,6 +40986,7 @@ public struct VoiceProfilesUpdateOptions: Codable, Sendable {
     self.maxDailyCost = maxDailyCost
     self.mode = mode
     self.noGuests = noGuests
+    self.overridable = overridable
     self.sttLanguage = sttLanguage
     self.sttModel = sttModel
     self.sttProvider = sttProvider
@@ -40953,6 +40996,7 @@ public struct VoiceProfilesUpdateOptions: Codable, Sendable {
 
   enum CodingKeys: String, CodingKey {
     case allowGuests = "allowGuests"
+    case allowedVoices = "allowedVoices"
     case delivery = "delivery"
     case label = "label"
     case language = "language"
@@ -40963,6 +41007,7 @@ public struct VoiceProfilesUpdateOptions: Codable, Sendable {
     case maxDailyCost = "maxDailyCost"
     case mode = "mode"
     case noGuests = "noGuests"
+    case overridable = "overridable"
     case sttLanguage = "sttLanguage"
     case sttModel = "sttModel"
     case sttProvider = "sttProvider"
@@ -40973,6 +41018,9 @@ public struct VoiceProfilesUpdateOptions: Codable, Sendable {
   func encodeBody(into body: inout [String: RaviJSON]) throws {
     if let value = self.allowGuests {
       body["allowGuests"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.allowedVoices {
+      body["allowedVoices"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.delivery {
       body["delivery"] = try RaviJSON.fromEncodable(value)
@@ -41003,6 +41051,9 @@ public struct VoiceProfilesUpdateOptions: Codable, Sendable {
     }
     if let value = self.noGuests {
       body["noGuests"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.overridable {
+      body["overridable"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.sttLanguage {
       body["sttLanguage"] = try RaviJSON.fromEncodable(value)

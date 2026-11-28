@@ -25,11 +25,12 @@ mock.module("../../nats.js", () => ({
     close: mock(async () => {}),
   },
 }));
+let canAccessSessionForTests: (...args: unknown[]) => boolean = () => true;
 const actualScope = await import("../../permissions/scope.js");
 mock.module("../../permissions/scope.js", () => ({
   ...actualScope,
   getScopeContext: () => ({}),
-  canAccessSession: () => true,
+  canAccessSession: (...args: unknown[]) => canAccessSessionForTests(...args),
   filterAccessibleSessions: <T>(_: unknown, sessions: T[]) => sessions,
 }));
 
@@ -78,6 +79,7 @@ describe("ravi voice commands", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-voice-cli-");
     currentContext = undefined;
+    canAccessSessionForTests = () => true;
     emitted.length = 0;
     getOrCreateSession("agent:main:main", "main", "/tmp", { name: "main" });
   });
@@ -88,10 +90,9 @@ describe("ravi voice commands", () => {
 
   it("starts a mock call as the operator and hands speech to the door", async () => {
     const calls = new VoiceCallsCommands();
-    const started = (await quiet(() => calls.start("main", undefined, "mock", undefined, true))) as Record<
-      string,
-      unknown
-    >;
+    const started = (await quiet(() =>
+      calls.start("main", undefined, "mock", undefined, undefined, undefined, undefined, undefined, true),
+    )) as Record<string, unknown>;
     expect(started).toMatchObject({ sessionName: "main", mode: "mock", connectionKind: "none", sdpAnswer: null });
     const callId = String(started.callId);
     expect(getVoiceCall(callId)?.state).toBe("active");
@@ -103,13 +104,27 @@ describe("ravi voice commands", () => {
     const control = emitted.find((message) => message.topic === `ravi.voice.${callId}.ctl`);
     expect(control?.data).toMatchObject({ op: "utterance", text: "que horas são?", speaker: { kind: "operator" } });
 
-    const again = await contractError(() => calls.start("main", undefined, "mock", undefined, true));
+    const again = await contractError(() =>
+      calls.start("main", undefined, "mock", undefined, undefined, undefined, undefined, undefined, true),
+    );
     expect(again.code).toBe("VOICE_CALL_ACTIVE");
   });
 
   it("refuses to start or approve from an agent turn", async () => {
     currentContext = { sessionKey: "agent:main:main", sessionName: "main", agentId: "main" };
-    const error = await contractError(() => new VoiceCallsCommands().start("main", undefined, "mock", undefined, true));
+    const error = await contractError(() =>
+      new VoiceCallsCommands().start(
+        "main",
+        undefined,
+        "mock",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
+    );
     expect(error.code).toBe("VOICE_AGENT_TURN_REFUSED");
     expect(error.exitCode).toBe(3);
   });
@@ -119,21 +134,21 @@ describe("ravi voice commands", () => {
     saveVoiceProfile({ ...defaultVoiceProfile(), id: "fresh", mode: "mock", maxDailyCostUsd: 1 });
     addVoiceDailyUsage("spent", 1, 60);
     const calls = new VoiceCallsCommands();
-    const refused = await contractError(() => calls.start("main", "spent", undefined, undefined, true));
+    const refused = await contractError(() =>
+      calls.start("main", "spent", undefined, undefined, undefined, undefined, undefined, undefined, true),
+    );
     expect(refused.code).toBe("VOICE_LIMIT_REACHED");
-    const started = (await quiet(() => calls.start("main", "fresh", undefined, undefined, true))) as Record<
-      string,
-      unknown
-    >;
+    const started = (await quiet(() =>
+      calls.start("main", "fresh", undefined, undefined, undefined, undefined, undefined, undefined, true),
+    )) as Record<string, unknown>;
     expect(getVoiceCall(String(started.callId))?.profileId).toBe("fresh");
   });
 
   it("activity tells the door whether the person is talking", async () => {
     const calls = new VoiceCallsCommands();
-    const started = (await quiet(() => calls.start("main", undefined, "mock", undefined, true))) as Record<
-      string,
-      unknown
-    >;
+    const started = (await quiet(() =>
+      calls.start("main", undefined, "mock", undefined, undefined, undefined, undefined, undefined, true),
+    )) as Record<string, unknown>;
     const callId = String(started.callId);
     const result = (await quiet(() => calls.activity(callId, "speaking", true))) as Record<string, unknown>;
     expect(result).toEqual({ callId, speaking: true });
@@ -145,17 +160,26 @@ describe("ravi voice commands", () => {
 
   it("refuses an engine that is not configured", async () => {
     const error = await contractError(() =>
-      new VoiceCallsCommands().start("main", undefined, "handsfree", undefined, true),
+      new VoiceCallsCommands().start(
+        "main",
+        undefined,
+        "handsfree",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
     );
     expect(error.code).toBe("VOICE_ENGINE_NOT_READY");
   });
 
   it("approve is braked, bound to version and digest, and answers with a reaction", async () => {
     const calls = new VoiceCallsCommands();
-    const started = (await quiet(() => calls.start("main", undefined, "mock", undefined, true))) as Record<
-      string,
-      unknown
-    >;
+    const started = (await quiet(() =>
+      calls.start("main", undefined, "mock", undefined, undefined, undefined, undefined, undefined, true),
+    )) as Record<string, unknown>;
     const callId = String(started.callId);
     const now = Date.now();
     createApprovalRequest({
@@ -247,6 +271,8 @@ describe("ravi voice commands", () => {
       sttProvider: string;
       sttModel: string;
       sttLanguage: string;
+      overridable: string;
+      allowedVoices: string;
     }>;
     const create = (id: string, a: ProfileArgs = {}) =>
       new VoiceProfilesCommands().create(
@@ -266,6 +292,8 @@ describe("ravi voice commands", () => {
         a.sttProvider,
         a.sttModel,
         a.sttLanguage,
+        a.overridable,
+        a.allowedVoices,
         true,
       );
     const update = (id: string, a: ProfileArgs = {}) =>
@@ -287,6 +315,8 @@ describe("ravi voice commands", () => {
         a.sttProvider,
         a.sttModel,
         a.sttLanguage,
+        a.overridable,
+        a.allowedVoices,
         true,
       );
     const issuedKey = (capabilities: Array<{ permission: string; objectType: string; objectId: string }>) =>
@@ -389,7 +419,17 @@ describe("ravi voice commands", () => {
       try {
         await quiet(() => update("stt", { sttProvider: "groq" }));
         const refused = await contractError(() =>
-          new VoiceCallsCommands().start("main", "stt", undefined, undefined, true),
+          new VoiceCallsCommands().start(
+            "main",
+            "stt",
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            true,
+          ),
         );
         expect(refused.code).toBe("VOICE_ENGINE_NOT_READY");
         expect(refused.message).toContain("GROQ_API_KEY");
@@ -421,12 +461,13 @@ describe("ravi voice commands", () => {
       expect(device.profiles).toEqual(["calm"]);
       currentContext = as;
       const calls = new VoiceCallsCommands();
-      const refused = await contractError(() => calls.start("main", "default", undefined, undefined, true));
+      const refused = await contractError(() =>
+        calls.start("main", "default", undefined, undefined, undefined, undefined, undefined, undefined, true),
+      );
       expect(refused.code).toBe("VOICE_PROFILE_FORBIDDEN");
-      const started = (await quiet(() => calls.start("main", undefined, undefined, undefined, true))) as Record<
-        string,
-        unknown
-      >;
+      const started = (await quiet(() =>
+        calls.start("main", undefined, undefined, undefined, undefined, undefined, undefined, undefined, true),
+      )) as Record<string, unknown>;
       expect(getVoiceCall(String(started.callId))?.profileId).toBe("calm");
     });
 
@@ -436,10 +477,9 @@ describe("ravi voice commands", () => {
       const bound = (await quiet(() => profiles.bind("calm", "main", true))) as Record<string, unknown>;
       expect(bound).toMatchObject({ profileId: "calm", sessionName: "main" });
       const calls = new VoiceCallsCommands();
-      const first = (await quiet(() => calls.start("main", undefined, undefined, undefined, true))) as Record<
-        string,
-        unknown
-      >;
+      const first = (await quiet(() =>
+        calls.start("main", undefined, undefined, undefined, undefined, undefined, undefined, undefined, true),
+      )) as Record<string, unknown>;
       expect(getVoiceCall(String(first.callId))?.profileId).toBe("calm");
       // No door runs here: close the call in the store, as the door would.
       const { updateVoiceCall } = await import("../../voice/store.js");
@@ -447,11 +487,188 @@ describe("ravi voice commands", () => {
       expect(((await quiet(() => profiles.unbind("main", true))) as { unbound: boolean }).unbound).toBe(true);
       await quiet(() => profiles.bind("calm", "main", true));
       await quiet(() => profiles.delete("calm", true));
-      const second = (await quiet(() => calls.start("main", undefined, "mock", undefined, true))) as Record<
-        string,
-        unknown
-      >;
+      const second = (await quiet(() =>
+        calls.start("main", undefined, "mock", undefined, undefined, undefined, undefined, undefined, true),
+      )) as Record<string, unknown>;
       expect(getVoiceCall(String(second.callId))?.profileId).toBe("default");
+    });
+  });
+
+  describe("per-call overrides and review follow-ups", () => {
+    const profiles = () => new VoiceProfilesCommands();
+    const createProfile = (
+      id: string,
+      a: { overridable?: string; allowedVoices?: string; sttProvider?: string; sttModel?: string },
+    ) =>
+      profiles().create(
+        id,
+        undefined,
+        "mock",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        a.sttProvider,
+        a.sttModel,
+        undefined,
+        a.overridable,
+        a.allowedVoices,
+        true,
+      );
+    const start = (profile: string, o: { voice?: string; language?: string; liveVoice?: string } = {}) =>
+      new VoiceCallsCommands().start(
+        "main",
+        profile,
+        undefined,
+        undefined,
+        o.voice,
+        o.language,
+        undefined,
+        o.liveVoice,
+        true,
+      );
+
+    it("a call overrides only what its profile allows, and only with allowed voices", async () => {
+      await quiet(() => createProfile("closed", {}));
+      expect((await contractError(() => start("closed", { voice: "v1" }))).code).toBe("VOICE_OVERRIDE_FORBIDDEN");
+      await quiet(() => createProfile("open", { overridable: "voice,language", allowedVoices: "v1,v2" }));
+      expect((await contractError(() => start("open", { voice: "v9" }))).code).toBe("VOICE_OVERRIDE_FORBIDDEN");
+      expect((await contractError(() => start("open", { liveVoice: "marin" }))).code).toBe("VOICE_OVERRIDE_FORBIDDEN");
+      const started = (await quiet(() => start("open", { voice: "v2", language: "en" }))) as Record<string, unknown>;
+      expect(started.overrides).toEqual({ voice: "v2", language: "en" });
+      const call = getVoiceCall(String(started.callId));
+      expect(call?.overrides).toEqual({ voice: "v2", language: "en" });
+      const { effectiveVoiceProfile } = await import("../../voice/types.js");
+      const { getVoiceProfile } = await import("../../voice/store.js");
+      const effective = effectiveVoiceProfile(getVoiceProfile("open")!, call?.overrides);
+      expect({ voice: effective.voice, language: effective.language }).toEqual({ voice: "v2", language: "en" });
+      expect((await contractError(() => createProfile("bad", { overridable: "maxCallMinutes" }))).code).toBe(
+        "USAGE_ERROR",
+      );
+    });
+
+    it("a device skips a session profile it was not paired for and names its profiles when refused", async () => {
+      await quiet(() => createProfile("kid", {}));
+      await quiet(() => createProfile("adult", {}));
+      await quiet(() => profiles().bind("adult", "main", true));
+      const { createContact } = await import("../../contacts.js");
+      const { dbGetContext } = await import("../../router/router-db.js");
+      const { getVoiceDevice } = await import("../../voice/store.js");
+      const person = createContact({ phone: "5511900000555", name: "Kid" });
+      const paired = (await quiet(() =>
+        new VoiceDevicesCommands().pair(person.id, "phone", "main", false, true, "kid", true),
+      )) as { device: { id: string } };
+      const device = getVoiceDevice(paired.device.id);
+      currentContext = { contextId: device?.contextId, context: dbGetContext(device?.contextId ?? "") } as ToolContext;
+      const started = (await quiet(() => start(undefined as unknown as string))) as Record<string, unknown>;
+      expect(getVoiceCall(String(started.callId))?.profileId).toBe("kid");
+      const refused = await contractError(() => start("adult"));
+      expect(refused.code).toBe("VOICE_PROFILE_FORBIDDEN");
+      expect(refused.message).toContain("name one of: kid");
+    });
+
+    it("a pinned transcription provider refuses another provider's model", async () => {
+      const pushProfile = (id: string, sttProvider?: string, sttModel?: string) =>
+        profiles().create(
+          id,
+          undefined,
+          "push",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          sttProvider,
+          sttModel,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        );
+      const error = await contractError(() => pushProfile("mix", "groq", "gpt-4o-transcribe"));
+      expect(error.code).toBe("USAGE_ERROR");
+      await quiet(() => pushProfile("ok", "groq", "whisper-large-v3"));
+      // Switching provider and clearing the old model together is checked on the profile that is saved.
+      const switched = (await quiet(() =>
+        profiles().update(
+          "ok",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          "openai",
+          "",
+          undefined,
+          undefined,
+          undefined,
+          true,
+        ),
+      )) as { profile: Record<string, unknown> };
+      expect(switched.profile.sttProvider).toBe("openai");
+      expect(switched.profile.sttModel).toBeUndefined();
+      // A non-push profile may keep the pair (the pin is a push setting); a push call on it is refused at start.
+      await quiet(() => createProfile("hf", { sttProvider: "groq", sttModel: "gpt-4o-transcribe" }));
+      const saved = { ...process.env };
+      process.env.ELEVENLABS_API_KEY = "x";
+      process.env.GROQ_API_KEY = "x";
+      try {
+        const refused = await contractError(() =>
+          new VoiceCallsCommands().start(
+            "main",
+            "hf",
+            "push",
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            true,
+          ),
+        );
+        expect(refused.code).toBe("VOICE_ENGINE_NOT_READY");
+      } finally {
+        process.env = saved;
+      }
+    });
+
+    it("a manager key binds only sessions it can reach", async () => {
+      await quiet(() => createProfile("calm", {}));
+      currentContext = {
+        contextId: "ctx_mgr",
+        context: {
+          contextId: "ctx_mgr",
+          kind: "cli",
+          capabilities: [{ permission: "mutate", objectType: "voice", objectId: "profiles.*" }],
+          createdAt: Date.now(),
+        },
+      } as unknown as ToolContext;
+      canAccessSessionForTests = () => false;
+      expect((await contractError(() => profiles().bind("calm", "main", true))).code).toBe("VOICE_SESSION_FORBIDDEN");
+      expect((await contractError(() => profiles().unbind("main", true))).code).toBe("VOICE_SESSION_FORBIDDEN");
+      canAccessSessionForTests = () => true;
+      expect(((await quiet(() => profiles().bind("calm", "main", true))) as { profileId: string }).profileId).toBe(
+        "calm",
+      );
     });
   });
 

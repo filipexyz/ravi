@@ -13,7 +13,7 @@ import { listElevenLabsVoices } from "../../audio/generator.js";
 import { findContactsByTag, getContactDetails } from "../../contacts.js";
 import { OWNER_CONTACT_TAG } from "../../knowledge/owner.js";
 import { nats } from "../../nats.js";
-import { filterAccessibleSessions, getScopeContext } from "../../permissions/scope.js";
+import { canAccessSession, filterAccessibleSessions, getScopeContext } from "../../permissions/scope.js";
 import { createRuntimeContext } from "../../runtime/context-registry.js";
 import { personCredentialMetadata } from "../../runtime/person-credential.js";
 import { buildSessionRelayTurnOrigin } from "../../runtime/turn-origin.js";
@@ -78,6 +78,7 @@ import {
 } from "../../voice/store.js";
 import {
   DEFAULT_VOICE_PROFILE_ID,
+  effectiveVoiceProfile,
   emptyVoiceUsage,
   isVoiceMode,
   VOICE_AGENT_STATES,
@@ -85,12 +86,15 @@ import {
   VOICE_DELIVERY_CLASSES,
   VOICE_EVENT_TYPES,
   VOICE_MODES,
+  VOICE_OVERRIDE_FIELDS,
   VOICE_STT_PROVIDERS,
   type VoiceCall,
+  type VoiceCallOverrides,
   type VoiceConnectionKind,
   type VoiceDeliveryClass,
   type VoiceEventType,
   type VoiceMode,
+  type VoiceOverrideField,
   type VoiceProfile,
   type VoiceSpeaker,
   type VoiceSttProvider,
@@ -167,6 +171,60 @@ function requireOperator(op: string, caller: VoiceCaller, asJson?: boolean): voi
   }
 }
 
+/**
+ * A pinned push provider only serves its own model family: Groq serves Whisper (`whisper-large-*`,
+ * `distil-whisper-*`), OpenAI serves `whisper-1` and the `gpt-*-transcribe` models.
+ */
+function sttModelMismatch(provider: VoiceSttProvider | undefined, model: string | undefined): string | null {
+  if (!provider || !model) return null;
+  const groqModel = /^(distil-)?whisper-large/i.test(model);
+  const openaiModel = /^gpt-/i.test(model) || model === "whisper-1";
+  if (provider === "groq" && !groqModel && openaiModel) {
+    return `--stt-model ${model} is an OpenAI model; Groq serves whisper-large-* models.`;
+  }
+  if (provider === "openai" && !openaiModel && groqModel) {
+    return `--stt-model ${model} is a Groq model; OpenAI serves whisper-1 and gpt-*-transcribe.`;
+  }
+  return null;
+}
+
+/** Validate a call's overrides against what its profile allows; `undefined` when there are none. */
+function callOverrides(
+  op: string,
+  profile: VoiceProfile,
+  requested: VoiceCallOverrides,
+  asJson?: boolean,
+): VoiceCallOverrides | undefined {
+  const overrides: VoiceCallOverrides = {};
+  const allowed = new Set(profile.overridable ?? []);
+  for (const field of VOICE_OVERRIDE_FIELDS) {
+    const value = requested[field]?.trim();
+    if (!value) continue;
+    if (!allowed.has(field)) {
+      fail(
+        op,
+        "VOICE_OVERRIDE_FORBIDDEN",
+        `Profile ${profile.id} does not let a call change ${field}.`,
+        asJson,
+        CONTRACT_EXIT_POLICY,
+      );
+    }
+    if ((field === "voice" || field === "liveVoice") && profile.allowedVoices?.length) {
+      if (!profile.allowedVoices.includes(value)) {
+        fail(
+          op,
+          "VOICE_OVERRIDE_FORBIDDEN",
+          `Voice ${value} is not in profile ${profile.id}'s allowed voices.`,
+          asJson,
+          CONTRACT_EXIT_POLICY,
+        );
+      }
+    }
+    overrides[field] = value;
+  }
+  return Object.keys(overrides).length > 0 ? overrides : undefined;
+}
+
 const STT_PROVIDER_KEYS: Record<VoiceSttProvider, string> = { groq: "GROQ_API_KEY", openai: "OPENAI_API_KEY" };
 
 /** Profile management: the operator, or a key the operator issued with `mutate:voice:profiles.*`. */
@@ -240,6 +298,7 @@ function publicCall(call: VoiceCall): Record<string, unknown> {
     mode: call.mode,
     engine: call.engine,
     profileId: call.profileId,
+    ...(call.overrides ? { overrides: call.overrides } : {}),
     state: call.state,
     agentState: call.agentState,
     speaker: call.speaker,
@@ -335,6 +394,7 @@ async function openConnection(
           callId: call.id,
           language: profile.sttLanguage ?? profile.language,
           voice: profile.voice ?? null,
+          ttsModel: profile.ttsModel ?? null,
           sttModel: profile.sttModel ?? null,
         }),
       },
@@ -546,6 +606,14 @@ export class VoiceCallsCommands {
     @Option({ flags: "--mode <mode>", description: "push|live|handsfree|mock (default: the profile's)" })
     modeValue?: string,
     @Option({ flags: "--offer <sdp>", description: "WebRTC SDP offer (live mode)" }) offer?: string,
+    @Option({ flags: "--voice <id>", description: "This call's ElevenLabs voice, if the profile allows it" })
+    voiceOverride?: string,
+    @Option({ flags: "--language <code>", description: "This call's language, if the profile allows it" })
+    languageOverride?: string,
+    @Option({ flags: "--tts-model <id>", description: "This call's ElevenLabs model, if the profile allows it" })
+    ttsModelOverride?: string,
+    @Option({ flags: "--live-voice <name>", description: "This call's GPT-Live voice, if the profile allows it" })
+    liveVoiceOverride?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const op = "voice calls start";
@@ -557,28 +625,45 @@ export class VoiceCallsCommands {
         fail(op, "VOICE_SESSION_NOT_CALLABLE", "A trigger's own session only runs that trigger.", asJson);
       }
       assertCallerMayCallSession(caller, session);
-      // Named profile, else the session's bound profile, else the device's only profile, else the default.
+      // Named profile, else the session's bound profile (when this device may use it), else the
+      // device's only profile, else the default.
       const deviceProfiles = caller.device?.profiles ?? ["*"];
+      const restricted = Boolean(caller.device) && !deviceProfiles.includes("*");
+      const sessionBound = getVoiceSessionProfile(session.sessionKey);
       const chosenId =
         profileId ??
-        getVoiceSessionProfile(session.sessionKey) ??
+        (sessionBound && (!restricted || deviceProfiles.includes(sessionBound)) ? sessionBound : undefined) ??
         (deviceProfiles.length === 1 && deviceProfiles[0] !== "*" ? deviceProfiles[0] : DEFAULT_VOICE_PROFILE_ID);
-      if (caller.device && !deviceProfiles.includes("*") && !deviceProfiles.includes(chosenId)) {
+      if (restricted && !deviceProfiles.includes(chosenId)) {
         fail(
           op,
           "VOICE_PROFILE_FORBIDDEN",
-          `This device was not paired for profile ${chosenId}.`,
+          `This device was not paired for profile ${chosenId}; name one of: ${deviceProfiles.join(", ")}.`,
           asJson,
           CONTRACT_EXIT_POLICY,
         );
       }
-      const profile = getVoiceProfile(chosenId);
-      if (!profile) fail(op, "VOICE_PROFILE_NOT_FOUND", `Profile ${chosenId} not found.`, asJson);
+      const baseProfile = getVoiceProfile(chosenId);
+      if (!baseProfile) fail(op, "VOICE_PROFILE_NOT_FOUND", `Profile ${chosenId} not found.`, asJson);
+      const overrides = callOverrides(
+        op,
+        baseProfile,
+        {
+          voice: voiceOverride,
+          language: languageOverride,
+          ttsModel: ttsModelOverride,
+          liveVoice: liveVoiceOverride,
+        },
+        asJson,
+      );
+      const profile = effectiveVoiceProfile(baseProfile, overrides);
       const mode = parseMode(op, modeValue, asJson) ?? profile.mode;
       const check = getVoiceEngine(mode).check();
       if (!check.ready) {
         fail(op, "VOICE_ENGINE_NOT_READY", `Engine ${mode} is missing: ${check.missing.join(", ")}.`, asJson);
       }
+      const sttPair = mode === "push" ? sttModelMismatch(profile.sttProvider, profile.sttModel) : null;
+      if (sttPair) fail(op, "VOICE_ENGINE_NOT_READY", `Profile ${profile.id}: ${sttPair}`, asJson);
       const sttKey = mode === "push" && profile.sttProvider ? STT_PROVIDER_KEYS[profile.sttProvider] : null;
       if (sttKey && !process.env[sttKey]?.trim()) {
         fail(
@@ -617,6 +702,7 @@ export class VoiceCallsCommands {
         mode,
         engine: mode,
         profileId: profile.id,
+        ...(overrides ? { overrides } : {}),
         state: "starting",
         agentState: "idle",
         speaker,
@@ -663,6 +749,7 @@ export class VoiceCallsCommands {
         sessionName: call.sessionName,
         mode,
         profileId: profile.id,
+        overrides: overrides ?? {},
         state: updated?.state,
         connectionKind: material.connectionKind,
         sdpAnswer: material.sdpAnswer,
@@ -696,7 +783,10 @@ export class VoiceCallsCommands {
       if (call.engine === "live" && !offer) {
         fail(op, "USAGE_ERROR", "Live calls connect with --offer <sdp>.", asJson, CONTRACT_EXIT_USAGE);
       }
-      const profile = getVoiceProfile(call.profileId) ?? (getVoiceProfile(DEFAULT_VOICE_PROFILE_ID) as VoiceProfile);
+      const profile = effectiveVoiceProfile(
+        getVoiceProfile(call.profileId) ?? (getVoiceProfile(DEFAULT_VOICE_PROFILE_ID) as VoiceProfile),
+        call.overrides,
+      );
       const material = await openConnection(call, profile, offer, true);
       const updated = updateOpenVoiceCall(call.id, {
         state: "active",
@@ -837,7 +927,10 @@ export class VoiceCallsCommands {
         fail(op, "VOICE_MODE_MISMATCH", `A ${call.engine} call carries audio over its own connection.`, asJson);
       }
       const clip = readClip(op, { audioPath, audioBase64, mime }, asJson);
-      const profile = getVoiceProfile(call.profileId) ?? (getVoiceProfile(DEFAULT_VOICE_PROFILE_ID) as VoiceProfile);
+      const profile = effectiveVoiceProfile(
+        getVoiceProfile(call.profileId) ?? (getVoiceProfile(DEFAULT_VOICE_PROFILE_ID) as VoiceProfile),
+        call.overrides,
+      );
       const engine = call.engine === "push" ? pushEngine : mockEngine;
       const heard = await engine.transcribe({
         bytes: clip.bytes,
@@ -1097,6 +1190,8 @@ interface ProfileFlags {
   sttProvider?: string;
   sttModel?: string;
   sttLanguage?: string;
+  overridable?: string | string[];
+  allowedVoices?: string | string[];
 }
 
 function applyProfileFlags(op: string, base: VoiceProfile, flags: ProfileFlags, asJson?: boolean): VoiceProfile {
@@ -1124,6 +1219,21 @@ function applyProfileFlags(op: string, base: VoiceProfile, flags: ProfileFlags, 
       CONTRACT_EXIT_USAGE,
     );
   }
+  const overridable = flags.overridable === undefined ? undefined : splitList(flags.overridable);
+  if (overridable) {
+    for (const field of overridable) {
+      if (field !== "none" && !(VOICE_OVERRIDE_FIELDS as readonly string[]).includes(field)) {
+        fail(
+          op,
+          "USAGE_ERROR",
+          `--overridable takes none or a list of ${VOICE_OVERRIDE_FIELDS.join(", ")}.`,
+          asJson,
+          CONTRACT_EXIT_USAGE,
+        );
+      }
+    }
+  }
+  const allowedVoices = flags.allowedVoices === undefined ? undefined : splitList(flags.allowedVoices);
   const next: VoiceProfile = {
     ...base,
     ...(flags.label !== undefined ? { label: flags.label } : {}),
@@ -1148,12 +1258,20 @@ function applyProfileFlags(op: string, base: VoiceProfile, flags: ProfileFlags, 
     ...(sttProvider !== undefined && sttProvider !== "auto" ? { sttProvider: sttProvider as VoiceSttProvider } : {}),
     ...(flags.sttModel ? { sttModel: flags.sttModel } : {}),
     ...(flags.sttLanguage ? { sttLanguage: flags.sttLanguage } : {}),
+    ...(overridable ? { overridable: overridable.filter((field) => field !== "none") as VoiceOverrideField[] } : {}),
+    ...(allowedVoices ? { allowedVoices: allowedVoices.filter((id) => id !== "*") } : {}),
     updatedAt: Date.now(),
   };
+  if (next.overridable?.length === 0) delete next.overridable;
+  if (next.allowedVoices?.length === 0) delete next.allowedVoices;
   // `auto` and empty values clear the field: the daemon picks again.
   if (sttProvider === "auto") delete next.sttProvider;
   if (flags.sttModel === "") delete next.sttModel;
   if (flags.sttLanguage === "") delete next.sttLanguage;
+  // The provider pin is a push setting (hands-free always transcribes in the worker), and the pair is
+  // checked on the profile that will be saved, after any clearing.
+  const sttMismatch = next.mode === "push" ? sttModelMismatch(next.sttProvider, next.sttModel) : null;
+  if (sttMismatch) fail(op, "USAGE_ERROR", sttMismatch, asJson, CONTRACT_EXIT_USAGE);
   return next;
 }
 
@@ -1220,6 +1338,16 @@ export class VoiceProfilesCommands {
       description: "Transcription language when not --language (empty clears)",
     })
     sttLanguage?: string,
+    @Option({
+      flags: "--overridable <fields>",
+      description: "Fields a call may change at start: voice,language,ttsModel,liveVoice (none clears)",
+    })
+    overridable?: string | string[],
+    @Option({
+      flags: "--allowed-voices <ids>",
+      description: "Voices a call may pick when it overrides one ('*' clears)",
+    })
+    allowedVoices?: string | string[],
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const op = "voice profiles create";
@@ -1253,6 +1381,8 @@ export class VoiceProfilesCommands {
             sttProvider,
             sttModel,
             sttLanguage,
+            overridable,
+            allowedVoices,
           },
           asJson,
         ),
@@ -1288,6 +1418,16 @@ export class VoiceProfilesCommands {
       description: "Transcription language when not --language (empty clears)",
     })
     sttLanguage?: string,
+    @Option({
+      flags: "--overridable <fields>",
+      description: "Fields a call may change at start: voice,language,ttsModel,liveVoice (none clears)",
+    })
+    overridable?: string | string[],
+    @Option({
+      flags: "--allowed-voices <ids>",
+      description: "Voices a call may pick when it overrides one ('*' clears)",
+    })
+    allowedVoices?: string | string[],
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const op = "voice profiles update";
@@ -1316,6 +1456,8 @@ export class VoiceProfilesCommands {
             sttProvider,
             sttModel,
             sttLanguage,
+            overridable,
+            allowedVoices,
           },
           asJson,
         ),
@@ -1348,11 +1490,16 @@ export class VoiceProfilesCommands {
   ) {
     const op = "voice profiles bind";
     return run(op, asJson, () => {
-      requireProfileManager(op, resolveVoiceCaller(op), asJson);
+      const caller = resolveVoiceCaller(op);
+      requireProfileManager(op, caller, asJson);
       if (!sessionRef) fail(op, "USAGE_ERROR", "<session> is required.", asJson, CONTRACT_EXIT_USAGE);
       if (!getVoiceProfile(id)) fail(op, "VOICE_PROFILE_NOT_FOUND", `Profile ${id} not found.`, asJson);
       const session = resolveSession(sessionRef);
       if (!session) fail(op, "VOICE_SESSION_NOT_FOUND", `Session ${sessionRef} not found.`, asJson);
+      // A manager key binds only sessions it can reach, like `sessions send`.
+      if (caller.kind !== "operator" && !canAccessSession(getScopeContext(), session.name ?? session.sessionKey)) {
+        fail(op, "VOICE_SESSION_FORBIDDEN", `No access to session ${sessionRef}.`, asJson, CONTRACT_EXIT_POLICY);
+      }
       setVoiceSessionProfile(session.sessionKey, id);
       const sessionName = session.name ?? session.sessionKey;
       return emit({ profileId: id, sessionKey: session.sessionKey, sessionName }, asJson, () =>
@@ -1369,10 +1516,14 @@ export class VoiceProfilesCommands {
   ) {
     const op = "voice profiles unbind";
     return run(op, asJson, () => {
-      requireProfileManager(op, resolveVoiceCaller(op), asJson);
+      const caller = resolveVoiceCaller(op);
+      requireProfileManager(op, caller, asJson);
       if (!sessionRef) fail(op, "USAGE_ERROR", "<session> is required.", asJson, CONTRACT_EXIT_USAGE);
       const session = resolveSession(sessionRef);
       if (!session) fail(op, "VOICE_SESSION_NOT_FOUND", `Session ${sessionRef} not found.`, asJson);
+      if (caller.kind !== "operator" && !canAccessSession(getScopeContext(), session.name ?? session.sessionKey)) {
+        fail(op, "VOICE_SESSION_FORBIDDEN", `No access to session ${sessionRef}.`, asJson, CONTRACT_EXIT_POLICY);
+      }
       const unbound = setVoiceSessionProfile(session.sessionKey, null);
       return emit({ sessionKey: session.sessionKey, unbound }, asJson, () =>
         console.log(unbound ? "Unbound." : "No profile was bound."),
@@ -1694,12 +1845,19 @@ const usageSchema = z.object({
   engineSeconds: z.number(),
   estimatedCostUsd: z.number(),
 });
+const overridesSchema = z.object({
+  voice: z.string().optional(),
+  language: z.string().optional(),
+  ttsModel: z.string().optional(),
+  liveVoice: z.string().optional(),
+});
 const callSchema = z.object({
   id: z.string(),
   sessionName: z.string(),
   mode: z.enum(VOICE_MODES),
   engine: z.enum(VOICE_MODES),
   profileId: z.string(),
+  overrides: overridesSchema.optional(),
   state: z.enum(VOICE_CALL_STATES),
   agentState: z.enum(VOICE_AGENT_STATES),
   speaker: speakerSchema,
@@ -1737,6 +1895,8 @@ const profileSchema = z.object({
   sttProvider: z.enum(VOICE_STT_PROVIDERS).optional(),
   sttModel: z.string().optional(),
   sttLanguage: z.string().optional(),
+  overridable: z.array(z.enum(VOICE_OVERRIDE_FIELDS)).optional(),
+  allowedVoices: z.array(z.string()).optional(),
   delivery: z.enum(VOICE_DELIVERY_CLASSES),
   allowGuests: z.boolean(),
   maxCallMinutes: z.number(),
@@ -1779,6 +1939,8 @@ declareCommandReturns(VoiceCallsCommands, {
     sessionName: z.string(),
     mode: z.enum(VOICE_MODES),
     profileId: z.string(),
+    // Optional so SDKs still decode a start answer from daemons that predate overrides.
+    overrides: overridesSchema.optional(),
     state: z.string(),
     capabilities: capabilitiesSchema,
   }),

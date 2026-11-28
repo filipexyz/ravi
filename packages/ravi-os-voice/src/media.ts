@@ -1,39 +1,42 @@
-import type { RaviVoiceCall, VoiceMode, createRaviVoice } from "./call.js";
+import type { RaviVoiceCall, StartCallOptions, VoiceMode, createRaviVoice } from "./call.js";
 
 /**
  * Push-to-talk recorder: `start()` on press, `stop()` on release sends the clip.
  * Uses MediaRecorder (webm/opus in Chromium and Firefox, mp4 in Safari).
  */
 export function pushToTalk(call: RaviVoiceCall, options: { mimeType?: string } = {}) {
-  let recorder: MediaRecorder | null = null;
-  let stream: MediaStream | null = null;
-  let chunks: Blob[] = [];
+  // Each press owns its recorder, stream and chunks, so a new press never touches a clip still being sent.
+  let current: { recorder: MediaRecorder; stream: MediaStream; chunks: Blob[] } | null = null;
 
   return {
     async start(): Promise<void> {
-      if (recorder) return;
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (current) return;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType =
         options.mimeType ?? ["audio/webm;codecs=opus", "audio/mp4"].find((type) => MediaRecorder.isTypeSupported(type));
-      recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-      chunks = [];
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      const chunks: Blob[] = [];
       recorder.ondataavailable = (event) => {
         if (event.data.size) chunks.push(event.data);
       };
+      current = { recorder, stream, chunks };
       recorder.start();
+      // `when_idle` replies wait while the person talks. A failed signal never blocks recording.
+      call.activity("speaking").catch(() => {});
     },
     async stop() {
-      const active = recorder;
-      if (!active) return null;
-      recorder = null;
+      const press = current;
+      if (!press) return null;
+      current = null;
       const done = new Promise<void>((resolve) => {
-        active.onstop = () => resolve();
+        press.recorder.onstop = () => resolve();
       });
-      active.stop();
+      press.recorder.stop();
       await done;
-      for (const track of stream?.getTracks() ?? []) track.stop();
-      stream = null;
-      const clip = new Blob(chunks, { type: (active.mimeType || "audio/webm").split(";")[0] });
+      for (const track of press.stream.getTracks()) track.stop();
+      const clip = new Blob(press.chunks, { type: (press.recorder.mimeType || "audio/webm").split(";")[0] });
+      // Best effort and not awaited before the clip is built: it never delays or drops the clip.
+      call.activity("quiet").catch(() => null);
       if (!clip.size) return null;
       return call.push(clip);
     },
@@ -108,7 +111,7 @@ function playbackDone(element: HTMLAudioElement): Promise<void> {
 export async function connectLive(
   voice: ReturnType<typeof createRaviVoice>,
   session: string,
-  options: { profile?: string; element?: HTMLAudioElement; mic?: MediaStream } = {},
+  options: Omit<StartCallOptions, "mode" | "offer"> & { element?: HTMLAudioElement; mic?: MediaStream } = {},
 ) {
   const pc = new RTCPeerConnection();
   const element = options.element ?? new Audio();
@@ -120,7 +123,8 @@ export async function connectLive(
   for (const track of mic.getAudioTracks()) pc.addTrack(track, mic);
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
-  const call = await voice.start(session, { mode: "live" as VoiceMode, profile: options.profile, offer: offer.sdp });
+  const { element: _element, mic: _mic, ...startOptions } = options;
+  const call = await voice.start(session, { ...startOptions, mode: "live" as VoiceMode, offer: offer.sdp });
   if (!call.info.sdpAnswer) {
     pc.close();
     throw new Error("The live engine returned no SDP answer");

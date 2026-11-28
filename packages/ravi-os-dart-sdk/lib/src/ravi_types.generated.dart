@@ -34480,13 +34480,23 @@ class VoiceCallsSilenceReturn {
 VoiceCallsSilenceReturn voiceCallsSilenceReturnFromJson(Object? json) => VoiceCallsSilenceReturn.fromJsonValue(json);
 
 class VoiceCallsStartOptions {
-  const VoiceCallsStartOptions({this.mode, this.offer, this.profile});
+  const VoiceCallsStartOptions({this.language, this.liveVoice, this.mode, this.offer, this.profile, this.ttsModel, this.voice});
 
+  final String? language;
+  final String? liveVoice;
   final String? mode;
   final String? offer;
   final String? profile;
+  final String? ttsModel;
+  final String? voice;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (language != null) {
+      into["language"] = RaviJson.from(language);
+    }
+    if (liveVoice != null) {
+      into["liveVoice"] = RaviJson.from(liveVoice);
+    }
     if (mode != null) {
       into["mode"] = RaviJson.from(mode);
     }
@@ -34496,17 +34506,24 @@ class VoiceCallsStartOptions {
     if (profile != null) {
       into["profile"] = RaviJson.from(profile);
     }
+    if (ttsModel != null) {
+      into["ttsModel"] = RaviJson.from(ttsModel);
+    }
+    if (voice != null) {
+      into["voice"] = RaviJson.from(voice);
+    }
   }
 }
 
 class VoiceCallsStartReturn {
-  const VoiceCallsStartReturn({required this.callId, required this.capabilities, required this.connectionKind, required this.lastSeq, required this.mode, required this.profileId, required this.roomToken, required this.roomUrl, required this.sdpAnswer, required this.sessionName, required this.state});
+  const VoiceCallsStartReturn({required this.callId, required this.capabilities, required this.connectionKind, required this.lastSeq, required this.mode, this.overrides, required this.profileId, required this.roomToken, required this.roomUrl, required this.sdpAnswer, required this.sessionName, required this.state});
 
   final String callId;
   final RaviJson capabilities;
   final String connectionKind;
   final double lastSeq;
   final String mode;
+  final RaviJson? overrides;
   final String profileId;
   final RaviJson roomToken;
   final RaviJson roomUrl;
@@ -34521,6 +34538,7 @@ class VoiceCallsStartReturn {
       connectionKind: raviJsonAsString(json["connectionKind"]),
       lastSeq: raviJsonAsDouble(json["lastSeq"]),
       mode: raviJsonAsString(json["mode"]),
+      overrides: json["overrides"] == null ? null : RaviJson.from(json["overrides"]),
       profileId: raviJsonAsString(json["profileId"]),
       roomToken: RaviJson.from(json["roomToken"]),
       roomUrl: RaviJson.from(json["roomUrl"]),
@@ -34754,9 +34772,10 @@ class VoiceProfilesBindReturn {
 VoiceProfilesBindReturn voiceProfilesBindReturnFromJson(Object? json) => VoiceProfilesBindReturn.fromJsonValue(json);
 
 class VoiceProfilesCreateOptions {
-  const VoiceProfilesCreateOptions({this.allowGuests, this.delivery, this.label, this.language, this.liveModel, this.liveVoice, this.maxCallCost, this.maxCallMinutes, this.maxDailyCost, this.mode, this.sttLanguage, this.sttModel, this.sttProvider, this.ttsModel, this.voice});
+  const VoiceProfilesCreateOptions({this.allowGuests, this.allowedVoices, this.delivery, this.label, this.language, this.liveModel, this.liveVoice, this.maxCallCost, this.maxCallMinutes, this.maxDailyCost, this.mode, this.overridable, this.sttLanguage, this.sttModel, this.sttProvider, this.ttsModel, this.voice});
 
   final bool? allowGuests;
+  final String? allowedVoices;
   final String? delivery;
   final String? label;
   final String? language;
@@ -34766,6 +34785,7 @@ class VoiceProfilesCreateOptions {
   final String? maxCallMinutes;
   final String? maxDailyCost;
   final String? mode;
+  final String? overridable;
   final String? sttLanguage;
   final String? sttModel;
   final String? sttProvider;
@@ -34775,6 +34795,9 @@ class VoiceProfilesCreateOptions {
   void encodeBody(Map<String, RaviJson> into) {
     if (allowGuests != null) {
       into["allowGuests"] = RaviJson.from(allowGuests);
+    }
+    if (allowedVoices != null) {
+      into["allowedVoices"] = RaviJson.from(allowedVoices);
     }
     if (delivery != null) {
       into["delivery"] = RaviJson.from(delivery);
@@ -34802,6 +34825,9 @@ class VoiceProfilesCreateOptions {
     }
     if (mode != null) {
       into["mode"] = RaviJson.from(mode);
+    }
+    if (overridable != null) {
+      into["overridable"] = RaviJson.from(overridable);
     }
     if (sttLanguage != null) {
       into["sttLanguage"] = RaviJson.from(sttLanguage);
@@ -34936,9 +34962,10 @@ class VoiceProfilesUnbindReturn {
 VoiceProfilesUnbindReturn voiceProfilesUnbindReturnFromJson(Object? json) => VoiceProfilesUnbindReturn.fromJsonValue(json);
 
 class VoiceProfilesUpdateOptions {
-  const VoiceProfilesUpdateOptions({this.allowGuests, this.delivery, this.label, this.language, this.liveModel, this.liveVoice, this.maxCallCost, this.maxCallMinutes, this.maxDailyCost, this.mode, this.noGuests, this.sttLanguage, this.sttModel, this.sttProvider, this.ttsModel, this.voice});
+  const VoiceProfilesUpdateOptions({this.allowGuests, this.allowedVoices, this.delivery, this.label, this.language, this.liveModel, this.liveVoice, this.maxCallCost, this.maxCallMinutes, this.maxDailyCost, this.mode, this.noGuests, this.overridable, this.sttLanguage, this.sttModel, this.sttProvider, this.ttsModel, this.voice});
 
   final bool? allowGuests;
+  final String? allowedVoices;
   final String? delivery;
   final String? label;
   final String? language;
@@ -34949,6 +34976,7 @@ class VoiceProfilesUpdateOptions {
   final String? maxDailyCost;
   final String? mode;
   final bool? noGuests;
+  final String? overridable;
   final String? sttLanguage;
   final String? sttModel;
   final String? sttProvider;
@@ -34958,6 +34986,9 @@ class VoiceProfilesUpdateOptions {
   void encodeBody(Map<String, RaviJson> into) {
     if (allowGuests != null) {
       into["allowGuests"] = RaviJson.from(allowGuests);
+    }
+    if (allowedVoices != null) {
+      into["allowedVoices"] = RaviJson.from(allowedVoices);
     }
     if (delivery != null) {
       into["delivery"] = RaviJson.from(delivery);
@@ -34988,6 +35019,9 @@ class VoiceProfilesUpdateOptions {
     }
     if (noGuests != null) {
       into["noGuests"] = RaviJson.from(noGuests);
+    }
+    if (overridable != null) {
+      into["overridable"] = RaviJson.from(overridable);
     }
     if (sttLanguage != null) {
       into["sttLanguage"] = RaviJson.from(sttLanguage);

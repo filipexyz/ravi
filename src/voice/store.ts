@@ -16,6 +16,7 @@ import {
   emptyVoiceUsage,
   type VoiceAgentState,
   type VoiceCall,
+  type VoiceCallOverrides,
   type VoiceCallState,
   type VoiceDevice,
   type VoiceEvent,
@@ -155,6 +156,10 @@ function migrateVoiceSchema(): void {
       updated_at INTEGER NOT NULL
     );
   `);
+  const callColumns = getVoiceDb().prepare("PRAGMA table_info(voice_calls)").all() as Array<{ name: string }>;
+  if (!callColumns.some((column) => column.name === "overrides_json")) {
+    getVoiceDb().exec("ALTER TABLE voice_calls ADD COLUMN overrides_json TEXT");
+  }
   const deviceColumns = getVoiceDb().prepare("PRAGMA table_info(voice_devices)").all() as Array<{ name: string }>;
   if (!deviceColumns.some((column) => column.name === "profiles_json")) {
     // Devices paired before profile lists keep every profile (`["*"]`), as they had.
@@ -189,6 +194,7 @@ interface CallRow {
   mode: string;
   engine: string;
   profile_id: string;
+  overrides_json: string | null;
   state: string;
   agent_state: string;
   speaker_json: string;
@@ -212,6 +218,7 @@ function rowToCall(row: CallRow): VoiceCall {
     mode: row.mode as VoiceCall["mode"],
     engine: row.engine as VoiceCall["engine"],
     profileId: row.profile_id,
+    ...(row.overrides_json ? { overrides: parseJson<VoiceCallOverrides>(row.overrides_json, {}) } : {}),
     state: row.state as VoiceCallState,
     agentState: row.agent_state as VoiceAgentState,
     speaker: parseJson<VoiceSpeaker>(row.speaker_json, { kind: "operator", id: "operator" }),
@@ -240,8 +247,8 @@ export function insertVoiceCall(call: VoiceCall): VoiceCall {
         .prepare(
           `INSERT INTO voice_calls (id, session_key, session_name, agent_id, mode, engine, profile_id, state, agent_state,
             speaker_json, caller_context_id, turn_origin_json, connection_kind, provider_ref, usage_json, ended_reason,
-            created_at, updated_at, ended_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            created_at, updated_at, ended_at, overrides_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           call.id,
@@ -263,6 +270,7 @@ export function insertVoiceCall(call: VoiceCall): VoiceCall {
           call.createdAt,
           call.updatedAt,
           call.endedAt ?? null,
+          call.overrides && Object.keys(call.overrides).length > 0 ? JSON.stringify(call.overrides) : null,
         );
     },
     { label: "voice:insertCall" },

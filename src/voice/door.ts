@@ -52,6 +52,7 @@ import {
 } from "./store.js";
 import {
   DEFAULT_VOICE_PROFILE_ID,
+  effectiveVoiceProfile,
   type VoiceAgentState,
   type VoiceCall,
   type VoiceEventType,
@@ -569,6 +570,7 @@ export class VoiceDoorService {
   ): Promise<void> {
     if (!this.isOpen(call.id)) return;
     const runtime = this.runtime(call.id);
+    const hold: { deadline?: number } = {};
     // The live model is a third party: it gets the sanitized text, never the raw screen text.
     const liveContext = call.engine === "live" ? sanitizeForSpeech(fullText) : "";
     if (!spokenText || profile.delivery === "silent") {
@@ -578,7 +580,7 @@ export class VoiceDoorService {
     }
     // `when_idle`: wait until the person stops talking. Live is exempt: the live model owns turn-taking.
     if (profile.delivery === "when_idle" && call.engine !== "live") {
-      await this.waitUntilIdle(call.id);
+      await this.waitUntilIdle(call.id, hold);
       if (!this.isOpen(call.id)) return;
     }
     if (call.engine === "live") {
@@ -614,8 +616,9 @@ export class VoiceDoorService {
     if (!this.isOpen(call.id)) return;
     // The person may have started talking while the clip was synthesized: wait again before it can play.
     if (profile.delivery === "when_idle") {
-      await this.waitUntilIdle(call.id);
+      await this.waitUntilIdle(call.id, hold);
       if (!this.isOpen(call.id)) return;
+      if (audio) await this.setAgentState(call.id, "speaking");
     }
     await this.emitOpen(
       call.id,
@@ -946,18 +949,19 @@ export class VoiceDoorService {
     for (const release of waiters) release();
   }
 
-  /** Resolve once the person is quiet, the call ends, or the hold reaches its ceiling. */
-  private async waitUntilIdle(callId: string): Promise<void> {
+  /**
+   * Resolve once the person is quiet, the call ends, or the hold reaches its ceiling. The ceiling
+   * counts from when this reply starts waiting, so a person who talks for long is not talked over.
+   */
+  private async waitUntilIdle(callId: string, hold: { deadline?: number }): Promise<void> {
     const runtime = this.runtime(callId);
-    const maxWait = this.deps.whenIdleMaxWaitMs ?? WHEN_IDLE_MAX_WAIT_MS;
-    const since = runtime.userSpeakingSince;
-    if (since === undefined) return;
-    const remaining = since + maxWait - this.now();
-    if (remaining <= 0) {
-      // A "speaking" signal older than the ceiling is stale: the stop never arrived.
-      runtime.userSpeakingSince = undefined;
-      return;
-    }
+    if (runtime.userSpeakingSince === undefined) return;
+    // One ceiling per reply: a second wait (after synthesis) only gets what is left of the first.
+    hold.deadline ??= this.now() + (this.deps.whenIdleMaxWaitMs ?? WHEN_IDLE_MAX_WAIT_MS);
+    const remaining = hold.deadline - this.now();
+    if (remaining <= 0) return;
+    // Nothing plays while the reply is held: show the call as listening, not speaking.
+    await this.setAgentState(callId, "listening");
     await new Promise<void>((resolve) => {
       let done = false;
       const finish = () => {
@@ -974,7 +978,8 @@ export class VoiceDoorService {
   }
 
   private profileFor(call: VoiceCall): VoiceProfile {
-    return getVoiceProfile(call.profileId) ?? (getVoiceProfile(DEFAULT_VOICE_PROFILE_ID) as VoiceProfile);
+    const base = getVoiceProfile(call.profileId) ?? (getVoiceProfile(DEFAULT_VOICE_PROFILE_ID) as VoiceProfile);
+    return effectiveVoiceProfile(base, call.overrides);
   }
 }
 

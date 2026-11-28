@@ -23,6 +23,28 @@ export interface OpenApproval {
 
 type Listener = (event: VoiceEvent) => void | Promise<void>;
 
+/**
+ * Options for opening a call. `voice`, `language`, `ttsModel` and `liveVoice` change the profile for
+ * this call only, and only when the profile lists them in `overridable` (the daemon refuses others
+ * with `VOICE_OVERRIDE_FORBIDDEN`). They need a daemon and an `@ravi-os/sdk` that know them.
+ */
+export interface StartCallOptions {
+  mode?: VoiceMode;
+  profile?: string;
+  offer?: string;
+  voice?: string;
+  language?: string;
+  ttsModel?: string;
+  liveVoice?: string;
+}
+
+/** Whether the person is talking; holds `when_idle` replies until they stop. */
+export type VoiceActivity = "speaking" | "quiet";
+
+type ActivityCapableCalls = {
+  activity?: (call: string, state: VoiceActivity) => Promise<unknown>;
+};
+
 /** The two SDK clients a voice app needs, built from one key. */
 export function createRaviVoice(config: RaviVoiceConfig) {
   const client = new RaviClient(createHttpTransport(config));
@@ -32,12 +54,20 @@ export function createRaviVoice(config: RaviVoiceConfig) {
     stream,
     /** Sessions this key may open a call on. */
     targets: () => client.voice.targets.list(),
+    /** Voice profiles (voice, language, models, limits) this daemon has. */
+    profiles: () => client.voice.profiles.list(),
+    /** ElevenLabs voices a profile or an allowed override can use. */
+    voices: (search?: string) => client.voice.voices.list(search ? { search } : {}),
     /**
      * Open a call on a session. For `live` pass the WebRTC offer (see
      * `connectLive`); for `handsfree` join the returned room (see `joinRoom`).
      */
-    async start(session: string, options: { mode?: VoiceMode; profile?: string; offer?: string } = {}) {
-      const started = await client.voice.calls.start(session, options);
+    async start(session: string, options: StartCallOptions = {}) {
+      // Overrides travel as named body fields; older SDK typings do not list them yet.
+      const started = await client.voice.calls.start(
+        session,
+        options as Parameters<typeof client.voice.calls.start>[1],
+      );
       return new RaviVoiceCall(client, stream, started);
     },
     /** Reattach to a call you already have (e.g. after a page reload). */
@@ -124,6 +154,16 @@ export class RaviVoiceCall {
   /** Push-to-talk: send one recorded clip. */
   async push(clip: Blob) {
     return this.client.voice.calls.push(this.id, { audioData: await blobToBase64(clip), mime: clip.type || "audio/webm" });
+  }
+
+  /**
+   * Tell the call whether the person is talking. `pushToTalk` sends it on press and release; call it
+   * yourself with your own voice-activity detection. Resolves to `null` on an SDK without it.
+   */
+  async activity(state: VoiceActivity): Promise<unknown> {
+    const calls = this.client.voice.calls as unknown as ActivityCapableCalls;
+    if (typeof calls.activity !== "function") return null;
+    return calls.activity(this.id, state);
   }
 
   /** Stop speaking now; running work continues in the session. */

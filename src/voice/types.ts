@@ -71,6 +71,8 @@ export interface VoiceCall {
   mode: VoiceMode;
   engine: VoiceMode;
   profileId: string;
+  /** Per-call changes to the profile, accepted at start within what the profile allows. */
+  overrides?: VoiceCallOverrides;
   state: VoiceCallState;
   agentState: VoiceAgentState;
   speaker: VoiceSpeaker;
@@ -89,6 +91,11 @@ export interface VoiceCall {
 }
 
 export const VOICE_STT_PROVIDERS = ["groq", "openai"] as const;
+
+/** Profile fields a caller may change for one call, when the profile lists them in `overridable`. */
+export const VOICE_OVERRIDE_FIELDS = ["voice", "language", "ttsModel", "liveVoice"] as const;
+export type VoiceOverrideField = (typeof VOICE_OVERRIDE_FIELDS)[number];
+export type VoiceCallOverrides = Partial<Pick<VoiceProfile, VoiceOverrideField>>;
 export type VoiceSttProvider = (typeof VOICE_STT_PROVIDERS)[number];
 
 export interface VoiceProfile {
@@ -108,6 +115,10 @@ export interface VoiceProfile {
   sttModel?: string;
   /** Transcription language when it differs from `language`. */
   sttLanguage?: string;
+  /** Fields a call may override at start; empty or unset: none (closed by default). */
+  overridable?: VoiceOverrideField[];
+  /** When set, a call's `voice` or `liveVoice` override must be one of these. */
+  allowedVoices?: string[];
   delivery: VoiceDeliveryClass;
   allowGuests: boolean;
   maxCallMinutes: number;
@@ -143,6 +154,17 @@ export interface VoiceTurn {
 }
 
 export const DEFAULT_VOICE_PROFILE_ID = "default";
+
+/** The profile a call actually runs with: its profile plus the overrides it was started with. */
+export function effectiveVoiceProfile(profile: VoiceProfile, overrides: VoiceCallOverrides | undefined): VoiceProfile {
+  if (!overrides) return profile;
+  const next: VoiceProfile = { ...profile };
+  for (const field of VOICE_OVERRIDE_FIELDS) {
+    const value = overrides[field];
+    if (typeof value === "string" && value) next[field] = value;
+  }
+  return next;
+}
 
 export const DEFAULT_VOICE_LIMITS = {
   maxCallMinutes: 30,

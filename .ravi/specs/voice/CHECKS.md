@@ -69,3 +69,18 @@ normative: false
   pairing with an empty `--profiles` list is a usage error, never `*`; GPT transcription models get
   `response_format: json` and Whisper keeps `verbose_json` with segments; transcription is priced by
   model, and an unknown model at its provider's highest known rate (`engines.test.ts`).
+- Per-call overrides and review follow-ups (`voice.test.ts`, "per-call overrides and review
+  follow-ups"): a closed profile refuses an override; an open one refuses fields it does not list and
+  voices outside `allowedVoices`, and stores and applies the allowed ones; a device skips a session
+  profile it was not paired for and its refusal names its profiles; a pinned Groq provider refuses
+  an OpenAI model; a manager key that cannot reach the session is refused bind and unbind.
+  `door.test.ts`: a person who talked longer than the ceiling still holds a new reply, and the call
+  shows `listening` while it is held. Six mutants (override field check, allowed voices, device skip,
+  STT pair, bind reach, listening while held) each fail one test.
+- Review of #1064 (Devin): one reply gets one `when_idle` ceiling across the waits before and after
+  synthesis (`door.test.ts`; resetting the deadline fails it); switching the STT provider while
+  clearing the model is checked on the saved profile; the provider/model pair is a push setting and
+  a push call on a mismatched profile is refused at start (`voice.test.ts`). The kit gives each
+  push-to-talk press its own recorder and chunks and sends "quiet" without delaying the clip;
+  `connectLive` forwards overrides; hands-free passes `ttsModel` to the worker; the start answer's
+  `overrides` is optional for SDKs talking to older daemons.
