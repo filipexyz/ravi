@@ -231,9 +231,13 @@ Private Pages need no browser login: Console checks the current ravi login.
 
 Who may read what:
   Public routes: always.
-  Private, protected_link and password routes: only on the operator's own
-  turns (terminal, their direct chat, their routines), and only when the ravi
-  login can read the page's project. Any other turn gets exit 3.
+  Private, protected_link and password routes: on the operator's own turns
+  (terminal, their direct chat, their routines) when the ravi login can read
+  the page's project, and on a turn of another person (their chat, a group
+  they wrote in, a thread working for them) with that person's own access
+  through their ravi link. No link, not a member or no access to the page:
+  exit 1, and details.person says which. A turn with no person (an agent
+  relaying, an unknown speaker): public routes only, exit 3.
 
 Formats (pick what the task needs):
   markdown  Default. Text extracted from the page: headings, lists, tables,
