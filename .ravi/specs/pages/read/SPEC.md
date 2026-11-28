@@ -44,17 +44,22 @@ nudges that send agents to the command.
    - `operator`: a turn the classifier accepts as the operator's own (the
      terminal, the linked owner's message, routines the operator owns):
      `publicOnly: false` with the `ravi login` session alone.
-   - `person`: a turn attributed to another contact (the person who wrote, in
-     a direct chat or a group, never the group; the person a thread works
-     for; the contact who owns the cron job): `publicOnly: false`, and the
+   - `person`: another contact writing in their own direct chat, in a session
+     of their own (`isContactPrivateDirectTurn`, the same check the
+     `person_asking` connector mode uses), so what the read returns stays in
+     a transcript only that person reads: `publicOnly: false`, and the
      request MUST name that contact in `x-ravi-actor-contact`, fixed from this
      same decision, so Console answers with that person's own access through
      this installation's `ravi link` (Console spec `cli/actor`). No link, not
      a member or no access to the Page is a refusal; Console never falls back
      to the operator's access for a named person.
-   - `public_only`: anything else (an agent relaying, a routine nobody owns,
-     an unresolved speaker, a turn that cannot be classified):
-     `publicOnly: true`.
+   - `public_only`: anything else: a contact in a group, in a shared session
+     or in a thread of one (other participants could ask the agent to repeat
+     the Page), a routine or a thread working for a contact, an agent
+     relaying, an unresolved speaker, a turn that cannot be classified:
+     `publicOnly: true`, with no `x-ravi-actor-contact`, so reading a public
+     Page never needs or starts anyone's link. A classification failure is
+     logged at debug.
    The operator's session never returns a private Page to another person's
    turn with the operator's own access.
 3. Without `--custom-domain`, only `*.ravi.page` hosts are sent to Console and
@@ -63,7 +68,8 @@ nudges that send agents to the command.
 4. A `public_only` refusal MUST exit 3 (`PAGE_ACCESS_DENIED`, policy block);
    other access refusals exit 1. The refusal MUST say which classifier rule
    kept the turn from being the operator's own (`details.turn`:
-   `relay_answer_chat`, `owner_outside_dm`, `group`, `not_owner` or
+   `relay_answer_chat`, `owner_outside_dm`, `group`, `shared_session` (a
+   contact's direct chat in a shared session), `not_owner` or
    `unknown`, and the same sentence in the message). The owner's own message
    reads private routes in any chat, a group or the agent's shared session
    included (`cli/connectors`, "The owner's own turn"). That

@@ -15,6 +15,7 @@ import {
   normalizePageReadUrl,
   pageReadIsPublicOnly,
   pageReadTurnBlock,
+  pagesReadTurnBlock,
   readPage,
   resolvePageReader,
 } from "./read.js";
@@ -172,13 +173,29 @@ describe("pageReadTurnBlock on real turn contexts", () => {
     expect(pageReadIsPublicOnly(deps(dm))).toBe(false);
   });
 
-  it("reads in a group for the person who wrote, never for the group", () => {
+  it("keeps a contact in a group public-only: others in that transcript could ask the agent to repeat it", () => {
     const group = turnContext(
       { ...memberDm, agentIdentityCompartment: "chat:120363012345678901@g.us" },
       "agent:cassia:whatsapp:wa-main:group:120363012345678901",
       "convit-group",
     );
-    expect(resolvePageReader(deps(group))).toEqual({ kind: "person", contactId: "c_mario" });
+    expect(resolvePageReader(deps(group))).toEqual({ kind: "public_only" });
+    expect(pageReadIsPublicOnly(deps(group))).toBe(true);
+  });
+
+  it("keeps a contact's direct chat public-only when it runs in a shared session", () => {
+    const shared = turnContext(memberDm, "agent:cassia:main", "cassia-main");
+    expect(resolvePageReader(deps(shared))).toEqual({ kind: "public_only" });
+    const thread = turnContext(
+      memberDm,
+      "agent:cassia:main:thread:1795096374.846999",
+      "cassia-main-t-1795096374846999",
+    );
+    expect(resolvePageReader(deps(thread))).toEqual({ kind: "public_only" });
+    // The refusal says why, not that the person is unlinked.
+    expect(pagesReadTurnBlock(deps(shared))).toMatchObject({ turn: "shared_session" });
+    const ownDm = turnContext(memberDm, "agent:cassia:whatsapp:wa-main:dm:5511888888888", "cassia-dm-086");
+    expect(pagesReadTurnBlock(deps(ownDm))?.turn).not.toBe("shared_session");
   });
 
   it("keeps public-only a turn with no person: an unresolved speaker or another agent relaying", () => {
@@ -191,6 +208,40 @@ describe("pageReadTurnBlock on real turn contexts", () => {
     const relay = turnContext({ actorPrincipal: "agent:other" }, "agent:main:main", "main");
     expect(resolvePageReader(deps(relay))).toEqual({ kind: "public_only" });
     expect(pageReadIsPublicOnly(deps(relay))).toBe(true);
+  });
+
+  it("sends a public-only read with no contact, so a public Page never needs or starts a link", async () => {
+    const group = turnContext(
+      { ...memberDm, agentIdentityCompartment: "chat:120363012345678901@g.us" },
+      "agent:cassia:whatsapp:wa-main:group:120363012345678901",
+      "convit-group",
+    );
+    const seen: Array<{ path: string; actor: string | null; body: unknown }> = [];
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const path = new URL(String(input)).pathname;
+      seen.push({
+        path,
+        actor: new Headers(init?.headers).get("x-ravi-actor-contact"),
+        body: init?.body ? JSON.parse(String(init.body)) : null,
+      });
+      const body =
+        path === "/api/cli/me" ? { user: { id: "user_luis" }, organization: { id: "org_1" } } : consoleResponse();
+      return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+    // The process runs inside the group turn, as the CLI does under the daemon.
+    const previousKey = process.env.RAVI_CONTEXT_KEY;
+    process.env.RAVI_CONTEXT_KEY = group.contextKey;
+    try {
+      await readPage({ url: "https://convit-apresentacoes.ravi.page/release-imprensa" }, deps(group));
+    } finally {
+      globalThis.fetch = original;
+      if (previousKey === undefined) delete process.env.RAVI_CONTEXT_KEY;
+      else process.env.RAVI_CONTEXT_KEY = previousKey;
+    }
+    const read = seen.find((call) => call.path === "/api/cli/pages/read");
+    expect(read?.body).toMatchObject({ publicOnly: true });
+    expect(read?.actor).toBeNull();
   });
 
   it("sends a person's read with that person's contact on the request, and publicOnly false", async () => {

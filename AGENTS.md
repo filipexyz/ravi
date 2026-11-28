@@ -155,9 +155,9 @@ ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --visibilit
 ```
 
 Read a Page link with `ravi pages read <url>`, never a browser or fetch: it reads
-private Pages through Console (on the operator's own turns, or for a person linked
-with `ravi link` with their own access; a turn with no person gets public routes
-only, exit 3). The default Markdown is text without the page's design; use
+private Pages through Console (on the operator's own turns, or in a linked person's own
+direct chat with their own access through `ravi link`; anything else, a contact in
+a group included, gets public routes only, exit 3). The default Markdown is text without the page's design; use
 `--format html`, or `--format zip|files --out <path>` for every published file, to
 see or reuse the style.
 

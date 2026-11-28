@@ -11,10 +11,11 @@
   group, with no confirmation; an owner account not linked to the login
   reads as that contact (`person`), so Console decides with that account's own
   link; `pageReadTurnBlock` still explains `not_owner`.
-- Another contact's message reads as that person in a direct chat and in a
-  group (the contact who wrote, never the group), with `publicOnly: false` and
-  `x-ravi-actor-contact` set to that contact on `POST /api/cli/pages/read`; an
-  unresolved speaker and an agent relay read public-only.
+- Another contact's message reads as that person in their own direct chat in
+  a session of their own, with `publicOnly: false` and `x-ravi-actor-contact`
+  set to that contact on `POST /api/cli/pages/read`; the same contact in a
+  group, in a shared session and in a thread of a shared session reads
+  public-only, as do an unresolved speaker and an agent relay.
 - A refused `person` read names the case in `details.turn` (`not_member`,
   `no_page_access`), and the gateway relay keeps it; `ACTOR_NOT_LINKED` is
   not remapped (its own refusal carries `linkFlow`); the operator's own
