@@ -31,7 +31,9 @@ import {
   HOST_CLI_GATEWAY_ENV,
   HOST_CLI_GATEWAY_INTERNAL_ENV,
   getHostCliGatewaySocketPath,
-  probeUnixSocket,
+  probeUnixSocketDetailed,
+  type UnixSocketProbeFailure,
+  type UnixSocketProbeResult,
 } from "../isolation/execution-plane.js";
 import { resolveRuntimeContext } from "../runtime/context-registry.js";
 import { readCredentialsFile, selectDefaultCredentialsKey } from "../runtime/credentials-store.js";
@@ -161,6 +163,8 @@ export function getRemoteGatewayConfig(env: NodeJS.ProcessEnv = process.env, op 
 
 export interface ResolveRemoteGatewayConfigOptions {
   probeSocket?: (socketPath: string) => Promise<boolean>;
+  /** Test seam for the detailed probe used when `probeSocket` is not given. */
+  probeSocketDetailed?: (socketPath: string) => Promise<UnixSocketProbeResult>;
   stateDir?: string;
   /** Set only after the CLI has verified installed operator provenance. */
   installedOperator?: boolean;
@@ -181,25 +185,54 @@ export async function resolveRemoteGatewayConfig(
   return resolveAutoHostCliGateway(env, options);
 }
 
+/**
+ * Why the last automatic host-gateway resolution found no usable socket. The CLI
+ * is a short-lived process, so one slot is enough; `gatewayRequiredError` reads
+ * it to tell "socket missing" from "socket there, daemon not answering".
+ */
+let lastHostGatewayFailure: { reason: UnixSocketProbeFailure; socketPath: string; code?: string } | null = null;
+
+export function getLastHostGatewayFailure(): {
+  reason: UnixSocketProbeFailure;
+  socketPath: string;
+  code?: string;
+} | null {
+  return lastHostGatewayFailure;
+}
+
 export async function resolveAutoHostCliGateway(
   env: NodeJS.ProcessEnv = process.env,
   options: ResolveRemoteGatewayConfigOptions = {},
 ): Promise<RemoteGatewayConfig | null> {
+  lastHostGatewayFailure = null;
   if (!shouldAutoUseHostCliGateway(env, options.installedOperator)) return null;
   const stateDirs = options.stateDir ? [options.stateDir] : resolveHostCliGatewayStateDirs(env);
-  const probe = options.probeSocket ?? probeUnixSocket;
   for (const stateDir of stateDirs) {
     const socketPath = getHostCliGatewaySocketPath(stateDir);
-    try {
-      if (!(await probe(socketPath))) continue;
-    } catch {
-      continue;
-    }
-    return {
+    const config: RemoteGatewayConfig = {
       url: `${HOST_CLI_GATEWAY_URL_PREFIX}${socketPath}`,
       source: "host-socket",
       socketPath,
     };
+    if (options.probeSocket) {
+      try {
+        if (!(await options.probeSocket(socketPath))) continue;
+      } catch {
+        continue;
+      }
+      return config;
+    }
+    const result = await (options.probeSocketDetailed ?? probeUnixSocketDetailed)(socketPath);
+    if (result.ok) return config;
+    // The socket file exists but the daemon did not accept within the retry
+    // budget (a stalled event loop, not an absent daemon). Hand the real
+    // request to the gateway transport with its normal timeout instead of
+    // declaring "no gateway": it still fails closed if the daemon is truly
+    // gone, and never falls back to local execution.
+    // Only for a runtime context key, which has no local fallback. An operator
+    // CLI (credential recovery, a stopped daemon) keeps its local path.
+    if (result.reason === "timeout" && requiresRemoteGateway(env)) return config;
+    lastHostGatewayFailure = { reason: result.reason, socketPath, ...(result.code ? { code: result.code } : {}) };
   }
   return null;
 }
@@ -237,9 +270,17 @@ export function requiresRemoteGateway(env: NodeJS.ProcessEnv = process.env): boo
 }
 
 export function gatewayRequiredError(op: string, installedOperator = false): ContractError {
+  const failure = getLastHostGatewayFailure();
+  const detail = failure
+    ? failure.reason === "missing"
+      ? ` (socket ausente: ${failure.socketPath})`
+      : failure.reason === "refused"
+        ? ` (socket presente, conexão recusada: ${failure.socketPath}; daemon parado ou reiniciando)`
+        : ` (socket presente, falha ao conectar${failure.code ? ` ${failure.code}` : ""}: ${failure.socketPath})`
+    : "";
   const message = installedOperator
-    ? "This command requires the installed Ravi gateway, and none is reachable."
-    : "Commands running with RAVI_CONTEXT_KEY must go through the Ravi gateway, and none is reachable.";
+    ? `This command requires the installed Ravi gateway, and none is reachable${detail}.`
+    : `Commands running with RAVI_CONTEXT_KEY must go through the Ravi gateway, and none is reachable${detail}.`;
   return new ContractError(op, "GATEWAY_REQUIRED", message, 1, {
     ...errorDiagnostic(message, { operation: op }),
     ...{
