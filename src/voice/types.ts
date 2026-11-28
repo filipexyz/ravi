@@ -163,6 +163,8 @@ export function effectiveVoiceProfile(profile: VoiceProfile, overrides: VoiceCal
     const value = overrides[field];
     if (typeof value === "string" && value) next[field] = value;
   }
+  // A call that changes its language transcribes in it too, over the profile's own `sttLanguage`.
+  if (overrides.language) delete next.sttLanguage;
   return next;
 }
 

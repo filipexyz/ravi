@@ -46,7 +46,9 @@ entered the session, and the feature spec `runtime/providers/realtime-voice` (ar
    speaking|quiet` (sent by the client, e.g. on push-to-talk press and release), and speak it when
    they stop, when the call ends (then it is not spoken) or after `WHEN_IDLE_MAX_WAIT_MS` (20 s)
    counted from when that reply starts waiting, so a lost "quiet" never silences the call and a long
-   speaker is not talked over. While a reply is held the call shows `agentState: listening`. With no "speaking" signal it speaks at once. Live calls
+   speaker is not talked over. While a reply is held the call shows `agentState: listening`.
+   A hold that reaches its ceiling with no "quiet" drops the stale "speaking" signal, so later
+   replies are not held again until a new "speaking" arrives. With no "speaking" signal it speaks at once. Live calls
    speak as `speak`: the live model owns turn-taking.
 
 ## Modes and engines
@@ -160,7 +162,10 @@ entered the session, and the feature spec `runtime/providers/realtime-voice` (ar
   `ttsModel` and `liveVoice` for one call only when the profile lists the field in `overridable`, and
   a `voice`/`liveVoice` only from `allowedVoices` when the profile sets it; anything else is refused
   with `VOICE_OVERRIDE_FORBIDDEN`. Overrides are stored on the call and never change limits, delivery
-  or the profile itself. A pinned `sttProvider` refuses another provider's `sttModel`. A device paired with `--profiles <ids>` MUST be refused any
+  or the profile itself. A pinned `sttProvider` refuses another provider's `sttModel`. A `language`
+  override also sets the transcription language over the profile's `sttLanguage`. `ttsModel` and
+  `language` overrides are free text within `overridable`: the profile owner accepts that a call may
+  pick a different ElevenLabs model, whose cost is still estimated per character. A device paired with `--profiles <ids>` MUST be refused any
   other profile (`VOICE_PROFILE_FORBIDDEN`); devices paired without the option keep `*`. Deleting a
   profile removes its session bindings.
 

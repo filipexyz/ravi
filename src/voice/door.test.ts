@@ -720,6 +720,31 @@ describe("voice door", () => {
       await until(() => spoke(call.id), "spoken once the person stopped");
     });
 
+    it("a ceiling reached with no quiet drops the stale signal, so the next reply is not held again", async () => {
+      saveVoiceProfile({ ...defaultVoiceProfile(), id: "idle", delivery: "when_idle" });
+      const { door } = harness({ whenIdleMaxWaitMs: 250 });
+      const call = makeCall("push", { profileId: "idle" });
+      await door.handleControl({ op: "activity", callId: call.id, speaking: true });
+      await say(door, call.id, "vt_s1");
+      await until(() => spoke(call.id), "first reply spoken at the ceiling");
+      const firstCount = listVoiceEvents(call.id).filter((event) => event.type === "agent.transcript").length;
+      const startedAt = Date.now();
+      await say(door, call.id, "vt_s2");
+      await until(
+        () => listVoiceEvents(call.id).filter((event) => event.type === "agent.transcript").length > firstCount,
+        "second reply spoken",
+      );
+      expect(Date.now() - startedAt).toBeLessThan(220);
+    });
+
+    it("a call that changes its language transcribes in it too", async () => {
+      const { effectiveVoiceProfile } = await import("./types.js");
+      const profile = { ...defaultVoiceProfile(), language: "pt", sttLanguage: "pt" };
+      expect(effectiveVoiceProfile(profile, { language: "en" })).toMatchObject({ language: "en" });
+      expect(effectiveVoiceProfile(profile, { language: "en" }).sttLanguage).toBeUndefined();
+      expect(effectiveVoiceProfile(profile, { voice: "v" }).sttLanguage).toBe("pt");
+    });
+
     it("one reply gets one ceiling, even when it waits before and after synthesis", async () => {
       saveVoiceProfile({ ...defaultVoiceProfile(), id: "idle", delivery: "when_idle" });
       const { door } = harness({

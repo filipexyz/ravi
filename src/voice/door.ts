@@ -962,19 +962,24 @@ export class VoiceDoorService {
     if (remaining <= 0) return;
     // Nothing plays while the reply is held: show the call as listening, not speaking.
     await this.setAgentState(callId, "listening");
-    await new Promise<void>((resolve) => {
+    const speakingSince = runtime.userSpeakingSince;
+    const timedOut = await new Promise<boolean>((resolve) => {
       let done = false;
-      const finish = () => {
+      const finish = (byCeiling: boolean) => {
         if (done) return;
         done = true;
         clearTimeout(timer);
-        const index = runtime.idleWaiters.indexOf(finish);
+        const index = runtime.idleWaiters.indexOf(release);
         if (index >= 0) runtime.idleWaiters.splice(index, 1);
-        resolve();
+        resolve(byCeiling);
       };
-      const timer = setTimeout(finish, remaining);
-      runtime.idleWaiters.push(finish);
+      const release = () => finish(false);
+      const timer = setTimeout(() => finish(true), remaining);
+      runtime.idleWaiters.push(release);
     });
+    // A full ceiling with no "quiet" means the signal is stale (a lost or reordered "quiet"): drop it,
+    // so the next replies are not held again. A new "speaking" arms it again.
+    if (timedOut && runtime.userSpeakingSince === speakingSince) runtime.userSpeakingSince = undefined;
   }
 
   private profileFor(call: VoiceCall): VoiceProfile {
