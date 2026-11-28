@@ -5,7 +5,13 @@ import { CloudAuthError } from "../cloud-auth/errors.js";
 import { readActiveCloudAuthUserId, readCloudCredentials } from "../cloud-auth/storage.js";
 import { LEGACY_CLOUD_AUTH_USER_ID } from "../cloud-auth/types.js";
 import { accessActorFromTurn } from "../access/actor.js";
-import { resolveConnectorTurn, type ConnectorTurnDeps, type ConnectorTurnResult } from "../link/connector-turn.js";
+import {
+  isContactPrivateDirectTurn,
+  resolveConnectorTurn,
+  type ConnectorTurnDeps,
+  type ConnectorTurnResult,
+} from "../link/connector-turn.js";
+import { logger } from "../utils/logger.js";
 import { createAuthenticatedPagesContext, type PagesClientDeps, type PagesClientOptions } from "./client.js";
 import {
   downloadPageFiles,
@@ -186,41 +192,50 @@ export function normalizePageReadNumber(
  * - `operator`: the operator's own turn (the terminal, the linked owner's
  *   message in any chat, routines the operator owns). Reads with the
  *   `ravi login` session.
- * - `person`: a turn Ravi attributes to someone else (`resolveAccessActor`:
- *   the person who wrote, in a direct chat or a group, the person a thread
- *   works for, the contact who owns the cron job). The read names that
- *   contact (`x-ravi-actor-contact`) and Console answers with that person's
- *   own access through this installation's `ravi link`: no link, not a member
- *   or no access to the Page is a refusal, never the operator's access.
- * - `public_only`: anything else (an agent relaying, a routine nobody owns, a
- *   turn that cannot be attributed). Private Pages are refused.
- *
- * In a group the person who wrote reads with their own access, and what the
- * read returns stays in that session's transcript, where other participants
- * can ask about it later: sharing there is that person's choice, as it is for
- * the owner (owner decision, 26/11; spec pages/read).
+ * - `person`: another contact writing in their own direct chat, in a session
+ *   of their own (`isContactPrivateDirectTurn`), so what the read returns
+ *   stays in a transcript only that person reads. The read names that contact
+ *   (`x-ravi-actor-contact`) and Console answers with that person's own access
+ *   through this installation's `ravi link`: no link, not a member or no
+ *   access to the Page is a refusal, never the operator's access.
+ * - `public_only`: anything else, a contact in a group or in a shared session
+ *   included (others in that transcript could ask the agent to repeat it),
+ *   and an agent relaying, a routine, an unresolved speaker or a turn that
+ *   cannot be classified. Private Pages are refused.
  */
 export type PageReader = { kind: "operator" } | { kind: "person"; contactId: string } | { kind: "public_only" };
+
+const log = logger.child("pages-read");
 
 export function resolvePageReader(deps: PageReadDeps = {}): PageReader {
   if (deps.publicOnly !== undefined) return deps.publicOnly ? { kind: "public_only" } : { kind: "operator" };
   let result: ConnectorTurnResult;
   try {
     result = resolveTurnForActiveLogin(deps);
-  } catch {
-    // no-cause: a turn that cannot be classified reads public Pages only, never as the operator
+  } catch (error) {
+    log.debug("pages read: the turn could not be classified; reading public Pages only", {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return { kind: "public_only" };
   }
   if (result.ok) return { kind: "operator" };
   let decision: ReturnType<typeof accessActorFromTurn>;
   try {
     decision = accessActorFromTurn(result);
-  } catch {
-    // no-cause: an actor that cannot be named reads public Pages only
+  } catch (error) {
+    log.debug("pages read: the turn's actor could not be named; reading public Pages only", {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return { kind: "public_only" };
   }
-  if (decision.kind === "contact" && decision.contactId.trim()) {
-    return { kind: "person", contactId: decision.contactId.trim() };
+  const contactId = decision.kind === "contact" ? decision.contactId.trim() : "";
+  const candidate = result.candidate;
+  if (
+    contactId &&
+    candidate?.speaker.contactId === contactId &&
+    isContactPrivateDirectTurn(candidate, deps.turn ?? {})
+  ) {
+    return { kind: "person", contactId };
   }
   return { kind: "public_only" };
 }
@@ -251,7 +266,13 @@ export function resolveTurnForActiveLogin(
 }
 
 /** Which rule kept this turn from being the operator's own (for a `public_only` refusal). */
-export type PageReadTurnBlock = "relay_answer_chat" | "owner_outside_dm" | "group" | "not_owner" | "unknown";
+export type PageReadTurnBlock =
+  | "relay_answer_chat"
+  | "owner_outside_dm"
+  | "group"
+  | "shared_session"
+  | "not_owner"
+  | "unknown";
 
 /**
  * Why the classifier did not count this turn as the operator's own, in words
@@ -286,6 +307,35 @@ export function pageReadTurnBlock(deps: PageReadDeps = {}): { turn: PageReadTurn
     };
   }
   return { turn: "unknown", why: "Ravi could not tell who is asking in this turn" };
+}
+
+/**
+ * `pageReadTurnBlock` for `ravi pages read`: a contact whose direct chat runs
+ * in a shared session is told that, not that they are unlinked, since a
+ * session of their own is what would let them read with their own access.
+ */
+export function pagesReadTurnBlock(deps: PageReadDeps = {}): { turn: PageReadTurnBlock; why: string } | null {
+  const block = pageReadTurnBlock(deps);
+  if (!block || block.turn === "unknown") return block;
+  let result: ConnectorTurnResult;
+  try {
+    result = resolveTurnForActiveLogin(deps);
+  } catch {
+    // no-cause: the explanation keeps the classifier's own reason when the turn cannot be re-read
+    return block;
+  }
+  const candidate = !result.ok ? result.candidate : undefined;
+  if (
+    candidate?.speaker.kind === "contact" &&
+    candidate.conversation === "dm" &&
+    !isContactPrivateDirectTurn(candidate, deps.turn ?? {})
+  ) {
+    return {
+      turn: "shared_session",
+      why: "the person writes in a direct chat whose session is shared with other chats, so a private Page read here would stay where others can ask about it; in a direct chat of their own it is read with their own access",
+    };
+  }
+  return block;
 }
 
 export async function readPage(options: PageReadOptions, deps: PageReadDeps = {}): Promise<PageReadResult> {
@@ -418,7 +468,7 @@ export function describePageReadFailure(error: unknown, url: string, reader?: Pa
     if (reason === "public_only") {
       return {
         code: "PAGE_ACCESS_DENIED",
-        message: `${url} is not public. Private Ravi Pages are read only on the operator's own turns (terminal, their direct chat, their routines) or for a person this turn is attributed to, with their own access through \`ravi link\`.`,
+        message: `${url} is not public. Private Ravi Pages are read only on the operator's own turns (terminal, their direct chat, their routines) or in a person's own direct chat, with their own access through \`ravi link\`.`,
         exitCode: 3,
         details: {
           reason,

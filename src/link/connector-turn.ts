@@ -538,6 +538,15 @@ export function resolveConnectorExecRoute(deps: ConnectorExecRouteDeps): Connect
   return result;
 }
 
+/**
+ * Whether this turn is a contact's own direct chat in a session of their own
+ * (`readIsPrivateDirectSession`): what it reads stays in a transcript only
+ * that person reads. A group, a shared session or anything unknown is not.
+ */
+export function isContactPrivateDirectTurn(turn: ConnectorTurn, deps: ConnectorTurnDeps = {}): boolean {
+  return turn.speaker.kind === "contact" && turn.conversation === "dm" && isPrivateDirectChat(turn, deps);
+}
+
 function isPrivateDirectChat(turn: ConnectorTurn, deps: ConnectorTurnDeps): boolean {
   const contactId = turn.speaker.contactId;
   if (!turn.directChat || !contactId) return false;

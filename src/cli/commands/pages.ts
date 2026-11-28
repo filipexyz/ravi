@@ -70,7 +70,7 @@ import {
   normalizePageReadNumber,
   PAGE_READ_MAX_CHARS,
   PAGE_READ_MIN_CHARS,
-  pageReadTurnBlock,
+  pagesReadTurnBlock,
   resolvePageReader,
   readPage,
   type PageReadResult,
@@ -233,11 +233,12 @@ Who may read what:
   Public routes: always.
   Private, protected_link and password routes: on the operator's own turns
   (terminal, their direct chat, their routines) when the ravi login can read
-  the page's project, and on a turn of another person (their chat, a group
-  they wrote in, a thread working for them) with that person's own access
-  through their ravi link. No link: ACTOR_NOT_LINKED (Ravi starts the link).
-  Not a member or no access to the page: exit 1, and details.turn says which. A turn with no person (an agent
-  relaying, an unknown speaker): public routes only, exit 3.
+  the page's project, and in another person's own direct chat (a session of
+  their own) with that person's own access through their ravi link. No link:
+  ACTOR_NOT_LINKED (Ravi starts the link). Not a member or no access to the
+  page: exit 1, and details.turn says which. Anything else (a contact in a
+  group or a shared session, an agent relaying, an unknown speaker): public
+  routes only, exit 3.
 
 Formats (pick what the task needs):
   markdown  Default. Text extracted from the page: headings, lists, tables,
@@ -524,7 +525,7 @@ export class PagesCommands {
         const failure = describePageReadFailure(error, url, resolvePageReader(this.deps));
         if (failure) {
           // A private Page refused on a turn that is not the operator's own: say which rule decided it.
-          const block = failure.details.reason === "public_only" ? pageReadTurnBlock(this.deps) : null;
+          const block = failure.details.reason === "public_only" ? pagesReadTurnBlock(this.deps) : null;
           contractFail(
             "pages read",
             failure.code,
