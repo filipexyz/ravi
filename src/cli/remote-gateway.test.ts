@@ -161,6 +161,40 @@ describe("remote gateway configuration", () => {
     ).resolves.toBeNull();
   });
 
+  it("keeps the gateway when the socket exists but the daemon is only slow to accept", async () => {
+    const config = await resolveRemoteGatewayConfig({ RAVI_CONTEXT_KEY: "rctx_test" }, "pages published", {
+      stateDir: "/home/user/.ravi",
+      probeSocketDetailed: async () => ({ ok: false, reason: "timeout" }),
+    });
+
+    // The real request decides; a slow accept never becomes "no gateway".
+    expect(config).toEqual({
+      url: "unix:///home/user/.ravi/cli-gateway.sock",
+      source: "host-socket",
+      socketPath: "/home/user/.ravi/cli-gateway.sock",
+    });
+  });
+
+  it("stays fail-closed when the socket is missing or refuses, and says which", async () => {
+    const env = { RAVI_CONTEXT_KEY: "rctx_test" };
+    const missing = await resolveRemoteGatewayConfig(env, "pages published", {
+      stateDir: "/home/user/.ravi",
+      probeSocketDetailed: async () => ({ ok: false, reason: "missing" }),
+    });
+    expect(missing).toBeNull();
+    expect(gatewayRequiredError("pages published").message).toContain("socket ausente");
+
+    const refused = await resolveRemoteGatewayConfig(env, "pages published", {
+      stateDir: "/home/user/.ravi",
+      probeSocketDetailed: async () => ({ ok: false, reason: "refused", code: "ECONNREFUSED" }),
+    });
+    expect(refused).toBeNull();
+    const error = gatewayRequiredError("pages published");
+    expect(error.code).toBe("GATEWAY_REQUIRED");
+    expect(error.message).toContain("conexão recusada");
+    expect(requiresRemoteGateway(env)).toBe(true);
+  });
+
   it("treats a throwing socket probe as unreachable instead of crashing the CLI", async () => {
     await expect(
       resolveRemoteGatewayConfig({ RAVI_CONTEXT_KEY: "rctx_test" }, "pages published", {

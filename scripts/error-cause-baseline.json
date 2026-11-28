@@ -2439,13 +2439,6 @@
       "count": 1
     },
     {
-      "id": "src/isolation/execution-plane.ts:1e00435bc427d26e062804f2",
-      "file": "src/isolation/execution-plane.ts",
-      "boundary": "isolation",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
       "id": "src/jobs/detach-script.ts:55fc73ecc04df177cb3133ff",
       "file": "src/jobs/detach-script.ts",
       "boundary": "jobs",
@@ -5723,7 +5716,7 @@
     }
   ],
   "totals": {
-    "violations": 856,
+    "violations": 855,
     "byDirectory": {
       "src/access": 2,
       "src/adapters": 2,
@@ -5763,7 +5756,6 @@
       "src/image": 1,
       "src/inbox": 3,
       "src/insights": 1,
-      "src/isolation": 1,
       "src/jobs": 7,
       "src/knowledge": 13,
       "src/knowledge/curator": 13,

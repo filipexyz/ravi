@@ -1,10 +1,13 @@
 import { describe, expect, it } from "bun:test";
+import { EventEmitter } from "node:events";
+import type { Socket } from "node:net";
 import { join } from "node:path";
 import {
   inspectExecutionPlane,
   isNetworkIsolationError,
   looksLikeRaviSourceTree,
   probeUnixSocket,
+  probeUnixSocketDetailed,
 } from "./execution-plane.js";
 
 function existsFrom(paths: string[]): (path: string) => boolean {
@@ -120,5 +123,91 @@ describe("isNetworkIsolationError", () => {
 describe("probeUnixSocket", () => {
   it("returns false for a missing socket without rejecting", async () => {
     await expect(probeUnixSocket("/tmp/ravi-missing-cli-gateway.sock")).resolves.toBe(false);
+  });
+});
+
+type FakeConnect = "hang" | "connect" | "refuse" | "vanish";
+
+/** A socket whose `connect()` follows a script, one entry per attempt. */
+function scriptedSockets(script: FakeConnect[]): { createSocket: () => Socket; count: () => number } {
+  let attempts = 0;
+  return {
+    count: () => attempts,
+    createSocket: () => {
+      const behaviour = script[Math.min(attempts, script.length - 1)] ?? "hang";
+      attempts += 1;
+      const fake = new EventEmitter() as EventEmitter & { connect: () => void; destroy: () => void };
+      fake.connect = () => {
+        if (behaviour === "connect") queueMicrotask(() => fake.emit("connect"));
+        if (behaviour === "refuse") {
+          queueMicrotask(() => fake.emit("error", Object.assign(new Error("refused"), { code: "ECONNREFUSED" })));
+        }
+        if (behaviour === "vanish") {
+          queueMicrotask(() => fake.emit("error", Object.assign(new Error("gone"), { code: "ENOENT" })));
+        }
+        // "hang": never answers; the attempt timeout decides.
+      };
+      fake.destroy = () => {};
+      return fake as unknown as Socket;
+    },
+  };
+}
+
+describe("probeUnixSocket retry", () => {
+  // The probe only reaches `connect` when the socket file exists.
+  const existing = import.meta.path;
+
+  it("a single short attempt reads a slow connect as unreachable (the old behaviour)", async () => {
+    const sockets = scriptedSockets(["hang"]);
+    const result = await probeUnixSocketDetailed(existing, { timeoutMs: 20, attempts: 1, ...sockets });
+    expect(result).toEqual({ ok: false, reason: "timeout" });
+    expect(sockets.count()).toBe(1);
+  });
+
+  it("reaches a daemon whose first attempts are slower than the attempt timeout", async () => {
+    const sockets = scriptedSockets(["hang", "hang", "connect"]);
+    const result = await probeUnixSocketDetailed(existing, { timeoutMs: 20, backoffMs: [5], ...sockets });
+    expect(result).toEqual({ ok: true });
+    expect(sockets.count()).toBe(3);
+  });
+
+  it("uses a retrying default: probeUnixSocket survives one slow attempt", async () => {
+    const sockets = scriptedSockets(["hang", "connect"]);
+    const result = await probeUnixSocketDetailed(existing, { timeoutMs: 20, backoffMs: [5], ...sockets });
+    expect(result.ok).toBe(true);
+    // The exported defaults must keep retrying, otherwise the fix is a no-op.
+    const defaults = scriptedSockets(["hang", "connect"]);
+    expect(await probeUnixSocketDetailed(existing, { timeoutMs: 20, ...defaults })).toEqual({ ok: true });
+  });
+
+  it("reports timeout vs refused so callers can tell a busy daemon from a dead one", async () => {
+    const hung = await probeUnixSocketDetailed(existing, {
+      timeoutMs: 10,
+      backoffMs: [1],
+      ...scriptedSockets(["hang"]),
+    });
+    const refused = await probeUnixSocketDetailed(existing, {
+      timeoutMs: 10,
+      backoffMs: [1],
+      ...scriptedSockets(["refuse"]),
+    });
+    expect(hung).toMatchObject({ ok: false, reason: "timeout" });
+    expect(refused).toMatchObject({ ok: false, reason: "refused", code: "ECONNREFUSED" });
+  });
+
+  it("does not retry a socket that vanishes between the existence check and connect", async () => {
+    const sockets = scriptedSockets(["vanish"]);
+    const result = await probeUnixSocketDetailed(existing, { timeoutMs: 10, backoffMs: [1], ...sockets });
+    expect(result).toMatchObject({ ok: false, reason: "missing", code: "ENOENT" });
+    expect(sockets.count()).toBe(1);
+  });
+
+  it("reports a missing socket as definite, without retrying", async () => {
+    const sockets = scriptedSockets(["hang"]);
+    const started = Date.now();
+    const result = await probeUnixSocketDetailed("/tmp/ravi-missing-cli-gateway.sock", { ...sockets });
+    expect(result).toEqual({ ok: false, reason: "missing" });
+    expect(sockets.count()).toBe(0);
+    expect(Date.now() - started).toBeLessThan(100);
   });
 });
