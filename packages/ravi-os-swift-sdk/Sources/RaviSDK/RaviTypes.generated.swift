@@ -40485,7 +40485,7 @@ public struct VoiceCallsStartReturn: Codable, Sendable {
   public var connectionKind: String
   public var lastSeq: Double
   public var mode: String
-  public var overrides: RaviJSON
+  public var overrides: RaviJSON?
   public var profileId: String
   public var roomToken: RaviJSON
   public var roomUrl: RaviJSON
@@ -40493,7 +40493,7 @@ public struct VoiceCallsStartReturn: Codable, Sendable {
   public var sessionName: String
   public var state: String
 
-  public init(callId: String, capabilities: RaviJSON, connectionKind: String, lastSeq: Double, mode: String, overrides: RaviJSON, profileId: String, roomToken: RaviJSON, roomUrl: RaviJSON, sdpAnswer: RaviJSON, sessionName: String, state: String) {
+  public init(callId: String, capabilities: RaviJSON, connectionKind: String, lastSeq: Double, mode: String, overrides: RaviJSON? = nil, profileId: String, roomToken: RaviJSON, roomUrl: RaviJSON, sdpAnswer: RaviJSON, sessionName: String, state: String) {
     self.callId = callId
     self.capabilities = capabilities
     self.connectionKind = connectionKind

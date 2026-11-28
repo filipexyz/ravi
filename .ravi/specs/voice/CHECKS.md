@@ -77,3 +77,10 @@ normative: false
   `door.test.ts`: a person who talked longer than the ceiling still holds a new reply, and the call
   shows `listening` while it is held. Six mutants (override field check, allowed voices, device skip,
   STT pair, bind reach, listening while held) each fail one test.
+- Review of #1064 (Devin): one reply gets one `when_idle` ceiling across the waits before and after
+  synthesis (`door.test.ts`; resetting the deadline fails it); switching the STT provider while
+  clearing the model is checked on the saved profile; the provider/model pair is a push setting and
+  a push call on a mismatched profile is refused at start (`voice.test.ts`). The kit gives each
+  push-to-talk press its own recorder and chunks and sends "quiet" without delaying the clip;
+  `connectLive` forwards overrides; hands-free passes `ttsModel` to the worker; the start answer's
+  `overrides` is optional for SDKs talking to older daemons.

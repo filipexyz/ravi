@@ -27392,7 +27392,7 @@ export type VoiceCallsStartReturn = {
   connectionKind: "none" | "webrtc" | "room";
   lastSeq: number;
   mode: "push" | "live" | "handsfree" | "mock";
-  overrides: {
+  overrides?: {
     language?: string;
     liveVoice?: string;
     ttsModel?: string;

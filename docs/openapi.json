@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "d4839eeb21cb2c54"
+    "version": "f6c0b0c7aee260d6"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -160128,7 +160128,6 @@
                     "sessionName",
                     "mode",
                     "profileId",
-                    "overrides",
                     "state",
                     "capabilities"
                   ],

@@ -34516,14 +34516,14 @@ class VoiceCallsStartOptions {
 }
 
 class VoiceCallsStartReturn {
-  const VoiceCallsStartReturn({required this.callId, required this.capabilities, required this.connectionKind, required this.lastSeq, required this.mode, required this.overrides, required this.profileId, required this.roomToken, required this.roomUrl, required this.sdpAnswer, required this.sessionName, required this.state});
+  const VoiceCallsStartReturn({required this.callId, required this.capabilities, required this.connectionKind, required this.lastSeq, required this.mode, this.overrides, required this.profileId, required this.roomToken, required this.roomUrl, required this.sdpAnswer, required this.sessionName, required this.state});
 
   final String callId;
   final RaviJson capabilities;
   final String connectionKind;
   final double lastSeq;
   final String mode;
-  final RaviJson overrides;
+  final RaviJson? overrides;
   final String profileId;
   final RaviJson roomToken;
   final RaviJson roomUrl;
@@ -34538,7 +34538,7 @@ class VoiceCallsStartReturn {
       connectionKind: raviJsonAsString(json["connectionKind"]),
       lastSeq: raviJsonAsDouble(json["lastSeq"]),
       mode: raviJsonAsString(json["mode"]),
-      overrides: RaviJson.from(json["overrides"]),
+      overrides: json["overrides"] == null ? null : RaviJson.from(json["overrides"]),
       profileId: raviJsonAsString(json["profileId"]),
       roomToken: RaviJson.from(json["roomToken"]),
       roomUrl: RaviJson.from(json["roomUrl"]),

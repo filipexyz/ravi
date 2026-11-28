@@ -141557,7 +141557,6 @@ public enum RaviSchemas {
       "sessionName",
       "mode",
       "profileId",
-      "overrides",
       "state",
       "capabilities"
     ],

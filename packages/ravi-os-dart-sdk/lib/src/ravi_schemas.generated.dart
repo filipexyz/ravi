@@ -141557,7 +141557,6 @@ class RaviSchemas {
     "sessionName",
     "mode",
     "profileId",
-    "overrides",
     "state",
     "capabilities"
   ],

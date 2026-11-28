@@ -574,11 +574,81 @@ describe("ravi voice commands", () => {
     });
 
     it("a pinned transcription provider refuses another provider's model", async () => {
-      const error = await contractError(() =>
-        createProfile("mix", { sttProvider: "groq", sttModel: "gpt-4o-transcribe" }),
-      );
+      const pushProfile = (id: string, sttProvider?: string, sttModel?: string) =>
+        profiles().create(
+          id,
+          undefined,
+          "push",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          sttProvider,
+          sttModel,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        );
+      const error = await contractError(() => pushProfile("mix", "groq", "gpt-4o-transcribe"));
       expect(error.code).toBe("USAGE_ERROR");
-      await quiet(() => createProfile("ok", { sttProvider: "openai", sttModel: "gpt-4o-transcribe" }));
+      await quiet(() => pushProfile("ok", "groq", "whisper-large-v3"));
+      // Switching provider and clearing the old model together is checked on the profile that is saved.
+      const switched = (await quiet(() =>
+        profiles().update(
+          "ok",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          "openai",
+          "",
+          undefined,
+          undefined,
+          undefined,
+          true,
+        ),
+      )) as { profile: Record<string, unknown> };
+      expect(switched.profile.sttProvider).toBe("openai");
+      expect(switched.profile.sttModel).toBeUndefined();
+      // A non-push profile may keep the pair (the pin is a push setting); a push call on it is refused at start.
+      await quiet(() => createProfile("hf", { sttProvider: "groq", sttModel: "gpt-4o-transcribe" }));
+      const saved = { ...process.env };
+      process.env.ELEVENLABS_API_KEY = "x";
+      process.env.GROQ_API_KEY = "x";
+      try {
+        const refused = await contractError(() =>
+          new VoiceCallsCommands().start(
+            "main",
+            "hf",
+            "push",
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            true,
+          ),
+        );
+        expect(refused.code).toBe("VOICE_ENGINE_NOT_READY");
+      } finally {
+        process.env = saved;
+      }
     });
 
     it("a manager key binds only sessions it can reach", async () => {

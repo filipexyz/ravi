@@ -139859,7 +139859,6 @@ export const VoiceCallsStartReturnSchema = {
     "sessionName",
     "mode",
     "profileId",
-    "overrides",
     "state",
     "capabilities"
   ],

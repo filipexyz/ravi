@@ -394,6 +394,7 @@ async function openConnection(
           callId: call.id,
           language: profile.sttLanguage ?? profile.language,
           voice: profile.voice ?? null,
+          ttsModel: profile.ttsModel ?? null,
           sttModel: profile.sttModel ?? null,
         }),
       },
@@ -661,6 +662,8 @@ export class VoiceCallsCommands {
       if (!check.ready) {
         fail(op, "VOICE_ENGINE_NOT_READY", `Engine ${mode} is missing: ${check.missing.join(", ")}.`, asJson);
       }
+      const sttPair = mode === "push" ? sttModelMismatch(profile.sttProvider, profile.sttModel) : null;
+      if (sttPair) fail(op, "VOICE_ENGINE_NOT_READY", `Profile ${profile.id}: ${sttPair}`, asJson);
       const sttKey = mode === "push" && profile.sttProvider ? STT_PROVIDER_KEYS[profile.sttProvider] : null;
       if (sttKey && !process.env[sttKey]?.trim()) {
         fail(
@@ -1261,12 +1264,14 @@ function applyProfileFlags(op: string, base: VoiceProfile, flags: ProfileFlags, 
   };
   if (next.overridable?.length === 0) delete next.overridable;
   if (next.allowedVoices?.length === 0) delete next.allowedVoices;
-  const sttMismatch = sttModelMismatch(next.sttProvider, next.sttModel);
-  if (sttMismatch) fail(op, "USAGE_ERROR", sttMismatch, asJson, CONTRACT_EXIT_USAGE);
   // `auto` and empty values clear the field: the daemon picks again.
   if (sttProvider === "auto") delete next.sttProvider;
   if (flags.sttModel === "") delete next.sttModel;
   if (flags.sttLanguage === "") delete next.sttLanguage;
+  // The provider pin is a push setting (hands-free always transcribes in the worker), and the pair is
+  // checked on the profile that will be saved, after any clearing.
+  const sttMismatch = next.mode === "push" ? sttModelMismatch(next.sttProvider, next.sttModel) : null;
+  if (sttMismatch) fail(op, "USAGE_ERROR", sttMismatch, asJson, CONTRACT_EXIT_USAGE);
   return next;
 }
 
@@ -1934,7 +1939,8 @@ declareCommandReturns(VoiceCallsCommands, {
     sessionName: z.string(),
     mode: z.enum(VOICE_MODES),
     profileId: z.string(),
-    overrides: overridesSchema,
+    // Optional so SDKs still decode a start answer from daemons that predate overrides.
+    overrides: overridesSchema.optional(),
     state: z.string(),
     capabilities: capabilitiesSchema,
   }),

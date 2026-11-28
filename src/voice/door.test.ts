@@ -720,6 +720,33 @@ describe("voice door", () => {
       await until(() => spoke(call.id), "spoken once the person stopped");
     });
 
+    it("one reply gets one ceiling, even when it waits before and after synthesis", async () => {
+      saveVoiceProfile({ ...defaultVoiceProfile(), id: "idle", delivery: "when_idle" });
+      const { door } = harness({
+        whenIdleMaxWaitMs: 400,
+        clip: {
+          transcribe: async () => ({ text: "", durationSec: 0, provider: "test" }),
+          synthesize: async ({ text }) => {
+            await new Promise((resolve) => setTimeout(resolve, 150));
+            return {
+              bytes: new Uint8Array([1]),
+              mime: "audio/mpeg",
+              characters: text.length,
+              costUsd: 0,
+              durationSec: 1,
+            };
+          },
+        },
+      });
+      const call = makeCall("push", { profileId: "idle" });
+      await door.handleControl({ op: "activity", callId: call.id, speaking: true });
+      const startedAt = Date.now();
+      await say(door, call.id, "vt_i9");
+      await until(() => spoke(call.id), "spoken");
+      // 400 ms hold + 150 ms synthesis; a second full ceiling would push it past 950 ms.
+      expect(Date.now() - startedAt).toBeLessThan(850);
+    });
+
     it("a person who starts talking while the clip is synthesized still holds it", async () => {
       saveVoiceProfile({ ...defaultVoiceProfile(), id: "idle", delivery: "when_idle" });
       let releaseSynthesis: () => void = () => {};
