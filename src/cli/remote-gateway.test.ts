@@ -175,6 +175,16 @@ describe("remote gateway configuration", () => {
     });
   });
 
+  it("does not hand an operator CLI to a slow gateway: its local path must stay reachable", async () => {
+    const config = await resolveRemoteGatewayConfig({}, "context credentials add", {
+      installedOperator: true,
+      stateDir: "/home/user/.ravi",
+      probeSocketDetailed: async () => ({ ok: false, reason: "timeout" }),
+    });
+
+    expect(config).toBeNull();
+  });
+
   it("stays fail-closed when the socket is missing or refuses, and says which", async () => {
     const env = { RAVI_CONTEXT_KEY: "rctx_test" };
     const missing = await resolveRemoteGatewayConfig(env, "pages published", {

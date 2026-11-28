@@ -229,7 +229,9 @@ export async function resolveAutoHostCliGateway(
     // request to the gateway transport with its normal timeout instead of
     // declaring "no gateway": it still fails closed if the daemon is truly
     // gone, and never falls back to local execution.
-    if (result.reason === "timeout") return config;
+    // Only for a runtime context key, which has no local fallback. An operator
+    // CLI (credential recovery, a stopped daemon) keeps its local path.
+    if (result.reason === "timeout" && requiresRemoteGateway(env)) return config;
     lastHostGatewayFailure = { reason: result.reason, socketPath, ...(result.code ? { code: result.code } : {}) };
   }
   return null;
@@ -283,7 +285,6 @@ export function gatewayRequiredError(op: string, installedOperator = false): Con
     ...errorDiagnostic(message, { operation: op }),
     ...{
       retryable: true,
-      ...(failure ? { probeFailure: failure.reason } : {}),
       suggestedAction: `Start the Ravi daemon so its host CLI gateway socket is available, or set ${REMOTE_GATEWAY_URL_ENV}`,
     },
   });
